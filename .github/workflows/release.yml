@@ -39,7 +39,7 @@ jobs:
     env:
       HAS_KEYSTORE: ${{ secrets.YOMU_KEYSTORE_BASE64 != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Version
         id: version
@@ -71,12 +71,12 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Building $tag: versionName $version, versionCode $code, pre-release: $prerelease"
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Restore signing keystore
         if: env.HAS_KEYSTORE == 'true'
@@ -159,7 +159,7 @@ jobs:
           cat "$notes"
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
