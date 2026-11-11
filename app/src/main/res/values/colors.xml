@@ -2,7 +2,6 @@
 <resources>
     <color name="yomu_primary">#4F5BD5</color>
     <color name="yomu_background">#FFFBFF</color>
-    <color name="ic_launcher_background">#3F4AB8</color>
     <bool name="yomu_light_bars">true</bool>
     <color name="widget_background">#F2F4F2FA</color>
     <color name="widget_surface">#FFFFFFFF</color>

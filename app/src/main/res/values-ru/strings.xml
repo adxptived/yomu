@@ -29,13 +29,10 @@
     </plurals>
     <string name="add_extension_repo">Добавить репозиторий расширений</string>
     <!-- Значки приложения (Настройки → Оформление → Значок приложения) -->
-    <string name="icon_classic">Классика</string>
-    <string name="icon_spark">Искра</string>
-    <string name="icon_ribbon">Лента</string>
-    <string name="icon_fox">Лис</string>
-    <string name="icon_hanko">Ханко</string>
-    <string name="icon_gaze">Взгляд</string>
-    <string name="icon_manga">Манга</string>
+    <string name="icon_purple_dark">Фиалка</string>
+    <string name="icon_purple_light">Сирень</string>
+    <string name="icon_orange_dark">Янтарь</string>
+    <string name="icon_orange_light">Персик</string>
     <!-- Сбой при прошлом запуске (1.9.0) -->
     <string name="crash_title">Yomu неожиданно закрылась</string>
     <string name="crash_text">В прошлый раз приложение упало. В отчёте — ошибка, экран, где она случилась, и модель телефона: отправьте его разработчику, чтобы ошибку исправили. Без вас ничего не отправляется.</string>

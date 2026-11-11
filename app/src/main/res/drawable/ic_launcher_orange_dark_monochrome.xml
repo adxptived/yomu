@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Yomu — Orange dark: monochrome layer. Source: branding/app-icons/yomu-orange-dark.svg (4096 px square, artwork inside the 66 dp safe zone). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 31.85 47.46 A 22.15 22.15 0 0 1 76.15 47.46 C 66.87 49.36 59.27 54.11 54 59.91 C 48.73 54.11 41.13 49.36 31.85 47.46 Z M 21.09 49.57 C 36.18 49.25 48.62 55.16 54 66.66 C 59.38 55.16 71.82 49.25 86.91 49.57 L 86.91 65.81 C 73.83 65.71 61.7 70.88 54 78.05 C 46.3 70.88 34.17 65.71 21.09 65.81 Z" />
+</vector>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Yomu — Orange dark (branding/app-icons/yomu-orange-dark.svg) -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_orange_dark_background" />
+    <foreground android:drawable="@drawable/ic_launcher_orange_dark_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_orange_dark_monochrome" />
+</adaptive-icon>

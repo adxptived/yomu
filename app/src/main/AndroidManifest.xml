@@ -181,11 +181,11 @@
             </intent-filter>
         </activity-alias>
         <activity-alias
-            android:name=".icon.Spark"
+            android:name=".icon.PurpleLight"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_spark"
-            android:roundIcon="@mipmap/ic_launcher_spark"
+            android:icon="@mipmap/ic_launcher_purple_light"
+            android:roundIcon="@mipmap/ic_launcher_purple_light"
             android:targetActivity=".YomuActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -193,11 +193,11 @@
             </intent-filter>
         </activity-alias>
         <activity-alias
-            android:name=".icon.Ribbon"
+            android:name=".icon.OrangeDark"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_ribbon"
-            android:roundIcon="@mipmap/ic_launcher_ribbon"
+            android:icon="@mipmap/ic_launcher_orange_dark"
+            android:roundIcon="@mipmap/ic_launcher_orange_dark"
             android:targetActivity=".YomuActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -205,47 +205,11 @@
             </intent-filter>
         </activity-alias>
         <activity-alias
-            android:name=".icon.Fox"
+            android:name=".icon.OrangeLight"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_fox"
-            android:roundIcon="@mipmap/ic_launcher_fox"
-            android:targetActivity=".YomuActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".icon.Hanko"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_hanko"
-            android:roundIcon="@mipmap/ic_launcher_hanko"
-            android:targetActivity=".YomuActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".icon.Gaze"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_gaze"
-            android:roundIcon="@mipmap/ic_launcher_gaze"
-            android:targetActivity=".YomuActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".icon.Manga"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_manga"
-            android:roundIcon="@mipmap/ic_launcher_manga"
+            android:icon="@mipmap/ic_launcher_orange_light"
+            android:roundIcon="@mipmap/ic_launcher_orange_light"
             android:targetActivity=".YomuActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

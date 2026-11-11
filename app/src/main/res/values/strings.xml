@@ -28,13 +28,10 @@
     </plurals>
     <string name="add_extension_repo">Add extension repository</string>
     <!-- Launcher icons (Settings → Appearance → App icon) -->
-    <string name="icon_classic">Classic</string>
-    <string name="icon_spark">Spark</string>
-    <string name="icon_ribbon">Ribbon</string>
-    <string name="icon_fox">Fox</string>
-    <string name="icon_hanko">Hanko</string>
-    <string name="icon_gaze">Gaze</string>
-    <string name="icon_manga">Manga</string>
+    <string name="icon_purple_dark">Violet</string>
+    <string name="icon_purple_light">Lilac</string>
+    <string name="icon_orange_dark">Amber</string>
+    <string name="icon_orange_light">Peach</string>
     <!-- A crash of the previous run (1.9.0) -->
     <string name="crash_title">Yomu closed unexpectedly</string>
     <string name="crash_text">The app crashed last time. The report has the error, the screen it happened on and the phone model: send it to the developer to get it fixed. Nothing is sent without you.</string>

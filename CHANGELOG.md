@@ -2,6 +2,7 @@
 
 ## 2.1.1 — player, profile, downloads
 
+- **New app icon**: a reader over an open book, four colour variants instead of the previous seven drawings (Settings → Appearance → App icon); the violet one is the default.
 - **Player stability and compact screens**: forward/backward skips stay within the known track duration, chapter and track changes reset the seek slider, and compact playback controls retain 48 dp touch targets.
 - **Continue** on the library's "Continue reading" card opens the chapter to read next instead of the title page.
 - **YouTube in the catalog**: videos and playlists added from the YouTube source offer "Listen online" again (the title page showed "No downloadable files").
