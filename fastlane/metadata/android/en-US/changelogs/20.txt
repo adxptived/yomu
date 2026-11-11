@@ -1,0 +1,1 @@
+Improved audiobook player, simpler profile and more resilient downloads. Continue reading opens the next chapter, and YouTube titles can be played online again.
