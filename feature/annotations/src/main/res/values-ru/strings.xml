@@ -17,6 +17,7 @@
     <string name="action_sentence">Выделить предложение</string>
     <string name="action_paragraph">Выделить абзац</string>
     <string name="action_bookmark">Закладка</string>
+    <string name="action_dictionary">Внешний словарь</string>
     <string name="action_custom">Свои действия</string>
     <string name="action_delete_highlight">Удалить выделение</string>
     <string name="color_yellow">Жёлтый</string>

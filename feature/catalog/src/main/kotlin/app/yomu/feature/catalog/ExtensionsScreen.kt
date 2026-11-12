@@ -2,6 +2,7 @@ package app.yomu.feature.catalog
 
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -32,27 +33,24 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.FileOpen
 import androidx.compose.material.icons.outlined.GppMaybe
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Block
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material3.Switch
-import androidx.compose.ui.draw.alpha
-import app.yomu.data.source.SourceInfo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
@@ -76,6 +74,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -89,6 +88,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -103,10 +104,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.SearchField
+import app.yomu.core.ui.components.YomuFab
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.core.ui.components.copyText
-import app.yomu.core.ui.components.YomuFab
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.source.AvailableExtension
 import app.yomu.data.source.BrokenReason
@@ -114,6 +115,7 @@ import app.yomu.data.source.ContentWarning
 import app.yomu.data.source.ExtensionStatus
 import app.yomu.data.source.ExtensionUpdate
 import app.yomu.data.source.InstalledExtension
+import app.yomu.data.source.SourceInfo
 import app.yomu.data.source.StoreState
 import app.yomu.data.source.tachiyomi.TachiyomiSource
 import coil3.compose.AsyncImage
@@ -144,6 +146,12 @@ fun ExtensionsScreen(
     val snackbar = remember { SnackbarHostState() }
     var tab by rememberSaveable { mutableIntStateOf(if (addStoreUrl != null) 2 else 0) }
     var searching by rememberSaveable { mutableStateOf(false) }
+    val searchFocus = remember { FocusRequester() }
+    LaunchedEffect(searching) { if (searching) runCatching { searchFocus.requestFocus() } }
+    BackHandler(enabled = searching) {
+        searching = false
+        viewModel.query.value = ""
+    }
     var showMenu by remember { mutableStateOf(false) }
     var trustFor by remember { mutableStateOf<InstalledExtension?>(null) }
     var trustAll by remember { mutableStateOf<List<InstalledExtension>?>(null) }
@@ -153,7 +161,8 @@ fun ExtensionsScreen(
     var addStoreInitial by rememberSaveable { mutableStateOf(addStoreUrl.orEmpty()) }
     var removeStore by remember { mutableStateOf<StoreState?>(null) }
     var pickLanguages by remember { mutableStateOf(false) }
-    val pickApk = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(viewModel::installFromFile) }
+    val pickApk =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(viewModel::installFromFile) }
     CatalogEventsEffect(viewModel.events, snackbar)
 
     LaunchedEffect(addStoreUrl) { if (addStoreUrl != null) viewModel.previewStore(addStoreUrl) }
@@ -164,7 +173,7 @@ fun ExtensionsScreen(
                 TopAppBar(
                     title = {
                         if (searching) {
-                            SearchField(query, { viewModel.query.value = it }, stringResource(R.string.ext_search_hint))
+                            SearchField(query, { viewModel.query.value = it }, stringResource(R.string.ext_search_hint), focusRequester = searchFocus)
                         } else {
                             Text(stringResource(R.string.ext_title))
                         }

@@ -13,6 +13,8 @@
     <string name="undo">Undo</string>
     <string name="back">Back</string>
     <string name="more">More</string>
+    <string name="fast_scroll_start">Jump to the beginning</string>
+    <string name="fast_scroll_end">Jump to the end</string>
     <string name="share">Share</string>
     <string name="copy">Copy</string>
     <string name="clear">Clear</string>

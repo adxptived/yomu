@@ -46,19 +46,45 @@ class OcrService(private val db: YomuDatabase) {
 
     suspend fun recognize(bitmap: Bitmap, lang: String, cacheKey: String? = null): List<OcrBlock> {
         val key = cacheKey?.let { "$it|$lang" }
-        key?.let { k -> db.ocrCache().get(k)?.let { return Json.decodeFromString(serializer, it.blocksJson) } }
+        key?.let { k ->
+            val cached = db.ocrCache().get(k)
+            if (cached != null) {
+                // A corrupted row must not disable OCR of that page forever: drop it and recognize again.
+                runCatching { Json.decodeFromString(serializer, cached.blocksJson) }.getOrNull()?.let { return it }
+                db.ocrCache().remove(k)
+            }
+        }
         val result = recognizer(lang).process(InputImage.fromBitmap(bitmap, 0)).awaitTask()
         val blocks = result.textBlocks.mapNotNull { b ->
             val r: Rect = b.boundingBox ?: return@mapNotNull null
             val text = if (lang == "ja" || lang == "zh") b.text.replace("\n", "") else b.text.replace('\n', ' ')
             OcrBlock(text.trim(), r.left, r.top, r.right, r.bottom)
         }.filter { it.text.isNotBlank() }
-        key?.let { db.ocrCache().put(OcrCacheEntity(it, Json.encodeToString(serializer, blocks), System.currentTimeMillis())) }
+        key?.let {
+            db.ocrCache().put(OcrCacheEntity(it, Json.encodeToString(serializer, blocks), System.currentTimeMillis()))
+            trim()
+        }
         return blocks
     }
+
+    /** Keeps the cache bounded by age and count instead of growing with every page ever viewed. */
+    private suspend fun trim() {
+        if (++writes % TRIM_EVERY != 0) return
+        val now = System.currentTimeMillis()
+        db.ocrCache().deleteBefore(now - MAX_AGE_MS)
+        db.ocrCache().trimTo(MAX_ENTRIES)
+    }
+
+    @Volatile private var writes = 0
 
     fun close() = synchronized(recognizers) {
         recognizers.values.forEach { it.close() }
         recognizers.clear()
+    }
+
+    private companion object {
+        const val TRIM_EVERY = 50
+        const val MAX_AGE_MS = 90L * 24 * 60 * 60 * 1000
+        const val MAX_ENTRIES = 5_000
     }
 }

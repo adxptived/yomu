@@ -28,8 +28,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import app.yomu.core.ui.theme.Dimens
 import app.yomu.core.ui.components.LocalHintStore
+import app.yomu.core.ui.theme.Dimens
 import app.yomu.domain.model.TapZoneLayout
 import app.yomu.feature.reader.manga.TapAction
 import app.yomu.feature.reader.manga.TapZonesOverlay

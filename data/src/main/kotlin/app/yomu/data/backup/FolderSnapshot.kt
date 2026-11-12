@@ -64,7 +64,8 @@ internal object FolderSnapshot {
                 fun walk(id: String, prefix: String, depth: Int) {
                     if (!seenDocumentIds.add(id)) throw IOException("Image folder contains a cycle or duplicate document")
                     val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(uri, id)
-                    val columns = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE)
+                    val columns =
+                        arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE)
                     val cursor = context.contentResolver.query(childUri, columns, null, null, null) ?: throw IOException("Cannot list image folder: $prefix")
                     cursor.use { c ->
                         val idColumn = c.getColumnIndexOrThrow(columns[0]); val nameColumn = c.getColumnIndexOrThrow(columns[1]); val mimeColumn = c.getColumnIndexOrThrow(columns[2])

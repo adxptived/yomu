@@ -129,7 +129,8 @@ object EpubParser {
         val rtl = spineEl?.attr("page-progression-direction") == "rtl"
         val navItem = manifest.firstOrNull { "nav" in it.properties.split(' ') }
         val ncxItem = spineEl?.attr("toc")?.let { byId[it] } ?: manifest.firstOrNull { it.mediaType == "application/x-dtbncx+xml" }
-        val pkg = EpubPackage(opfPath, meta, manifest, spine, emptyList(), coverPath, rtl, fixed, navItem?.path, ncxItem?.path)
+        val pkg =
+            EpubPackage(opfPath, meta, manifest, spine, emptyList(), coverPath, rtl, fixed, navItem?.path, ncxItem?.path)
         val toc = runCatching { navItem?.let { parseNav(container, it.path, pkg) } }.getOrNull().orEmpty()
             .ifEmpty { runCatching { ncxItem?.let { parseNcx(container, it.path, pkg) } }.getOrNull().orEmpty() }
             .ifEmpty { spine.mapIndexed { i, item -> TocItem(titleOf(container, item) ?: "${i + 1}", i) } }

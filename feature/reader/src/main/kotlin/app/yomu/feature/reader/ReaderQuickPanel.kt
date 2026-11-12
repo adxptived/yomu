@@ -18,6 +18,10 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -63,11 +67,13 @@ internal fun ReaderQuickPanel(
             }
             if (text != null) QuickTextBar(text, vm)
             val brightnessLabel = stringResource(R.string.rs_brightness)
+            var brightness by remember(common.brightness) { mutableFloatStateOf(if (common.brightness < 0f) 0.5f else common.brightness) }
             Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.l), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.BrightnessMedium, null, Modifier.size(20.dp))
                 Slider(
-                    value = if (common.brightness < 0f) 0.5f else common.brightness,
-                    onValueChange = { v -> vm.updateCommon { it.copy(brightness = v.coerceAtLeast(0.01f)) } },
+                    value = brightness,
+                    onValueChange = { brightness = it },
+                    onValueChangeFinished = { vm.updateCommon { it.copy(brightness = brightness.coerceAtLeast(0.01f)) } },
                     enabled = common.brightness >= 0f,
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp).semantics { contentDescription = brightnessLabel },
                 )
@@ -78,11 +84,13 @@ internal fun ReaderQuickPanel(
                 )
             }
             val warmLabel = stringResource(R.string.rs_warm)
+            var warm by remember(common.warmFilter) { mutableFloatStateOf(common.warmFilter) }
             Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.l), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.WbTwilight, null, Modifier.size(20.dp))
                 Slider(
-                    value = common.warmFilter,
-                    onValueChange = { v -> vm.updateCommon { it.copy(warmFilter = v) } },
+                    value = warm,
+                    onValueChange = { warm = it },
+                    onValueChangeFinished = { vm.updateCommon { it.copy(warmFilter = warm) } },
                     valueRange = 0f..0.8f,
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp).semantics { contentDescription = warmLabel },
                 )

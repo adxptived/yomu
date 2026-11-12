@@ -31,6 +31,18 @@ object Files {
         else -> context.contentResolver.openInputStream(uri) ?: error("Cannot open $uri")
     }
 
+    /** Size counted from the bytes actually readable, for providers that do not report [size] (-1). */
+    fun count(context: Context, uri: Uri): Long = open(context, uri).use { input ->
+        val buf = ByteArray(BUFFER)
+        var total = 0L
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            total += n
+        }
+        total
+    }
+
     fun copy(context: Context, uri: Uri, dest: File): File {
         dest.parentFile?.mkdirs()
         open(context, uri).use { input -> dest.outputStream().use { input.copyTo(it, BUFFER) } }

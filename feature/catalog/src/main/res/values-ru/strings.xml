@@ -8,6 +8,8 @@
     <string name="catalog_all_languages">Все языки</string>
     <string name="catalog_downloads">Загрузки</string>
     <string name="catalog_add_opds">Добавить OPDS-каталог</string>
+    <string name="opds_url_placeholder">https://example.org/opds</string>
+    <string name="title_open_webview">Веб-версия</string>
     <string name="catalog_add_opds_hint">Calibre, Флибуста, Standard Ebooks, свой сервер…</string>
     <string name="catalog_local_folder">Локальная папка…</string>
     <string name="catalog_check_updates">Проверить обновления</string>

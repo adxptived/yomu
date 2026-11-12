@@ -96,5 +96,6 @@ internal object MediaTypes {
     fun isFont(name: String, mediaType: String = ""): Boolean =
         mediaType.contains("font") || mediaType.contains("opentype") || name.substringAfterLast('.', "").lowercase() in setOf("ttf", "otf", "woff", "woff2")
 
-    private val BINARY = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "ttf", "otf", "woff", "woff2", "mp3", "mp4", "m4a", "ogg", "wav", "zip", "pdf")
+    private val BINARY =
+        setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "ttf", "otf", "woff", "woff2", "mp3", "mp4", "m4a", "ogg", "wav", "zip", "pdf")
 }

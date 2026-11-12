@@ -1,8 +1,8 @@
 package app.yomu.profile
 
 import android.content.Context
-import androidx.annotation.StringRes
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -33,7 +32,6 @@ import androidx.compose.material.icons.automirrored.outlined.ShortText
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
@@ -70,6 +68,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -124,7 +123,8 @@ private enum class ProfilePage(@StringRes val title: Int) {
 }
 
 /** Emoji avatars of the profile; "" (the first one in the picker) is the first letter of the name. */
-private val AVATARS = listOf("📚", "📖", "🦊", "🐱", "🐼", "🦉", "🐉", "🌸", "🌙", "⭐", "🔥", "🍵", "🎧", "🎮", "👾", "🍙")
+private val AVATARS =
+    listOf("📚", "📖", "🦊", "🐱", "🐼", "🦉", "🐉", "🌸", "🌙", "⭐", "🔥", "🍵", "🎧", "🎮", "👾", "🍙")
 
 /**
  * The "Profile" tab: an overview (summary, milestones, recent reading, entries to the statistics, tracking and downloads)
@@ -288,7 +288,8 @@ private fun ProfileOverview(
     val scope = rememberCoroutineScope()
     val days by historyViewModel.days.collectAsStateWithLifecycle()
     val query by historyViewModel.query.collectAsStateWithLifecycle()
-    val recent = remember(days, query) { if (query.isBlank()) days.orEmpty().asSequence().flatMap { it.items }.take(3).toList() else emptyList() }
+    val recent =
+        remember(days, query) { if (query.isBlank()) days.orEmpty().asSequence().flatMap { it.items }.take(3).toList() else emptyList() }
     var busy by remember { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
     val palette = ProfileCard.Palette(colors.primary.toArgb(), colors.tertiary.toArgb(), colors.onPrimary.toArgb())

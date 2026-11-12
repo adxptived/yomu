@@ -33,10 +33,10 @@ import app.yomu.data.download.DownloadRepository
 import app.yomu.data.library.ImportService
 import app.yomu.data.repository.WordRepositoryImpl
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import timber.log.Timber
-import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
@@ -92,7 +92,9 @@ object Notifications {
 
     /** Settings → Notifications; kept current by the app (see [watch]). */
     @Volatile var prefs: NotificationPrefs = NotificationPrefs()
+
     @Volatile private var prefsLoaded = false
+
     @Volatile private var settingsRef: AppSettings? = null
 
     private suspend fun readPrefs(settings: AppSettings) = NotificationPrefs(
@@ -188,7 +190,13 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val title = ctx.getString(R.string.notif_downloading)
         // A new run replaces the result of the previous one ("finished", "paused: storage full").
         runCatching { androidx.core.app.NotificationManagerCompat.from(ctx).cancel(Notifications.ID_DOWNLOAD_DONE) }
-        runCatching { setForeground(progressInfo(ctx, title, 0f)) }
+        // Without a foreground service the process may be killed mid-download and no notification explains the work.
+        // Do not start the queue in that state: retry later instead of running invisibly.
+        val foreground = runCatching { setForeground(progressInfo(ctx, title, 0f)) }
+        if (foreground.isFailure) {
+            Timber.w(foreground.exceptionOrNull(), "Downloads cannot run in the foreground")
+            return if (runAttemptCount < 3) Result.retry() else Result.failure()
+        }
         var lastShown = 0L
         val outcome = downloads.runQueue { p ->
             val now = System.currentTimeMillis()
@@ -319,14 +327,18 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     override suspend fun doWork(): Result = try {
         backup.autoBackup()
         Result.success()
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         Timber.e(e, "Auto backup failed")
         Notifications.notify(applicationContext, Notifications.ID_BACKUP, Notifications.builder(applicationContext, Notifications.BACKUP).setContentTitle(applicationContext.getString(R.string.notif_backup_failed)).setContentText(e.message))
-        Result.retry()
+        // A full disk or a revoked folder permission does not fix itself by retrying every few hours forever.
+        if (runAttemptCount >= MAX_ATTEMPTS) Result.failure() else Result.retry()
     }
 
     companion object {
         const val NAME = "auto_backup"
+        private const val MAX_ATTEMPTS = 5
     }
 }
 

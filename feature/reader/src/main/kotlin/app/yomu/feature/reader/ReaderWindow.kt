@@ -24,15 +24,12 @@ fun ReaderWindowEffects(common: CommonReaderSettings, chromeVisible: Boolean, la
     val activity = LocalActivity.current ?: return
     val window = activity.window
 
-    DisposableEffect(common.brightness) {
+    // LaunchedEffect, not DisposableEffect: during an edge swipe the brightness changes every frame, and disposing
+    // the previous effect would reset the screen to the system brightness in between (a visible flicker).
+    LaunchedEffect(common.brightness) {
         val lp = window.attributes
         lp.screenBrightness = if (common.brightness < 0f) WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE else common.brightness.coerceIn(0.01f, 1f)
         window.attributes = lp
-        onDispose {
-            val l = window.attributes
-            l.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-            window.attributes = l
-        }
     }
 
     DisposableEffect(common.drawUnderCutout) {
@@ -81,5 +78,12 @@ fun ReaderWindowEffects(common: CommonReaderSettings, chromeVisible: Boolean, la
             }
         }
     }
-    DisposableEffect(Unit) { onDispose { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) } }
+    DisposableEffect(Unit) {
+        onDispose {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            val lp = window.attributes
+            lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            window.attributes = lp
+        }
+    }
 }

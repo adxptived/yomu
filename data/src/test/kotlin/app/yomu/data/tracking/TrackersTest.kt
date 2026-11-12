@@ -75,7 +75,9 @@ class TrackersTest {
     @Test
     fun aniListSignsInSearchesAndSaves() = runBlocking {
         val t = AniListTracker(store, keys, { client }, apiUrl = url("/graphql"))
-        assertTrue(t.authUrl().contains("client_id=11") && t.authUrl().contains("response_type=token"))
+        val auth = t.startAuth()
+        assertTrue(auth.contains("client_id=11") && auth.contains("response_type=token"))
+        val state = auth.toHttpUrl().queryParameter("state")!!
         answer = { _, body ->
             when {
                 "Viewer" in body -> json("""{"data":{"Viewer":{"id":7,"name":"neko"}}}""")
@@ -92,7 +94,7 @@ class TrackersTest {
                 else -> MockResponse().setResponseCode(400)
             }
         }
-        t.finishLogin("yomu://anilist-auth#access_token=tok-a&token_type=Bearer&expires_in=31536000")
+        t.finishLogin("yomu://anilist-auth#access_token=tok-a&token_type=Bearer&expires_in=31536000&state=$state")
         assertTrue(t.loggedIn())
         assertEquals("neko", t.userName())
         assertEquals(7L, store.userId(TrackService.ANILIST))
@@ -121,7 +123,8 @@ class TrackersTest {
     @Test
     fun aniListReportsADeniedSignIn() = runBlocking {
         val t = AniListTracker(store, keys, { client }, apiUrl = url("/graphql"))
-        val e = runCatching { t.finishLogin("yomu://anilist-auth?error=access_denied&error_description=The+user+denied") }.exceptionOrNull()
+        val state = t.startAuth().toHttpUrl().queryParameter("state")
+        val e = runCatching { t.finishLogin("yomu://anilist-auth?error=access_denied&error_description=The+user+denied&state=$state") }.exceptionOrNull()
         assertTrue(e is TrackerException && e.message!!.contains("The user denied"))
         assertFalse(t.loggedIn())
     }
@@ -129,10 +132,11 @@ class TrackersTest {
     @Test
     fun myAnimeListUsesPkceAndRefreshesAnExpiredToken() = runBlocking {
         val t = MyAnimeListTracker(store, keys, { client }, apiUrl = url("/v2"), authBase = url("/oauth2"))
-        val auth = t.authUrl().toHttpUrl()
+        val auth = t.startAuth().toHttpUrl()
         val challenge = auth.queryParameter("code_challenge")!!
         assertEquals("plain", auth.queryParameter("code_challenge_method"))
         assertEquals("yomu://myanimelist-auth", auth.queryParameter("redirect_uri"))
+        val state = auth.queryParameter("state")!!
         var tokens = 0
         answer = { r, _ ->
             val path = r.requestUrl!!.encodedPath
@@ -150,7 +154,7 @@ class TrackersTest {
                 else -> MockResponse().setResponseCode(404)
             }
         }
-        t.finishLogin("yomu://myanimelist-auth?code=the-code&state=x")
+        t.finishLogin("yomu://myanimelist-auth?code=the-code&state=$state")
         val exchange = form(bodies[0])
         assertEquals("authorization_code", exchange["grant_type"])
         assertEquals("the-code", exchange["code"])
@@ -210,7 +214,7 @@ class TrackersTest {
                 else -> MockResponse().setResponseCode(404)
             }
         }
-        t.finishLogin("yomu://shikimori-auth?code=c0de")
+        t.finishLogin("yomu://shikimori-auth?code=c0de&state=${t.startAuth().toHttpUrl().queryParameter("state")}")
         val token = form(bodies[0])
         assertEquals("authorization_code", token["grant_type"])
         assertEquals("shiki-secret", token["client_secret"])

@@ -31,17 +31,29 @@ class ShikimoriTracker(
     override val redirectHost = "shikimori-auth"
     override val needsSecret = true
 
-    override fun authUrl(): String = "$baseUrl/oauth/authorize".toHttpUrl().newBuilder()
-        .addQueryParameter("client_id", clientId())
-        .addQueryParameter("redirect_uri", redirectUri)
-        .addQueryParameter("response_type", "code")
-        .addQueryParameter("scope", "user_rates")
-        .build().toString()
+    override fun authUrl(state: String): String {
+        val verifier = newPkceVerifier()
+        return "$baseUrl/oauth/authorize".toHttpUrl().newBuilder()
+            .addQueryParameter("client_id", clientId())
+            .addQueryParameter("redirect_uri", redirectUri)
+            .addQueryParameter("response_type", "code")
+            .addQueryParameter("scope", "user_rates")
+            .addQueryParameter("state", state)
+            .addQueryParameter("code_challenge", codeChallenge(verifier))
+            .addQueryParameter("code_challenge_method", "S256")
+            .build().toString()
+    }
 
     override suspend fun finishLogin(redirect: String) {
+        requireRedirectState(redirect)
         val p = redirectParams(redirect)
         val code = p["code"] ?: throw TrackerException("Shikimori: ${p["error_description"] ?: p["error"] ?: "no code in the answer"}")
-        tokenRequest(FormBody.Builder().add("grant_type", "authorization_code").add("code", code).add("redirect_uri", redirectUri))
+        val verifier = store.extra(service, "verifier") ?: throw TrackerException("Shikimori: start signing in again")
+        store.setExtra(service, "verifier", null)
+        tokenRequest(
+            FormBody.Builder().add("grant_type", "authorization_code").add("code", code).add("redirect_uri", redirectUri),
+            verifier,
+        )
         try {
             val me = json.parseToJsonElement(get("$baseUrl/api/users/whoami")!!)
             store.saveUser(service, me["id"].long() ?: 0, me["nickname"].str())
@@ -51,7 +63,8 @@ class ShikimoriTracker(
         }
     }
 
-    private suspend fun tokenRequest(form: FormBody.Builder) {
+    private suspend fun tokenRequest(form: FormBody.Builder, verifier: String? = null) {
+        if (verifier != null) form.add("code_verifier", verifier)
         val body = form.add("client_id", clientId()).add("client_secret", clientSecret()).build()
         val text = execute(Request.Builder().url("$baseUrl/oauth/token").header("User-Agent", USER_AGENT).post(body).build())!!
         val t = json.parseToJsonElement(text)

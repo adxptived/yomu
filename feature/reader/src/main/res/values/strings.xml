@@ -183,6 +183,27 @@
     <string name="rs_pdf_crop">Crop margins automatically</string>
     <string name="rs_pdf_crop_summary">Detects empty margins on every page</string>
     <string name="rs_pdf_crop_manual">Manual crop</string>
+    <string name="rs_pdf_crop_left">Crop from the left, %</string>
+    <string name="rs_pdf_crop_right">Crop from the right, %</string>
+    <string name="rs_pdf_crop_top">Crop from the top, %</string>
+    <string name="rs_pdf_crop_bottom">Crop from the bottom, %</string>
+    <string name="rs_pdf_contrast">Contrast</string>
+    <string name="rs_pdf_grayscale">Grayscale</string>
+    <string name="rs_pdf_zoom_lock">Lock zoom</string>
+    <string name="rs_zoom_lock_summary">Open the next pages at the current zoom</string>
+    <string name="rs_auto_night_mode">Switch to night</string>
+    <string name="rs_auto_night_system">With the app theme</string>
+    <string name="rs_auto_night_schedule">On a schedule</string>
+    <string name="rs_night_from">Night starts at</string>
+    <string name="rs_night_to">Night ends at</string>
+    <string name="rs_dual_landscape">Two pages in landscape</string>
+    <string name="rs_dual_landscape_summary">Two text columns when the screen is wider than it is tall</string>
+    <string name="tts_channel">Reading aloud</string>
+    <string name="reader_pages">Pages</string>
+    <string name="reader_time_left_m">≈ %1$d min left</string>
+    <string name="reader_time_left_hm">≈ %1$d h %2$d min left</string>
+    <string name="reader_zoom_lock_on">Zoom is locked: the next pages open at this scale</string>
+    <string name="reader_zoom_lock_off">Zoom is not locked: tap to open the next pages at this scale</string>
     <string name="rs_pdf_reflow">Reflow text</string>
     <string name="rs_pdf_reflow_summary">Shows the text layer with your font settings</string>
 
@@ -310,6 +331,8 @@
     <string name="rs_night_theme">Night theme</string>
     <string name="rs_edge_gestures">Edge swipe gestures</string>
     <string name="rs_edge_gestures_summary">Swipe up or down on the left edge for brightness, on the right edge for the warm filter</string>
+    <string name="rs_edge_brightness">Brightness swipe (left edge)</string>
+    <string name="rs_edge_warm">Warm filter swipe (right edge)</string>
     <string name="rs_brightness_pill">Brightness</string>
     <string name="rs_warm_pill">Warm filter</string>
     <string name="hint_reader_edges">Slide up or down along the left edge to change brightness, along the right edge for the warm filter.</string>

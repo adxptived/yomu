@@ -1,13 +1,13 @@
 package app.yomu.data.backup
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.intOrNull
 import java.io.IOException
 
 /**
@@ -65,7 +65,8 @@ internal object FolderMetadataSnapshotCodec {
         } else {
             val stateVersion = root["stateVersion"]?.jsonPrimitive?.intOrNull ?: error("Missing state version")
             val revisions = root["folderRevisions"] ?: error("Missing folder revisions")
-            val stateRoot = JsonObject((root - "stateVersion" - "folderRevisions") + ("version" to JsonPrimitive(stateVersion)))
+            val stateRoot =
+                JsonObject((root - "stateVersion" - "folderRevisions") + ("version" to JsonPrimitive(stateVersion)))
             FolderMetadataSnapshot(
                 state = json.decodeFromJsonElement(SyncState.serializer(), stateRoot),
                 revisions = json.decodeFromJsonElement(ListSerializer(FolderEntry.serializer()), revisions),
@@ -86,6 +87,5 @@ internal object FolderMetadataSnapshotCodec {
             new
         }
         FolderMetadataSnapshot(state = next, revisions = revised).also(::validate)
-    } catch (e: IOException) { throw e }
-      catch (e: Exception) { throw IOException("Cannot translate folder metadata; no data was applied", e) }
+    } catch (e: IOException) { throw e } catch (e: Exception) { throw IOException("Cannot translate folder metadata; no data was applied", e) }
 }

@@ -238,7 +238,8 @@ class PdfAnnotationStore(
                         while (done < inc.size) done += output.write(ByteBuffer.wrap(inc, done, inc.size - done), base + done)
                         output.force(true)
                         val crc = CRC32().apply { update(inc) }.value
-                        val manifest = PdfAnnotationManifest(base, base + inc.size, crc, signature, markups.map { it.id })
+                        val manifest =
+                            PdfAnnotationManifest(base, base + inc.size, crc, signature, markups.map { it.id })
                         manifestFile(bookId).writeText(json.encodeToString(PdfAnnotationManifest.serializer(), manifest))
                     }
                 }

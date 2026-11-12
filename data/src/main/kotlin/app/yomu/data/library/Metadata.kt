@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import app.yomu.core.common.Files
 import app.yomu.data.audio.AudioMeta
 import app.yomu.data.audio.AudiobookStore
 import app.yomu.data.book.Containers
@@ -17,7 +18,6 @@ import app.yomu.data.book.PdfSource
 import app.yomu.data.book.ResourceContainer
 import app.yomu.data.book.TxtConverter
 import app.yomu.data.book.firstLocal
-import app.yomu.core.common.Files
 import app.yomu.domain.model.BookFormat
 import java.io.ByteArrayOutputStream
 import java.io.File

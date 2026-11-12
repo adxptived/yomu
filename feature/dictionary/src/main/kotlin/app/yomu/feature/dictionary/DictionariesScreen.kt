@@ -2,8 +2,6 @@ package app.yomu.feature.dictionary
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -14,11 +12,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -43,14 +41,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.PreferenceSwitch
 import app.yomu.core.ui.components.SkeletonList
-import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.YomuFab
+import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.domain.model.DictFormat
 import app.yomu.domain.model.DictionaryInfo
@@ -66,7 +66,8 @@ fun DictionariesScreen(viewModel: DictionariesViewModel, onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
     val resources = LocalResources.current
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { viewModel.import(it) }
+    val picker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { viewModel.import(it) }
     LaunchedEffect(viewModel) {
         viewModel.eventFlow.collect { r ->
             r.fold(

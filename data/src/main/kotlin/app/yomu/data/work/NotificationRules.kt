@@ -2,12 +2,12 @@ package app.yomu.data.work
 
 import android.content.Context
 import android.util.AtomicFile
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 import java.io.File
 
 /** What a notification is about; each kind can be switched off in Settings → Notifications. */
@@ -61,15 +61,9 @@ class NotificationLog(private val file: File) {
         _entries.value = list
         runCatching {
             file.parentFile?.mkdirs()
-            val atomic = AtomicFile(file)
-            val out = atomic.startWrite()
-            try {
-                out.write(json.encodeToString(ListSerializer(NotificationRecord.serializer()), list).toByteArray())
-                atomic.finishWrite(out)
-            } catch (e: Exception) {
-                atomic.failWrite(out)
-                throw e
-            }
+            // Sibling temp file + move: AtomicFile's rename dance fails to replace a file on a host (Windows), which
+            // made the log lose everything but its first record in host tests.
+            app.yomu.data.backup.AtomicPublish.publish(file, json.encodeToString(ListSerializer(NotificationRecord.serializer()), list).toByteArray())
         }
     }
 

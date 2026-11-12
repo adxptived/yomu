@@ -114,7 +114,6 @@ internal class BookDeletionSync(
                     runCatching { SharedBookRevision.capture(id, state, links, file = entries[id]) }.getOrNull()
                 }
                 val decision = BookDeletionGuard.propose(enabled = true, locallyPresent = false, base = baseline.shared, remote = current)
-                if (decision != BookDeletionGuard.Decision.PUBLISH) println("DIAG decision=$decision book=${agreedState?.books?.firstOrNull { it.hash == id }} hl=${agreedState?.highlights?.filter { it.hash == id }} del=${agreedState?.deleted?.filterKeys { SyncKeys.bookOf(it) == id }}")
                 when (decision) {
                     BookDeletionGuard.Decision.PUBLISH -> {
                         deletions[id] = DeletedBook(expected = baseline.shared, at = System.currentTimeMillis())
@@ -185,6 +184,7 @@ internal class BookDeletionSync(
             for (mark in ann.allBookmarks().filter { it.bookId == row.id }) ann.deleteBookmark(mark.id)
             db.words().delete(db.words().all().filter { it.bookId == row.id }.map { it.id })
             db.progress().deleteForBook(row.id)
+            db.chapterProgress().clear(row.id)
             db.books().delete(listOf(row.id))
         }
     }

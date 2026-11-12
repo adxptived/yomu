@@ -11,37 +11,39 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
-import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
-import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.VerticalDivider
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.ui.Modifier
-import app.yomu.core.ui.components.IncognitoBanner
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -57,19 +59,26 @@ import app.yomu.MainViewModel
 import app.yomu.R
 import app.yomu.core.common.ErrorLog
 import app.yomu.core.ui.components.FloatingNavBarDefaults
+import app.yomu.core.ui.components.IncognitoBanner
 import app.yomu.core.ui.components.LocalNavAnimatedScope
 import app.yomu.core.ui.components.LocalNavBarHidden
 import app.yomu.core.ui.components.LocalNavBarInset
-import app.yomu.core.ui.components.NavTab
-import app.yomu.core.ui.components.item
 import app.yomu.core.ui.components.LocalSharedTransitionScope
+import app.yomu.core.ui.components.NavTab
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.item
 import app.yomu.data.repository.toJson
+import app.yomu.domain.repository.BookRepository
 import app.yomu.feature.annotations.AnnotationsScreen
+import app.yomu.feature.audio.AudioController
+import app.yomu.feature.audio.AudioPlayerScreen
+import app.yomu.feature.audio.NowPlayingBar
 import app.yomu.feature.catalog.BrowseArgs
+import app.yomu.feature.catalog.CatalogHomeViewModel
 import app.yomu.feature.catalog.CatalogScreen
 import app.yomu.feature.catalog.ExtensionsScreen
 import app.yomu.feature.catalog.GlobalSearchScreen
+import app.yomu.feature.catalog.OnlineLibraryPane
 import app.yomu.feature.catalog.SearchArgs
 import app.yomu.feature.catalog.SourceBrowseScreen
 import app.yomu.feature.catalog.SourceBrowseViewModel
@@ -83,6 +92,7 @@ import app.yomu.feature.downloads.DownloadsScreen
 import app.yomu.feature.editor.EditorScreen
 import app.yomu.feature.library.BookDetailsScreen
 import app.yomu.feature.library.LibraryScreen
+import app.yomu.feature.library.OnlineLibrary
 import app.yomu.feature.reader.DocxLayoutScreen
 import app.yomu.feature.reader.ReaderArgs
 import app.yomu.feature.reader.ReaderScreen
@@ -90,21 +100,11 @@ import app.yomu.feature.reader.ReadingStatsScreen
 import app.yomu.feature.settings.SettingsLinks
 import app.yomu.feature.settings.SettingsScreen
 import app.yomu.feature.settings.SettingsSection
-import app.yomu.profile.ProfileScreen
 import app.yomu.feature.translator.LanguagePacksScreen
+import app.yomu.profile.ProfileScreen
+import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
-import androidx.compose.runtime.remember
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.yomu.feature.catalog.CatalogHomeViewModel
-import app.yomu.feature.catalog.OnlineLibraryPane
-import app.yomu.feature.library.OnlineLibrary
-import app.yomu.domain.repository.BookRepository
-import app.yomu.feature.audio.AudioController
-import app.yomu.feature.audio.AudioPlayerScreen
-import app.yomu.feature.audio.NowPlayingBar
-import androidx.compose.runtime.produceState
-import org.koin.compose.koinInject
 
 /** The screens of the [NavTab]s, all inside [HomeRoute] (see [TabsHost]); [trailName] names them in crash reports. */
 enum class TopLevel(val tab: NavTab, val trailName: String) {
@@ -359,15 +359,15 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                 null -> Unit
                 true -> AudioPlayerScreen(koinViewModel { parametersOf(r.bookId) }, back)
                 false -> ReaderScreen(
-                viewModel = koinViewModel { parametersOf(ReaderArgs(bookId = r.bookId, locatorJson = r.locator, chapterId = r.chapterId, positionReference = r.positionReference)) },
-                onBack = back,
-                onOpenAnnotations = { nav.navigate(AnnotationsRoute(it)) },
-                onOpenDictionary = { nav.navigate(LookupRoute(it)) },
-                onOpenPacks = { nav.navigate(LanguagePacksRoute) },
-                onOpenStats = { nav.navigate(StatsRoute) },
-                onOpenEditor = { nav.navigate(EditorRoute(it)) },
-                onOpenPageLayout = { nav.navigate(DocxLayoutRoute(it)) },
-            )
+                    viewModel = koinViewModel { parametersOf(ReaderArgs(bookId = r.bookId, locatorJson = r.locator, chapterId = r.chapterId, positionReference = r.positionReference)) },
+                    onBack = back,
+                    onOpenAnnotations = { nav.navigate(AnnotationsRoute(it)) },
+                    onOpenDictionary = { nav.navigate(LookupRoute(it)) },
+                    onOpenPacks = { nav.navigate(LanguagePacksRoute) },
+                    onOpenStats = { nav.navigate(StatsRoute) },
+                    onOpenEditor = { nav.navigate(EditorRoute(it)) },
+                    onOpenPageLayout = { nav.navigate(DocxLayoutRoute(it)) },
+                )
             }
         }
         screen<DocxLayoutRoute> { entry ->

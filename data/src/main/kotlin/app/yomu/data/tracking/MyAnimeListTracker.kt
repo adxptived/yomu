@@ -10,7 +10,6 @@ import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.security.SecureRandom
 
 /** MyAnimeList: REST API v2, OAuth with PKCE (plain challenge, as MAL requires), refresh tokens. */
 class MyAnimeListTracker(
@@ -22,22 +21,24 @@ class MyAnimeListTracker(
 ) : Tracker(TrackService.MYANIMELIST, store, keys, client) {
     override val redirectHost = "myanimelist-auth"
 
-    override fun authUrl(): String {
-        val verifier = pkceVerifier()
-        store.setExtra(service, "verifier", verifier)
+    override fun authUrl(state: String): String {
+        val verifier = newPkceVerifier()
         return "$authBase/authorize".toHttpUrl().newBuilder()
             .addQueryParameter("response_type", "code")
             .addQueryParameter("client_id", clientId())
             .addQueryParameter("code_challenge", verifier)
             .addQueryParameter("code_challenge_method", "plain")
             .addQueryParameter("redirect_uri", redirectUri)
+            .addQueryParameter("state", state)
             .build().toString()
     }
 
     override suspend fun finishLogin(redirect: String) {
+        requireRedirectState(redirect)
         val p = redirectParams(redirect)
         val code = p["code"] ?: throw TrackerException("MyAnimeList: ${p["error_description"] ?: p["error"] ?: "no code in the answer"}")
         val verifier = store.extra(service, "verifier") ?: throw TrackerException("MyAnimeList: start signing in again")
+        store.setExtra(service, "verifier", null)
         val form = FormBody.Builder()
             .add("client_id", clientId())
             .add("grant_type", "authorization_code")
@@ -46,7 +47,6 @@ class MyAnimeListTracker(
             .add("redirect_uri", redirectUri)
             .build()
         saveTokens(execute(Request.Builder().url("$authBase/token").post(form).build())!!)
-        store.setExtra(service, "verifier", null)
         try {
             val me = json.parseToJsonElement(get("$apiUrl/users/@me")!!)
             store.saveUser(service, me["id"].long() ?: 0, me["name"].str())
@@ -85,7 +85,8 @@ class MyAnimeListTracker(
 
     private suspend fun send(spec: Request.Builder.() -> Request.Builder, allowNotFound: Boolean = false): String? {
         val token = freshToken()
-        val first = runCatching { execute(Request.Builder().header("Authorization", "Bearer $token").spec().build(), allowNotFound) }
+        val first =
+            runCatching { execute(Request.Builder().header("Authorization", "Bearer $token").spec().build(), allowNotFound) }
         val e = first.exceptionOrNull()
         if (e is CancellationException) throw e
         if (e is TrackerException && e.unauthorized && store.refreshToken(service) != null) {
@@ -181,13 +182,6 @@ class MyAnimeListTracker(
             "on_hold" -> TrackStatus.ON_HOLD
             "dropped" -> TrackStatus.DROPPED
             else -> TrackStatus.READING
-        }
-
-        /** 64 characters of the PKCE alphabet. */
-        fun pkceVerifier(): String {
-            val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
-            val random = SecureRandom()
-            return String(CharArray(64) { chars[random.nextInt(chars.length)] })
         }
     }
 }

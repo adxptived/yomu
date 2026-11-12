@@ -148,15 +148,26 @@
       document.body.appendChild(n);
     }
   }
+  // A landscape spread moves by the content width (window minus both margins), not by the window width:
+  // two columns plus the gutter occupy exactly that width, so page turns never drift.
+  function pageStep() {
+    if (cfg.paged && !cfg.vertical && (cfg.columns || 1) > 1) {
+      var mh = cfg.marginH || 20;
+      return Math.max(1, pageW - 2 * mh);
+    }
+    return pageW;
+  }
   function pageCount() {
     if (cfg.fixed || !cfg.paged || cfg.vertical) return 1;
+    // The laid-out width is a multiple of the window width: one page, or one spread of two columns.
     return Math.max(1, Math.round(se.scrollWidth / pageW));
   }
-  function currentPage() { return cfg.fixed ? 0 : Math.round(Math.abs(se.scrollLeft) / pageW); }
+  function currentPage() { return cfg.fixed ? 0 : Math.round(Math.abs(se.scrollLeft) / pageStep()); }
   function setPage(i, smooth) {
     var n = pageCount();
+    var step = pageStep();
     i = Math.max(0, Math.min(n - 1, i));
-    var x = i * pageW * (isRtlDoc() ? -1 : 1);
+    var x = i * step * (isRtlDoc() ? -1 : 1);
     var anim = cfg.reduceMotion ? 'NONE' : (cfg.pageAnimation || 'SLIDE');
     if (smooth && anim === 'FADE') {
       var el = document.documentElement;
@@ -171,7 +182,7 @@
       setTimeout(report, 300);
       return;
     }
-    if (smooth && anim === 'SLIDE' && Math.abs(Math.abs(se.scrollLeft) - i * pageW) <= pageW * 1.5) se.scrollTo({ left: x, behavior: 'smooth' });
+    if (smooth && anim === 'SLIDE' && Math.abs(Math.abs(se.scrollLeft) - i * step) <= step * 1.5) se.scrollTo({ left: x, behavior: 'smooth' });
     else se.scrollLeft = x;
     setTimeout(report, smooth && anim === 'SLIDE' ? 350 : 30);
   }
@@ -228,7 +239,7 @@
     if (cfg.vertical) { se.scrollLeft = se.scrollLeft + rc.right - pageW + (cfg.marginH || 20); }
     else if (cfg.paged) {
       var abs = Math.abs(se.scrollLeft) + (isRtlDoc() ? (pageW - rc.right) : rc.left);
-      setPage(Math.floor((abs + 1) / pageW), smooth);
+      setPage(Math.floor((abs + 1) / pageStep()), smooth);
       return;
     } else { se.scrollTop = se.scrollTop + rc.top - (cfg.marginV || 28); }
     setTimeout(report, 30);
@@ -487,12 +498,19 @@
     var now = Date.now();
     if (cfg.wordTap === 'DOUBLE_TAP') {
       if (now - lastTapAt < 300 && tapTimer) {
+        // A second tap is a page turn, not a dictionary lookup: the lookup is what a single tap on a word waits for.
         clearTimeout(tapTimer); tapTimer = null; lastTapAt = 0;
-        var w = wordAt(x, y); if (w) B.onWord(json(w));
+        B.onTap(x / pageW, y / pageH);
         return;
       }
+      var word = wordAt(x, y);
+      if (!word) { B.onTap(x / pageW, y / pageH); return; }
       lastTapAt = now;
-      tapTimer = setTimeout(function () { tapTimer = null; B.onTap(x / pageW, y / pageH); }, 280);
+      tapTimer = setTimeout(function () {
+        tapTimer = null; lastTapAt = 0;
+        var found = wordAt(x, y);
+        if (found) B.onWord(json(found)); else B.onTap(x / pageW, y / pageH);
+      }, 280);
       return;
     }
     if (cfg.wordTap === 'SINGLE_TAP') {

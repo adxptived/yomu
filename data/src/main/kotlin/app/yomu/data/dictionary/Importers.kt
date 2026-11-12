@@ -49,8 +49,9 @@ data class DictHeader(val name: String, val format: DictFormat, val sourceLang: 
 /** A dictionary found in a folder of extracted files. */
 interface DictImporter {
     val header: DictHeader
+
     /** Streams entries to [sink]. */
-    fun read(sink: (RawEntry) -> Unit)
+    suspend fun read(sink: suspend (RawEntry) -> Unit)
 }
 
 private fun openMaybeGz(file: File): InputStream {
@@ -89,7 +90,7 @@ class StarDictImporter private constructor(
     private val sameType: String?,
     override val header: DictHeader,
 ) : DictImporter {
-    override fun read(sink: (RawEntry) -> Unit) {
+    override suspend fun read(sink: suspend (RawEntry) -> Unit) {
         val dictBytes: RandomAccessFile?
         val dictData: ByteArray?
         if (dict.name.endsWith(".dz", true) || dict.name.endsWith(".gz", true)) {
@@ -215,11 +216,11 @@ class DslImporter(private val file: File) : DictImporter {
         return input.bufferedReader(charset)
     }
 
-    override fun read(sink: (RawEntry) -> Unit) {
+    override suspend fun read(sink: suspend (RawEntry) -> Unit) {
         reader().use { r ->
             val heads = mutableListOf<String>()
             val body = mutableListOf<String>()
-            fun flush() {
+            suspend fun flush() {
                 if (heads.isNotEmpty() && body.isNotEmpty()) {
                     val parsed = parseBody(body)
                     heads.forEach { h -> sink(parsed.copy(headword = cleanHead(h))) }
@@ -273,7 +274,7 @@ class WiktionaryJsonImporter(private val file: File) : DictImporter {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     override val header = DictHeader(file.name.substringBefore('.'), DictFormat.WIKTIONARY)
 
-    override fun read(sink: (RawEntry) -> Unit) {
+    override suspend fun read(sink: suspend (RawEntry) -> Unit) {
         val reader = openMaybeGz(file).bufferedReader()
         reader.use { r ->
             r.mark(16)
@@ -281,7 +282,7 @@ class WiktionaryJsonImporter(private val file: File) : DictImporter {
             r.reset()
             if (first == '[' || (first == '{' && !isJsonLines())) {
                 when (val root = json.parseToJsonElement(r.readText())) {
-                    is JsonArray -> root.forEach { el -> (el as? JsonObject)?.let { obj -> entryOf(obj)?.let(sink) } }
+                    is JsonArray -> root.forEach { el -> (el as? JsonObject)?.let { obj -> entryOf(obj)?.let { sink(it) } } }
                     is JsonObject -> emitObject(root, sink)
                     else -> Unit
                 }
@@ -295,9 +296,9 @@ class WiktionaryJsonImporter(private val file: File) : DictImporter {
     }
 
     /** One entry object (kaikki/Wiktextract style) or a simple `{"word": definitions}` map. */
-    private fun emitObject(obj: JsonObject, sink: (RawEntry) -> Unit) {
+    private suspend fun emitObject(obj: JsonObject, sink: suspend (RawEntry) -> Unit) {
         if (WORD_KEYS.any { it in obj }) {
-            entryOf(obj)?.let(sink)
+            entryOf(obj)?.let { sink(it) }
             return
         }
         obj.forEach { (word, value) ->
@@ -345,7 +346,7 @@ class WiktionaryJsonImporter(private val file: File) : DictImporter {
 class JmdictImporter(private val file: File) : DictImporter {
     override val header = DictHeader("JMdict", DictFormat.JMDICT, "ja", null)
 
-    override fun read(sink: (RawEntry) -> Unit) {
+    override suspend fun read(sink: suspend (RawEntry) -> Unit) {
         val kebs = mutableListOf<String>()
         val rebs = mutableListOf<String>()
         val glosses = mutableListOf<String>()

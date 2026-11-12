@@ -68,22 +68,22 @@ import androidx.lifecycle.viewModelScope
 import app.yomu.core.common.ScreenErrors
 import app.yomu.core.common.UiState
 import app.yomu.core.datastore.AppSettings
-import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.CoverImage
 import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.StateContent
+import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.data.repository.ReadingHistoryRepository
 import app.yomu.data.repository.TitleInfo
 import app.yomu.domain.repository.StatsRepository
 import app.yomu.domain.stats.StatsCalculator
 import app.yomu.domain.stats.StatsPeriod
 import app.yomu.domain.stats.StatsSummary
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.mapLatest
@@ -204,7 +204,8 @@ private fun StatsContent(ui: StatsUi, period: StatsPeriod, onPeriod: (StatsPerio
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            val options = listOf(StatsPeriod.WEEK to R.string.stats_week, StatsPeriod.MONTH to R.string.stats_month, StatsPeriod.YEAR to R.string.stats_year, StatsPeriod.ALL to R.string.stats_all)
+            val options =
+                listOf(StatsPeriod.WEEK to R.string.stats_week, StatsPeriod.MONTH to R.string.stats_month, StatsPeriod.YEAR to R.string.stats_year, StatsPeriod.ALL to R.string.stats_all)
             options.forEachIndexed { i, (p, label) ->
                 SegmentedButton(selected = period == p, onClick = { onPeriod(p) }, shape = SegmentedButtonDefaults.itemShape(i, options.size)) {
                     Text(stringResource(label), maxLines = 1)

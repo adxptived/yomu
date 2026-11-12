@@ -17,6 +17,7 @@
     <string name="action_sentence">Select sentence</string>
     <string name="action_paragraph">Select paragraph</string>
     <string name="action_bookmark">Bookmark</string>
+    <string name="action_dictionary">Dictionary app</string>
     <string name="action_custom">Custom actions</string>
     <string name="action_delete_highlight">Delete highlight</string>
     <string name="color_yellow">Yellow</string>

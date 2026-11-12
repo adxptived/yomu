@@ -19,7 +19,8 @@ internal object LocalBookRevision {
         val book = db.books().get(bookId) ?: return@withTransaction null
         val sql = db.openHelper.readableDatabase
         val digest = MessageDigest.getInstance("SHA-256")
-        val out = DataOutputStream(DigestOutputStream(object : OutputStream() { override fun write(value: Int) = Unit; override fun write(buffer: ByteArray, offset: Int, length: Int) = Unit }, digest))
+        val out =
+            DataOutputStream(DigestOutputStream(object : OutputStream() { override fun write(value: Int) = Unit; override fun write(buffer: ByteArray, offset: Int, length: Int) = Unit }, digest))
         fun bytes(value: ByteArray) { out.writeInt(value.size); out.write(value) }
         fun field(value: String) = bytes(value.toByteArray(Charsets.UTF_8))
         fun query(name: String, statement: String, vararg args: Any) {
@@ -46,7 +47,7 @@ internal object LocalBookRevision {
             }
         }
         query("book", "SELECT * FROM books WHERE id = ? ORDER BY id", bookId)
-        for (table in listOf("reading_progress", "bookmarks", "highlights", "notes", "words", "tracks", "reading_sessions", "book_authors", "book_tags", "book_collections"))
+        for (table in listOf("reading_progress", "chapter_progress", "bookmarks", "highlights", "notes", "words", "tracks", "reading_sessions", "book_authors", "book_tags", "book_collections"))
             query(table, "SELECT * FROM `$table` WHERE bookId = ? ORDER BY rowid", bookId)
         query("authors", "SELECT * FROM authors WHERE id IN (SELECT authorId FROM book_authors WHERE bookId = ?) ORDER BY id", bookId)
         query("tags", "SELECT * FROM tags WHERE id IN (SELECT tagId FROM book_tags WHERE bookId = ?) ORDER BY id", bookId)

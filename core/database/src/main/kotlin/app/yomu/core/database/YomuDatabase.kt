@@ -11,13 +11,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         BookEntity::class, BookFts::class, AuthorEntity::class, BookAuthorCrossRef::class, SeriesEntity::class,
         CollectionEntity::class, BookCollectionCrossRef::class, CatalogCollectionCrossRef::class, TagEntity::class, BookTagCrossRef::class,
-        ReadingProgressEntity::class, BookmarkEntity::class, HighlightEntity::class, NoteEntity::class,
+        ReadingProgressEntity::class, ChapterProgressEntity::class, BookmarkEntity::class, HighlightEntity::class, NoteEntity::class,
         WordEntity::class, DictionaryEntity::class, DictionaryEntryEntity::class, LookupHistoryEntity::class,
         TranslationCacheEntity::class, SourceEntity::class, CatalogItemEntity::class, ChapterEntity::class,
         DownloadTaskEntity::class, ReadingSessionEntity::class, ExtensionRepoEntity::class, OcrCacheEntity::class, TrackEntity::class,
         FolderSyncBaseEntity::class,
     ],
-    version = 7,
+    version = 10,
     exportSchema = true,
 )
 abstract class YomuDatabase : RoomDatabase() {
@@ -26,6 +26,7 @@ abstract class YomuDatabase : RoomDatabase() {
     abstract fun tags(): TagDao
     abstract fun authors(): AuthorDao
     abstract fun progress(): ProgressDao
+    abstract fun chapterProgress(): ChapterProgressDao
     abstract fun annotations(): AnnotationDao
     abstract fun words(): WordDao
     abstract fun dictionaries(): DictionaryDao
@@ -41,6 +42,7 @@ abstract class YomuDatabase : RoomDatabase() {
     companion object {
         const val NAME = "yomu.db"
 
+        @Suppress("SpreadOperator") // addMigrations takes a vararg; the array is the single source of the list.
         fun build(context: Context, inMemory: Boolean = false): YomuDatabase {
             val builder = if (inMemory) {
                 Room.inMemoryDatabaseBuilder(context, YomuDatabase::class.java)
@@ -145,6 +147,36 @@ abstract class YomuDatabase : RoomDatabase() {
             }
         }
 
-        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+        /** 7 → 8: indexes for queries that scan the whole table (scan folders, downloaded chapters, queued downloads). */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_books_scanFolder` ON `books` (`scanFolder`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_chapters_downloaded` ON `chapters` (`downloaded`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_downloads_url` ON `downloads` (`url`)")
+            }
+        }
+
+        /** 8 → 9: local books can be starred, independently of the reading status. */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_books_favorite` ON `books` (`favorite`)")
+            }
+        }
+
+        /** 9 → 10: a reading position for every chapter of a text book, so returning to a chapter restores it. */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `chapter_progress` (`bookId` INTEGER NOT NULL, `chapter` INTEGER NOT NULL, " +
+                        "`locatorJson` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`bookId`, `chapter`), " +
+                        "FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_chapter_progress_bookId` ON `chapter_progress` (`bookId`)")
+            }
+        }
+
+        val MIGRATIONS: Array<Migration> =
+            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
     }
 }

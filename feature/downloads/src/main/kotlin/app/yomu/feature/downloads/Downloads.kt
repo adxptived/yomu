@@ -3,9 +3,9 @@ package app.yomu.feature.downloads
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,24 +19,24 @@ import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.VerticalAlignTop
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Wifi
-import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -48,13 +48,16 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -91,9 +94,12 @@ import app.yomu.domain.model.DownloadItem
 import app.yomu.domain.model.DownloadKind
 import app.yomu.domain.model.DownloadStatus
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -105,6 +111,11 @@ import app.yomu.core.ui.R as CoreR
 
 /** Waiting downloads of one title (or a single book download), in queue order. */
 data class QueueGroup(val entryId: Long?, val items: List<DownloadItem>)
+
+/** One-off notifications of the downloads screen (the undo action of a cancellation). */
+sealed interface DownloadsEvent {
+    data class Cancelled(val ids: List<Long>) : DownloadsEvent
+}
 
 /** Download queue split into the sections shown on screen. */
 data class DownloadSections(
@@ -164,6 +175,8 @@ class DownloadsViewModel(
     val summary: StateFlow<DownloadSummary> = overview.summary.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DownloadSummary())
     val networkWait: StateFlow<NetworkWait> = overview.networkWait.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NetworkWait.NONE)
     val audio: StateFlow<List<AudioDownload>> = overview.audioQueue.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    private val _events = MutableSharedFlow<DownloadsEvent>(extraBufferCapacity = 1)
+    val events: SharedFlow<DownloadsEvent> = _events.asSharedFlow()
 
     init { refreshUsage() }
 
@@ -178,7 +191,12 @@ class DownloadsViewModel(
     fun refreshUsage() = viewModelScope.launch(ScreenErrors) { usage.value = withContext(Dispatchers.IO) { repo.storageUsage() } }
     fun pause(items: List<DownloadItem>) = viewModelScope.launch(ScreenErrors) { repo.pause(items.map { it.id }) }
     fun resume(items: List<DownloadItem>) = viewModelScope.launch(ScreenErrors) { repo.resume(items.map { it.id }) }
-    fun cancel(items: List<DownloadItem>) = viewModelScope.launch(ScreenErrors) { repo.cancel(items.map { it.id }) }
+    fun resumeIds(ids: List<Long>) = viewModelScope.launch(ScreenErrors) { repo.resume(ids) }
+    fun cancel(items: List<DownloadItem>) = viewModelScope.launch(ScreenErrors) {
+        val ids = items.map { it.id }
+        repo.cancel(ids)
+        _events.emit(DownloadsEvent.Cancelled(ids))
+    }
     fun moveToTop(items: List<DownloadItem>) = viewModelScope.launch(ScreenErrors) { repo.moveToTop(items.map { it.id }) }
     fun remove(item: DownloadItem) = viewModelScope.launch(ScreenErrors) { repo.remove(listOf(item.id)) }
     fun pauseAll() = viewModelScope.launch(ScreenErrors) { repo.pauseAll() }
@@ -204,6 +222,19 @@ val downloadsModule = module {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadsScreen(viewModel: DownloadsViewModel, onBack: () -> Unit) {
+    val snackbar = remember { SnackbarHostState() }
+    val cancelled = stringResource(R.string.downloads_cancelled)
+    val undo = stringResource(CoreR.string.undo)
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is DownloadsEvent.Cancelled -> {
+                    val result = snackbar.showSnackbar(cancelled, actionLabel = undo, withDismissAction = true)
+                    if (result == SnackbarResult.ActionPerformed) viewModel.resumeIds(event.ids)
+                }
+            }
+        }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -212,6 +243,7 @@ fun DownloadsScreen(viewModel: DownloadsViewModel, onBack: () -> Unit) {
                 actions = { DownloadsActions(viewModel) },
             )
         },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         DownloadsContent(viewModel, Modifier.padding(padding).fillMaxSize())
     }
@@ -286,43 +318,43 @@ fun DownloadsContent(viewModel: DownloadsViewModel, modifier: Modifier = Modifie
     LaunchedEffect(s?.finished?.size) { viewModel.refreshUsage() }
 
     CompositionLocalProvider(LocalNetworkWait provides wait) {
-    LazyColumn(modifier, contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
-        // Always the first item, also while the sizes are being counted: a card inserted above the queue later would
-        // keep the list scrolled to the queue and leave the card half hidden above it.
-        item(key = "usage") {
-            Column {
-                QueueSummary(summary, wait, viewModel)
-                UsageCard(usage, onClearCache = { confirmClearCache = true })
-            }
-        }
-        if (s == null) return@LazyColumn
-        if (s.isEmpty && audio.isEmpty()) {
-            item(key = "empty") {
-                EmptyState(
-                    title = stringResource(R.string.downloads_empty),
-                    message = stringResource(R.string.downloads_empty_hint),
-                    icon = Icons.Outlined.CloudDownload,
-                    modifier = Modifier.fillMaxWidth().padding(top = Dimens.xl),
-                )
-            }
-        }
-        section(R.string.downloads_running, s.running, viewModel, titles, maxRetries)
-        audioSection(audio, viewModel)
-        if (s.queued.isNotEmpty()) {
-            item(key = "h-queued") { SectionHeader("${stringResource(R.string.downloads_queued)} (${s.queued.size})") }
-            s.queueGroups.forEach { group ->
-                val title = group.entryId?.let { titles[it] }?.takeIf { it.isNotEmpty() }
-                if (title != null && group.items.size > 1) {
-                    item(key = "g-${group.entryId}") { GroupHeader(title, group.items, viewModel) }
-                    items(group.items, key = { it.id }) { DownloadRow(it, viewModel, DownloadSections.shortTitle(it, title), maxRetries, motionItem().padding(start = Dimens.l)) }
-                } else {
-                    items(group.items, key = { it.id }) { DownloadRow(it, viewModel, it.title, maxRetries, motionItem()) }
+        LazyColumn(modifier, contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
+            // Always the first item, also while the sizes are being counted: a card inserted above the queue later would
+            // keep the list scrolled to the queue and leave the card half hidden above it.
+            item(key = "usage") {
+                Column {
+                    QueueSummary(summary, wait, viewModel)
+                    UsageCard(usage, onClearCache = { confirmClearCache = true })
                 }
             }
+            if (s == null) return@LazyColumn
+            if (s.isEmpty && audio.isEmpty()) {
+                item(key = "empty") {
+                    EmptyState(
+                        title = stringResource(R.string.downloads_empty),
+                        message = stringResource(R.string.downloads_empty_hint),
+                        icon = Icons.Outlined.CloudDownload,
+                        modifier = Modifier.fillMaxWidth().padding(top = Dimens.xl),
+                    )
+                }
+            }
+            section(R.string.downloads_running, s.running, viewModel, titles, maxRetries)
+            audioSection(audio, viewModel)
+            if (s.queued.isNotEmpty()) {
+                item(key = "h-queued") { SectionHeader("${stringResource(R.string.downloads_queued)} (${s.queued.size})") }
+                s.queueGroups.forEach { group ->
+                    val title = group.entryId?.let { titles[it] }?.takeIf { it.isNotEmpty() }
+                    if (title != null && group.items.size > 1) {
+                        item(key = "g-${group.entryId}") { GroupHeader(title, group.items, viewModel) }
+                        items(group.items, key = { it.id }) { DownloadRow(it, viewModel, DownloadSections.shortTitle(it, title), maxRetries, motionItem().padding(start = Dimens.l)) }
+                    } else {
+                        items(group.items, key = { it.id }) { DownloadRow(it, viewModel, it.title, maxRetries, motionItem()) }
+                    }
+                }
+            }
+            section(R.string.downloads_failed, s.failed, viewModel, titles, maxRetries, actionLabel = R.string.downloads_retry_all, onAction = viewModel::retryFailed)
+            section(R.string.downloads_finished, s.finished, viewModel, titles, maxRetries)
         }
-        section(R.string.downloads_failed, s.failed, viewModel, titles, maxRetries, actionLabel = R.string.downloads_retry_all, onAction = viewModel::retryFailed)
-        section(R.string.downloads_finished, s.finished, viewModel, titles, maxRetries)
-    }
     }
 
     if (confirmClearCache) {
@@ -459,74 +491,74 @@ private fun DownloadRow(item: DownloadItem, vm: DownloadsViewModel, label: Strin
             SwipeAction.destructive(stringResource(R.string.downloads_cancel)) { vm.cancel(listOf(item)) }
         },
     ) {
-    ListItem(
-        headlineContent = { Text(label, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-        supportingContent = {
-            Column {
-                StateLine(state)
-                if (item.status == DownloadStatus.RUNNING && !retrying) {
-                    if (item.progress > 0f) {
-                        LinearProgressIndicator(progress = { item.progress }, modifier = Modifier.fillMaxWidth().padding(top = Dimens.xs))
-                    } else {
-                        LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = Dimens.xs))
-                    }
-                }
-                if (detail != null) {
-                    Text(
-                        detail,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        color = if (item.status == DownloadStatus.FAILED || item.status == DownloadStatus.PAUSED && hasError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = Dimens.xs),
-                    )
-                }
-            }
-        },
-        leadingContent = {
-            Icon(
-                when (item.kind) {
-                    DownloadKind.BOOK -> Icons.AutoMirrored.Filled.MenuBook
-                    DownloadKind.CHAPTER -> Icons.Outlined.Collections
-                    DownloadKind.EXTENSION -> Icons.Filled.Extension
-                },
-                null,
-            )
-        },
-        trailingContent = {
-            Row {
-                when (item.status) {
-                    DownloadStatus.RUNNING, DownloadStatus.QUEUED ->
-                        IconButton(onClick = { vm.pause(listOf(item)) }) { Icon(Icons.Filled.Pause, stringResource(R.string.downloads_pause)) }
-                    DownloadStatus.PAUSED ->
-                        IconButton(onClick = { vm.resume(listOf(item)) }) { Icon(Icons.Filled.PlayArrow, stringResource(R.string.downloads_resume)) }
-                    DownloadStatus.FAILED ->
-                        IconButton(onClick = { vm.resume(listOf(item)) }) { Icon(Icons.Filled.Refresh, stringResource(CoreR.string.retry)) }
-                    else -> Unit
-                }
-                when (item.status) {
-                    DownloadStatus.DONE, DownloadStatus.CANCELLED ->
-                        IconButton(onClick = { vm.remove(item) }) { Icon(Icons.Filled.Delete, stringResource(R.string.downloads_remove)) }
-                    DownloadStatus.QUEUED, DownloadStatus.PAUSED -> Box {
-                        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(CoreR.string.more)) }
-                        DropdownMenu(menu, onDismissRequest = { menu = false }) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.downloads_move_to_top)) },
-                                leadingIcon = { Icon(Icons.Filled.VerticalAlignTop, null) },
-                                onClick = { menu = false; vm.moveToTop(listOf(item)) },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.downloads_cancel)) },
-                                leadingIcon = { Icon(Icons.Filled.Close, null) },
-                                onClick = { menu = false; vm.cancel(listOf(item)) },
-                            )
+        ListItem(
+            headlineContent = { Text(label, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+            supportingContent = {
+                Column {
+                    StateLine(state)
+                    if (item.status == DownloadStatus.RUNNING && !retrying) {
+                        if (item.progress > 0f) {
+                            LinearProgressIndicator(progress = { item.progress }, modifier = Modifier.fillMaxWidth().padding(top = Dimens.xs))
+                        } else {
+                            LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = Dimens.xs))
                         }
                     }
-                    else -> IconButton(onClick = { vm.cancel(listOf(item)) }) { Icon(Icons.Filled.Close, stringResource(R.string.downloads_cancel)) }
+                    if (detail != null) {
+                        Text(
+                            detail,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            color = if (item.status == DownloadStatus.FAILED || item.status == DownloadStatus.PAUSED && hasError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = Dimens.xs),
+                        )
+                    }
                 }
-            }
-        },
-    )
+            },
+            leadingContent = {
+                Icon(
+                    when (item.kind) {
+                        DownloadKind.BOOK -> Icons.AutoMirrored.Filled.MenuBook
+                        DownloadKind.CHAPTER -> Icons.Outlined.Collections
+                        DownloadKind.EXTENSION -> Icons.Filled.Extension
+                    },
+                    null,
+                )
+            },
+            trailingContent = {
+                Row {
+                    when (item.status) {
+                        DownloadStatus.RUNNING, DownloadStatus.QUEUED ->
+                            IconButton(onClick = { vm.pause(listOf(item)) }) { Icon(Icons.Filled.Pause, stringResource(R.string.downloads_pause)) }
+                        DownloadStatus.PAUSED ->
+                            IconButton(onClick = { vm.resume(listOf(item)) }) { Icon(Icons.Filled.PlayArrow, stringResource(R.string.downloads_resume)) }
+                        DownloadStatus.FAILED ->
+                            IconButton(onClick = { vm.resume(listOf(item)) }) { Icon(Icons.Filled.Refresh, stringResource(CoreR.string.retry)) }
+                        else -> Unit
+                    }
+                    when (item.status) {
+                        DownloadStatus.DONE, DownloadStatus.CANCELLED ->
+                            IconButton(onClick = { vm.remove(item) }) { Icon(Icons.Filled.Delete, stringResource(R.string.downloads_remove)) }
+                        DownloadStatus.QUEUED, DownloadStatus.PAUSED -> Box {
+                            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(CoreR.string.more)) }
+                            DropdownMenu(menu, onDismissRequest = { menu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.downloads_move_to_top)) },
+                                    leadingIcon = { Icon(Icons.Filled.VerticalAlignTop, null) },
+                                    onClick = { menu = false; vm.moveToTop(listOf(item)) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.downloads_cancel)) },
+                                    leadingIcon = { Icon(Icons.Filled.Close, null) },
+                                    onClick = { menu = false; vm.cancel(listOf(item)) },
+                                )
+                            }
+                        }
+                        else -> IconButton(onClick = { vm.cancel(listOf(item)) }) { Icon(Icons.Filled.Close, stringResource(R.string.downloads_cancel)) }
+                    }
+                }
+            },
+        )
     }
 }
 

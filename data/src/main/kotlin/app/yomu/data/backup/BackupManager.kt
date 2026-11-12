@@ -34,7 +34,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-data class RestoreResult(val tables: Int, val rows: Int, val files: Int)
+data class RestoreResult(val tables: Int, val rows: Int, val files: Int, val skipped: Int = 0)
 
 /**
  * Backup = zip with backup.json (settings + database tables as JSON rows) and optionally the copied book files and covers.
@@ -106,203 +106,237 @@ class BackupManager(private val context: Context, private val db: YomuDatabase, 
         }
     }
 
-    suspend fun restore(input: InputStream): RestoreResult = withContext(Dispatchers.IO) {
+    suspend fun restore(input: InputStream): RestoreResult = withContext(NonCancellable + Dispatchers.IO) {
         // Extract to a private staging directory first. No existing book or cover may be
         // overwritten by a broken, conflicting or malicious archive.
         val filesRoot = context.filesDir.canonicalFile
         val staging = java.nio.file.Files.createTempDirectory(filesRoot.toPath(), ".yomu-restore-").toFile()
         try {
-        var root: JsonObject? = null
-        val stagedFiles = LinkedHashMap<String, File>()
-        ZipInputStream(input.buffered()).use { zip ->
-            while (true) {
-                val e = zip.nextEntry ?: break
-                when {
-                    e.name == "backup.json" -> {
-                        if (root != null || e.isDirectory) throw java.io.IOException("Duplicate or invalid backup.json")
-                        val out = java.io.ByteArrayOutputStream()
-                        val buffer = ByteArray(8192)
-                        while (true) {
-                            val n = zip.read(buffer)
-                            if (n < 0) break
-                            if (out.size().toLong() + n > 128L * 1024 * 1024) throw java.io.IOException("Backup metadata is too large")
-                            out.write(buffer, 0, n)
+            var root: JsonObject? = null
+            val stagedFiles = LinkedHashMap<String, File>()
+            ZipInputStream(input.buffered()).use { zip ->
+                while (true) {
+                    val e = zip.nextEntry ?: break
+                    when {
+                        e.name == "backup.json" -> {
+                            if (root != null || e.isDirectory) throw java.io.IOException("Duplicate or invalid backup.json")
+                            val out = java.io.ByteArrayOutputStream()
+                            val buffer = ByteArray(8192)
+                            while (true) {
+                                val n = zip.read(buffer)
+                                if (n < 0) break
+                                if (out.size().toLong() + n > 128L * 1024 * 1024) throw java.io.IOException("Backup metadata is too large")
+                                out.write(buffer, 0, n)
+                            }
+                            root = json.parseToJsonElement(SyncJson.text(out.toByteArray())).jsonObject
                         }
-                        root = json.parseToJsonElement(SyncJson.text(out.toByteArray())).jsonObject
+                        e.name.startsWith("files/") && !e.isDirectory -> {
+                            val rel = e.name.removePrefix("files/")
+                            val segments = rel.split('/')
+                            val allowed = listOf("books/", "synced-books/", "covers/", "downloads/books/", "fonts/")
+                            if (allowed.none { rel.startsWith(it) } || segments.any { it.isEmpty() || it == "." || it == ".." || '\\' in it || it.any { c -> c.code < 32 } })
+                                throw java.io.IOException("Unsafe file path in backup")
+                            if (rel in stagedFiles) throw java.io.IOException("Duplicate file path in backup: $rel")
+                            val staged = File(staging, rel)
+                            if (!staged.parentFile.mkdirs() && !staged.parentFile.isDirectory) throw java.io.IOException("Cannot stage backup files")
+                            staged.outputStream().use { zip.copyTo(it) }
+                            stagedFiles[rel] = staged
+                        }
                     }
-                    e.name.startsWith("files/") && !e.isDirectory -> {
-                        val rel = e.name.removePrefix("files/")
-                        val segments = rel.split('/')
-                        val allowed = listOf("books/", "synced-books/", "covers/", "downloads/books/", "fonts/")
-                        if (allowed.none { rel.startsWith(it) } || segments.any { it.isEmpty() || it == "." || it == ".." || '\\' in it || it.any { c -> c.code < 32 } })
-                            throw java.io.IOException("Unsafe file path in backup")
-                        if (rel in stagedFiles) throw java.io.IOException("Duplicate file path in backup: $rel")
-                        val staged = File(staging, rel)
-                        if (!staged.parentFile.mkdirs() && !staged.parentFile.isDirectory) throw java.io.IOException("Cannot stage backup files")
-                        staged.outputStream().use { zip.copyTo(it) }
-                        stagedFiles[rel] = staged
-                    }
-                }
-                zip.closeEntry()
-            }
-        }
-        val r = root ?: error("backup.json missing")
-        require(r["format"]?.jsonPrimitive?.content == FORMAT) { "Not a Yomu backup" }
-        val oldFiles = r["filesDir"]?.jsonPrimitive?.content
-        val newFiles = context.filesDir.absolutePath
-        val tables = r["tables"]?.jsonObject ?: JsonObject(emptyMap())
-        // A revision qualifies local reading positions, but per-target merge bases must be reset.
-        // Old backups contain no such revision; mark stable folders as unknown and fail closed.
-        val restoredFolderIds = (tables["books"] as? JsonArray).orEmpty().mapNotNull { element ->
-            val book = element.jsonObject
-            val format = (book["format"] as? JsonPrimitive)?.content
-            val hash = (book["fileHash"] as? JsonPrimitive)?.content
-            hash?.takeIf { format == "FOLDER" && FolderManifestCodec.validId(it) }
-        }
-        require(restoredFolderIds.size == restoredFolderIds.toSet().size) { "Duplicate restored folder identity" }
-        val positions = LinkedHashMap<String, String>()
-        val rawPositions = r["folderPositionRevisions"]
-        if (rawPositions != null && rawPositions !is JsonArray) throw java.io.IOException("Invalid folder position revisions in backup")
-        for (item in (rawPositions as? JsonArray).orEmpty()) {
-            val raw = (item as? JsonPrimitive)?.takeIf { it.isString }?.content ?: throw java.io.IOException("Invalid folder position revision in backup")
-            val entry = FolderManifestCodec.decode(raw.toByteArray()).folders.singleOrNull()
-                ?: throw java.io.IOException("Invalid folder position revision in backup")
-            if (entry.id !in restoredFolderIds || positions.put(entry.id, raw) != null)
-                throw java.io.IOException("Unexpected or duplicate folder position revision in backup")
-        }
-        // Validate every destination before publishing any staged file. Only files inside the
-        // app's known backup directories are accepted, and symlink aliases are rejected.
-        val destinations = stagedFiles.map { (rel, staged) ->
-            val destination = File(filesRoot, rel).absoluteFile
-            if (destination.canonicalPath != destination.path || !destination.path.startsWith(filesRoot.path + File.separator))
-                throw java.io.IOException("Unsafe backup destination: $rel")
-            if (destination.exists() && (!destination.isFile || !sameFile(destination, staged)))
-                throw java.io.IOException("Backup file conflicts with an existing file: $rel")
-            staged to destination
-        }
-        for ((staged, destination) in destinations) {
-            if (destination.canonicalPath != destination.path) throw java.io.IOException("Unsafe backup destination: ${destination.name}")
-            if (destination.exists()) {
-                if (!destination.isFile || !sameFile(destination, staged)) throw java.io.IOException("Backup file changed during restore")
-                continue
-            }
-            if (!destination.parentFile.mkdirs() && !destination.parentFile.isDirectory) throw java.io.IOException("Cannot restore backup directory")
-            if (destination.canonicalPath != destination.path) throw java.io.IOException("Unsafe backup destination: ${destination.name}")
-            // A hard link atomically installs complete staged bytes without replacing an existing
-            // file. The stage is in filesDir, so both paths are on the same filesystem.
-            try { java.nio.file.Files.createLink(destination.toPath(), staged.toPath()) }
-            catch (e: java.nio.file.FileAlreadyExistsException) {
-                if (!destination.isFile || !sameFile(destination, staged)) throw java.io.IOException("Backup file changed during restore", e)
-            } catch (e: Exception) { throw java.io.IOException("Cannot safely restore backup file: ${destination.name}", e) }
-        }
-        val sqlDb = db.openHelper.writableDatabase
-        var rows = 0
-        sqlDb.beginTransaction()
-        try {
-            // A matching book row does not imply that its current locators still use the
-            // backup's page revision. Never replace an existing local baseline silently.
-            for (id in restoredFolderIds) {
-                val existing = sqlDb.query("SELECT id FROM books WHERE fileHash = ?", arrayOf(id)).use { cursor ->
-                    val ids = mutableListOf<Long>()
-                    while (cursor.moveToNext()) ids += cursor.getLong(0)
-                    ids
-                }
-                if (existing.size > 1) throw java.io.IOException("Duplicate existing folder identity")
-                if (existing.isNotEmpty()) {
-                    val incomingId = (tables["books"] as JsonArray).map { it.jsonObject }
-                        .single { (it["fileHash"] as? JsonPrimitive)?.content == id }["id"]?.jsonPrimitive?.longOrNull
-                    if (incomingId == null || existing.single() != incomingId)
-                        throw java.io.IOException("Backup folder identity conflicts with an existing book: $id")
-                    val current = sqlDb.query(
-                        "SELECT revisionJson FROM folder_sync_bases WHERE targetId = ? AND folderId = ?",
-                        arrayOf(FolderRevisionCommit.LOCAL, id),
-                    ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-                    val incoming = positions[id]
-                    val currentEntry = current?.let { raw -> runCatching { FolderManifestCodec.decode(raw.toByteArray()).folders.single() }.getOrNull() }
-                    val incomingEntry = incoming?.let { raw -> FolderManifestCodec.decode(raw.toByteArray()).folders.single() }
-                    if (current != null && current != "unknown-after-restore" && currentEntry == null)
-                        throw java.io.IOException("Existing folder page revision is invalid: $id")
-                    if ((currentEntry == null) != (incomingEntry == null) || (currentEntry != null && currentEntry != incomingEntry))
-                        throw java.io.IOException("Backup folder page revision conflicts with existing data: $id")
+                    zip.closeEntry()
                 }
             }
-            TABLES.forEach { t ->
-                val list = tables[t] as? JsonArray ?: return@forEach
-                val columns = mutableSetOf<String>()
-                // Required columns without a default (added after the backup was made) get a neutral value.
-                val required = mutableMapOf<String, String>()
-                sqlDb.query("PRAGMA table_info(`$t`)").use { c ->
-                    while (c.moveToNext()) {
-                        val name = c.getString(c.getColumnIndexOrThrow("name"))
-                        columns += name
-                        val notNull = c.getInt(c.getColumnIndexOrThrow("notnull")) == 1
-                        val hasDefault = !c.isNull(c.getColumnIndexOrThrow("dflt_value"))
-                        val pk = c.getInt(c.getColumnIndexOrThrow("pk")) > 0
-                        if (notNull && !hasDefault && !pk) required[name] = c.getString(c.getColumnIndexOrThrow("type")).orEmpty().uppercase()
+            val r = root ?: error("backup.json missing")
+            require(r["format"]?.jsonPrimitive?.content == FORMAT) { "Not a Yomu backup" }
+            val oldFiles = r["filesDir"]?.jsonPrimitive?.content
+            val newFiles = context.filesDir.absolutePath
+            val tables = r["tables"]?.jsonObject ?: JsonObject(emptyMap())
+            // A revision qualifies local reading positions, but per-target merge bases must be reset.
+            // Old backups contain no such revision; mark stable folders as unknown and fail closed.
+            val restoredFolderIds = (tables["books"] as? JsonArray).orEmpty().mapNotNull { element ->
+                val book = element.jsonObject
+                val format = (book["format"] as? JsonPrimitive)?.content
+                val hash = (book["fileHash"] as? JsonPrimitive)?.content
+                hash?.takeIf { format == "FOLDER" && FolderManifestCodec.validId(it) }
+            }
+            require(restoredFolderIds.size == restoredFolderIds.toSet().size) { "Duplicate restored folder identity" }
+            val positions = LinkedHashMap<String, String>()
+            val rawPositions = r["folderPositionRevisions"]
+            if (rawPositions != null && rawPositions !is JsonArray) throw java.io.IOException("Invalid folder position revisions in backup")
+            for (item in (rawPositions as? JsonArray).orEmpty()) {
+                val raw = (item as? JsonPrimitive)?.takeIf { it.isString }?.content ?: throw java.io.IOException("Invalid folder position revision in backup")
+                val entry = FolderManifestCodec.decode(raw.toByteArray()).folders.singleOrNull()
+                    ?: throw java.io.IOException("Invalid folder position revision in backup")
+                if (entry.id !in restoredFolderIds || positions.put(entry.id, raw) != null)
+                    throw java.io.IOException("Unexpected or duplicate folder position revision in backup")
+            }
+            // Validate every destination before publishing any staged file. Only files inside the
+            // app's known backup directories are accepted, and symlink aliases are rejected.
+            val destinations = stagedFiles.map { (rel, staged) ->
+                val destination = File(filesRoot, rel).absoluteFile
+                if (destination.canonicalPath != destination.path || !destination.path.startsWith(filesRoot.path + File.separator))
+                    throw java.io.IOException("Unsafe backup destination: $rel")
+                if (destination.exists() && (!destination.isFile || !sameFile(destination, staged)))
+                    throw java.io.IOException("Backup file conflicts with an existing file: $rel")
+                staged to destination
+            }
+            val sqlDb = db.openHelper.writableDatabase
+            var rows = 0
+            var skipped = 0
+            // Files created by this restore. If the transaction fails, they are removed again so a failed restore never
+            // leaves orphan files next to a rolled-back database.
+            val published = mutableListOf<File>()
+            sqlDb.beginTransaction()
+            try {
+                // A matching book row does not imply that its current locators still use the
+                // backup's page revision. Never replace an existing local baseline silently.
+                for (id in restoredFolderIds) {
+                    val existing = sqlDb.query("SELECT id FROM books WHERE fileHash = ?", arrayOf(id)).use { cursor ->
+                        val ids = mutableListOf<Long>()
+                        while (cursor.moveToNext()) ids += cursor.getLong(0)
+                        ids
+                    }
+                    if (existing.size > 1) throw java.io.IOException("Duplicate existing folder identity")
+                    if (existing.isNotEmpty()) {
+                        val incomingId = (tables["books"] as JsonArray).map { it.jsonObject }
+                            .single { (it["fileHash"] as? JsonPrimitive)?.content == id }["id"]?.jsonPrimitive?.longOrNull
+                        if (incomingId == null || existing.single() != incomingId)
+                            throw java.io.IOException("Backup folder identity conflicts with an existing book: $id")
+                        val current = sqlDb.query(
+                            "SELECT revisionJson FROM folder_sync_bases WHERE targetId = ? AND folderId = ?",
+                            arrayOf(FolderRevisionCommit.LOCAL, id),
+                        ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                        val incoming = positions[id]
+                        val currentEntry = current?.takeIf { it != "unknown-after-restore" }?.let { raw -> runCatching { FolderManifestCodec.decode(raw.toByteArray()).folders.single() }.getOrNull() }
+                        val incomingEntry = incoming?.let { raw -> FolderManifestCodec.decode(raw.toByteArray()).folders.single() }
+                        if (current != null && current != "unknown-after-restore" && currentEntry == null)
+                            throw java.io.IOException("Existing folder page revision is invalid: $id")
+                        // The rest of the backup must not be abandoned because this device read further in one folder:
+                        // keep the local page revision (local wins) and report the skipped record.
+                        if (currentEntry != null && (incomingEntry == null || incomingEntry != currentEntry)) {
+                            positions[id] = current!!
+                            skipped++
+                        }
                     }
                 }
-                list.forEach { el ->
-                    val obj = el.jsonObject
-                    val values = ContentValues()
-                    required.forEach { (k, type) ->
-                        if (obj[k] == null || obj[k] is JsonNull) {
-                            when {
-                                type.contains("INT") -> values.put(k, 0L)
-                                type.contains("REAL") || type.contains("FLOA") || type.contains("DOUB") -> values.put(k, 0.0)
-                                else -> values.put(k, "")
+                TABLES.forEach { t ->
+                    val list = tables[t] as? JsonArray ?: return@forEach
+                    val columns = mutableSetOf<String>()
+                    val pkColumns = mutableListOf<String>()
+                    // Required columns without a default (added after the backup was made) get a neutral value.
+                    val required = mutableMapOf<String, String>()
+                    sqlDb.query("PRAGMA table_info(`$t`)").use { c ->
+                        while (c.moveToNext()) {
+                            val name = c.getString(c.getColumnIndexOrThrow("name"))
+                            columns += name
+                            val notNull = c.getInt(c.getColumnIndexOrThrow("notnull")) == 1
+                            val hasDefault = !c.isNull(c.getColumnIndexOrThrow("dflt_value"))
+                            val pk = c.getInt(c.getColumnIndexOrThrow("pk")) > 0
+                            if (notNull && !hasDefault && !pk) required[name] = c.getString(c.getColumnIndexOrThrow("type")).orEmpty().uppercase()
+                            if (pk) pkColumns += name
+                        }
+                    }
+                    list.forEach { el ->
+                        val obj = el.jsonObject
+                        val values = ContentValues()
+                        required.forEach { (k, type) ->
+                            if (obj[k] == null || obj[k] is JsonNull) {
+                                when {
+                                    type.contains("INT") -> values.put(k, 0L)
+                                    type.contains("REAL") || type.contains("FLOA") || type.contains("DOUB") -> values.put(k, 0.0)
+                                    else -> values.put(k, "")
+                                }
                             }
                         }
-                    }
-                    obj.forEach { (k, v) ->
-                        if (k !in columns) return@forEach
-                        val p = v as? JsonPrimitive
-                        when {
-                            p == null || v is JsonNull -> if (k !in required) values.putNull(k)
-                            p.isString -> values.put(k, if (oldFiles != null && oldFiles != newFiles) p.content.replace(oldFiles, newFiles) else p.content)
-                            p.longOrNull != null -> values.put(k, p.longOrNull)
-                            p.doubleOrNull != null -> values.put(k, p.doubleOrNull)
-                            p.booleanOrNull != null -> values.put(k, if (p.booleanOrNull == true) 1 else 0)
+                        obj.forEach { (k, v) ->
+                            if (k !in columns) return@forEach
+                            val p = v as? JsonPrimitive
+                            when {
+                                p == null || v is JsonNull -> if (k !in required) values.putNull(k)
+                                p.isString -> values.put(k, if (oldFiles != null && oldFiles != newFiles) p.content.replace(oldFiles, newFiles) else p.content)
+                                p.longOrNull != null -> values.put(k, p.longOrNull)
+                                p.doubleOrNull != null -> values.put(k, p.doubleOrNull)
+                                p.booleanOrNull != null -> values.put(k, if (p.booleanOrNull == true) 1 else 0)
+                            }
+                        }
+                        try {
+                            sqlDb.insert(t, SQLiteDatabase.CONFLICT_ABORT, values)
+                            rows++
+                        } catch (e: android.database.sqlite.SQLiteConstraintException) {
+                            // An exact pre-existing row is harmless; a row whose primary key already exists means this
+                            // device is newer, so it is kept. Any other conflict must not replace a newer record or
+                            // cascade-delete its dependent data.
+                            val entries = values.keySet().map { key -> key to values.get(key) }
+                            val where = entries.joinToString(" AND ") { "`${it.first}` IS ?" }
+                            val query = androidx.sqlite.db.SimpleSQLiteQuery(
+                                "SELECT 1 FROM `$t` WHERE $where LIMIT 1", entries.map { it.second }.toTypedArray(),
+                            )
+                            val same = sqlDb.query(query).use { it.moveToFirst() }
+                            if (same) {
+                                skipped++
+                                return@forEach
+                            }
+                            if (pkColumns.isNotEmpty() && pkColumns.all { values.containsKey(it) }) {
+                                val keyWhere = pkColumns.joinToString(" AND ") { "`$it` = ?" }
+                                val args = pkColumns.map { values.get(it) }.toTypedArray()
+                                val exists = sqlDb.query(androidx.sqlite.db.SimpleSQLiteQuery("SELECT 1 FROM `$t` WHERE $keyWhere LIMIT 1", args))
+                                    .use { it.moveToFirst() }
+                                if (exists) {
+                                    skipped++
+                                    return@forEach
+                                }
+                            }
+                            throw java.io.IOException("Backup conflicts with existing data in $t", e)
                         }
                     }
+                }
+                // Publish the staged files while the rows are still in the transaction: if anything below fails, the
+                // transaction is rolled back and the files created here are removed again.
+                for ((staged, destination) in destinations) {
+                    if (destination.canonicalPath != destination.path) throw java.io.IOException("Unsafe backup destination: ${destination.name}")
+                    if (destination.exists()) {
+                        if (!destination.isFile || !sameFile(destination, staged)) throw java.io.IOException("Backup file changed during restore")
+                        continue
+                    }
+                    if (!destination.parentFile.mkdirs() && !destination.parentFile.isDirectory) throw java.io.IOException("Cannot restore backup directory")
+                    if (destination.canonicalPath != destination.path) throw java.io.IOException("Unsafe backup destination: ${destination.name}")
+                    // A hard link atomically installs complete staged bytes without replacing an existing
+                    // file. The stage is in filesDir, so both paths are on the same filesystem.
                     try {
-                        sqlDb.insert(t, SQLiteDatabase.CONFLICT_ABORT, values)
-                        rows++
-                    } catch (e: android.database.sqlite.SQLiteConstraintException) {
-                        // An exact pre-existing row is harmless; any other conflict must not
-                        // replace a newer record or cascade-delete its dependent data.
-                        val entries = values.keySet().map { key -> key to values.get(key) }
-                        val where = entries.joinToString(" AND ") { "`${it.first}` IS ?" }
-                        val query = androidx.sqlite.db.SimpleSQLiteQuery(
-                            "SELECT 1 FROM `$t` WHERE $where LIMIT 1", entries.map { it.second }.toTypedArray(),
-                        )
-                        val same = sqlDb.query(query).use { it.moveToFirst() }
-                        if (!same) throw java.io.IOException("Backup conflicts with existing data in $t", e)
+                        java.nio.file.Files.createLink(destination.toPath(), staged.toPath())
+                        published += destination
+                    } catch (e: java.nio.file.FileAlreadyExistsException) {
+                        if (!destination.isFile || !sameFile(destination, staged)) throw java.io.IOException("Backup file changed during restore", e)
+                    } catch (e: Exception) {
+                        throw java.io.IOException("Cannot safely restore backup file: ${destination.name}", e)
                     }
                 }
-            }
-            // Do not reuse per-target bases. Restore only locally qualified positions; if the
-            // older backup has none, an explicit unknown marker prevents guessing on next sync.
-            sqlDb.execSQL("DELETE FROM folder_sync_bases WHERE targetId != ?", arrayOf(FolderRevisionCommit.LOCAL))
-            for (id in restoredFolderIds) {
-                val values = ContentValues().apply {
-                    put("targetId", FolderRevisionCommit.LOCAL)
-                    put("folderId", id)
-                    put("revisionJson", positions[id] ?: "unknown-after-restore")
+                // Do not reuse per-target bases. Restore only locally qualified positions; if the
+                // older backup has none, an explicit unknown marker prevents guessing on next sync.
+                sqlDb.execSQL("DELETE FROM folder_sync_bases WHERE targetId != ?", arrayOf(FolderRevisionCommit.LOCAL))
+                for (id in restoredFolderIds) {
+                    val values = ContentValues().apply {
+                        put("targetId", FolderRevisionCommit.LOCAL)
+                        put("folderId", id)
+                        put("revisionJson", positions[id] ?: "unknown-after-restore")
+                    }
+                    sqlDb.insert("folder_sync_bases", SQLiteDatabase.CONFLICT_REPLACE, values)
                 }
-                sqlDb.insert("folder_sync_bases", SQLiteDatabase.CONFLICT_REPLACE, values)
+                // Backups of 1.0–1.4 carry online library categories: they become tabs, like on upgrade.
+                app.yomu.core.database.YomuDatabase.categoriesToTabs(sqlDb)
+                sqlDb.execSQL("INSERT INTO books_fts(books_fts) VALUES('rebuild')")
+                sqlDb.setTransactionSuccessful()
+            } catch (e: Throwable) {
+                published.forEach { file -> runCatching { java.nio.file.Files.deleteIfExists(file.toPath()) } }
+                throw e
+            } finally {
+                sqlDb.endTransaction()
             }
-            // Backups of 1.0–1.4 carry online library categories: they become tabs, like on upgrade.
-            app.yomu.core.database.YomuDatabase.categoriesToTabs(sqlDb)
-            sqlDb.execSQL("INSERT INTO books_fts(books_fts) VALUES('rebuild')")
-            sqlDb.setTransactionSuccessful()
-        } finally {
-            sqlDb.endTransaction()
-        }
-        db.invalidationTracker.refreshVersionsAsync()
-        // The data is not what the last sync left: the next sync only adds and applies deletion marks.
-        SyncManager.clearBase(context)
-        (r["settings"] as? JsonObject)?.let { settings.importJson(it) }
-        RestoreResult(tables.size, rows, stagedFiles.size)
+            db.invalidationTracker.refreshVersionsAsync()
+            // The data is not what the last sync left: the next sync only adds and applies deletion marks.
+            SyncManager.clearBase(context)
+            (r["settings"] as? JsonObject)?.let { settings.importJson(it) }
+            RestoreResult(tables.size, rows, stagedFiles.size, skipped)
         } finally { staging.deleteRecursively() }
     }
 
@@ -362,7 +396,7 @@ class BackupManager(private val context: Context, private val db: YomuDatabase, 
         const val VERSION = 1
         val TABLES = listOf(
             "books", "authors", "book_authors", "series", "collections", "book_collections", "tags", "book_tags",
-            "reading_progress", "bookmarks", "highlights", "notes", "words", "sources", "catalog_items", "chapters",
+            "reading_progress", "chapter_progress", "bookmarks", "highlights", "notes", "words", "sources", "catalog_items", "chapters",
             "catalog_collections", "reading_sessions", "extension_repos", "lookup_history", "tracks",
         )
     }

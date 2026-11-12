@@ -7,13 +7,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Login
@@ -31,8 +31,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,13 +43,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.common.Share
-import app.yomu.core.ui.R as CoreR
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.PreferenceHeader
 import app.yomu.core.ui.components.TextInputDialog
@@ -64,6 +63,7 @@ import app.yomu.feature.annotations.icon
 import app.yomu.feature.annotations.label
 import java.text.DateFormat
 import java.util.Date
+import app.yomu.core.ui.R as CoreR
 
 @Composable
 private fun Hint(text: String) {
@@ -91,7 +91,8 @@ internal fun ColumnScope.SyncSection(vm: SettingsViewModel, onOpenProblems: () -
         else -> folder.isNotBlank()
     }
     var createRepo by remember { mutableStateOf(false) }
-    val folderPick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(vm::setSyncFolder) }
+    val folderPick =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(vm::setSyncFolder) }
 
     Hint(stringResource(R.string.set_sync_hint))
     PreferenceSwitch(stringResource(R.string.set_sync), enabled, { v -> vm.set(s.syncEnabled, v) { vm.rescheduleSync() } }, enabled = configured, icon = settingIcon(R.string.set_sync))
@@ -216,7 +217,7 @@ internal fun ColumnScope.TrackingSection(vm: SettingsViewModel) {
                     loggedIn -> signOut = service
                     tracker.passwordLogin -> passwordService = service
                     !tracker.configured() -> noKey = service
-                    else -> Share.openUrl(context, tracker.authUrl())
+                    else -> Share.openUrl(context, tracker.startAuth())
                 }
             },
         )
@@ -367,7 +368,8 @@ internal fun QuickActionsSection(vm: SettingsViewModel, onOpenSelection: () -> U
 
 @Composable
 internal fun MihonImportItem(vm: SettingsViewModel) {
-    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::importMihon) }
+    val open =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::importMihon) }
     PreferenceItem(stringResource(R.string.set_mihon_import), stringResource(R.string.set_mihon_import_sum), onClick = { open.launch(arrayOf("*/*")) }, icon = settingIcon(R.string.set_mihon_import))
     val result by vm.mihonResult.collectAsStateWithLifecycle()
     result?.let { r ->

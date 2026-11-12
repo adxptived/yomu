@@ -1,6 +1,5 @@
 package app.yomu.feature.editor
 
-import androidx.compose.material.icons.filled.Translate
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -8,8 +7,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -32,6 +29,7 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -53,6 +51,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VerticalSplit
 import androidx.compose.material3.AlertDialog
@@ -91,6 +90,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -409,7 +409,8 @@ private fun Modifier.rotated(degrees: Int): Modifier = if (degrees == 0) this el
 
 @Composable
 private fun PagePreview(s: MangaState, start: Int, onTranslate: (Int) -> Unit, onDismiss: () -> Unit) {
-    val pager = rememberPagerState(initialPage = start.coerceIn(0, (s.pages.size - 1).coerceAtLeast(0))) { s.pages.size }
+    val pager =
+        rememberPagerState(initialPage = start.coerceIn(0, (s.pages.size - 1).coerceAtLeast(0))) { s.pages.size }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), key = { s.pages[it].file }) { i ->

@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.network
 
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.DeserializationStrategy
+// Used by the context receivers below; the formatter's unused-import pass cannot see them.
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.okio.decodeFromBufferedSource
 import kotlinx.serialization.serializer
@@ -101,7 +102,7 @@ private suspend fun Call.await(callStack: Array<StackTraceElement>): Response {
 }
 
 suspend fun Call.await(): Response {
-    val callStack = Exception().stackTrace.run { copyOfRange(1, size) }
+    val callStack = Exception("HTTP call stack").stackTrace.run { copyOfRange(1, size) }
     return await(callStack)
 }
 
@@ -109,7 +110,7 @@ suspend fun Call.await(): Response {
  * Similar to [await] but throws [HttpException] if [Response.isSuccessful] returns false
  */
 suspend fun Call.awaitSuccess(): Response {
-    val callStack = Exception().stackTrace.run { copyOfRange(1, size) }
+    val callStack = Exception("HTTP call stack").stackTrace.run { copyOfRange(1, size) }
     val response = await(callStack)
     if (!response.isSuccessful) {
         response.close()

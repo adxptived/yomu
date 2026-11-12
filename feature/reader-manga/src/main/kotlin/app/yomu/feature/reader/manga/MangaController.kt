@@ -2,6 +2,7 @@ package app.yomu.feature.reader.manga
 
 import android.graphics.Bitmap
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -33,6 +34,9 @@ class MangaController(val pages: PageSource) {
 
     /** Pages preloaded ahead of the current one. */
     val preloadAhead: Int get() = preloadLimit?.let { minOf(it, settings.preload) } ?: settings.preload
+
+    /** Zoom kept for the next pages while [MangaSettings.zoomLock] is on. */
+    var lockedZoom by mutableFloatStateOf(1f)
 
     /** Incremented to show the tap zone overlay for a few seconds. */
     var tapZonesHint by mutableIntStateOf(0)
@@ -96,7 +100,8 @@ object ImageFilters {
         if (s.grayscale) m.setToSaturation(0f)
         val c = s.contrast
         val t = (1f - c) * 128f + s.brightness * 255f
-        val contrast = ColorMatrix(floatArrayOf(c, 0f, 0f, 0f, t, 0f, c, 0f, 0f, t, 0f, 0f, c, 0f, t, 0f, 0f, 0f, 1f, 0f))
+        val contrast =
+            ColorMatrix(floatArrayOf(c, 0f, 0f, 0f, t, 0f, c, 0f, 0f, t, 0f, 0f, c, 0f, t, 0f, 0f, 0f, 1f, 0f))
         m.timesAssign(contrast)
         if (s.invert) m.timesAssign(ColorMatrix(floatArrayOf(-1f, 0f, 0f, 0f, 255f, 0f, -1f, 0f, 0f, 255f, 0f, 0f, -1f, 0f, 255f, 0f, 0f, 0f, 1f, 0f)))
         return m

@@ -572,7 +572,6 @@ private fun OfflinePanel(
     }
 }
 
-
 @Composable
 private fun OptionRow(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(

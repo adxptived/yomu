@@ -76,7 +76,8 @@ object ProseMirror {
         }
     }
 
-    private val MARKS = mapOf("bold" to "b", "italic" to "i", "underline" to "u", "strike" to "s", "code" to "code", "superscript" to "sup", "subscript" to "sub")
+    private val MARKS =
+        mapOf("bold" to "b", "italic" to "i", "underline" to "u", "strike" to "s", "code" to "code", "superscript" to "sup", "subscript" to "sub")
     private val BLOCK_TYPES = setOf("paragraph", "heading", "blockquote", "listItem")
 
     /** A JSON value that is either a document or an HTML/plain string. */

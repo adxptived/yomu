@@ -28,7 +28,7 @@ enum class BookFormat(
     UNKNOWN,
 }
 
-enum class ReadingStatus { NEW, READING, FINISHED }
+enum class ReadingStatus { NEW, READING, FINISHED, ON_HOLD, DROPPED, PLAN_TO_READ }
 
 /** Which engine renders the book. EPUB/PDF can be flagged as manga (image based) by the user or by detection. */
 enum class EngineType { TEXT, PDF, MANGA, AUDIO }
@@ -54,6 +54,8 @@ data class Book(
     val progress: Float = 0f,
     val tags: List<String> = emptyList(),
     val readerSettingsJson: String? = null,
+    /** Starred by the user; independent of [status] and of the catalog's online favourites. */
+    val favorite: Boolean = false,
 ) {
     val engine: EngineType
         get() = when {
@@ -69,12 +71,14 @@ data class BookCollection(val id: Long, val name: String, val count: Int = 0)
 
 enum class LibrarySort { TITLE, AUTHOR, ADDED, LAST_READ, PROGRESS }
 
+@Serializable
 data class LibraryFilter(
     val formats: Set<BookFormat> = emptySet(),
     val statuses: Set<ReadingStatus> = emptySet(),
     val tag: String? = null,
     val language: String? = null,
     val collectionId: Long? = null,
+    val favoritesOnly: Boolean = false,
 )
 
 data class LibraryQuery(

@@ -2,8 +2,8 @@ package app.yomu.feature.library
 
 import android.content.Context
 import android.content.Intent
-import android.widget.Toast
 import android.net.Uri
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,29 +11,29 @@ import app.yomu.core.common.Files
 import app.yomu.core.common.ScreenErrors
 import app.yomu.core.common.runCatchingApp
 import app.yomu.core.database.TrackEntity
-import app.yomu.data.tracking.TrackerManager
-import app.yomu.domain.tracking.TrackEntry
-import app.yomu.domain.tracking.TrackSearchResult
-import app.yomu.domain.tracking.TrackService
-import app.yomu.feature.catalog.TrackSearchState
-import app.yomu.feature.catalog.TrackingViewModel
 import app.yomu.data.repository.AnnotationRepositoryImpl
 import app.yomu.data.repository.BookRepositoryImpl
 import app.yomu.data.repository.StatsRepositoryImpl
+import app.yomu.data.tracking.TrackerManager
 import app.yomu.data.translation.BookTranslationWorker
 import app.yomu.data.translation.BookTranslator
 import app.yomu.data.translation.TranslationService
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.ReadingStatus
+import app.yomu.domain.tracking.TrackEntry
+import app.yomu.domain.tracking.TrackSearchResult
+import app.yomu.domain.tracking.TrackService
+import app.yomu.feature.catalog.TrackSearchState
+import app.yomu.feature.catalog.TrackingViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -94,14 +94,15 @@ class BookDetailsViewModel(
     override fun updateTrack(track: TrackEntity, transform: (TrackEntry) -> TrackEntry) = viewModelScope.launch(ScreenErrors) {
         runCatchingApp { trackers.edit(track, transform) }
             .onSuccess { if (!it) Toast.makeText(context, app.yomu.feature.catalog.R.string.track_pending, Toast.LENGTH_SHORT).show() }
-            .onFailure { Toast.makeText(context, it.message ?: "Tracking error", Toast.LENGTH_LONG).show() }
+            .onFailure { Toast.makeText(context, it.message ?: context.getString(R.string.tracking_error), Toast.LENGTH_LONG).show() }
     }
     override fun unbindTrack(track: TrackEntity, removeRemote: Boolean) = viewModelScope.launch(ScreenErrors) {
-        runCatchingApp { trackers.unbind(track, removeRemote) }.onFailure { Toast.makeText(context, it.message ?: "Tracking error", Toast.LENGTH_LONG).show() }
+        runCatchingApp { trackers.unbind(track, removeRemote) }.onFailure { Toast.makeText(context, it.message ?: context.getString(R.string.tracking_error), Toast.LENGTH_LONG).show() }
     }
 
     fun save(updated: Book) = viewModelScope.launch(ScreenErrors) { books.update(updated) }
     fun setStatus(status: ReadingStatus) = viewModelScope.launch(ScreenErrors) { books.setStatus(listOf(bookId), status) }
+    fun setFavorite(value: Boolean) = viewModelScope.launch(ScreenErrors) { books.setFavorite(listOf(bookId), value) }
     fun setManga(value: Boolean) = viewModelScope.launch(ScreenErrors) { books.setManga(bookId, value) }
     fun setTags(tags: List<String>) = viewModelScope.launch(ScreenErrors) { books.setTags(bookId, tags) }
 

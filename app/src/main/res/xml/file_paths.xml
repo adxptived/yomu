@@ -1,7 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Only the directories the app actually shares: temporary shares, update APKs and library books. Exposing the whole
+  files/ and cache/ let any app that was granted one URI read drafts, sync state and other private files.
+-->
 <paths>
-    <files-path name="files" path="." />
-    <cache-path name="cache" path="." />
-    <external-files-path name="external_files" path="." />
-    <external-cache-path name="external_cache" path="." />
+    <files-path name="books" path="books/" />
+    <files-path name="download_books" path="downloads/books/" />
+    <files-path name="synced_books" path="synced-books/" />
+    <files-path name="converted" path="converted/" />
+    <cache-path name="share" path="share/" />
+    <cache-path name="updates" path="updates/" />
 </paths>

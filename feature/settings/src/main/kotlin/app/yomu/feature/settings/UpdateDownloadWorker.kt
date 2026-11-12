@@ -17,16 +17,16 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import app.yomu.data.work.Notifications
 import app.yomu.data.work.NotifyKind
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
-import java.io.File
-import java.io.IOException
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 /** The app's [UpdateBackground]: a WorkManager job that outlives the screens and the process. */
 class WorkUpdateBackground(private val context: Context) : UpdateBackground {

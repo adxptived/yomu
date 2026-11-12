@@ -62,8 +62,10 @@ class SafeBackupRestoreTest {
             val existing = File(dest.filesDir, "books/existing.txt").apply { parentFile.mkdirs(); writeText("local content") }
             val localId = book(b, existing, "existing")
             b.progress().upsert(ReadingProgressEntity(localId, "{}", .5f, 2))
-            val error = runCatching { BackupManager(dest, b, AppSettings(dest)).restore(archive.inputStream()) }.exceptionOrNull()
-            if (error !is IOException) throw AssertionError("Expected safe database conflict", error)
+            val result = BackupManager(dest, b, AppSettings(dest)).restore(archive.inputStream())
+            // A row whose primary key already exists is kept (this device wins) and reported as skipped, instead of
+            // aborting the whole restore.
+            assertTrue(result.skipped >= 1)
             assertEquals("existing", b.books().all().single().title)
             assertEquals("local content", existing.readText())
             assertEquals(.5f, b.progress().get(localId)!!.progress, .001f)

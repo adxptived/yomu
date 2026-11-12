@@ -40,8 +40,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.File
@@ -140,7 +140,7 @@ class CatalogRepository(
 
     /** Stores (or refreshes) a catalog item seen in a listing and returns its local id. */
     suspend fun upsert(sourceId: Long, item: SItem): Long {
-        rememberCoverHeaders(sourceId, item.thumbnailUrl)
+        withContext(Dispatchers.IO) { rememberCoverHeaders(sourceId, item.thumbnailUrl) }
         val existing = dao.find(sourceId, item.url)
         val type = when (item.type) {
             SourceContent.MANGA -> ContentType.MANGA
@@ -148,7 +148,7 @@ class CatalogRepository(
             SourceContent.BOOK -> ContentType.BOOK
         }
         return if (existing == null) {
-            dao.insert(
+            val id = dao.insert(
                 CatalogItemEntity(
                     sourceId = sourceId, url = item.url, title = item.title, author = item.author, artist = item.artist,
                     description = item.description, genres = joinList(item.genres), status = item.status, coverUrl = item.thumbnailUrl,
@@ -156,6 +156,8 @@ class CatalogRepository(
                     memo = item.memo,
                 ),
             )
+            // Another writer inserted the same title between the find and the insert: the unique index ignored ours.
+            if (id != 0L) id else dao.find(sourceId, item.url)?.id ?: error("Catalog item disappeared")
         } else {
             if (item.initialized || existing.coverUrl == null || (item.memo != null && item.memo != existing.memo)) {
                 dao.update(
@@ -391,10 +393,17 @@ class CatalogRepository(
         refresh(toId)
         val oldChapters = dao.chapters(fromEntryId)
         val newChapters = dao.chapters(toId)
-        val readNumbers = oldChapters.filter { it.read }.map { it.number }.toSet()
-        val maxRead = oldChapters.filter { it.read }.maxOfOrNull { it.number } ?: -1f
+        // Match by chapter number and scanlator, as the sync does: a guess like "number <= last read" marks
+        // unread chapters as read and drops the page position and bookmarks.
+        val oldByKey = oldChapters.associateBy { it.number to it.scanlator }
         db.withTransaction {
-            dao.updateChapters(newChapters.map { c -> if (c.number in readNumbers || (c.number >= 0 && c.number <= maxRead)) c.copy(read = true, isNew = false) else c.copy(isNew = false) })
+            dao.updateChapters(
+                newChapters.map { c ->
+                    val old = oldByKey[c.number to c.scanlator]
+                    if (old == null) c.copy(isNew = false)
+                    else c.copy(read = old.read, bookmarked = old.bookmarked, lastPageRead = old.lastPageRead, isNew = false)
+                },
+            )
             val fromTabs = tabs.onlineTabsOf(fromEntryId)
             dao.setFavorite(toId, true, null, System.currentTimeMillis())
             fromTabs.forEach { tabs.setOnline(listOf(toId), it, true) }
@@ -417,7 +426,8 @@ class CatalogRepository(
         val c = dao.chapter(chapterId) ?: error("Chapter not found")
         c.localPath?.let { p -> File(p).takeIf { it.exists() }?.let { return it.readText() } }
         val e = dao.get(c.itemId) ?: error("Entry not found")
-        val text = sourceCall(e.sourceId, SourceCalls.UPDATE_TIMEOUT_MS) { source(e.sourceId).getContent(c.toSChapter()) }
+        val text =
+            sourceCall(e.sourceId, SourceCalls.UPDATE_TIMEOUT_MS) { source(e.sourceId).getContent(c.toSChapter()) }
         if (text.isBlank()) throw SourceException("The source returned an empty chapter: ${c.name}")
         return text
     }

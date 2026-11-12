@@ -8,23 +8,23 @@ import app.yomu.core.common.AppError
 import app.yomu.core.common.Files
 import app.yomu.core.database.BookEntity
 import app.yomu.core.datastore.AppSettings
-import app.yomu.data.format.FormatDetector
 import app.yomu.data.audio.AudiobookStore
 import app.yomu.data.audio.YouTubeClient
-import app.yomu.data.book.Containers
-import app.yomu.domain.model.AudioFiles
-import app.yomu.domain.model.AudiobookManifest
-import app.yomu.data.backup.FolderManifestCodec
 import app.yomu.data.backup.FolderEntry
-import app.yomu.data.backup.FolderSnapshot
+import app.yomu.data.backup.FolderManifestCodec
 import app.yomu.data.backup.FolderRevisionCommit
+import app.yomu.data.backup.FolderSnapshot
+import app.yomu.data.book.Containers
+import app.yomu.data.format.FormatDetector
 import app.yomu.data.repository.BookRepositoryImpl
+import app.yomu.data.repository.authorsToText
 import app.yomu.data.repository.findByHash
 import app.yomu.data.repository.findByUri
 import app.yomu.data.repository.setFileUri
-import app.yomu.data.repository.urisInFolder
-import app.yomu.data.repository.authorsToText
 import app.yomu.data.repository.sortTitle
+import app.yomu.data.repository.urisInFolder
+import app.yomu.domain.model.AudioFiles
+import app.yomu.domain.model.AudiobookManifest
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookFormat
 import app.yomu.domain.model.ReadingStatus
@@ -56,7 +56,8 @@ class ImportService(
     private val settings: AppSettings,
     private val covers: CoverStore,
     // Only folder and ZIP imports use it, never the network: tests may leave the default.
-    private val audio: AudiobookStore = AudiobookStore(context, books, { okhttp3.OkHttpClient() }, YouTubeClient { okhttp3.OkHttpClient() }),
+    private val audio: AudiobookStore =
+        AudiobookStore(context, books, { okhttp3.OkHttpClient() }, YouTubeClient { okhttp3.OkHttpClient() }),
 ) {
     private val mutex = Mutex()
     private val _progress = MutableStateFlow(ImportProgress(0, 0, null))
@@ -166,7 +167,10 @@ class ImportService(
         }
         if (format == BookFormat.UNKNOWN) throw AppError.UnsupportedFormat(FormatDetector.extension(name).ifEmpty { "?" })
         if (format == BookFormat.CBZ && forced == null) importAudioZip(uri, name, alreadyLocal)?.let { return it }
-        val size = if (format == BookFormat.FOLDER) 0L else Files.size(context, uri)
+        // A provider may not report the size (-1). The identity must still match what another device hashes from the
+        // real file, otherwise every sync sees the same book as changed and never uploads it.
+        val reportedSize = if (format == BookFormat.FOLDER) 0L else Files.size(context, uri)
+        val size = if (reportedSize >= 0) reportedSize else Files.count(context, uri)
         val hash = if (format == BookFormat.FOLDER) (folderIdentity ?: "dir:$uri") else Files.sha1(Files.open(context, uri), HASH_LIMIT) + ":" + size
         books.findByHash(hash)?.let { return ImportOutcome.Duplicate(name, it) }
         books.findByUri(uri.toString())?.let { return ImportOutcome.Duplicate(name, it) }
@@ -192,51 +196,51 @@ class ImportService(
         val copiedFile = if (!isLinked && !alreadyLocal) storedUri.path?.let(::File) else null
         var committed = false
         try {
-        val meta = try {
-            MetadataExtractor.extract(context, storedUri, format, name)
-        } catch (e: AppError) {
-            if (!isLinked && !alreadyLocal) File(storedUri.path!!).delete()
-            throw e
-        } catch (e: Exception) {
-            if (!isLinked && !alreadyLocal) File(storedUri.path!!).delete()
-            throw AppError.CorruptedFile(e.message, e)
-        }
-        val entity = BookEntity(
-            title = meta.title,
-            sortTitle = sortTitle(meta.title),
-            authorsText = authorsToText(meta.authors),
-            seriesName = meta.series,
-            seriesId = null,
-            seriesIndex = meta.seriesIndex,
-            language = meta.language,
-            description = meta.description,
-            publisher = meta.publisher,
-            format = format.name,
-            uri = storedUri.toString(),
-            isLinked = isLinked,
-            fileSize = if (size > 0) size else 0,
-            fileHash = hash,
-            coverPath = null,
-            status = ReadingStatus.NEW.name,
-            isManga = format.isComic || meta.isManga,
-            addedAt = System.currentTimeMillis(),
-            lastReadAt = null,
-            progress = 0f,
-            readerSettingsJson = if (meta.rtl) RTL_SETTINGS else null,
-            scanFolder = scanFolder,
-        )
-        val id = if (initialFolderRevision == null) books.insert(entity, meta.authors, meta.subjects.take(5))
-        else books.rawDb().withTransaction {
-            val inserted = books.insert(entity, meta.authors, meta.subjects.take(5))
-            FolderRevisionCommit.initializeLocal(books.rawDb(), inserted, initialFolderRevision)
-            inserted
-        }
-        committed = true
-        meta.cover?.let { books.setCover(id, it) }
-        meta.converted?.let { converted ->
-            runCatching { converted.builder.writeTo(BookFiles.convertedFile(context, id)) }.onFailure { Timber.w(it, "Conversion cache failed") }
-        }
-        return ImportOutcome.Added(name, id)
+            val meta = try {
+                MetadataExtractor.extract(context, storedUri, format, name)
+            } catch (e: AppError) {
+                if (!isLinked && !alreadyLocal) File(storedUri.path!!).delete()
+                throw e
+            } catch (e: Exception) {
+                if (!isLinked && !alreadyLocal) File(storedUri.path!!).delete()
+                throw AppError.CorruptedFile(e.message, e)
+            }
+            val entity = BookEntity(
+                title = meta.title,
+                sortTitle = sortTitle(meta.title),
+                authorsText = authorsToText(meta.authors),
+                seriesName = meta.series,
+                seriesId = null,
+                seriesIndex = meta.seriesIndex,
+                language = meta.language,
+                description = meta.description,
+                publisher = meta.publisher,
+                format = format.name,
+                uri = storedUri.toString(),
+                isLinked = isLinked,
+                fileSize = if (size > 0) size else 0,
+                fileHash = hash,
+                coverPath = null,
+                status = ReadingStatus.NEW.name,
+                isManga = format.isComic || meta.isManga,
+                addedAt = System.currentTimeMillis(),
+                lastReadAt = null,
+                progress = 0f,
+                readerSettingsJson = if (meta.rtl) RTL_SETTINGS else null,
+                scanFolder = scanFolder,
+            )
+            val id = if (initialFolderRevision == null) books.insert(entity, meta.authors, meta.subjects.take(5))
+            else books.rawDb().withTransaction {
+                val inserted = books.insert(entity, meta.authors, meta.subjects.take(5))
+                FolderRevisionCommit.initializeLocal(books.rawDb(), inserted, initialFolderRevision)
+                inserted
+            }
+            committed = true
+            meta.cover?.let { books.setCover(id, it) }
+            meta.converted?.let { converted ->
+                runCatching { converted.builder.writeTo(BookFiles.convertedFile(context, id)) }.onFailure { Timber.w(it, "Conversion cache failed") }
+            }
+            return ImportOutcome.Added(name, id)
         } finally {
             // Cancelled or failed before the book was saved: no orphan copy stays in the library folder.
             if (!committed) copiedFile?.delete()

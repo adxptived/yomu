@@ -55,6 +55,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -85,14 +86,14 @@ import coil3.request.transformations
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import me.saket.telephoto.zoomable.ZoomLimit
 import me.saket.telephoto.zoomable.ZoomSpec
 import me.saket.telephoto.zoomable.coil3.ZoomableAsyncImage
 import me.saket.telephoto.zoomable.rememberZoomableImageState
 import me.saket.telephoto.zoomable.rememberZoomableState
 import java.io.File
-import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.sync.Semaphore
 
 interface MangaListener {
     fun onMenu() {}
@@ -232,12 +233,23 @@ private fun Paged(controller: MangaController, listener: MangaListener, layout: 
             }
         }
     }
+    var endReported by remember { mutableStateOf(false) }
     LaunchedEffect(pager) {
         snapshotFlow { pager.currentPage }.distinctUntilChanged().collect { slot ->
             layout.pageOf(slot)?.let { controller.page = it; listener.onPageChanged(it) }
             if (slot == layout.total - 1) {
-                controller.page = (controller.count - 1).coerceAtLeast(0)
-                listener.onFinished()
+                // The end slot is not a page: report the last page so the saved position is not one behind.
+                val last = (controller.count - 1).coerceAtLeast(0)
+                if (controller.page != last) {
+                    controller.page = last
+                    listener.onPageChanged(last)
+                }
+                if (!hasNext && !endReported) {
+                    endReported = true
+                    listener.onFinished()
+                }
+            } else {
+                endReported = false
             }
         }
     }
@@ -297,7 +309,21 @@ private fun PageImage(controller: MangaController, listener: MangaListener, inde
             error != null -> PageError(error, onBackground(s), onRetry = { attempt++ }, onMenu = listener::onMenu)
             f == null -> CircularProgressIndicator(color = onBackground(s).copy(alpha = 0.7f))
             else -> {
-                val zoomState = rememberZoomableImageState(rememberZoomableState(zoomSpec = ZoomSpec(maximum = ZoomLimit(factor = 6f))))
+                val zoomable = rememberZoomableState(zoomSpec = ZoomSpec(maximum = ZoomLimit(factor = 6f)))
+                val zoomState = rememberZoomableImageState(zoomable)
+                if (s.zoomLock) {
+                    // Keep the zoom of the page being read; a page that comes into view opens at the same level.
+                    LaunchedEffect(zoomable, index) {
+                        snapshotFlow { zoomable.contentTransformation.scale.scaleX }.collect { scale ->
+                            if (scale > 1.01f) controller.lockedZoom = scale
+                        }
+                    }
+                    LaunchedEffect(zoomable, index) {
+                        val target = controller.lockedZoom
+                        val current = zoomable.contentTransformation.scale.scaleX
+                        if (target > 1.01f && current < target - 0.01f) zoomable.zoomBy(target / current)
+                    }
+                }
                 val filter = ImageFilters.matrix(s)?.let { ColorFilter.colorMatrix(it) }
                 ZoomableAsyncImage(
                     model = request(context, f, s.cropBorders),
@@ -431,7 +457,8 @@ private fun Webtoon(controller: MangaController, listener: MangaListener, hasPre
     val context = LocalContext.current
     val offset = if (hasPrev) 1 else 0
     val state = rememberLazyListState(initialFirstVisibleItemIndex = controller.page + offset)
-    var zoom by remember { mutableFloatStateOf(1f) }
+    var zoom by rememberSaveable { mutableFloatStateOf(1f) }
+    var finishedReported by remember { mutableStateOf(false) }
     val hScroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val animate by rememberUpdatedState(s.pageAnimation)
@@ -454,7 +481,14 @@ private fun Webtoon(controller: MangaController, listener: MangaListener, hasPre
             val p = (i - offset).coerceIn(0, (controller.count - 1).coerceAtLeast(0))
             controller.page = p
             listener.onPageChanged(p)
-            if (i >= controller.count + offset - 1 && !state.canScrollForward) listener.onFinished()
+            if (i >= controller.count + offset - 1 && !state.canScrollForward) {
+                if (!finishedReported) {
+                    finishedReported = true
+                    listener.onFinished()
+                }
+            } else if (finishedReported && i < controller.count + offset - 1) {
+                finishedReported = false
+            }
         }
     }
     val filter = ImageFilters.matrix(s)?.let { ColorFilter.colorMatrix(it) }

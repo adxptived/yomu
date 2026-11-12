@@ -9,12 +9,12 @@ import okhttp3.Credentials
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
-import java.io.File
-import java.io.InputStream
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
+import java.io.InputStream
 
 // A damaged server file must not allocate unbounded memory before it is validated.
 internal const val MAX_SYNC_FILE_BYTES = 32 * 1024 * 1024
@@ -62,7 +62,8 @@ class FolderSyncBackend(private val context: Context, private val folder: Uri) :
     private fun find(name: String = SyncManager.FILE_NAME): Uri? {
         val root = DocumentsContract.getTreeDocumentId(folder)
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(folder, root)
-        val columns = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE)
+        val columns =
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE)
         val cursor = context.contentResolver.query(children, columns, null, null, null)
             ?: throw IOException("Cannot list the sync folder")
         var found: Uri? = null
@@ -221,10 +222,16 @@ class WebDavSyncBackend(private val client: OkHttpClient, url: String, user: Str
     override val id: String = "webdav:$folder"
 
     init {
-        require(folder.startsWith("https://") || folder.startsWith("http://")) { "The WebDAV address must start with https:// or http://" }
+        // Basic auth over plain HTTP exposes the password to every hop; sync contents and tracker tokens too.
+        // A loopback address never leaves the device, so a local test server is acceptable.
+        val scheme = folder.substringBefore("://").lowercase()
+        val host = runCatching { java.net.URI(folder).host }.getOrNull()
+        val loopback = host == "localhost" || host == "127.0.0.1" || host == "::1" || host?.startsWith("127.") == true
+        require(scheme == "https" || (scheme == "http" && loopback)) { "The WebDAV address must start with https://" }
     }
 
     private fun request(url: String) = Request.Builder().url(url).apply { auth?.let { header("Authorization", it) } }
+
     // Only a single, quoted RFC entity-tag is safe for If-Match. In particular "*" would
     // turn the intended version check into an existence check and permit lost updates.
     private fun strongTag(tag: String?): String? = tag?.takeIf { value ->

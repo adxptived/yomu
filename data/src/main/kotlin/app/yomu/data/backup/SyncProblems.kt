@@ -93,7 +93,7 @@ internal class SyncProblemStore(context: Context) {
 }
 
 internal fun SyncProblem.record(at: Long): SyncProblemInfo = SyncProblemInfo(
-    id = "${kindTag}:${target ?: subject}",
+    id = "$kindTag:${target ?: subject}",
     kind = kindTag,
     subject = subject,
     detail = (this as? IOException)?.message.orEmpty(),

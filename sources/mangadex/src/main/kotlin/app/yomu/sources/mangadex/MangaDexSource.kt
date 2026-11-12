@@ -212,7 +212,8 @@ class MangaDexSource(
         private const val YEAR = "Year"
         private const val TAGS = "Tags (comma separated)"
         private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
-        val languages = listOf("en", "ru", "uk", "es", "es-la", "fr", "de", "it", "pt-br", "pl", "id", "vi", "tr", "zh", "zh-hk", "ko", "ja")
+        val languages =
+            listOf("en", "ru", "uk", "es", "es-la", "fr", "de", "it", "pt-br", "pl", "id", "vi", "tr", "zh", "zh-hk", "ko", "ja")
     }
 }
 

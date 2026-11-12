@@ -32,6 +32,7 @@ import java.time.format.DateTimeFormatter
 enum class MilestoneKind(val tiers: LongArray) {
     /** Hours of reading. */
     HOURS(longArrayOf(1, 10, 50, 100, 250, 500, 1000)),
+
     /** Days in a row (the best streak counts, so a milestone is never lost). */
     STREAK(longArrayOf(3, 7, 14, 30, 100, 365)),
     BOOKS(longArrayOf(1, 5, 10, 25, 50, 100)),

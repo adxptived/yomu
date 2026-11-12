@@ -5,6 +5,7 @@ import app.yomu.core.database.BookEntity
 import app.yomu.core.database.CatalogCollectionCrossRef
 import app.yomu.core.database.CatalogItemEntity
 import app.yomu.core.database.ChapterEntity
+import app.yomu.core.database.ChapterProgressEntity
 import app.yomu.core.database.CollectionEntity
 import app.yomu.core.database.HighlightEntity
 import app.yomu.core.database.WordEntity
@@ -104,6 +105,29 @@ class SyncMergerTest {
     @After fun close() {
         a.db.close()
         b.db.close()
+    }
+
+    @Test
+    fun chapterPositionsMergeNewestPerChapter() = runBlocking {
+        val bookA = a.addBook("chapters")
+        val bookB = b.addBook("chapters")
+        a.db.chapterProgress().save(ChapterProgressEntity(bookA, 0, "{\"offset\":10}", 100))
+        a.db.chapterProgress().save(ChapterProgressEntity(bookA, 1, "{\"offset\":20}", 100))
+        b.db.chapterProgress().save(ChapterProgressEntity(bookB, 1, "{\"offset\":99}", 200))
+        b.db.chapterProgress().save(ChapterProgressEntity(bookB, 2, "{\"offset\":30}", 150))
+        a.sync()
+        b.sync()
+        a.sync()
+        fun positions(device: Device, id: Long) = runBlocking {
+            device.db.chapterProgress().all().filter { it.bookId == id }.associate { it.chapter to it.locatorJson }
+        }
+        val afterA = positions(a, bookA)
+        val afterB = positions(b, bookB)
+        assertEquals(setOf(0, 1, 2), afterA.keys)
+        assertEquals("{\"offset\":10}", afterA[0])
+        assertEquals("{\"offset\":99}", afterA[1])
+        assertEquals("{\"offset\":30}", afterA[2])
+        assertEquals(afterA, afterB)
     }
 
     @Test

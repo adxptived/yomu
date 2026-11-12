@@ -102,6 +102,8 @@
     <string name="set_single_tap">Одиночному касанию</string>
     <string name="set_double_tap">Двойному касанию</string>
     <string name="set_web_search">Веб-поиск</string>
+    <string name="set_dictionary_app">Внешний словарь</string>
+    <string name="set_dictionary_system">Спрашивать каждый раз</string>
     <string name="set_custom_search_url">Адрес поиска</string>
     <string name="set_custom_search_url_sum">{text} заменяется выделенным текстом</string>
     <string name="set_tts">Чтение вслух</string>

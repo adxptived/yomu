@@ -122,45 +122,45 @@ class AudiobookDownloader(
                 coroutineContext.ensureActive()
                 // A failed request (network switch, VPN, 5xx) is retried from the bytes already on disk.
                 SourceCalls.retrying(REQUEST_ATTEMPTS, baseDelayMs = RETRY_BASE_MS) {
-                pos = out.length()
-                val end = if (chunk == Long.MAX_VALUE) "" else ((length?.let { minOf(it, pos + chunk) } ?: (pos + chunk)) - 1).toString()
-                val request = Request.Builder().url(url).apply {
-                    headers.forEach { (k, v) -> header(k, v) }
-                    if (pos > 0 || end.isNotEmpty()) header("Range", "bytes=$pos-$end")
-                }.build()
-                client().newCall(request).execute().use { r ->
-                    if (r.code == 416 && length == null) {
-                        length = pos
-                        return@use
-                    }
-                    if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
-                    if (r.code == 200 && pos > 0) {
-                        // The server ignored the range: start over.
-                        out.setLength(0)
-                        pos = 0
-                    }
-                    mime = mime ?: r.body.contentType()?.let { "${it.type}/${it.subtype}" }
-                    length = length ?: totalOf(r) ?: if (r.code == 200) r.body.contentLength().takeIf { it >= 0 } else null
-                    out.seek(pos)
-                    val buffer = ByteArray(64 * 1024)
-                    r.body.byteStream().use { input ->
-                        var lastReport = 0L
-                        while (true) {
-                            val n = input.read(buffer)
-                            if (n < 0) break
-                            out.write(buffer, 0, n)
-                            pos += n
-                            val now = System.currentTimeMillis()
-                            if (now - lastReport > REPORT_MS) {
-                                coroutineContext.ensureActive()
-                                lastReport = now
-                                length?.let { progress((pos.toFloat() / it).coerceIn(0f, 1f)) }
+                    pos = out.length()
+                    val end = if (chunk == Long.MAX_VALUE) "" else ((length?.let { minOf(it, pos + chunk) } ?: (pos + chunk)) - 1).toString()
+                    val request = Request.Builder().url(url).apply {
+                        headers.forEach { (k, v) -> header(k, v) }
+                        if (pos > 0 || end.isNotEmpty()) header("Range", "bytes=$pos-$end")
+                    }.build()
+                    client().newCall(request).execute().use { r ->
+                        if (r.code == 416 && length == null) {
+                            length = pos
+                            return@use
+                        }
+                        if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
+                        if (r.code == 200 && pos > 0) {
+                            // The server ignored the range: start over.
+                            out.setLength(0)
+                            pos = 0
+                        }
+                        mime = mime ?: r.body.contentType()?.let { "${it.type}/${it.subtype}" }
+                        length = length ?: totalOf(r) ?: if (r.code == 200) r.body.contentLength().takeIf { it >= 0 } else null
+                        out.seek(pos)
+                        val buffer = ByteArray(64 * 1024)
+                        r.body.byteStream().use { input ->
+                            var lastReport = 0L
+                            while (true) {
+                                val n = input.read(buffer)
+                                if (n < 0) break
+                                out.write(buffer, 0, n)
+                                pos += n
+                                val now = System.currentTimeMillis()
+                                if (now - lastReport > REPORT_MS) {
+                                    coroutineContext.ensureActive()
+                                    lastReport = now
+                                    length?.let { progress((pos.toFloat() / it).coerceIn(0f, 1f)) }
+                                }
                             }
                         }
+                        // Without a known length, one whole response is the file.
+                        if (length == null) length = pos
                     }
-                    // Without a known length, one whole response is the file.
-                    if (length == null) length = pos
-                }
                 }
             }
         }
@@ -209,7 +209,6 @@ class AudiobookDownloader(
             id?.let { AudioQueueEntry(it, toProgress(info)) }
         }
     }.catch { e -> if (e is IllegalStateException) emit(emptyList()) else throw e }
-
 
     private fun toProgress(info: WorkInfo) = AudioDownloadProgress(
         running = !info.state.isFinished,

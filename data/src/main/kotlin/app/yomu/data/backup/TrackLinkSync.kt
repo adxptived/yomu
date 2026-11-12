@@ -4,9 +4,9 @@ import android.content.Context
 import androidx.room.withTransaction
 import app.yomu.core.database.TrackEntity
 import app.yomu.core.database.YomuDatabase
+import app.yomu.data.tracking.TrackerManager
 import app.yomu.domain.tracking.TrackService
 import app.yomu.domain.tracking.TrackStatus
-import app.yomu.data.tracking.TrackerManager
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -22,7 +22,7 @@ interface TrackLinkTransport {
 @Serializable
 internal data class LinkOwner(val bookHash: String? = null, val sourceId: Long? = null, val titleUrl: String? = null) {
     fun valid(): Boolean = if (bookHash != null) bookHash.isNotBlank() && bookHash.length <= 512 && sourceId == null && titleUrl == null
-        else sourceId != null && titleUrl != null && titleUrl.isNotBlank() && titleUrl.length <= 8192
+    else sourceId != null && titleUrl != null && titleUrl.isNotBlank() && titleUrl.length <= 8192
     fun key(): String = if (bookHash != null) "b:${bookHash.length}:$bookHash" else "c:$sourceId:${titleUrl!!.length}:$titleUrl"
 }
 
@@ -35,6 +35,7 @@ internal data class TrackLink(
 }
 
 @Serializable internal data class TrackLinksFile(val version: Int = 1, val links: List<TrackLink> = emptyList())
+
 @Serializable internal data class TrackLinksBase(val version: Int = 1, val syncId: String, val links: List<TrackLink> = emptyList(), val indexKnown: Boolean = false)
 
 /** Three-way merge on remote IDs. Different simultaneous replacements are never silently overwritten. */
@@ -62,8 +63,7 @@ internal class TrackLinkSync(private val context: Context, private val db: YomuD
 
     private fun decode(bytes: ByteArray): TrackLinksFile {
         if (bytes.size > maxBytes) throw IOException("Tracking sync file is too large")
-        val data = try { json.decodeFromString(TrackLinksFile.serializer(), SyncJson.text(bytes)) }
-            catch (e: Exception) { throw IOException("Invalid tracking sync file", e) }
+        val data = try { json.decodeFromString(TrackLinksFile.serializer(), SyncJson.text(bytes)) } catch (e: Exception) { throw IOException("Invalid tracking sync file", e) }
         if (data.version != 1 || data.links.any { !it.valid() } || data.links.map { it.key() }.toSet().size != data.links.size)
             throw IOException("Unsupported or invalid tracking sync file")
         return data
@@ -131,7 +131,8 @@ internal class TrackLinkSync(private val context: Context, private val db: YomuD
             if (track.bookId in ambiguousIds) throw IOException("Duplicate book identifier prevents tracking sync")
             val ref = if (track.bookId != null) ownersByBook[track.bookId] else ownersByItem[track.itemId]
             if (ref == null || TrackService.of(track.service) == null) continue
-            val link = TrackLink(ref.owner, track.service, track.remoteId, track.title, track.url, track.totalChapters.coerceAtLeast(0))
+            val link =
+                TrackLink(ref.owner, track.service, track.remoteId, track.title, track.url, track.totalChapters.coerceAtLeast(0))
             if (!link.valid() || local.put(link.key(), Local(link, track)) != null) throw IOException("Invalid or duplicate local tracking binding")
         }
         val merged = remote.toMutableMap()

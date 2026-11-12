@@ -12,6 +12,7 @@ interface TranslationEngine {
     suspend fun translate(text: String, from: String?, to: String): String
     suspend fun detectLanguage(text: String): String?
     suspend fun supportedLanguages(): List<String>
+
     /** False when the engine needs configuration (API key, address) that is missing. */
     suspend fun isConfigured(): Boolean = true
 }

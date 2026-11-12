@@ -1,7 +1,7 @@
 package app.yomu.feature.reader
 
-import android.provider.Settings
 import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -10,9 +10,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,20 +24,26 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.NoteAdd
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.BrightnessMedium
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -49,31 +55,29 @@ import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EditNote
-import androidx.compose.material.icons.automirrored.outlined.NoteAdd
 import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.rememberTooltipState
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -82,16 +86,16 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -99,9 +103,9 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -113,34 +117,36 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.yomu.core.common.DictionaryLauncher
 import app.yomu.core.common.Share
 import app.yomu.core.common.UiState
 import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.ErrorState
 import app.yomu.core.ui.components.KeyBus
 import app.yomu.core.ui.components.OneTimeHint
+import app.yomu.core.ui.components.QuickActionMenu
+import app.yomu.core.ui.components.QuickMenuItem
 import app.yomu.core.ui.components.SkeletonBox
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.rememberHaptic
+import app.yomu.core.ui.theme.Dimens
 import app.yomu.domain.model.BookFormat
 import app.yomu.domain.model.CustomAction
 import app.yomu.domain.model.HighlightColor
 import app.yomu.domain.model.HighlightStyle
 import app.yomu.domain.model.Locator
 import app.yomu.domain.model.MangaDirection
-import app.yomu.domain.model.TapZoneLayout
+import app.yomu.domain.model.QuickActions
+import app.yomu.domain.model.QuickMenuStyle
 import app.yomu.domain.model.SelectionAction
+import app.yomu.domain.model.TapZoneLayout
 import app.yomu.domain.model.WebSearchEngine
 import app.yomu.feature.annotations.NoteDialog
 import app.yomu.feature.annotations.QuoteImage
 import app.yomu.feature.annotations.SelectionMenu
+import app.yomu.feature.annotations.copyToClipboard
 import app.yomu.feature.annotations.icon
 import app.yomu.feature.annotations.label
-import app.yomu.core.ui.components.QuickActionMenu
-import app.yomu.core.ui.components.QuickMenuItem
-import app.yomu.domain.model.QuickActions
-import app.yomu.domain.model.QuickMenuStyle
-import app.yomu.feature.annotations.copyToClipboard
 import app.yomu.feature.dictionary.LookupRequest
 import app.yomu.feature.dictionary.WordLookupViewModel
 import app.yomu.feature.dictionary.WordPopup
@@ -151,16 +157,15 @@ import app.yomu.feature.translator.Speaker
 import app.yomu.feature.translator.TranslationSheet
 import app.yomu.feature.translator.TranslationViewModel
 import kotlinx.coroutines.delay
-import java.io.File
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
+import java.io.File
 import java.net.URLEncoder
 import java.util.Locale
 import app.yomu.core.ui.R as CoreR
-import app.yomu.core.ui.theme.Dimens
 
-internal enum class ReaderSheet { NONE, TOC, SEARCH, SETTINGS, TTS }
+internal enum class ReaderSheet { NONE, TOC, SEARCH, SETTINGS, TTS, PAGES }
 
 /**
  * The reader: hosts one of the three engines and the shared chrome (top/bottom bars that auto-hide),
@@ -223,15 +228,16 @@ fun ReaderScreen(
     val pageMenuStyle by viewModel.pageMenuStyle.collectAsStateWithLifecycle()
     val pageActions by viewModel.pageActions.collectAsStateWithLifecycle()
     var savePageAs by remember { mutableStateOf<ReaderEvent.SavePageAs?>(null) }
-    val savePageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
-        val pending = savePageAs
-        savePageAs = null
-        if (uri != null && pending != null) viewModel.savePageTo(pending.file, uri)
-    }
+    val savePageLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+            val pending = savePageAs
+            savePageAs = null
+            if (uri != null && pending != null) viewModel.savePageTo(pending.file, uri)
+        }
 
     var sheet by rememberSaveable { mutableStateOf(ReaderSheet.NONE) }
     var noteFor by remember { mutableStateOf<ReaderSelection?>(null) }
-    var pageNote by remember { mutableStateOf(false) }
+    var pageNote by rememberSaveable { mutableStateOf(false) }
     var lookup by remember { mutableStateOf<LookupRequest?>(null) }
     var lookupAnchor by remember { mutableStateOf<Rect?>(null) }
     var searchSeed by rememberSaveable { mutableStateOf("") }
@@ -241,10 +247,13 @@ fun ReaderScreen(
     var tapZonesDone by rememberSaveable { mutableStateOf(false) }
     var goToPage by rememberSaveable { mutableStateOf(false) }
     var lastInteraction by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    // Written on every pointer event without recomposing the reader (35 state reads) for each finger movement.
+    val interactionClock = remember { java.util.concurrent.atomic.AtomicLong(0L) }
     val snackbar = remember { SnackbarHostState() }
     val speaker: Speaker = koinInject()
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
+    LaunchedEffect(landscape) { viewModel.setLandscape(landscape) }
     val data = (content as? UiState.Data)?.value
     val bookLang = viewModel.book?.language
     val author = viewModel.book?.authors?.joinToString()
@@ -408,6 +417,11 @@ fun ReaderScreen(
             SelectionAction.SELECT_SENTENCE -> viewModel.expandSelection(paragraph = false)
             SelectionAction.SELECT_PARAGRAPH -> viewModel.expandSelection(paragraph = true)
             SelectionAction.BOOKMARK -> { viewModel.toggleBookmark(); viewModel.clearSelection() }
+            SelectionAction.DICTIONARY -> {
+                val opened = DictionaryLauncher.lookup(context, sel.text, viewModel.dictionaryApp().packageNames)
+                if (!opened) scope.launch { snackbar.showSnackbar(resources.getString(R.string.reader_app_not_found)) }
+                viewModel.clearSelection()
+            }
         }
     }
 
@@ -420,12 +434,20 @@ fun ReaderScreen(
                 awaitPointerEventScope {
                     while (true) {
                         awaitPointerEvent(PointerEventPass.Initial)
-                        lastInteraction = System.currentTimeMillis()
+                        val now = System.currentTimeMillis()
+                        // Once a second is enough to keep the screen on and the panels open; per-event writes made
+                        // every finger movement recompose the whole reader.
+                        if (now - interactionClock.get() > 1_000) {
+                            interactionClock.set(now)
+                            lastInteraction = now
+                        }
                     }
                 }
             }
             .edgeAdjust(
-                enabled = common.edgeGestures && (data is ReaderContent.Text || data is ReaderContent.Pdf) && !chrome && sheet == ReaderSheet.NONE && selection == null,
+                enabled = common.edgeGestures && (common.edgeBrightness || common.edgeWarm) && (data is ReaderContent.Text || data is ReaderContent.Pdf) && !chrome && sheet == ReaderSheet.NONE && selection == null,
+                allowBrightness = common.edgeBrightness,
+                allowWarm = common.edgeWarm,
                 startValue = { brightness ->
                     if (!brightness) common.warmFilter
                     else if (common.brightness >= 0f) common.brightness
@@ -449,7 +471,8 @@ fun ReaderScreen(
             }
             is UiState.Error -> CompositionLocalProvider(LocalContentColor provides stateColor) {
                 // A moved or deleted file, or a permission lost after reinstalling: let the user point at it again.
-                val relink = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) viewModel.relink(uri) }
+                val relink =
+                    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) viewModel.relink(uri) }
                 if (viewModel.canRelink(s.error)) {
                     ErrorState(s.error, onRetry = { relink.launch(arrayOf("*/*")) }, retryLabel = stringResource(R.string.reader_relink),
                         secondaryLabel = stringResource(CoreR.string.back), onSecondary = onBack)
@@ -471,6 +494,31 @@ fun ReaderScreen(
         }
 
         EdgeAdjustPill(edge, edgeShown, Modifier.align(Alignment.Center))
+
+        // Zoom lock: pages and comics open at the zoom of the current page. A side button, within thumb reach.
+        if (chrome && (data is ReaderContent.Pdf || data is ReaderContent.Manga)) {
+            val locked = if (data is ReaderContent.Pdf) pdfSettings.zoomLock else mangaSettings.zoomLock
+            val label = stringResource(if (locked) R.string.reader_zoom_lock_on else R.string.reader_zoom_lock_off)
+            Surface(
+                onClick = {
+                    if (data is ReaderContent.Pdf) viewModel.updatePdf { it.copy(zoomLock = !it.zoomLock) }
+                    else viewModel.updateManga { it.copy(zoomLock = !it.zoomLock) }
+                },
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                tonalElevation = 4.dp,
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp).size(48.dp).semantics { contentDescription = label },
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        if (locked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                        label,
+                        Modifier.size(22.dp),
+                        tint = if (locked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
 
         bilingual?.let { p ->
             LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter).statusBarsPadding())
@@ -520,6 +568,11 @@ fun ReaderScreen(
                     showChapter = common.footerChapter,
                     horizontalPadding = readerText.marginHorizontal.coerceIn(12, 48),
                     pill = data is ReaderContent.Pdf,
+                    minutesLeft = if (data is ReaderContent.Text && position.charsLeftInBook > 0) {
+                        (position.charsLeftInBook / cpm).toInt().takeIf { it in 1..6000 }
+                    } else {
+                        null
+                    },
                 )
             }
         }
@@ -561,6 +614,10 @@ fun ReaderScreen(
                     }
                     DropdownMenuItem(text = { Text(stringResource(R.string.reader_dictionary)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.MenuBook, null) },
                         onClick = { dismiss(); onOpenDictionary("") })
+                    if (data is ReaderContent.Pdf || data is ReaderContent.Manga) {
+                        DropdownMenuItem(text = { Text(stringResource(R.string.reader_pages)) }, leadingIcon = { Icon(Icons.Default.GridView, null) },
+                            onClick = { dismiss(); sheet = ReaderSheet.PAGES })
+                    }
                     if (data is ReaderContent.Text) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.reader_bilingual)) }, leadingIcon = { Icon(Icons.Outlined.ViewAgenda, null) },
                             onClick = { dismiss(); viewModel.toggleBilingual() })
@@ -650,7 +707,10 @@ fun ReaderScreen(
                     onSearch = { sheet = ReaderSheet.SEARCH },
                     onSettings = { sheet = ReaderSheet.SETTINGS },
                     onQuick = { quickPanel = !quickPanel },
-                    onTts = { if (!ttsActive) viewModel.startTts(); sheet = ReaderSheet.TTS },
+                    onTts = {
+                        if (!ttsActive) viewModel.startTts()
+                        sheet = ReaderSheet.TTS
+                    },
                     onAutoScroll = { viewModel.toggleAutoScroll(); viewModel.chromeVisible.value = false },
                     onTranslate = {
                         if (data is ReaderContent.Manga) viewModel.translateMangaPage(position.page) else viewModel.translatePage()
@@ -762,6 +822,21 @@ fun ReaderScreen(
             ReaderSettingsSheet(viewModel, c, textSettings, mangaSettings, pdfSettings, common, perBook, wordTapSetting, onDismiss = { sheet = ReaderSheet.NONE })
         }
         ReaderSheet.TTS -> TtsSheet(viewModel, common, onDismiss = { sheet = ReaderSheet.NONE })
+        ReaderSheet.PAGES -> when (val c = data) {
+            is ReaderContent.Pdf -> PagesSheet(
+                count = c.controller.pageCount,
+                current = position.page,
+                onPick = { viewModel.goToPage(it + 1); sheet = ReaderSheet.NONE },
+                onDismiss = { sheet = ReaderSheet.NONE },
+            ) { index -> PdfPageThumb(c.controller, index) }
+            is ReaderContent.Manga -> PagesSheet(
+                count = c.controller.count,
+                current = position.page,
+                onPick = { viewModel.goToPage(it + 1); sheet = ReaderSheet.NONE },
+                onDismiss = { sheet = ReaderSheet.NONE },
+            ) { index -> MangaPageThumb(c.controller, index) }
+            else -> Unit
+        }
     }
 
     footnote?.let { html -> FootnoteDialog(html) { viewModel.footnote.value = null } }
@@ -800,7 +875,8 @@ private fun ReaderTopBar(
                     Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            val bookmarkLabel = stringResource(if (bookmarked) R.string.reader_remove_bookmark else R.string.reader_add_bookmark)
+            val bookmarkLabel =
+                stringResource(if (bookmarked) R.string.reader_remove_bookmark else R.string.reader_add_bookmark)
             IconButton(onClick = onBookmark, modifier = Modifier.semantics { stateDescription = bookmarkLabel }) {
                 Icon(if (bookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, bookmarkLabel,
                     tint = if (bookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -946,4 +1022,3 @@ private fun ReaderSkeleton(textColor: Color) {
         }
     }
 }
-

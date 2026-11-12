@@ -6,10 +6,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.yomu.core.common.ScreenErrors
 import app.yomu.core.common.UiState
+import app.yomu.data.export.AnkiPackageWriter
 import app.yomu.data.repository.AnnotationRepositoryImpl
 import app.yomu.data.repository.BookRepositoryImpl
 import app.yomu.domain.export.AnnotationExporter
-import app.yomu.data.export.AnkiPackageWriter
 import app.yomu.domain.export.AnnotationFormat
 import app.yomu.domain.model.Bookmark
 import app.yomu.domain.model.Highlight
@@ -25,8 +25,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -123,32 +125,41 @@ class AnnotationsViewModel(
         AnnotationTab.entries.associateWith { tab -> all.count { it.belongsTo(tab) } }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
-    val items: StateFlow<UiState<List<AnnotationEntry>>> = combine(entries, _filter) { all, f ->
-        val q = f.query.trim().lowercase()
-        val list = all.asSequence()
-            .filter { it.belongsTo(f.tab) }
-            .filter { e ->
-                when (e) {
-                    is AnnotationEntry.H -> (f.color == null || e.highlight.color == f.color) && (!f.favoritesOnly || e.highlight.isFavorite)
-                    else -> f.color == null && !f.favoritesOnly
+    private val retry = MutableStateFlow(0)
+
+    val items: StateFlow<UiState<List<AnnotationEntry>>> = retry.flatMapLatest {
+        combine(entries, _filter) { all, f ->
+            val q = f.query.trim().lowercase()
+            val list = all.asSequence()
+                .filter { it.belongsTo(f.tab) }
+                .filter { e ->
+                    when (e) {
+                        is AnnotationEntry.H -> (f.color == null || e.highlight.color == f.color) && (!f.favoritesOnly || e.highlight.isFavorite)
+                        else -> f.color == null && !f.favoritesOnly
+                    }
                 }
+                .filter { e ->
+                    q.isEmpty() || e.text.lowercase().contains(q) || e.bookTitle.lowercase().contains(q) ||
+                        (e is AnnotationEntry.H && e.highlight.note.orEmpty().lowercase().contains(q)) ||
+                        (e is AnnotationEntry.H && e.highlight.tags.any { it.lowercase().contains(q) })
+                }
+                .toList()
+            val sorted = when (f.sort) {
+                AnnotationSort.DATE -> list.sortedByDescending { it.createdAt }
+                AnnotationSort.POSITION -> list.sortedWith(
+                    compareBy<AnnotationEntry> { if (allBooks) it.bookTitle.lowercase() else "" }
+                        .thenBy { it.locator?.chapter ?: Int.MAX_VALUE }
+                        .thenBy { it.locator?.offset ?: ((it.locator?.progression ?: 0f) * 1_000_000).toInt() },
+                )
             }
-            .filter { e ->
-                q.isEmpty() || e.text.lowercase().contains(q) || e.bookTitle.lowercase().contains(q) ||
-                    (e is AnnotationEntry.H && e.highlight.note.orEmpty().lowercase().contains(q)) ||
-                    (e is AnnotationEntry.H && e.highlight.tags.any { it.lowercase().contains(q) })
-            }
-            .toList()
-        val sorted = when (f.sort) {
-            AnnotationSort.DATE -> list.sortedByDescending { it.createdAt }
-            AnnotationSort.POSITION -> list.sortedWith(
-                compareBy<AnnotationEntry> { if (allBooks) it.bookTitle.lowercase() else "" }
-                    .thenBy { it.locator?.chapter ?: Int.MAX_VALUE }
-                    .thenBy { it.locator?.offset ?: ((it.locator?.progression ?: 0f) * 1_000_000).toInt() },
-            )
-        }
-        if (sorted.isEmpty()) UiState.Empty else UiState.Data(sorted)
+            if (sorted.isEmpty()) UiState.Empty else UiState.Data(sorted)
+        }.catch { emit(UiState.Error(app.yomu.core.common.AppError.from(it))) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState.Loading)
+
+    /** "Try again" on the error screen: re-subscribes the database flows instead of leaving a dead screen. */
+    fun retry() {
+        retry.value++
+    }
 
     private fun AnnotationEntry.belongsTo(tab: AnnotationTab) = when (tab) {
         AnnotationTab.HIGHLIGHTS -> this is AnnotationEntry.H

@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -118,18 +119,27 @@ class WordsViewModel(private val context: Context, private val words: WordReposi
     private val events = Channel<WordsEvent>(Channel.BUFFERED)
     val eventFlow = events.receiveAsFlow()
 
-    val items: StateFlow<UiState<List<Word>>> = combine(query.debounce(200), tag, level) { q, t, l -> Triple(q, t, l) }
-        .flatMapLatest { (q, t, l) -> words.observeWords(q, null, t, l.max).map { list -> list.filter { it.level >= l.min } } }
-        .combine(sort) { list, s ->
-            val sorted = when (s) {
-                WordSort.DATE -> list.sortedByDescending { it.createdAt }
-                WordSort.ALPHA -> list.sortedBy { it.term.lowercase() }
-                WordSort.LEVEL -> list.sortedWith(compareBy<Word> { it.level }.thenBy { it.term.lowercase() })
-                WordSort.DUE -> list.sortedBy { it.srs.dueAt }
+    private val retry = MutableStateFlow(0)
+
+    val items: StateFlow<UiState<List<Word>>> = retry.flatMapLatest {
+        combine(query.debounce(200), tag, level) { q, t, l -> Triple(q, t, l) }
+            .flatMapLatest { (q, t, l) -> words.observeWords(q, null, t, l.max).map { list -> list.filter { it.level >= l.min } } }
+            .combine(sort) { list, s ->
+                val sorted = when (s) {
+                    WordSort.DATE -> list.sortedByDescending { it.createdAt }
+                    WordSort.ALPHA -> list.sortedBy { it.term.lowercase() }
+                    WordSort.LEVEL -> list.sortedWith(compareBy<Word> { it.level }.thenBy { it.term.lowercase() })
+                    WordSort.DUE -> list.sortedBy { it.srs.dueAt }
+                }
+                if (sorted.isEmpty()) UiState.Empty else UiState.Data(sorted)
             }
-            if (sorted.isEmpty()) UiState.Empty else UiState.Data(sorted)
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState.Loading)
+            .catch { emit(UiState.Error(app.yomu.core.common.AppError.from(it))) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState.Loading)
+
+    /** "Try again" on the error screen: re-subscribes the database flow. */
+    fun retry() {
+        retry.value++
+    }
 
     fun toggleSelect(id: Long) = selection.update { if (id in it) it - id else it + id }
     fun clearSelection() { selection.value = emptySet() }

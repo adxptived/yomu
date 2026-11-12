@@ -1,33 +1,6 @@
 package app.yomu.feature.settings
 
 import android.Manifest
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.material.icons.filled.CollectionsBookmark
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Translate
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
-import app.yomu.core.ui.theme.hueSaturation
-import app.yomu.core.ui.theme.isDarkScheme
-import app.yomu.core.ui.theme.schemeFor
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,35 +10,48 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.height
-import androidx.compose.material.icons.outlined.DataUsage
-import androidx.compose.material.icons.outlined.SignalCellularAlt
-import androidx.compose.material.icons.outlined.Wifi
-import androidx.compose.material3.OutlinedCard
-import androidx.compose.ui.draw.clip
-import app.yomu.core.network.TrafficMeter
-import app.yomu.core.ui.components.animateMotionFloat
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.outlined.DataUsage
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SignalCellularAlt
+import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -73,30 +59,42 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.yomu.core.common.Files
+import app.yomu.core.datastore.Pref
+import app.yomu.core.network.TrafficMeter
+import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.LauncherIcon
 import app.yomu.core.ui.components.LauncherIconImage
 import app.yomu.core.ui.components.LocalLauncherIcons
-import app.yomu.core.ui.components.rememberHaptic
-import app.yomu.core.common.Files
-import app.yomu.core.datastore.Pref
-import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.PreferenceHeader
 import app.yomu.core.ui.components.TextInputDialog
+import app.yomu.core.ui.components.animateMotionFloat
+import app.yomu.core.ui.components.rememberHaptic
 import app.yomu.core.ui.theme.Accent
 import app.yomu.core.ui.theme.Dimens
-import app.yomu.feature.reader.manga.MangaControlSettings
-import app.yomu.feature.reader.manga.MangaPageSettings
-import app.yomu.feature.reader.manga.MangaSettingsUpdate
 import app.yomu.core.ui.theme.ThemeMode
+import app.yomu.core.ui.theme.hueSaturation
+import app.yomu.core.ui.theme.isDarkScheme
+import app.yomu.core.ui.theme.schemeFor
+import app.yomu.domain.model.DictionaryApp
 import app.yomu.domain.model.PdfMode
 import app.yomu.domain.model.ReaderOrientation
 import app.yomu.domain.model.ReaderTheme
@@ -104,6 +102,9 @@ import app.yomu.domain.model.ScreenTimeout
 import app.yomu.domain.model.WebSearchEngine
 import app.yomu.domain.model.WordTapGesture
 import app.yomu.domain.translation.TranslationMode
+import app.yomu.feature.reader.manga.MangaControlSettings
+import app.yomu.feature.reader.manga.MangaPageSettings
+import app.yomu.feature.reader.manga.MangaSettingsUpdate
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -192,7 +193,8 @@ internal fun languageOptions(context: android.content.Context, codes: List<Strin
     codes.forEach { c -> add(c to Locale.forLanguageTag(c).getDisplayLanguage(Locale.getDefault()).replaceFirstChar { it.titlecase() }) }
 }
 
-internal val LANGS = listOf("en", "ru", "uk", "be", "ja", "zh", "ko", "de", "fr", "es", "it", "pt", "pl", "cs", "tr", "ar", "hi", "vi", "id", "th", "nl", "sv")
+internal val LANGS =
+    listOf("en", "ru", "uk", "be", "ja", "zh", "ko", "de", "fr", "es", "it", "pt", "pl", "cs", "tr", "ar", "hi", "vi", "id", "th", "nl", "sv")
 
 // endregion
 
@@ -210,7 +212,8 @@ internal fun ColumnScope.AppearanceSection(vm: SettingsViewModel) {
 
     PreferenceHeader(stringResource(R.string.set_theme))
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs)) {
-        val modes = listOf(ThemeMode.SYSTEM to R.string.set_theme_system, ThemeMode.LIGHT to R.string.set_theme_light, ThemeMode.DARK to R.string.set_theme_dark)
+        val modes =
+            listOf(ThemeMode.SYSTEM to R.string.set_theme_system, ThemeMode.LIGHT to R.string.set_theme_light, ThemeMode.DARK to R.string.set_theme_dark)
         modes.forEachIndexed { i, (m, label) ->
             SegmentedButton(
                 selected = mode == m.name,
@@ -497,7 +500,8 @@ internal fun ColumnScope.LibrarySection(vm: SettingsViewModel) {
     val s = vm.settings
     val folders by s.scanFolders.state()
     var removeFolder by remember { mutableStateOf<String?>(null) }
-    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(vm::addScanFolder) }
+    val pick =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(vm::addScanFolder) }
     SwitchPref(vm, s.libraryGrid, R.string.set_grid)
     val auto = stringResource(R.string.set_auto)
     IntSliderPref(vm, s.gridColumns, R.string.set_columns, 0..6, label = { if (it == 0) auto else it.toString() })
@@ -600,9 +604,19 @@ internal fun ColumnScope.ReaderSection(vm: SettingsViewModel, links: SettingsLin
         WebSearchEngine.CUSTOM to stringResource(R.string.set_custom),
     ))
     if (engine == WebSearchEngine.CUSTOM) TextPref(vm, s.customSearchUrl, R.string.set_custom_search_url, summaryWhenEmpty = R.string.set_custom_search_url_sum)
+    // Selected words can go to an installed dictionary app instead of the in-app dictionary.
+    ChoicePref(
+        vm, s.dictionaryApp, R.string.set_dictionary_app,
+        listOf(
+            DictionaryApp.SYSTEM to stringResource(R.string.set_dictionary_system),
+            DictionaryApp.LINGVO to "Lingvo",
+            DictionaryApp.COLORDICT to "ColorDict",
+            DictionaryApp.GOLDENDICT to "GoldenDict",
+        ),
+    )
 
     PreferenceHeader(stringResource(R.string.set_tts))
-    SliderSetting(stringResource(R.string.set_tts_speed), c.ttsSpeed, 0.5f..2.5f, steps = 19, label = { String.format(Locale.US, "%.1f×", it) }, icon = settingIcon(R.string.set_tts_speed)) { v ->
+    SliderSetting(stringResource(R.string.set_tts_speed), c.ttsSpeed, 0.5f..2.5f, steps = 19, label = { String.format(Locale.getDefault(), "%.1f×", it) }, icon = settingIcon(R.string.set_tts_speed)) { v ->
         vm.update(s.commonReader) { it.copy(ttsSpeed = v) }
     }
     SliderSetting(stringResource(R.string.set_tts_pitch), c.ttsPitch, 0.5f..2f, steps = 14, label = { String.format(Locale.US, "%.1f", it) }, icon = settingIcon(R.string.set_tts_pitch)) { v ->
@@ -909,9 +923,11 @@ internal fun ColumnScope.BackupSection(vm: SettingsViewModel, onOpenSync: () -> 
     var includeFiles by rememberSaveable { mutableStateOf(false) }
     var restoreUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var confirmReset by remember { mutableStateOf(false) }
-    val create = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri -> uri?.let { vm.createBackup(it, includeFiles) } }
+    val create =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri -> uri?.let { vm.createBackup(it, includeFiles) } }
     val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> restoreUri = uri }
-    val backupFolderPick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(vm::setBackupFolder) }
+    val backupFolderPick =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(vm::setBackupFolder) }
     val lastBackup by s.lastBackupAt.state()
     val backupFolder by s.backupFolder.state()
     val syncEnabled by s.syncEnabled.state()

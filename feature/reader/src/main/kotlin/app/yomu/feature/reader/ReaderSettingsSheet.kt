@@ -25,23 +25,23 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.FormatSize
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.WbTwilight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.InputChip
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -63,26 +63,25 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.common.Files
 import app.yomu.core.ui.components.OptionTiles
 import app.yomu.core.ui.components.PreferenceChoice
-import app.yomu.core.ui.components.TileOption
-import app.yomu.domain.model.PageTurnAnimation
-import app.yomu.domain.model.TapZoneLayout
-import app.yomu.feature.reader.manga.TapZonesDiagram
-import app.yomu.feature.reader.manga.zoneLabel
 import app.yomu.core.ui.components.PreferenceSlider
 import app.yomu.core.ui.components.PreferenceSwitch
+import app.yomu.core.ui.components.TileOption
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.domain.model.CommonReaderSettings
 import app.yomu.domain.model.MangaSettings
+import app.yomu.domain.model.PageTurnAnimation
 import app.yomu.domain.model.PdfMode
 import app.yomu.domain.model.PdfSettings
 import app.yomu.domain.model.ReaderOrientation
 import app.yomu.domain.model.ReaderTheme
 import app.yomu.domain.model.ScreenTimeout
+import app.yomu.domain.model.TapZoneLayout
 import app.yomu.domain.model.TextAlignment
 import app.yomu.domain.model.TextPreset
 import app.yomu.domain.model.TextReaderSettings
@@ -90,7 +89,8 @@ import app.yomu.domain.model.WordTapGesture
 import app.yomu.feature.reader.epub.ReaderCss
 import app.yomu.feature.reader.manga.MangaControlSettings
 import app.yomu.feature.reader.manga.MangaPageSettings
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.yomu.feature.reader.manga.TapZonesDiagram
+import app.yomu.feature.reader.manga.zoneLabel
 import java.io.File
 import app.yomu.core.ui.R as CoreR
 
@@ -137,6 +137,23 @@ fun ReaderSettingsSheet(
                         if (text.theme == ReaderTheme.CUSTOM) CustomColors(text, viewModel)
                         PreferenceSwitch(stringResource(R.string.rs_auto_night), text.autoNight, { v -> viewModel.updateText { it.copy(autoNight = v) } }, summary = stringResource(R.string.rs_auto_night_summary))
                         if (text.autoNight) {
+                            PreferenceChoice(
+                                stringResource(R.string.rs_auto_night_mode),
+                                listOf(
+                                    app.yomu.domain.model.AutoNightMode.SYSTEM to stringResource(R.string.rs_auto_night_system),
+                                    app.yomu.domain.model.AutoNightMode.SCHEDULE to stringResource(R.string.rs_auto_night_schedule),
+                                ),
+                                text.autoNightMode,
+                                { v -> viewModel.updateText { it.copy(autoNightMode = v) } },
+                            )
+                            if (text.autoNightMode == app.yomu.domain.model.AutoNightMode.SCHEDULE) {
+                                PreferenceSlider(stringResource(R.string.rs_night_from), text.nightFromHour.toFloat(), 0f..23f, { v ->
+                                    viewModel.updateText { it.copy(nightFromHour = v.toInt()) }
+                                }, { "%02d:00".format(it.toInt()) }, steps = 23)
+                                PreferenceSlider(stringResource(R.string.rs_night_to), text.nightToHour.toFloat(), 0f..23f, { v ->
+                                    viewModel.updateText { it.copy(nightToHour = v.toInt()) }
+                                }, { "%02d:00".format(it.toInt()) }, steps = 23)
+                            }
                             ThemePicker(
                                 text,
                                 { t -> viewModel.updateText { it.copy(nightTheme = t) } },
@@ -188,7 +205,8 @@ private fun TextSettings(s: TextReaderSettings, vm: ReaderViewModel) {
     PreferenceSlider(stringResource(R.string.rs_word_spacing), s.wordSpacing, 0f..0.5f, { v -> vm.updateText { it.copy(wordSpacing = Math.round(v * 50) / 50f) } }, { "%.2f".format(it) }, steps = 24)
     Text(stringResource(R.string.rs_align), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = Dimens.l, top = Dimens.s))
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs)) {
-        val opts = listOf(TextAlignment.START to R.string.rs_align_start, TextAlignment.JUSTIFY to R.string.rs_align_justify, TextAlignment.CENTER to R.string.rs_align_center)
+        val opts =
+            listOf(TextAlignment.START to R.string.rs_align_start, TextAlignment.JUSTIFY to R.string.rs_align_justify, TextAlignment.CENTER to R.string.rs_align_center)
         opts.forEachIndexed { i, (a, label) ->
             SegmentedButton(selected = s.align == a, onClick = { vm.updateText { it.copy(align = a) } }, shape = SegmentedButtonDefaults.itemShape(i, opts.size)) { Text(stringResource(label)) }
         }
@@ -196,6 +214,12 @@ private fun TextSettings(s: TextReaderSettings, vm: ReaderViewModel) {
     PreferenceSwitch(stringResource(R.string.rs_hyphenation), s.hyphenation, { v -> vm.updateText { it.copy(hyphenation = v) } })
     PreferenceSwitch(stringResource(R.string.rs_paged), s.paged, { v -> vm.updateText { it.copy(paged = v) } }, summary = stringResource(if (s.paged) R.string.rs_paged_on else R.string.rs_paged_off))
     if (s.paged && !s.verticalText) {
+        PreferenceSwitch(
+            stringResource(R.string.rs_dual_landscape),
+            s.dualPageLandscape,
+            { v -> vm.updateText { it.copy(dualPageLandscape = v) } },
+            summary = stringResource(R.string.rs_dual_landscape_summary),
+        )
         PreferenceChoice(
             stringResource(R.string.rs_page_anim),
             listOf(
@@ -393,16 +417,25 @@ fun ReaderTheme.label(): Int = when (this) {
 private fun PdfSettingsContent(s: PdfSettings, vm: ReaderViewModel) {
     Text(stringResource(R.string.rs_pdf_mode), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = Dimens.l, top = Dimens.m))
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs)) {
-        val opts = listOf(PdfMode.SCROLL to R.string.rs_pdf_scroll, PdfMode.PAGED to R.string.rs_pdf_paged, PdfMode.DUAL to R.string.rs_pdf_dual)
+        val opts =
+            listOf(PdfMode.SCROLL to R.string.rs_pdf_scroll, PdfMode.PAGED to R.string.rs_pdf_paged, PdfMode.DUAL to R.string.rs_pdf_dual)
         opts.forEachIndexed { i, (m, label) ->
             SegmentedButton(selected = s.mode == m, onClick = { vm.updatePdf { it.copy(mode = m) } }, shape = SegmentedButtonDefaults.itemShape(i, opts.size)) { Text(stringResource(label)) }
         }
     }
     PreferenceSwitch(stringResource(R.string.rs_pdf_night), s.night, { v -> vm.updatePdf { it.copy(night = v) } }, summary = stringResource(R.string.rs_pdf_night_summary))
     PreferenceSwitch(stringResource(R.string.rs_pdf_crop), s.autoCrop, { v -> vm.updatePdf { it.copy(autoCrop = v) } }, summary = stringResource(R.string.rs_pdf_crop_summary))
-    PreferenceSlider(stringResource(R.string.rs_pdf_crop_manual), s.manualCrop.left * 100, 0f..20f, { v ->
-        vm.updatePdf { it.copy(manualCrop = app.yomu.domain.model.CropMargins(v / 100f, v / 100f, v / 100f, v / 100f)) }
-    }, { "${it.toInt()}%" }, steps = 19)
+    if (!s.autoCrop) {
+        val crop = s.manualCrop
+        val update: (app.yomu.domain.model.CropMargins) -> Unit = { m -> vm.updatePdf { it.copy(manualCrop = m) } }
+        PreferenceSlider(stringResource(R.string.rs_pdf_crop_left), crop.left * 100, 0f..25f, { v -> update(crop.copy(left = v / 100f)) }, { "${it.toInt()}%" }, steps = 25)
+        PreferenceSlider(stringResource(R.string.rs_pdf_crop_right), crop.right * 100, 0f..25f, { v -> update(crop.copy(right = v / 100f)) }, { "${it.toInt()}%" }, steps = 25)
+        PreferenceSlider(stringResource(R.string.rs_pdf_crop_top), crop.top * 100, 0f..25f, { v -> update(crop.copy(top = v / 100f)) }, { "${it.toInt()}%" }, steps = 25)
+        PreferenceSlider(stringResource(R.string.rs_pdf_crop_bottom), crop.bottom * 100, 0f..25f, { v -> update(crop.copy(bottom = v / 100f)) }, { "${it.toInt()}%" }, steps = 25)
+    }
+    PreferenceSlider(stringResource(R.string.rs_pdf_contrast), s.contrast, 0.5f..2f, { v -> vm.updatePdf { it.copy(contrast = Math.round(v * 10) / 10f) } }, { "%.1f".format(it) }, steps = 15)
+    PreferenceSwitch(stringResource(R.string.rs_pdf_grayscale), s.grayscale, { v -> vm.updatePdf { it.copy(grayscale = v) } })
+    PreferenceSwitch(stringResource(R.string.rs_pdf_zoom_lock), s.zoomLock, { v -> vm.updatePdf { it.copy(zoomLock = v) } }, summary = stringResource(R.string.rs_zoom_lock_summary))
     PreferenceSwitch(stringResource(R.string.rs_pdf_reflow), s.reflow, { v -> vm.updatePdf { it.copy(reflow = v) } }, summary = stringResource(R.string.rs_pdf_reflow_summary))
 }
 
@@ -471,6 +504,8 @@ private fun ControlSettings(content: ReaderContent, c: CommonReaderSettings, m: 
             )
         }
         PreferenceSwitch(stringResource(R.string.rs_edge_gestures), c.edgeGestures, { v -> vm.updateCommon { it.copy(edgeGestures = v) } }, summary = stringResource(R.string.rs_edge_gestures_summary))
+        PreferenceSwitch(stringResource(R.string.rs_edge_brightness), c.edgeBrightness, { v -> vm.updateCommon { it.copy(edgeBrightness = v) } }, enabled = c.edgeGestures)
+        PreferenceSwitch(stringResource(R.string.rs_edge_warm), c.edgeWarm, { v -> vm.updateCommon { it.copy(edgeWarm = v) } }, enabled = c.edgeGestures)
         PreferenceSwitch(stringResource(R.string.rs_volume_keys), c.volumeKeys, { v -> vm.updateCommon { it.copy(volumeKeys = v) } })
     }
     if (content is ReaderContent.Text) {

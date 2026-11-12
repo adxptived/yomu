@@ -197,7 +197,8 @@ class NetworkClients(context: Context) {
 /** Observes connectivity; [isOnline] and [isUnmetered] are kept up to date. */
 class NetworkMonitor(context: Context) {
     private val cm = context.getSystemService(ConnectivityManager::class.java)
-    private val _online = MutableStateFlow(current()?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true)
+    private val _online =
+        MutableStateFlow(current()?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true)
     val online: StateFlow<Boolean> = _online.asStateFlow()
 
     init {
@@ -218,6 +219,7 @@ class NetworkMonitor(context: Context) {
     val isUnmetered: Boolean get() = current()?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == true
 
     @Volatile private var meteredAt = Long.MIN_VALUE / 2
+
     @Volatile private var meteredValue = false
 
     /**

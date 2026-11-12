@@ -3,44 +3,45 @@ package app.yomu.data.repository
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
-import app.yomu.data.audio.AudiobookStore
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import androidx.paging.map
 import androidx.room.withTransaction
 import androidx.sqlite.db.SimpleSQLiteQuery
+import app.yomu.core.common.Files
 import app.yomu.core.database.AuthorEntity
 import app.yomu.core.database.BookAuthorCrossRef
 import app.yomu.core.database.BookCollectionCrossRef
 import app.yomu.core.database.BookEntity
 import app.yomu.core.database.BookTagCrossRef
+import app.yomu.core.database.ChapterProgressEntity
 import app.yomu.core.database.CollectionEntity
 import app.yomu.core.database.ReadingProgressEntity
 import app.yomu.core.database.SeriesEntity
 import app.yomu.core.database.TagEntity
 import app.yomu.core.database.YomuDatabase
-import app.yomu.core.common.Files
+import app.yomu.data.audio.AudiobookStore
 import app.yomu.data.backup.FolderManifestCodec
-import app.yomu.data.backup.FolderRevisionCommit
 import app.yomu.data.backup.FolderReadSyncGate
+import app.yomu.data.backup.FolderRevisionCommit
 import app.yomu.data.backup.FolderSnapshot
 import app.yomu.data.book.FolderPageProof
 import app.yomu.data.library.CoverStore
 import app.yomu.data.library.ImportService
-import app.yomu.domain.model.BookFormat
 import app.yomu.domain.model.BatchMetadata
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookCollection
+import app.yomu.domain.model.BookFormat
 import app.yomu.domain.model.LibraryQuery
 import app.yomu.domain.model.LibrarySort
 import app.yomu.domain.model.Locator
 import app.yomu.domain.model.ReadingStatus
 import app.yomu.domain.repository.BookRepository
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
 
@@ -104,8 +105,7 @@ class BookRepositoryImpl(
             else -> null
         } ?: throw java.io.IOException("Saved position no longer exists; reopen the list and try again")
         return json.second?.let {
-            try { DataJson.decodeFromString(Locator.serializer(), it) }
-            catch (e: Exception) { throw java.io.IOException("Saved position is invalid", e) }
+            try { DataJson.decodeFromString(Locator.serializer(), it) } catch (e: Exception) { throw java.io.IOException("Saved position is invalid", e) }
         }
     }
 
@@ -133,15 +133,29 @@ class BookRepositoryImpl(
             sql.append(" AND books.id IN (SELECT bookId FROM book_collections WHERE collectionId = ?)")
             args += it
         }
+        if (f.favoritesOnly) sql.append(" AND books.favorite = 1")
         val search = q.search.trim()
         if (search.isNotEmpty()) {
-            val match = search.split(Regex("\\s+")).filter { it.isNotBlank() }.joinToString(" ") { "\"" + it.replace("\"", "") + "\"*" }
-            sql.append(" AND (books.id IN (SELECT rowid FROM books_fts WHERE books_fts MATCH ?) OR books.title LIKE ? OR books.authorsText LIKE ? OR books.seriesName LIKE ?)")
-            args += match
-            val like = "%$search%"
-            args += like
-            args += like
-            args += like
+            // FTS operators must not reach the MATCH expression: a lone quote, "*" or "-" is a syntax error that
+            // would crash the library screen. Tokens are quoted literally and prefix-matched.
+            val terms = search.split(Regex("\\s+"))
+                .map { it.replace("\"", "").trim() }
+                .filter { it.isNotEmpty() }
+            // LIKE treats % and _ as wildcards: a search for "50%" must not match everything.
+            val like = "%" + search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            val likeColumns =
+                "books.title LIKE ? ESCAPE '\\' OR books.authorsText LIKE ? ESCAPE '\\' OR books.seriesName LIKE ? ESCAPE '\\'" +
+                    " OR books.description LIKE ? ESCAPE '\\'" +
+                    " OR books.id IN (SELECT bt.bookId FROM book_tags bt JOIN tags t ON t.id = bt.tagId WHERE t.name LIKE ? ESCAPE '\\')"
+            if (terms.isNotEmpty()) {
+                val match = terms.joinToString(" ") { "\"$it\"*" }
+                sql.append(" AND (books.id IN (SELECT rowid FROM books_fts WHERE books_fts MATCH ?) OR $likeColumns)")
+                args += match
+            } else {
+                sql.append(" AND ($likeColumns)")
+            }
+            // title, authors, series, description and tag
+            repeat(5) { args += like }
         }
         val dir = if (q.ascending) "ASC" else "DESC"
         val order = when (q.sort) {
@@ -228,6 +242,8 @@ class BookRepositoryImpl(
 
     override suspend fun setStatus(ids: Collection<Long>, status: ReadingStatus) = books.setStatus(ids, status.name)
 
+    override suspend fun setFavorite(ids: Collection<Long>, favorite: Boolean) = books.setFavorite(ids, favorite)
+
     /**
      * Applies the batch [edit] to the [list] of books (already in the order they are numbered in, see
      * [BatchMetadata.ordered]) in one transaction. Returns how many books changed.
@@ -272,6 +288,14 @@ class BookRepositoryImpl(
     }
 
     override suspend fun getProgress(bookId: Long): Locator? = db.progress().get(bookId)?.locatorJson?.toLocator()
+
+    override suspend fun saveChapterProgress(bookId: Long, chapter: Int, locator: Locator) {
+        if (bookId <= 0 || chapter < 0) return
+        db.chapterProgress().save(ChapterProgressEntity(bookId, chapter, locator.toJson(), System.currentTimeMillis()))
+    }
+
+    override suspend fun getChapterProgress(bookId: Long, chapter: Int): Locator? =
+        db.chapterProgress().get(bookId, chapter)?.locatorJson?.toLocator()
 
     override suspend fun saveReaderSettings(bookId: Long, json: String?) = books.setReaderSettings(bookId, json)
 

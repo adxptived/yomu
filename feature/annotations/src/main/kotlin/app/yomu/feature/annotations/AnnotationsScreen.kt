@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -70,6 +71,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
@@ -87,17 +90,19 @@ import app.yomu.core.common.Share
 import app.yomu.core.common.UiState
 import app.yomu.core.ui.components.ChipItem
 import app.yomu.core.ui.components.EmptyState
-import app.yomu.core.ui.components.OneTimeHint
+import app.yomu.core.ui.components.ErrorState
 import app.yomu.core.ui.components.FilterChipsRow
+import app.yomu.core.ui.components.OneTimeHint
 import app.yomu.core.ui.components.SheetAction
-import app.yomu.core.ui.components.SwipeAction
-import app.yomu.core.ui.components.SwipeActionsBox
 import app.yomu.core.ui.components.SheetTitle
 import app.yomu.core.ui.components.SkeletonList
+import app.yomu.core.ui.components.SwipeAction
+import app.yomu.core.ui.components.SwipeActionsBox
 import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.motionItem
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.domain.export.AnnotationFormat
 import app.yomu.domain.model.HighlightColor
@@ -145,6 +150,12 @@ fun AnnotationsScreen(
     val bookTitle by viewModel.title.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var searching by rememberSaveable { mutableStateOf(false) }
+    val searchFocus = remember { FocusRequester() }
+    LaunchedEffect(searching) { if (searching) runCatching { searchFocus.requestFocus() } }
+    BackHandler(enabled = searching) {
+        searching = false
+        viewModel.setQuery("")
+    }
     var menu by remember { mutableStateOf(false) }
     var exportMenu by remember { mutableStateOf(false) }
     var sheetFor by remember { mutableStateOf<AnnotationEntry?>(null) }
@@ -156,7 +167,8 @@ fun AnnotationsScreen(
     val exporters = AnnotationFormat.entries.associateWith { f ->
         rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(f.mime)) { uri -> if (uri != null) viewModel.export(f, uri) }
     }
-    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) viewModel.importReadwise(uri) }
+    val importer =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) viewModel.importReadwise(uri) }
 
     val deletedMsg = stringResource(R.string.annotations_deleted)
     val undoLabel = stringResource(UiR.string.undo)
@@ -187,7 +199,7 @@ fun AnnotationsScreen(
                             placeholder = { Text(stringResource(R.string.annotations_search)) },
                             singleLine = true,
                             colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent),
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().focusRequester(searchFocus),
                         )
                     } else {
                         Column {
@@ -197,7 +209,12 @@ fun AnnotationsScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { if (searching) viewModel.setQuery(""); searching = !searching }) {
+                    IconButton(
+                        onClick = {
+                            if (searching) viewModel.setQuery("")
+                            searching = !searching
+                        },
+                    ) {
                         Icon(if (searching) Icons.Default.Close else Icons.Default.Search, stringResource(UiR.string.search))
                     }
                     IconButton(onClick = viewModel::toggleSort) {
@@ -275,7 +292,7 @@ fun AnnotationsScreen(
                         icon = if (filter.tab == AnnotationTab.BOOKMARKS) Icons.Outlined.BookmarkBorder else Icons.Default.FormatQuote,
                     )
                 }
-                is UiState.Error -> EmptyState(errorMessage(s.error))
+                is UiState.Error -> ErrorState(s.error, onRetry = viewModel::retry)
                 is UiState.Data -> LazyColumn(
                     contentPadding = PaddingValues(horizontal = Dimens.l, vertical = Dimens.s),
                     modifier = Modifier.fillMaxSize(),
@@ -296,7 +313,7 @@ fun AnnotationsScreen(
                         }
                         item(key = e.key) {
                             SwipeActionsBox(
-                                modifier = Modifier.animateItem(),
+                                modifier = motionItem(),
                                 end = SwipeAction.destructive(stringResource(UiR.string.delete)) { viewModel.delete(e) },
                             ) {
                                 AnnotationCard(

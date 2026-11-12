@@ -112,7 +112,8 @@ class EpubWorkspace(val root: File) {
     private fun hrefFromOpf(path: String) = EpubPaths.relative(opfPath, path)
 
     private fun addManifestItem(doc: Document, path: String, mediaType: String, idPrefix: String, properties: String? = null): String {
-        val id = uniqueId(idPrefix, (pkg.manifest.map { it.id } + doc.manifestEl().children().map { it.attr("id") }).toMutableSet())
+        val id =
+            uniqueId(idPrefix, (pkg.manifest.map { it.id } + doc.manifestEl().children().map { it.attr("id") }).toMutableSet())
         val item = doc.manifestEl().appendElement("item").attr("id", id).attr("href", hrefFromOpf(path)).attr("media-type", mediaType)
         if (!properties.isNullOrBlank()) item.attr("properties", properties)
         return id
@@ -1094,7 +1095,8 @@ class EpubWorkspace(val root: File) {
         private val RES_ATTRS = listOf("src", "xlink:href", "href")
         private val FONT_FACE = Regex("@font-face\\s*\\{[^}]*\\}", RegexOption.IGNORE_CASE)
         private val FONT_FAMILY = Regex("(^|[;{\\s])font-family\\s*:[^;}]*;?", RegexOption.IGNORE_CASE)
-        private val COLORS = Regex("(^|[;{\\s])(color|background-color|background)\\s*:[^;}]*;?", RegexOption.IGNORE_CASE)
+        private val COLORS =
+            Regex("(^|[;{\\s])(color|background-color|background)\\s*:[^;}]*;?", RegexOption.IGNORE_CASE)
         private val XML_ENTITIES = setOf("amp", "lt", "gt", "quot", "apos")
 
         /** Returns a "line:column message" description of the first XML error, or null when [text] is well formed. */

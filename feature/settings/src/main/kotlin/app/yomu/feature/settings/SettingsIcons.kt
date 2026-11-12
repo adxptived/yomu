@@ -7,9 +7,6 @@ import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.automirrored.outlined.WrapText
-import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.outlined.BorderColor
-import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Animation
@@ -21,6 +18,9 @@ import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.Bookmarks
+import androidx.compose.material.icons.outlined.BorderColor
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Cached
 import androidx.compose.material.icons.outlined.Checklist
@@ -60,9 +60,9 @@ import androidx.compose.material.icons.outlined.Gavel
 import androidx.compose.material.icons.outlined.Gesture
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.HideImage
 import androidx.compose.material.icons.outlined.Highlight
 import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.HideImage
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.ImportExport

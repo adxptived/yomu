@@ -82,5 +82,6 @@ object TextPresets {
     }
 
     /** Themes offered in the quick row of the settings sheet. */
-    val quickThemes = listOf(ReaderTheme.LIGHT, ReaderTheme.SEPIA, ReaderTheme.GRAY, ReaderTheme.DARK, ReaderTheme.BLACK)
+    val quickThemes =
+        listOf(ReaderTheme.LIGHT, ReaderTheme.SEPIA, ReaderTheme.GRAY, ReaderTheme.DARK, ReaderTheme.BLACK)
 }

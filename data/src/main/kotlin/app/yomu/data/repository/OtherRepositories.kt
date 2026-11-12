@@ -6,12 +6,12 @@ import app.yomu.domain.model.BookAnnotations
 import app.yomu.domain.model.Bookmark
 import app.yomu.domain.model.Highlight
 import app.yomu.domain.model.Note
+import app.yomu.domain.model.ReadingSession
 import app.yomu.domain.model.ReadingStats
 import app.yomu.domain.model.ReviewMode
 import app.yomu.domain.model.Word
 import app.yomu.domain.repository.AnnotationRepository
 import app.yomu.domain.repository.StatsRepository
-import app.yomu.domain.model.ReadingSession
 import app.yomu.domain.repository.WordRepository
 import app.yomu.domain.srs.Sm2
 import app.yomu.domain.text.Lemmatizer

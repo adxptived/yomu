@@ -86,7 +86,8 @@ object TypesetMath {
     fun bubble(px: IntArray, width: Int, height: Int, text: PixelRect, background: Int, tolerance: Int = 60): PixelRect? {
         val padX = max(12, text.width * 3 / 2)
         val padY = max(12, text.height * 3 / 2)
-        val win = PixelRect(max(0, text.left - padX), max(0, text.top - padY), min(width, text.right + padX), min(height, text.bottom + padY))
+        val win =
+            PixelRect(max(0, text.left - padX), max(0, text.top - padY), min(width, text.right + padX), min(height, text.bottom + padY))
         val ww = win.width
         val wh = win.height
         if (ww <= 0 || wh <= 0) return null

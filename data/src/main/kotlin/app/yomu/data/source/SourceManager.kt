@@ -2,11 +2,11 @@ package app.yomu.data.source
 
 import android.content.Context
 import android.graphics.drawable.Drawable
-import app.yomu.data.audio.YouTubeClient
-import app.yomu.data.audio.YouTubeSource
 import app.yomu.core.database.SourceEntity
 import app.yomu.core.database.YomuDatabase
 import app.yomu.core.datastore.AppSettings
+import app.yomu.data.audio.YouTubeClient
+import app.yomu.data.audio.YouTubeSource
 import app.yomu.data.source.tachiyomi.TachiyomiSource
 import app.yomu.source.CatalogSource
 import app.yomu.source.ConfigurableSource
@@ -19,9 +19,9 @@ import app.yomu.sources.novels.NovelBinSource
 import app.yomu.sources.novels.RanobeLibSource
 import app.yomu.sources.opds.GutenbergSource
 import app.yomu.sources.opds.InternetArchiveSource
+import app.yomu.sources.opds.LibriVoxSource
 import app.yomu.sources.opds.OpdsSource
 import app.yomu.sources.opds.OpenLibrarySource
-import app.yomu.sources.opds.LibriVoxSource
 import app.yomu.sources.opds.WikisourceSource
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -83,7 +83,8 @@ class SourceManager(
     private val extensions: ExtensionManager,
     youtube: YouTubeClient,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e -> Timber.e(e, "Source list update failed") })
+    private val scope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e -> Timber.e(e, "Source list update failed") })
     private val json = Json { ignoreUnknownKeys = true }
     private val configSerializer = MapSerializer(String.serializer(), String.serializer())
 
@@ -121,30 +122,34 @@ class SourceManager(
         // extensions for each one (millions of comparisons with the big repositories, on every list change).
         val extOf = HashMap<Long, InstalledExtension>()
         extensions.loaded.value.forEach { e -> e.sources.forEach { src -> extOf.putIfAbsent(src.id, e) } }
-        list.map { s ->
-            val row = byId[s.id]
-            val ext = extOf[s.id]
-            SourceInfo(
-                id = s.id, name = s.name, lang = s.lang, content = s.content,
-                kind = when {
-                    s is LocalSource -> SourceInfo.Kind.LOCAL
-                    s is OpdsSource -> SourceInfo.Kind.OPDS
-                    ext != null -> SourceInfo.Kind.EXTENSION
-                    else -> SourceInfo.Kind.BUILT_IN
-                },
-                pinned = row?.pinned ?: false,
-                enabled = row?.enabled ?: true,
-                supportsLatest = s.supportsLatest,
-                configurable = s is ConfigurableSource,
-                extensionPkg = ext?.pkg,
-                lastUsedAt = row?.lastUsedAt ?: 0,
-                hasSettings = (s as? TachiyomiSource)?.hasPreferences == true,
-                extensionName = ext?.name,
-                isNsfw = ext?.isNsfw == true,
-                icon = ext?.icon,
-                logo = if (ext == null) logoOf(s) else null,
-                hidden = s.id.toString() in hiddenSources || (ext != null && ext.pkg in hiddenExtensions),
-            )
+        list.mapNotNull { s ->
+            // One extension property that throws must not terminate this eagerly shared flow (which would freeze the
+            // whole catalog until the app restarts): the source is left out of this snapshot instead.
+            runCatching {
+                val row = byId[s.id]
+                val ext = extOf[s.id]
+                SourceInfo(
+                    id = s.id, name = s.name, lang = s.lang, content = s.content,
+                    kind = when {
+                        s is LocalSource -> SourceInfo.Kind.LOCAL
+                        s is OpdsSource -> SourceInfo.Kind.OPDS
+                        ext != null -> SourceInfo.Kind.EXTENSION
+                        else -> SourceInfo.Kind.BUILT_IN
+                    },
+                    pinned = row?.pinned ?: false,
+                    enabled = row?.enabled ?: true,
+                    supportsLatest = s.supportsLatest,
+                    configurable = s is ConfigurableSource,
+                    extensionPkg = ext?.pkg,
+                    lastUsedAt = row?.lastUsedAt ?: 0,
+                    hasSettings = (s as? TachiyomiSource)?.hasPreferences == true,
+                    extensionName = ext?.name,
+                    isNsfw = ext?.isNsfw == true,
+                    icon = ext?.icon,
+                    logo = if (ext == null) logoOf(s) else null,
+                    hidden = s.id.toString() in hiddenSources || (ext != null && ext.pkg in hiddenExtensions),
+                )
+            }.onFailure { Timber.w(it, "Source info ${s.id}") }.getOrNull()
         }
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
@@ -232,7 +237,8 @@ class SourceManager(
     private suspend fun ensureRow(id: Long): SourceEntity {
         db.sources().get(id)?.let { return it }
         val s = get(id)
-        val row = SourceEntity(id, s?.name ?: "?", s?.lang ?: "", "builtin", pinned = false, enabled = true, configJson = null, lastUsedAt = 0)
+        val row =
+            SourceEntity(id, s?.name ?: "?", s?.lang ?: "", "builtin", pinned = false, enabled = true, configJson = null, lastUsedAt = 0)
         db.sources().upsert(row)
         return row
     }

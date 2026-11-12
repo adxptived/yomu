@@ -15,16 +15,16 @@ import app.yomu.data.backup.BackupManager
 import app.yomu.data.backup.MihonImporter
 import app.yomu.data.backup.SyncManager
 import app.yomu.data.backup.SyncProblemInfo
-import app.yomu.data.source.ExtensionManager
-import app.yomu.data.tracking.TrackerManager
-import app.yomu.data.tracking.TrackSyncWorker
-import app.yomu.domain.tracking.TrackService
 import app.yomu.data.download.DownloadRepository
 import app.yomu.data.download.StorageUsage
+import app.yomu.data.source.ExtensionManager
+import app.yomu.data.tracking.TrackSyncWorker
+import app.yomu.data.tracking.TrackerManager
 import app.yomu.data.work.LibraryScanWorker
-import app.yomu.data.work.WorkScheduler
 import app.yomu.data.work.Notifications
 import app.yomu.data.work.NotifyKind
+import app.yomu.data.work.WorkScheduler
+import app.yomu.domain.tracking.TrackService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,6 +36,7 @@ import java.io.File
 sealed interface SettingsEvent {
     data class Message(val res: Int, val args: List<Any> = emptyList()) : SettingsEvent
     data class Failure(val error: Throwable) : SettingsEvent
+
     /** A restore finished; the app should restart to reload everything. */
     data object Restored : SettingsEvent
 }

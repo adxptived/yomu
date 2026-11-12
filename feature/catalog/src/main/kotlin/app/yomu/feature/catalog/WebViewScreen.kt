@@ -30,7 +30,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -61,16 +60,10 @@ fun WebViewScreen(url: String, onBack: () -> Unit) {
     var progress by remember { mutableFloatStateOf(0f) }
     var canGoBack by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
-    var webView by remember { mutableStateOf<WebView?>(null) }
+    // Not a Compose state: assigning the WebView must not recompose the screen.
+    val webViewRef = remember { java.util.concurrent.atomic.AtomicReference<WebView?>(null) }
 
-    BackHandler(enabled = canGoBack) { webView?.goBack() }
-    DisposableEffect(Unit) {
-        onDispose {
-            // Throws when WebView is not available (the screen then showed an explanation instead).
-            runCatching { CookieManager.getInstance().flush() }
-            webView?.destroy()
-        }
-    }
+    BackHandler(enabled = canGoBack) { webViewRef.get()?.goBack() }
 
     Scaffold(
         topBar = {
@@ -84,7 +77,7 @@ fun WebViewScreen(url: String, onBack: () -> Unit) {
                     },
                     navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.Close, stringResource(CoreR.string.close)) } },
                     actions = {
-                        IconButton(onClick = { webView?.reload() }) { Icon(Icons.Filled.Refresh, stringResource(R.string.webview_reload)) }
+                        IconButton(onClick = { webViewRef.get()?.reload() }) { Icon(Icons.Filled.Refresh, stringResource(R.string.webview_reload)) }
                         IconButton(onClick = onBack) { Icon(Icons.Filled.Done, stringResource(CoreR.string.done)) }
                         IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, stringResource(CoreR.string.more)) }
                         DropdownMenu(showMenu, onDismissRequest = { showMenu = false }) {
@@ -131,12 +124,12 @@ fun WebViewScreen(url: String, onBack: () -> Unit) {
                                 val scheme = request.url.scheme.orEmpty()
                                 return scheme != "http" && scheme != "https"
                             }
-    
+
                             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                                 current = url
                                 canGoBack = view.canGoBack()
                             }
-    
+
                             override fun onPageFinished(view: WebView, url: String) {
                                 current = url
                                 canGoBack = view.canGoBack()
@@ -147,13 +140,19 @@ fun WebViewScreen(url: String, onBack: () -> Unit) {
                             override fun onProgressChanged(view: WebView, newProgress: Int) {
                                 progress = newProgress / 100f
                             }
-    
+
                             override fun onReceivedTitle(view: WebView, t: String?) {
                                 if (!t.isNullOrBlank()) title = t
                             }
                         }
                         loadUrl(url, mapOf("User-Agent" to SourceNetwork.userAgent))
-                        webView = this
+                        webViewRef.set(this)
+                    }
+                },
+                onRelease = { view ->
+                    if (webViewRef.compareAndSet(view, null)) {
+                        runCatching { CookieManager.getInstance().flush() }
+                        view.destroy()
                     }
                 },
             )

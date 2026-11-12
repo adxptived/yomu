@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.source.online
 
+import app.yomu.compat.tachiyomi.internal.awaitSingle
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.asObservableSuccess
@@ -16,7 +17,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import rx.Observable
-import app.yomu.compat.tachiyomi.internal.awaitSingle
 import uy.kohesive.injekt.injectLazy
 import java.net.URI
 import java.net.URISyntaxException

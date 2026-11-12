@@ -130,7 +130,8 @@ internal fun SearchSheet(
         if (state.done && state.hits.isEmpty() && state.query.isNotBlank()) {
             EmptyLine(stringResource(R.string.reader_search_none))
         }
-        val highlight = SpanStyle(fontWeight = FontWeight.Bold, background = MaterialTheme.colorScheme.primaryContainer, color = MaterialTheme.colorScheme.onPrimaryContainer)
+        val highlight =
+            SpanStyle(fontWeight = FontWeight.Bold, background = MaterialTheme.colorScheme.primaryContainer, color = MaterialTheme.colorScheme.onPrimaryContainer)
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 520.dp)) {
             items(state.hits, key = { "${it.chapter}:${it.occurrence}:${it.matchStart}" }) { hit ->
                 ListItem(

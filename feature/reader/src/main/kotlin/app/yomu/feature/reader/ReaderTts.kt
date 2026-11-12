@@ -95,7 +95,12 @@ class ReaderTts(context: Context) {
     }
 
     private fun speakFrom(start: Int) {
-        val e = tts ?: return
+        val e = tts ?: run {
+            // No engine (or it failed to start): do not leave the reader in a "playing" state.
+            _playing.value = false
+            onError?.invoke()
+            return
+        }
         e.stop()
         e.setSpeechRate(speed)
         e.setPitch(pitch)

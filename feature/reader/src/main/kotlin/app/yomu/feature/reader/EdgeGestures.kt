@@ -43,6 +43,8 @@ private const val EDGE_FRACTION = 0.12f
  */
 internal fun Modifier.edgeAdjust(
     enabled: Boolean,
+    allowBrightness: Boolean,
+    allowWarm: Boolean,
     startValue: (brightness: Boolean) -> Float,
     onChange: (EdgeAdjust) -> Unit,
     onEnd: (EdgeAdjust) -> Unit,
@@ -54,9 +56,12 @@ internal fun Modifier.edgeAdjust(
     pointerInput(slop) {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            val left = down.position.x < size.width * EDGE_FRACTION
+            val right = down.position.x > size.width * (1f - EDGE_FRACTION)
+            // Every side is switchable on its own: turning off the brightness swipe must keep the warm one.
             val brightness = when {
-                down.position.x < size.width * EDGE_FRACTION -> true
-                down.position.x > size.width * (1f - EDGE_FRACTION) -> false
+                left && allowBrightness -> true
+                right && allowWarm -> false
                 else -> return@awaitEachGesture
             }
             val range = if (brightness) 1f else WARM_MAX

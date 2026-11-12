@@ -47,15 +47,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import coil3.compose.AsyncImage
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -64,6 +63,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
 import java.io.File
 import java.util.Date
@@ -222,8 +222,12 @@ internal fun ReaderFooter(
     showChapter: Boolean,
     horizontalPadding: Int,
     pill: Boolean,
+    minutesLeft: Int? = null,
     modifier: Modifier = Modifier,
 ) {
+    val timeLeft = minutesLeft?.takeIf { it > 0 }?.let { m ->
+        if (m >= 60) stringResource(R.string.reader_time_left_hm, m / 60, m % 60) else stringResource(R.string.reader_time_left_m, m)
+    }
     val pageInfo = buildString {
         if (position.bookPages > 0) {
             append(position.bookPage.coerceAtLeast(1)).append(" / ")
@@ -243,7 +247,7 @@ internal fun ReaderFooter(
             contentColor = Color.White,
             modifier = modifier.navigationBarsPadding().padding(bottom = 8.dp),
         ) {
-            Text(listOfNotNull(clock, pageInfo).joinToString("  ·  "), style = style, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+            Text(listOfNotNull(clock, pageInfo, timeLeft).joinToString("  ·  "), style = style, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
         }
         return
     }
@@ -258,7 +262,7 @@ internal fun ReaderFooter(
         val chapter = position.chapterTitle?.takeIf { showChapter && it.isNotBlank() }
         Text(chapter.orEmpty(), style = style, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         Spacer(Modifier.width(12.dp))
-        Text(pageInfo, style = style, color = color, maxLines = 1)
+        Text(listOfNotNull(pageInfo, timeLeft).joinToString(" · "), style = style, color = color, maxLines = 1)
     }
 }
 

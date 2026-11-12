@@ -3,6 +3,7 @@ package app.yomu.feature.dictionary
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,12 +15,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -27,7 +28,6 @@ import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Spellcheck
 import androidx.compose.material3.AlertDialog
@@ -63,9 +63,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.common.UiState
-import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.ChipItem
 import app.yomu.core.ui.components.EmptyState
+import app.yomu.core.ui.components.ErrorState
 import app.yomu.core.ui.components.FilterChipsRow
 import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.SkeletonList
@@ -73,6 +73,8 @@ import app.yomu.core.ui.components.SwipeAction
 import app.yomu.core.ui.components.SwipeActionsBox
 import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.motionItem
+import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.domain.export.WordFormat
 import app.yomu.domain.model.Locator
@@ -116,7 +118,8 @@ fun WordsContent(viewModel: WordsViewModel, onOpenBook: (Long, Locator?, String)
     val exporters = WordFormat.entries.associateWith { f ->
         rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(f.mime)) { it?.let { u -> viewModel.export(f, u) } }
     }
-    val importCsv = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(viewModel::importCsv) }
+    val importCsv =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(viewModel::importCsv) }
     val deletedMsg = stringResource(R.string.words_deleted)
     val undo = stringResource(UiR.string.undo)
     val exported = stringResource(R.string.words_exported)
@@ -180,12 +183,12 @@ fun WordsContent(viewModel: WordsViewModel, onOpenBook: (Long, Locator?, String)
                     message = if (query.isBlank()) stringResource(R.string.words_empty_text) else null,
                     icon = Icons.Outlined.Spellcheck,
                 )
-                is UiState.Error -> EmptyState(errorMessage(s.error))
+                is UiState.Error -> ErrorState(s.error, onRetry = viewModel::retry)
                 is UiState.Data -> LazyColumn(contentPadding = PaddingValues(bottom = navBarBottomPadding(88.dp))) {
                     items(s.value, key = { it.id }) { w ->
                         val selected = w.id in selection
                         SwipeActionsBox(
-                            modifier = Modifier.animateItem(),
+                            modifier = motionItem(),
                             end = SwipeAction.destructive(stringResource(UiR.string.delete)) { viewModel.delete(setOf(w.id)) },
                             enabled = selection.isEmpty(),
                         ) {
@@ -299,7 +302,8 @@ private fun WordEditDialog(word: Word, onSave: (Word) -> Unit, onReset: () -> Un
 /** Formats of the word export, the Anki deck first. */
 @Composable
 private fun WordExportDialog(onPick: (WordFormat) -> Unit, onDismiss: () -> Unit) {
-    val order = listOf(WordFormat.ANKI_APKG, WordFormat.ANKI_TSV, WordFormat.CSV, WordFormat.QUIZLET, WordFormat.JSON, WordFormat.MARKDOWN)
+    val order =
+        listOf(WordFormat.ANKI_APKG, WordFormat.ANKI_TSV, WordFormat.CSV, WordFormat.QUIZLET, WordFormat.JSON, WordFormat.MARKDOWN)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.words_export_title)) },

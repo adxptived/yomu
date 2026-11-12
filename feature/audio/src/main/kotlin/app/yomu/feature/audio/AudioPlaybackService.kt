@@ -555,17 +555,23 @@ class AudioPlaybackService : MediaSessionService() {
 
     private val callback = object : MediaSession.Callback {
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
-            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
-                .add(SessionCommand(CMD_LOAD, Bundle.EMPTY))
-                .add(SessionCommand(CMD_SLEEP, Bundle.EMPTY))
-                .add(SessionCommand(CMD_SKIP_SILENCE, Bundle.EMPTY))
-                .add(SessionCommand(CMD_SKIP_INTERVALS, Bundle.EMPTY))
-                .add(SessionCommand(CMD_BOOKMARKS, Bundle.EMPTY))
-                .build()
-            return MediaSession.ConnectionResult.AcceptedResultBuilder(session).setAvailableSessionCommands(commands).build()
+            // Play/pause/skip stay available to the system UI, Bluetooth and other controllers; only Yomu's own
+            // screens may load books, read bookmarks or change the player's settings.
+            val own = controller.packageName == packageName
+            val builder = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+            if (own) {
+                builder.add(SessionCommand(CMD_LOAD, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_SLEEP, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_SKIP_SILENCE, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_SKIP_INTERVALS, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_BOOKMARKS, Bundle.EMPTY))
+            }
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session).setAvailableSessionCommands(builder.build()).build()
         }
 
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+            if (controller.packageName != packageName)
+                return Futures.immediateFuture(SessionResult(androidx.media3.session.SessionError.ERROR_NOT_SUPPORTED))
             when (customCommand.customAction) {
                 CMD_LOAD -> load(args.getLong(KEY_BOOK, -1), args.getBoolean(KEY_PLAY, false))
                 CMD_SLEEP -> sleep(args.getInt(KEY_MINUTES, 0))

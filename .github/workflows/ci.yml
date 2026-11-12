@@ -40,14 +40,15 @@ jobs:
         if: matrix.java == 21
         run: ./gradlew lintDebug
 
-      - name: Detekt (informational)
+      - name: Detekt
         if: matrix.java == 21
-        continue-on-error: true
         run: ./gradlew detekt
 
-      - name: Release APK (R8, debug-signed without secrets)
+      # A release without the real keystore is refused by the build now (the debug key is public). The R8 build is
+      # checked through "fast", which is release code under the debug package and debug signer.
+      - name: Release-like APK (R8, debug package)
         if: matrix.java == 21
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleFast
 
       - name: Upload debug APK
         if: matrix.java == 21
@@ -56,14 +57,12 @@ jobs:
           name: yomu-debug-apk
           path: app/build/outputs/apk/debug/*.apk
 
-      - name: Upload release APK
+      - name: Upload release-like APK
         if: matrix.java == 21
         uses: actions/upload-artifact@v4
         with:
-          name: yomu-release-apk
-          path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/mapping/release/mapping.txt
+          name: yomu-fast-apk
+          path: app/build/outputs/apk/fast/*.apk
 
       - name: Upload reports and screenshots
         if: always()
@@ -75,3 +74,4 @@ jobs:
             **/build/test-results/
             app/build/outputs/roborazzi/
           if-no-files-found: ignore
+

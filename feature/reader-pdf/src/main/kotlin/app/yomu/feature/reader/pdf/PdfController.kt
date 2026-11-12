@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.RectF
 import android.util.LruCache
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -31,6 +32,9 @@ class PdfController(val pdf: PdfSource) {
     var hits by mutableStateOf<List<PdfTextHit>>(emptyList())
     var currentHit by mutableStateOf<PdfTextHit?>(null)
     var ttsMark by mutableStateOf<Triple<Int, Int, Int>?>(null)
+
+    /** Zoom kept for the next pages while [PdfSettings.zoomLock] is on. */
+    var lockedZoom by mutableFloatStateOf(1f)
 
     private val requests = Channel<Int>(Channel.CONFLATED)
     val pageRequests: Flow<Int> = requests.receiveAsFlow()
@@ -83,9 +87,15 @@ class PdfController(val pdf: PdfSource) {
 
     suspend fun links(index: Int): List<PdfLink> = linkCache[index] ?: runCatching { pdf.links(index) }.getOrDefault(emptyList()).also { linkCache[index] = it }
 
+    /** Drops rendered pages but keeps detected margins: a settings change must not re-crop every page. */
+    fun invalidateBitmaps() {
+        cache.evictAll()
+    }
+
     fun clearCache() {
         cache.evictAll()
         margins.clear()
+        linkCache.clear()
     }
 
     /** Converts a point inside the rendered (cropped) page of size [w]x[h] px to page points. */

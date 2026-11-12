@@ -25,14 +25,14 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Explore
-import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.Badge
@@ -75,8 +75,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEachIndexed
 import app.yomu.core.ui.R
 import app.yomu.core.ui.theme.Dimens
-import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /** One destination of the navigation bar or rail; [badge] puts a small dot on its icon (an update in Settings). */
 @Immutable
@@ -88,6 +88,7 @@ data class NavItem(val label: String, val icon: ImageVector, val selectedIcon: I
  */
 enum class NavTab(@StringRes val label: Int, val icon: ImageVector, val selectedIcon: ImageVector) {
     LIBRARY(R.string.nav_library, Icons.Outlined.CollectionsBookmark, Icons.Filled.CollectionsBookmark),
+
     /** The profile since 1.8.0 (statistics and history are its tabs); the name stays for stored tab orders. */
     HISTORY(R.string.nav_history, Icons.Outlined.AccountCircle, Icons.Filled.AccountCircle),
     CATALOG(R.string.nav_catalog, Icons.Outlined.Explore, Icons.Filled.Explore),
@@ -170,7 +171,8 @@ private fun NavBarItems(items: List<NavItem>, selected: Int, showLabels: Boolean
     val haptic = rememberHaptic()
     val colors = MaterialTheme.colorScheme
     // How "selected" each item is, from 0 to 1: its width, the indicator, the icon and the name all follow this value.
-    val progress = remember(items.map { it.label }) { List(items.size) { i -> Animatable(if (i == selected) 1f else 0f) } }
+    val progress =
+        remember(items.map { it.label }) { List(items.size) { i -> Animatable(if (i == selected) 1f else 0f) } }
     LaunchedEffect(progress, selected, reduce) {
         progress.fastForEachIndexed { i, a ->
             val target = if (i == selected) 1f else 0f
@@ -193,7 +195,10 @@ private fun NavBarItems(items: List<NavItem>, selected: Int, showLabels: Boolean
                             .clip(CircleShape)
                             .selectable(
                                 selected = isSelected,
-                                onClick = { if (!isSelected) haptic.perform(); onSelect(i) },
+                                onClick = {
+                                    if (!isSelected) haptic.perform()
+                                    onSelect(i)
+                                },
                                 role = Role.Tab,
                                 interactionSource = interactions[i],
                                 indication = ripple(),

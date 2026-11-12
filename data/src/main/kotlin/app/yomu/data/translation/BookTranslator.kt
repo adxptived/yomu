@@ -143,7 +143,8 @@ class BookTranslator(
             return paths.mapIndexed { i, path -> Chapter(i, titles[i] ?: path.substringAfterLast('/').substringBeforeLast('.')) }
         }
 
-        private val BLOCKS = setOf("p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "dd", "dt", "td", "figcaption", "div")
+        private val BLOCKS =
+            setOf("p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "dd", "dt", "td", "figcaption", "div")
         const val BILINGUAL_CSS = ".yomu-tr{opacity:.75;font-style:italic;margin-top:.2em;margin-bottom:.8em}"
     }
 }

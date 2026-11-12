@@ -139,7 +139,12 @@ class AudioController(private val context: Context) {
     fun togglePlay() {
         val p = player() ?: return
         if (p.playbackState == Player.STATE_ENDED) p.seekTo(0, 0)
-        if (p.playWhenReady) p.pause() else { if (p.playbackState == Player.STATE_IDLE) p.prepare(); p.play() }
+        if (p.playWhenReady) {
+            p.pause()
+        } else {
+            if (p.playbackState == Player.STATE_IDLE) p.prepare()
+            p.play()
+        }
     }
 
     /** Position updates are not events: the screen calls this on its own clock. */

@@ -34,8 +34,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import app.yomu.core.ui.R
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -111,6 +115,8 @@ fun FastScroller(
         lastText = text
     }
 
+    val startLabel = stringResource(R.string.fast_scroll_start)
+    val endLabel = stringResource(R.string.fast_scroll_end)
     Box(modifier.fillMaxHeight().onSizeChanged { trackPx = it.height }) {
         AnimatedVisibility(
             visible = long && (shown || dragging),
@@ -135,7 +141,20 @@ fun FastScroller(
                 Box(
                     Modifier
                         .size(ThumbTouchWidth, ThumbTouchHeight)
-                        .semantics { this.contentDescription = contentDescription }
+                        .semantics {
+                            this.contentDescription = contentDescription
+                            // A drag is unavailable to TalkBack: offer the two jumps as accessibility actions.
+                            customActions = listOf(
+                                CustomAccessibilityAction(startLabel) {
+                                    scope.launch { target.scrollToItem(0) }
+                                    true
+                                },
+                                CustomAccessibilityAction(endLabel) {
+                                    scope.launch { target.scrollToItem((count - 1).coerceAtLeast(0)) }
+                                    true
+                                },
+                            )
+                        }
                         .pointerInput(count, range) {
                             detectVerticalDragGestures(
                                 onDragStart = { dragFraction = fraction; dragging = true },
@@ -160,4 +179,3 @@ fun FastScroller(
         }
     }
 }
-

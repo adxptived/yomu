@@ -3,7 +3,6 @@ package app.yomu.feature.catalog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -28,7 +26,6 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -36,7 +33,6 @@ import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Folder
@@ -105,23 +101,23 @@ import app.yomu.core.ui.components.BookGridItem
 import app.yomu.core.ui.components.BookListItem
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.EmptyState
+import app.yomu.core.ui.components.PillTab
+import app.yomu.core.ui.components.PillTabRow
 import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.SheetAction
 import app.yomu.core.ui.components.SheetTitle
 import app.yomu.core.ui.components.SkeletonList
+import app.yomu.core.ui.components.TabActionsSheet
+import app.yomu.core.ui.components.TabOption
+import app.yomu.core.ui.components.TabsPickerSheet
 import app.yomu.core.ui.components.TextInputDialog
+import app.yomu.core.ui.components.ToolbarPill
+import app.yomu.core.ui.components.TopLevelBody
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.core.ui.components.motionItem
-import app.yomu.core.ui.components.PillTab
-import app.yomu.core.ui.components.PillTabRow
-import app.yomu.core.ui.components.TabActionsSheet
-import app.yomu.core.ui.components.TabOption
-import app.yomu.core.ui.components.TopLevelBody
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.topLevelContentInsets
-import app.yomu.core.ui.components.TabsPickerSheet
-import app.yomu.core.ui.components.ToolbarPill
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.catalog.HistoryEntry
 import app.yomu.data.source.SourceHealth
@@ -173,7 +169,8 @@ fun CatalogScreen(
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var showMenu by remember { mutableStateOf(false) }
     var showAddOpds by remember { mutableStateOf(false) }
-    val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(viewModel::configureLocal) }
+    val pickFolder =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(viewModel::configureLocal) }
 
     CatalogEventsEffect(viewModel.events, snackbar, onOpenTitle)
 
@@ -846,7 +843,7 @@ private fun AddOpdsDialog(onDismiss: () -> Unit, onAdd: (String, String, String?
                 OutlinedTextField(
                     url, { url = it },
                     label = { Text(stringResource(R.string.opds_url)) },
-                    placeholder = { Text("example.org/opds") },
+                    placeholder = { Text(stringResource(R.string.opds_url_placeholder)) },
                     supportingText = when {
                         invalid -> { { Text(stringResource(R.string.opds_url_invalid)) } }
                         address != null && address != url.trim() -> { { Text(stringResource(R.string.opds_url_will_use, address)) } }

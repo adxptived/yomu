@@ -39,7 +39,7 @@ class LocalTrackingTest {
         var deleted = false
         val saved = mutableListOf<TrackEntry>()
         override val redirectHost = "local-test"
-        override fun authUrl() = "https://example.invalid"
+        override fun authUrl(state: String) = "https://example.invalid"
         override suspend fun finishLogin(redirect: String) = Unit
         override suspend fun search(query: String) = emptyList<TrackSearchResult>()
         override suspend fun find(remoteId: Long): TrackEntry? {

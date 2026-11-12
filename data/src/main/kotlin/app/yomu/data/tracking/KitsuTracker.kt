@@ -24,7 +24,7 @@ class KitsuTracker(store: TrackerStore, keys: TrackerKeys, client: () -> OkHttpC
     Tracker(TrackService.KITSU, store, keys, client) {
     override val redirectHost = "kitsu-password-only"
     override val passwordLogin = true
-    override fun authUrl(): String = throw TrackerException("Kitsu: password sign-in required")
+    override fun authUrl(state: String): String = throw TrackerException("Kitsu: password sign-in required")
     override suspend fun finishLogin(redirect: String): Unit = throw TrackerException("Kitsu: password sign-in required")
 
     private data class Tokens(val access: String, val refresh: String?, val expires: Long)
@@ -41,8 +41,10 @@ class KitsuTracker(store: TrackerStore, keys: TrackerKeys, client: () -> OkHttpC
     }
     override suspend fun loginWithPassword(username: String, password: String) {
         require(username.isNotBlank() && password.isNotEmpty()) { "Kitsu: email and password are required" }
-        val tokens = tokenRequest(FormBody.Builder().add("grant_type", "password").add("username", username.trim()).add("password", password).build())
-        val users = array(sendRaw(Request.Builder().url("$baseUrl/api/edge/users?filter%5Bself%5D=true").header("Authorization", "Bearer ${tokens.access}").get().build()))
+        val tokens =
+            tokenRequest(FormBody.Builder().add("grant_type", "password").add("username", username.trim()).add("password", password).build())
+        val users =
+            array(sendRaw(Request.Builder().url("$baseUrl/api/edge/users?filter%5Bself%5D=true").header("Authorization", "Bearer ${tokens.access}").get().build()))
         if (users.size != 1) throw TrackerException("Kitsu: could not identify account")
         val user = users.single()
         val id = user["id"].str()?.toLongOrNull()?.takeIf { it > 0 } ?: throw TrackerException("Kitsu: invalid account ID")
@@ -50,8 +52,7 @@ class KitsuTracker(store: TrackerStore, keys: TrackerKeys, client: () -> OkHttpC
     }
     private suspend fun refresh(stale: String?) = refreshOnce(stale) {
         val old = store.refreshToken(service) ?: throw TrackerException("Kitsu: sign in again", unauthorized = true)
-        val fresh = try { tokenRequest(FormBody.Builder().add("grant_type", "refresh_token").add("refresh_token", old).build()) }
-        catch (e: TrackerException) {
+        val fresh = try { tokenRequest(FormBody.Builder().add("grant_type", "refresh_token").add("refresh_token", old).build()) } catch (e: TrackerException) {
             if (e.code == 400 || e.code == 401) throw TrackerException("Kitsu: sign in again", unauthorized = true, cause = e, code = e.code)
             throw e
         }

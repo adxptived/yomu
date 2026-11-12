@@ -43,14 +43,21 @@ object EmbeddedChapters {
         val kids = boxesAt(channel, moov.bodyStart, moov.end)
         class Trak(val box: FileBox, val head: ByteArray, val id: Int?, val refs: Set<Int>)
         val traks = kids.filter { it.type == "trak" }.map { t ->
-            val head = cat(boxesAt(channel, t.bodyStart, t.end).filter { it.type == "tkhd" || it.type == "tref" }.mapNotNull { raw(channel, it) })
+            val head =
+                cat(boxesAt(channel, t.bodyStart, t.end).filter { it.type == "tkhd" || it.type == "tref" }.mapNotNull { raw(channel, it) })
             val b = ByteBuffer.wrap(head)
             var id: Int? = null
             val refs = mutableSetOf<Int>()
             for (box in children(b, 0, b.limit())) {
                 when (box.type) {
                     "tkhd" -> id = runCatching { trackId(b, box) }.getOrNull()
-                    "tref" -> child(b, box, "chap")?.let { c -> (c.start until c.end - 3 step 4).forEach { refs += b.getInt(it) } }
+                    "tref" -> child(b, box, "chap")?.let { c ->
+                        var i = c.start
+                        while (i < c.end - 3) {
+                            refs += b.getInt(i)
+                            i += 4
+                        }
+                    }
                 }
             }
             Trak(t, head, id, refs)
@@ -199,7 +206,8 @@ object EmbeddedChapters {
             if (wide) b.getLong(stco.start + 8 + i * 8) else b.getInt(stco.start + 8 + i * 4).toLong() and 0xFFFFFFFFL
         }
 
-        val runs = List(b.getInt(stsc.start + 4).coerceIn(0, 10_000)) { i -> b.getInt(stsc.start + 8 + i * 12) to b.getInt(stsc.start + 12 + i * 12) }
+        val runs =
+            List(b.getInt(stsc.start + 4).coerceIn(0, 10_000)) { i -> b.getInt(stsc.start + 8 + i * 12) to b.getInt(stsc.start + 12 + i * 12) }
         val offsets = mutableListOf<Long>()
         var sample = 0
         for ((chunkIndex, chunkOffset) in chunks.withIndex()) {

@@ -25,9 +25,13 @@ class AniListTracker(
 ) : Tracker(TrackService.ANILIST, store, keys, client) {
     override val redirectHost = "anilist-auth"
 
-    override fun authUrl() = "https://anilist.co/api/v2/oauth/authorize?client_id=${URLEncoder.encode(clientId(), "UTF-8")}&response_type=token"
+    // AniList has no secret for user-supplied client ids, so the implicit grant is the only usable flow; it does
+    // support state, which is what makes the redirect attributable to a sign-in started here.
+    override fun authUrl(state: String) = "https://anilist.co/api/v2/oauth/authorize?client_id=${URLEncoder.encode(clientId(), "UTF-8")}" +
+        "&response_type=token&state=${URLEncoder.encode(state, "UTF-8")}"
 
     override suspend fun finishLogin(redirect: String) {
+        requireRedirectState(redirect)
         val p = redirectParams(redirect)
         val token = p["access_token"] ?: throw TrackerException("AniList: ${p["error_description"] ?: p["error"] ?: "no token in the answer"}")
         val expires = p["expires_in"]?.toLongOrNull()?.let { System.currentTimeMillis() + it * 1000 } ?: 0

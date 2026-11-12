@@ -6,6 +6,7 @@ import app.yomu.core.database.BookmarkEntity
 import app.yomu.core.database.CatalogCollectionCrossRef
 import app.yomu.core.database.CatalogItemEntity
 import app.yomu.core.database.ChapterEntity
+import app.yomu.core.database.ChapterProgressEntity
 import app.yomu.core.database.CollectionEntity
 import app.yomu.core.database.HighlightEntity
 import app.yomu.core.database.NoteEntity
@@ -190,6 +191,7 @@ internal class SyncMerger(private val db: YomuDatabase) {
         val tabById = tabs.associateBy { it.id }
         val bookTabs = collections.allRefs().groupBy({ it.bookId }, { tabById[it.collectionId]?.name }).mapValues { (_, v) -> v.filterNotNull().toSet() }
         val progress = db.progress().all().associateBy { it.bookId }
+        val chapterProgress = db.chapterProgress().all().groupBy { it.bookId }
         val remoteBooks = r.books.associateBy { it.hash }
         val outBooks = LinkedHashMap<String, SyncBook>()
         val finalBookTabs = HashMap<String, Set<String>>()
@@ -218,9 +220,33 @@ internal class SyncMerger(private val db: YomuDatabase) {
             val merged = merge3(localTabs, rb?.tabs?.toSet(), b?.bookTabs?.get(hash)?.toSet())
             if (merged != localTabs) wantedBookTabs[bk.id] = merged
             finalBookTabs[hash] = merged
-            outBooks[hash] = if (o.progress) SyncBook(hash, bk.title, locator, value, at, status, merged.sorted())
+            // Chapter positions: newest per chapter wins and is copied to this device when the other one is ahead.
+            val localChapters = chapterProgress[bk.id].orEmpty().associateBy { it.chapter }
+            val remoteChapters = rb?.chapterProgress.orEmpty().associateBy { it.chapter }
+            val mergedChapters = sortedMapOf<Int, SyncChapterProgress>()
+            if (o.progress) {
+                for (ch in (localChapters.keys + remoteChapters.keys).sorted()) {
+                    val localRow = localChapters[ch]
+                    val remoteRow = remoteChapters[ch]
+                    if (localRow == null && remoteRow == null) continue
+                    val winner = when {
+                        localRow == null -> SyncChapterProgress(ch, remoteRow!!.locator, remoteRow.updatedAt)
+                        remoteRow == null -> SyncChapterProgress(ch, localRow.locatorJson, localRow.updatedAt)
+                        remoteRow.updatedAt > localRow.updatedAt -> SyncChapterProgress(ch, remoteRow.locator, remoteRow.updatedAt)
+                        else -> SyncChapterProgress(ch, localRow.locatorJson, localRow.updatedAt)
+                    }
+                    if (remoteRow != null && (localRow == null || remoteRow.updatedAt > localRow.updatedAt)) {
+                        db.chapterProgress().save(ChapterProgressEntity(bk.id, ch, remoteRow.locator, remoteRow.updatedAt))
+                        changed++
+                    }
+                    mergedChapters[ch] = winner
+                }
+            } else {
+                rb?.chapterProgress?.forEach { mergedChapters[it.chapter] = it }
+            }
+            outBooks[hash] = if (o.progress) SyncBook(hash, bk.title, locator, value, at, status, merged.sorted(), mergedChapters.values.toList())
             // Position sync off: the shared position stays what the other devices wrote; tabs still merge.
-            else SyncBook(hash, bk.title, rb?.locator, rb?.progress ?: 0f, rb?.updatedAt ?: 0L, rb?.status ?: bk.status, merged.sorted())
+            else SyncBook(hash, bk.title, rb?.locator, rb?.progress ?: 0f, rb?.updatedAt ?: 0L, rb?.status ?: bk.status, merged.sorted(), mergedChapters.values.toList())
         }
         r.books.forEach { rb -> if (rb.hash !in outBooks) outBooks[rb.hash] = rb }
 
@@ -533,7 +559,8 @@ internal class SyncMerger(private val db: YomuDatabase) {
             val rc = remoteChapters[url]
             val h = url.hashCode()
             val read = merge3(c?.read ?: false, if (rt == null) null else rc?.read ?: false, readBase?.let { h in it })
-            val mark = merge3(c?.bookmarked ?: false, if (rt == null) null else rc?.bookmark ?: false, markBase?.let { h in it })
+            val mark =
+                merge3(c?.bookmarked ?: false, if (rt == null) null else rc?.bookmark ?: false, markBase?.let { h in it })
             val newerRemote = rc != null && rc.at > (c?.lastReadAt ?: 0L)
             if (c == null) {
                 if (rc == null || !(read || mark || rc.page > 0 || rc.at > 0)) continue

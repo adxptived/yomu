@@ -258,8 +258,63 @@ class DatabaseMigrationTest {
         } finally { room.close(); file.delete() }
     }
 
+    /** 2.2: books get a favorite flag; existing books must stay unstarred. */
+    @Test
+    fun migrates8To9AddingFavoriteFlag() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val file = context.getDatabasePath("migration-test-8.db").apply { parentFile?.mkdirs(); delete() }
+        createFromSchema(file, 8)
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use { sql ->
+            sql.execSQL(
+                "INSERT INTO books (title, sortTitle, authorsText, format, uri, isLinked, fileSize, status, isManga, addedAt, progress) " +
+                    "VALUES ('Book', 'Book', '', 'EPUB', 'file:///book.epub', 0, 10, 'READING', 0, 1, 0.5)",
+            )
+        }
+        val room = Room.databaseBuilder(context, YomuDatabase::class.java, file.path).addMigrations(*YomuDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val db = room.openHelper.writableDatabase
+            assertEquals(CURRENT_VERSION, db.version)
+            db.query("SELECT title, favorite FROM books").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("Book", c.getString(0))
+                assertEquals(0, c.getInt(1))
+            }
+        } finally {
+            room.close()
+            file.delete()
+        }
+    }
+
+    /** 2.2: a separate position for every chapter of a text book. */
+    @Test
+    fun migrates9To10AddingChapterProgress() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val file = context.getDatabasePath("migration-test-9.db").apply { parentFile?.mkdirs(); delete() }
+        createFromSchema(file, 9)
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use { sql ->
+            sql.execSQL(
+                "INSERT INTO books (title, sortTitle, authorsText, format, uri, isLinked, fileSize, status, isManga, addedAt, progress, favorite) " +
+                    "VALUES ('Book', 'Book', '', 'EPUB', 'file:///book.epub', 0, 10, 'READING', 0, 1, 0.5, 0)",
+            )
+        }
+        val room = Room.databaseBuilder(context, YomuDatabase::class.java, file.path).addMigrations(*YomuDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val db = room.openHelper.writableDatabase
+            assertEquals(CURRENT_VERSION, db.version)
+            db.execSQL("INSERT INTO chapter_progress (bookId, chapter, locatorJson, updatedAt) VALUES (1, 2, '{}', 5)")
+            db.query("SELECT chapter, locatorJson FROM chapter_progress WHERE bookId = 1").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals(2, c.getInt(0))
+                assertEquals("{}", c.getString(1))
+            }
+        } finally {
+            room.close()
+            file.delete()
+        }
+    }
+
     private companion object {
-        const val CURRENT_VERSION = 7
+        const val CURRENT_VERSION = 10
     }
 }
 

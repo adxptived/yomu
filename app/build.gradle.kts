@@ -64,7 +64,9 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName(if (releaseKeystore != null) "release" else "debug")
+            // A release is never signed with the public debug key: without the real keystore the APK stays
+            // unsigned, and the assemble/bundle task below refuses to create it.
+            signingConfig = if (releaseKeystore != null) signingConfigs.getByName("release") else null
         }
         // The debug app built like a release (R8, not debuggable), `./gradlew assembleFast` (1.9.0). A debug build is
         // too slow to judge animations by; this one installs over it (same package and key) and keeps its data.
@@ -91,6 +93,17 @@ androidComponents {
     // Its code is the release code: unit tests of its own would only run the same tests once more.
     beforeVariants(selector().withBuildType("fast")) { variant ->
         variant.hostTests[HostTestBuilder.UNIT_TEST_TYPE]?.enable = false
+    }
+}
+
+// A release without the real key must fail loudly instead of producing a debug-signed APK that anybody can replace.
+tasks.configureEach {
+    if (name == "assembleRelease" || name == "bundleRelease") {
+        doFirst {
+            check(releaseKeystore != null) {
+                "YOMU_KEYSTORE_PATH is not set: refusing to build a release. Use assembleFast for a test build."
+            }
+        }
     }
 }
 

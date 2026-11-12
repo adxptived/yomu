@@ -1,10 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Cleartext is allowed because user-added OPDS servers (Calibre, Kavita, Komga…) often run over plain HTTP in a home network.
-     Built-in sources use HTTPS only. -->
+<!--
+  Cleartext is off by default: tokens, WebDAV passwords and sync contents must not be readable on a hostile network.
+  Only names that cannot leave the local machine/home network are exempt, for user-added OPDS servers (Calibre,
+  Kavita, Komga) that commonly run over plain HTTP there. Built-in sources, WebDAV and extension stores use HTTPS.
+-->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true">
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">local</domain>
+    </domain-config>
 </network-security-config>

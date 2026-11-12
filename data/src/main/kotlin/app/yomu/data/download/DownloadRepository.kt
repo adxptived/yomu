@@ -1,6 +1,7 @@
 package app.yomu.data.download
 
 import android.content.Context
+import androidx.room.withTransaction
 import app.yomu.core.common.AppError
 import app.yomu.core.common.Files
 import app.yomu.core.database.DownloadTaskEntity
@@ -18,7 +19,6 @@ import app.yomu.data.catalog.UpdateCheckResult
 import app.yomu.data.library.ImportOutcome
 import app.yomu.data.library.ImportService
 import app.yomu.data.repository.toDomain
-import app.yomu.data.source.SourceCalls
 import app.yomu.data.work.DownloadWorker
 import app.yomu.domain.catalog.ChapterOrder
 import app.yomu.domain.model.DownloadItem
@@ -30,6 +30,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -38,7 +39,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -50,12 +50,12 @@ import kotlinx.serialization.json.Json
 import okhttp3.Request
 import timber.log.Timber
 import java.io.File
-import kotlin.random.Random
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlin.random.Random
 
 data class StorageUsage(val books: Long, val chapters: Long, val covers: Long, val cache: Long, val converted: Long) {
     val total: Long get() = books + chapters + covers + cache + converted
@@ -82,6 +82,7 @@ class DownloadRepository(
 ) {
     private val dao = db.downloads()
     private val claim = Mutex()
+
     /** Running downloads per source id (guarded by [claim]). */
     private val runningBySource = HashMap<Long, Int>()
     private val headersSerializer = MapSerializer(String.serializer(), String.serializer())
@@ -96,22 +97,24 @@ class DownloadRepository(
         if (ids.isEmpty()) emptyMap() else db.catalog().items(ids).associate { it.id to it.title }
 
     suspend fun enqueueBook(title: String, url: String, mimeType: String?, sourceId: Long? = null, headers: Map<String, String> = emptyMap()): Long {
-        // A second tap must not start a parallel download of the same file; a failed one is simply restarted.
-        dao.activeForUrl(url)?.let { return it.id }
-        dao.failedForUrl(url)?.let { failed ->
-            dao.restart(listOf(failed.id), System.currentTimeMillis())
-            DownloadWorker.start(context, settings.downloadWifiOnly.get())
-            return failed.id
+        // The check and the insert share one transaction: a second tap (or the UI and UpdateWorker at once) must not
+        // pass the check between the two and create a duplicate task that imports the same file twice.
+        val id = db.withTransaction {
+            dao.activeForUrl(url)?.let { return@withTransaction it.id }
+            dao.failedForUrl(url)?.let { failed ->
+                dao.restart(listOf(failed.id), System.currentTimeMillis())
+                return@withTransaction failed.id
+            }
+            val now = System.currentTimeMillis()
+            dao.insert(
+                DownloadTaskEntity(
+                    kind = DownloadKind.BOOK.name, title = title, url = url,
+                    headersJson = if (headers.isEmpty()) null else Json.encodeToString(headersSerializer, headers),
+                    status = DownloadStatus.QUEUED.name, bytesDownloaded = 0, bytesTotal = -1, pagesDone = 0, pagesTotal = 0, error = null,
+                    chapterId = null, itemId = null, sourceId = sourceId, destPath = null, mimeType = mimeType, createdAt = now, updatedAt = now,
+                ),
+            )
         }
-        val now = System.currentTimeMillis()
-        val id = dao.insert(
-            DownloadTaskEntity(
-                kind = DownloadKind.BOOK.name, title = title, url = url,
-                headersJson = if (headers.isEmpty()) null else Json.encodeToString(headersSerializer, headers),
-                status = DownloadStatus.QUEUED.name, bytesDownloaded = 0, bytesTotal = -1, pagesDone = 0, pagesTotal = 0, error = null,
-                chapterId = null, itemId = null, sourceId = sourceId, destPath = null, mimeType = mimeType, createdAt = now, updatedAt = now,
-            ),
-        )
         DownloadWorker.start(context, settings.downloadWifiOnly.get())
         return id
     }
@@ -123,42 +126,45 @@ class DownloadRepository(
      */
     suspend fun enqueueChapters(entryId: Long, chapterIds: List<Long>, top: Boolean = false): Int {
         if (chapterIds.isEmpty()) return 0
-        val entry = catalog.entry(entryId) ?: return 0
-        val chapters = catalog.chapters(entryId).associateBy { it.id }
-        val pending = dao.pendingForChapters(chapterIds).associateBy { it.chapterId }
-        val now = System.currentTimeMillis()
-        val priority = if (top) dao.maxPriority() + 1 else 0
-        val restart = mutableListOf<Long>()
-        var queued = 0
-        chapterIds.distinct().forEach { cid ->
-            val ch = chapters[cid] ?: return@forEach
-            if (ch.downloaded) {
-                if (ch.localPath?.let { File(it).exists() } == true) return@forEach
-                db.catalog().setDownloaded(cid, false, null) // files deleted outside the app
-            }
-            val task = pending[cid]
-            when (task?.status) {
-                DownloadStatus.QUEUED.name, DownloadStatus.RUNNING.name -> Unit
-                DownloadStatus.PAUSED.name, DownloadStatus.FAILED.name -> {
-                    restart += task.id
-                    queued++
+        val queued = db.withTransaction {
+            val entry = catalog.entry(entryId) ?: return@withTransaction 0
+            val chapters = catalog.chapters(entryId).associateBy { it.id }
+            val pending = dao.pendingForChapters(chapterIds).associateBy { it.chapterId }
+            val now = System.currentTimeMillis()
+            val priority = if (top) dao.maxPriority() + 1 else 0
+            val restart = mutableListOf<Long>()
+            var count = 0
+            chapterIds.distinct().forEach { cid ->
+                val ch = chapters[cid] ?: return@forEach
+                if (ch.downloaded) {
+                    if (ch.localPath?.let { File(it).exists() } == true) return@forEach
+                    db.catalog().setDownloaded(cid, false, null) // files deleted outside the app
                 }
-                else -> {
-                    dao.insert(
-                        DownloadTaskEntity(
-                            kind = DownloadKind.CHAPTER.name, title = "${entry.title} — ${ch.name}", url = ch.url, headersJson = null,
-                            status = DownloadStatus.QUEUED.name, bytesDownloaded = 0, bytesTotal = -1, pagesDone = 0, pagesTotal = 0, error = null,
-                            chapterId = cid, itemId = entryId, sourceId = entry.sourceId, destPath = null, mimeType = null,
-                            createdAt = now, updatedAt = now, priority = priority,
-                        ),
-                    )
-                    queued++
+                val task = pending[cid]
+                when (task?.status) {
+                    DownloadStatus.QUEUED.name, DownloadStatus.RUNNING.name -> Unit
+                    DownloadStatus.PAUSED.name, DownloadStatus.FAILED.name -> {
+                        restart += task.id
+                        count++
+                    }
+                    else -> {
+                        dao.insert(
+                            DownloadTaskEntity(
+                                kind = DownloadKind.CHAPTER.name, title = "${entry.title} — ${ch.name}", url = ch.url, headersJson = null,
+                                status = DownloadStatus.QUEUED.name, bytesDownloaded = 0, bytesTotal = -1, pagesDone = 0, pagesTotal = 0, error = null,
+                                chapterId = cid, itemId = entryId, sourceId = entry.sourceId, destPath = null, mimeType = null,
+                                createdAt = now, updatedAt = now, priority = priority,
+                            ),
+                        )
+                        count++
+                    }
                 }
             }
-        }
-        if (restart.isNotEmpty()) {
-            dao.restart(restart, now)
-            if (top) dao.setPriority(restart, priority, now)
+            if (restart.isNotEmpty()) {
+                dao.restart(restart, now)
+                if (top) dao.setPriority(restart, priority, now)
+            }
+            count
         }
         if (queued > 0) DownloadWorker.start(context, settings.downloadWifiOnly.get())
         return queued
@@ -272,6 +278,15 @@ class DownloadRepository(
 
     /** True when something is queued or running — the worker skips its notification otherwise. */
     suspend fun hasWork(): Boolean = dao.activeCount() > 0
+
+    /**
+     * After a restart: a task that was RUNNING has no process behind it any more, so it goes back to the queue and the
+     * worker is started. Without this a killed process left the screen showing "downloading" forever.
+     */
+    suspend fun resumePending() {
+        dao.moveAll(listOf(DownloadStatus.RUNNING.name), DownloadStatus.QUEUED.name, System.currentTimeMillis())
+        if (dao.activeCount() > 0) DownloadWorker.start(context, settings.downloadWifiOnly.get())
+    }
     suspend fun remove(ids: Collection<Long>) = dao.delete(ids)
 
     /**
@@ -280,6 +295,7 @@ class DownloadRepository(
      * storage is full (the queue is paused).
      */
     suspend fun runQueue(onProgress: suspend (QueueProgress) -> Unit): QueueOutcome = coroutineScope {
+        dao.deleteFinishedBefore(System.currentTimeMillis() - FINISHED_KEEP_MS)
         dao.moveAll(listOf(DownloadStatus.RUNNING.name), DownloadStatus.QUEUED.name, System.currentTimeMillis())
         claim.withLock { runningBySource.clear() }
         val done = AtomicInteger()
@@ -323,18 +339,38 @@ class DownloadRepository(
                 delay(SLOT_WAIT_MS)
                 continue
             }
+            if (!hasSpaceFor(task)) {
+                withContext(NonCancellable) { release(task) }
+                onFailure(task, AppError.NoSpace(), failed, offline, noSpace)
+                return
+            }
+            var released = false
             try {
                 process(task) { title, fraction -> onProgress(QueueProgress(title, fraction, dao.activeCount())) }
                 if (dao.get(task.id)?.status == DownloadStatus.DONE.name) done.incrementAndGet()
             } catch (e: CancellationException) {
                 ensureActive() // the worker was stopped; otherwise a source's own timeout/cancellation is a failed attempt
+                withContext(NonCancellable) { release(task) }
+                released = true
                 onFailure(task, e, failed, offline, noSpace)
             } catch (e: Throwable) {
+                withContext(NonCancellable) { release(task) }
+                released = true
                 onFailure(task, e, failed, offline, noSpace)
             } finally {
-                withContext(NonCancellable) { release(task) }
+                // The slot is released before a retry wait, so two failing chapters of one source cannot block it.
+                if (!released) withContext(NonCancellable) { release(task) }
             }
         }
+    }
+
+    /** A download needs its own size plus a reserve; a full disk must be detected before the first byte is written. */
+    private fun hasSpaceFor(task: DownloadTaskEntity): Boolean {
+        val available = runCatching { android.os.StatFs(context.filesDir.path).availableBytes }.getOrDefault(Long.MAX_VALUE)
+        // Some environments (tests, unusual volumes) report 0 or a negative size; only trust a positive number.
+        if (available <= 0) return true
+        val needed = task.bytesTotal.takeIf { it > 0 } ?: 0L
+        return available - needed >= MIN_FREE_BYTES
     }
 
     private suspend fun claimNext(): DownloadTaskEntity? = claim.withLock {
@@ -359,6 +395,7 @@ class DownloadRepository(
         when {
             kind == FailureKind.NO_SPACE -> {
                 // Not the task's fault either: it is paused with the reason, and so is the rest of the queue.
+                cleanUp(task)
                 dao.setStatus(listOf(task.id), DownloadStatus.PAUSED.name, message, now)
                 noSpace.set(true)
             }
@@ -495,7 +532,8 @@ class DownloadRepository(
                 part.copyTo(dest, overwrite = false)
                 part.delete()
             }
-            val finalPath = when (val outcome = importer.importLocalFile(dest, dest.name)) {
+            val outcome = importer.importLocalFile(dest, dest.name)
+            val finalPath = when (outcome) {
                 is ImportOutcome.Failed -> {
                     dest.delete()
                     throw outcome.error
@@ -504,7 +542,13 @@ class DownloadRepository(
                 is ImportOutcome.Duplicate -> importer.adoptFileForDuplicate(outcome.bookId, dest) ?: dest.path
                 is ImportOutcome.Added -> dest.path
             }
-            dao.get(t.id)?.let { dao.update(it.copy(status = DownloadStatus.DONE.name, destPath = finalPath, error = null, updatedAt = System.currentTimeMillis())) }
+            // The task may have been cancelled after the last stillRunning check: only a task that is still RUNNING
+            // becomes DONE, otherwise the book added by this cancelled download is removed again.
+            val done = dao.complete(t.id, finalPath, 0, 0, System.currentTimeMillis())
+            if (done == 0 && finalPath == dest.path) {
+                dest.delete()
+                if (outcome is ImportOutcome.Added) db.books().delete(listOf(outcome.bookId))
+            }
         }
     }
 
@@ -518,8 +562,11 @@ class DownloadRepository(
             val html = catalog.novelContent(chapterId)
             val file = File(folder, "$baseName.html")
             file.writeText(Xhtml.page(chapter.name, Xhtml.fromFragment(html), null, css = ""))
+            if (dao.complete(t.id, file.path, 1, 1, System.currentTimeMillis()) == 0) {
+                file.delete()
+                return@withContext
+            }
             db.catalog().setDownloaded(chapterId, true, file.path)
-            dao.get(t.id)?.let { dao.update(it.copy(status = DownloadStatus.DONE.name, destPath = file.path, pagesDone = 1, pagesTotal = 1, error = null, updatedAt = System.currentTimeMillis())) }
             return@withContext
         }
         val (source, pages) = try {
@@ -597,8 +644,12 @@ class DownloadRepository(
             if (!tmp.renameTo(dir)) { tmp.copyRecursively(dir, overwrite = true); tmp.deleteRecursively() }
             dir.path
         }
+        if (dao.complete(t.id, path, pages.size, pages.size, System.currentTimeMillis()) == 0) {
+            // Cancelled between the last check and the final write: do not keep the files of a cancelled chapter.
+            File(path).let { if (it.isDirectory) it.deleteRecursively() else it.delete() }
+            return@withContext
+        }
         db.catalog().setDownloaded(chapterId, true, path)
-        dao.get(t.id)?.let { dao.update(it.copy(status = DownloadStatus.DONE.name, destPath = path, error = null, updatedAt = System.currentTimeMillis())) }
     }
 
     private fun comicInfo(series: String, title: String, number: Float, writer: String?, summary: String?, pages: Int): String = buildString {
@@ -648,12 +699,27 @@ class DownloadRepository(
         converted = Files.dirSize(File(context.filesDir, "converted")),
     )
 
+    /**
+     * Frees derived data only. Deleting the whole cache directory used to pull the floor from under owners that are
+     * still working: OkHttp's DiskLruCache, Coil's image cache, a sync `.part` and an editor output being written.
+     */
     fun clearCache() {
-        context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
+        val own =
+            listOf("pages", "http", "ext_network_cache", "rar", "docx-layout", "share", "anki", "audiozip", "image_cache")
+        own.forEach { File(context.cacheDir, it).deleteRecursively() }
+        context.cacheDir.listFiles()?.forEach { f ->
+            if (f.isFile && (f.name.startsWith("dict_import_") || (f.name.startsWith("ext-") && f.name.endsWith(".tmp")))) f.delete()
+        }
     }
 
     companion object {
         const val REPORT_MS = 400L
+
+        /** Finished tasks are history; a month is enough to retry or look one up. */
+        private const val FINISHED_KEEP_MS = 30L * 24 * 60 * 60 * 1000
+
+        /** Free space always kept for the app itself (database, covers, a reading session's temporary files). */
+        private const val MIN_FREE_BYTES = 64L * 1024 * 1024
 
         /** Parallel downloads from one source: more would mostly trigger rate limits and bans. */
         const val PER_SOURCE_LIMIT = 2

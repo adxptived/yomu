@@ -47,6 +47,7 @@ class TrackerException(message: String, val unauthorized: Boolean = false, cause
  */
 class TrackerStore(context: Context) {
     private val prefs = context.getSharedPreferences("trackers", Context.MODE_PRIVATE)
+    private val secrets = TrackerSecrets()
     private val _version = MutableStateFlow(0)
 
     /** Changes on every sign-in, sign-out and client id edit. */
@@ -54,32 +55,44 @@ class TrackerStore(context: Context) {
 
     private fun key(s: TrackService, name: String) = "${s.id}.$name"
 
-    fun token(s: TrackService): String? = prefs.getString(key(s, "token"), null)?.takeIf { it.isNotBlank() }
-    fun refreshToken(s: TrackService): String? = prefs.getString(key(s, "refresh"), null)?.takeIf { it.isNotBlank() }
+    private fun readString(name: String): String? = prefs.getString(name, null)?.let { secrets.decode(it) }
+
+    private fun writeString(editor: android.content.SharedPreferences.Editor, name: String, value: String?) {
+        if (value == null) editor.remove(name) else editor.putString(name, secrets.encode(value) ?: value)
+    }
+
+    fun token(s: TrackService): String? = readString(key(s, "token"))?.takeIf { it.isNotBlank() }
+    fun refreshToken(s: TrackService): String? = readString(key(s, "refresh"))?.takeIf { it.isNotBlank() }
     fun expiresAt(s: TrackService): Long = prefs.getLong(key(s, "expires"), 0)
     fun userId(s: TrackService): Long = prefs.getLong(key(s, "user_id"), 0)
-    fun userName(s: TrackService): String? = prefs.getString(key(s, "user_name"), null)
-    fun extra(s: TrackService, name: String): String? = prefs.getString(key(s, "x.$name"), null)
+    fun userName(s: TrackService): String? = readString(key(s, "user_name"))
+    fun extra(s: TrackService, name: String): String? = readString(key(s, "x.$name"))
 
     fun saveTokens(s: TrackService, token: String, refresh: String?, expiresAt: Long) {
-        prefs.edit().putString(key(s, "token"), token).putString(key(s, "refresh"), refresh).putLong(key(s, "expires"), expiresAt).apply()
+        prefs.edit().also {
+            writeString(it, key(s, "token"), token)
+            writeString(it, key(s, "refresh"), refresh)
+        }.putLong(key(s, "expires"), expiresAt).apply()
         _version.value++
     }
 
     /** Persist a new account and its tokens together; observers never see a mixed account. */
     fun saveAccount(s: TrackService, token: String, refresh: String?, expiresAt: Long, id: Long, name: String?) {
-        prefs.edit().putString(key(s, "token"), token).putString(key(s, "refresh"), refresh)
-            .putLong(key(s, "expires"), expiresAt).putLong(key(s, "user_id"), id).putString(key(s, "user_name"), name).apply()
+        prefs.edit().also {
+            writeString(it, key(s, "token"), token)
+            writeString(it, key(s, "refresh"), refresh)
+            writeString(it, key(s, "user_name"), name)
+        }.putLong(key(s, "expires"), expiresAt).putLong(key(s, "user_id"), id).apply()
         _version.value++
     }
 
     fun saveUser(s: TrackService, id: Long, name: String?) {
-        prefs.edit().putLong(key(s, "user_id"), id).putString(key(s, "user_name"), name).apply()
+        prefs.edit().also { writeString(it, key(s, "user_name"), name) }.putLong(key(s, "user_id"), id).apply()
         _version.value++
     }
 
     fun setExtra(s: TrackService, name: String, value: String?) {
-        prefs.edit().putString(key(s, "x.$name"), value).apply()
+        prefs.edit().also { writeString(it, key(s, "x.$name"), value) }.apply()
     }
 
     fun logout(s: TrackService) {
@@ -87,11 +100,14 @@ class TrackerStore(context: Context) {
         _version.value++
     }
 
-    fun clientIdOverride(s: TrackService): String = prefs.getString(key(s, "client_id"), null).orEmpty()
-    fun clientSecretOverride(s: TrackService): String = prefs.getString(key(s, "client_secret"), null).orEmpty()
+    fun clientIdOverride(s: TrackService): String = readString(key(s, "client_id")).orEmpty()
+    fun clientSecretOverride(s: TrackService): String = readString(key(s, "client_secret")).orEmpty()
 
     fun setClient(s: TrackService, id: String, secret: String?) {
-        prefs.edit().putString(key(s, "client_id"), id.trim()).apply { if (secret != null) putString(key(s, "client_secret"), secret.trim()) }.apply()
+        prefs.edit().also {
+            writeString(it, key(s, "client_id"), id.trim())
+            if (secret != null) writeString(it, key(s, "client_secret"), secret.trim())
+        }.apply()
         _version.value++
     }
 }
@@ -133,8 +149,40 @@ abstract class Tracker(
 
     fun userName(): String? = store.userName(service)
 
-    /** Page to open in the browser; it comes back to [redirectUri]. */
-    abstract fun authUrl(): String
+    /** Page to open in the browser; it comes back to [redirectUri]. [state] must be echoed by the service. */
+    abstract fun authUrl(state: String): String
+
+    /**
+     * Starts a sign-in: generates a single-use [state] (and, for services that support it, a PKCE verifier) and
+     * returns the consent page. A redirect is accepted only if it carries the state of a sign-in this app started.
+     */
+    fun startAuth(): String {
+        val state = newToken()
+        store.setExtra(service, "state", state)
+        return authUrl(state)
+    }
+
+    /** Rejects a redirect that does not belong to a sign-in started from this app (custom-scheme URLs are public). */
+    protected fun requireRedirectState(uri: String) {
+        val expected = store.extra(service, "state")
+        // Single use: a replayed redirect must not sign the user in again.
+        store.setExtra(service, "state", null)
+        val got = redirectParams(uri)["state"]
+        if (expected == null || got == null ||
+            !java.security.MessageDigest.isEqual(expected.toByteArray(), got.toByteArray())
+        ) {
+            throw TrackerException("${service.displayName}: sign-in was not started from Yomu or has expired")
+        }
+    }
+
+    /** Stores and returns a fresh PKCE verifier for the next authorization request. */
+    protected fun newPkceVerifier(): String = newToken().also { store.setExtra(service, "verifier", it) }
+
+    /** PKCE S256 challenge of [verifier]. */
+    protected fun codeChallenge(verifier: String): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII))
+        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
+    }
 
     /** Finishes signing in with the redirect the browser opened. */
     abstract suspend fun finishLogin(redirect: String)
@@ -179,9 +227,17 @@ abstract class Tracker(
     }
 
     companion object {
+        /** 32 random bytes as URL-safe base64: enough for OAuth state and PKCE verifiers. */
+        internal fun newToken(): String {
+            val bytes = ByteArray(32)
+            java.security.SecureRandom().nextBytes(bytes)
+            return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+        }
+
         /** Query and fragment parameters of a redirect URI. */
         fun redirectParams(uri: String): Map<String, String> {
-            val parts = listOfNotNull(uri.substringAfter('?', "").substringBefore('#').ifEmpty { null }, uri.substringAfter('#', "").ifEmpty { null })
+            val parts =
+                listOfNotNull(uri.substringAfter('?', "").substringBefore('#').ifEmpty { null }, uri.substringAfter('#', "").ifEmpty { null })
             return parts.flatMap { it.split('&') }.filter { '=' in it }.associate {
                 URLDecoder.decode(it.substringBefore('='), "UTF-8") to URLDecoder.decode(it.substringAfter('='), "UTF-8")
             }

@@ -14,25 +14,25 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ManageSearch
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.ShortText
+import androidx.compose.material.icons.automirrored.filled.Subject
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BorderColor
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.automirrored.filled.ManageSearch
-import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.automirrored.filled.ShortText
 import androidx.compose.material.icons.filled.StarOutline
-import androidx.compose.material.icons.automirrored.filled.Subject
 import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material.icons.filled.BorderColor
-import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -81,6 +81,7 @@ fun SelectionAction.icon(): ImageVector = when (this) {
     SelectionAction.SELECT_SENTENCE -> Icons.AutoMirrored.Filled.ShortText
     SelectionAction.SELECT_PARAGRAPH -> Icons.AutoMirrored.Filled.Subject
     SelectionAction.BOOKMARK -> Icons.Default.Bookmark
+    SelectionAction.DICTIONARY -> Icons.AutoMirrored.Filled.MenuBook
     SelectionAction.CUSTOM -> Icons.AutoMirrored.Filled.OpenInNew
 }
 
@@ -102,6 +103,7 @@ fun SelectionAction.label(): Int = when (this) {
     SelectionAction.SELECT_SENTENCE -> R.string.action_sentence
     SelectionAction.SELECT_PARAGRAPH -> R.string.action_paragraph
     SelectionAction.BOOKMARK -> R.string.action_bookmark
+    SelectionAction.DICTIONARY -> R.string.action_dictionary
     SelectionAction.CUSTOM -> R.string.action_custom
 }
 
@@ -139,11 +141,15 @@ fun SelectionToolbar(
                     HighlightColor.entries.forEach { c ->
                         val name = stringResource(c.label())
                         Box(
-                            Modifier.size(32.dp).padding(2.dp).background(Color(c.argb), CircleShape)
-                                .then(if (c == currentColor) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier)
-                                .clickable { onHighlight(c, HighlightStyle.HIGHLIGHT) }
+                            Modifier.size(48.dp).clickable { onHighlight(c, HighlightStyle.HIGHLIGHT) }
                                 .semantics { contentDescription = name },
-                        )
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box(
+                                Modifier.size(30.dp).background(Color(c.argb), CircleShape)
+                                    .then(if (c == currentColor) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier),
+                            )
+                        }
                     }
                     if (onDelete != null) {
                         IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, stringResource(R.string.action_delete_highlight)) }
@@ -184,4 +190,3 @@ fun HighlightColor.label(): Int = when (this) {
     HighlightColor.PINK -> R.string.color_pink
     HighlightColor.PURPLE -> R.string.color_purple
 }
-

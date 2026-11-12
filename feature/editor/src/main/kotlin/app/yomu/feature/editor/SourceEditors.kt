@@ -1,37 +1,17 @@
 package app.yomu.feature.editor
 
-import android.annotation.SuppressLint
-import android.net.Uri
-import android.webkit.JavascriptInterface
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
-import androidx.compose.material.icons.automirrored.filled.Redo
-import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.FormatBold
-import androidx.compose.material.icons.filled.FormatClear
-import androidx.compose.material.icons.filled.FormatItalic
-import androidx.compose.material.icons.filled.FormatListNumbered
-import androidx.compose.material.icons.filled.FormatQuote
-import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -40,7 +20,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -49,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -68,16 +48,9 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import app.yomu.core.common.ScreenErrors
 import app.yomu.core.ui.components.ConfirmDialog
-import app.yomu.core.ui.components.RequireWebView
-import app.yomu.core.ui.components.TextInputDialog
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonPrimitive
-import java.io.File
 import app.yomu.core.ui.R as CoreR
 
 enum class CodeLang { MARKUP, CSS }
@@ -164,7 +137,7 @@ internal fun SourceEditorScreen(
     onSave: (String) -> Unit,
     onClose: () -> Unit,
 ) {
-    var value by remember { mutableStateOf(TextFieldValue(initialText)) }
+    var value by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(initialText)) }
     var findOpen by remember { mutableStateOf(!initialFind.isNullOrEmpty()) }
     var query by remember { mutableStateOf(initialFind.orEmpty()) }
     var xmlError by remember { mutableStateOf<String?>(null) }
@@ -250,4 +223,3 @@ internal fun SourceEditorScreen(
         )
     }
 }
-

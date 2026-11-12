@@ -82,25 +82,18 @@ internal class FolderAdoption(
         }
         val uri = Uri.parse(book.uri)
         writeJournal(Journal(old, new, System.currentTimeMillis()))
-        try {
-            // The snapshot pins the exact pages the stable identity will stand for.
-            val entry = FolderSnapshot.snapshot(context, uri, new, book.title)
-            rewriteRemote(old, new, entry, book.title)
-            db.withTransaction {
-                val current = db.books().get(bookId) ?: throw IOException("The folder is no longer in the library")
-                if (current.fileHash != old) throw IOException("The folder identity changed during migration: ${current.title}")
-                db.books().update(current.copy(fileHash = new))
-                rewriteBaseRows(old, new, entry)
-                val localRow = db.folderSyncBases().forFolder(new).firstOrNull { it.targetId == FolderRevisionCommit.LOCAL }
-                if (localRow == null) FolderRevisionCommit.initializeLocal(db, bookId, entry)
-            }
-            clearJournal()
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // The journal stays; the next attempt resumes the same migration.
-            throw e
+        // The snapshot pins the exact pages the stable identity will stand for.
+        val entry = FolderSnapshot.snapshot(context, uri, new, book.title)
+        rewriteRemote(old, new, entry, book.title)
+        db.withTransaction {
+            val current = db.books().get(bookId) ?: throw IOException("The folder is no longer in the library")
+            if (current.fileHash != old) throw IOException("The folder identity changed during migration: ${current.title}")
+            db.books().update(current.copy(fileHash = new))
+            rewriteBaseRows(old, new, entry)
+            val localRow = db.folderSyncBases().forFolder(new).firstOrNull { it.targetId == FolderRevisionCommit.LOCAL }
+            if (localRow == null) FolderRevisionCommit.initializeLocal(db, bookId, entry)
         }
+        clearJournal()
     }
 
     /**
@@ -126,22 +119,16 @@ internal class FolderAdoption(
         val pending = loadJournal()
         if (pending != null && pending.old != old) throw IOException("Another folder migration is in progress; finish it first")
         writeJournal(Journal(old, new, System.currentTimeMillis()))
-        try {
-            rewriteRemote(old, new, entry, book.title)
-            db.withTransaction {
-                val current = db.books().get(bookId) ?: return@withTransaction
-                if (current.fileHash != old) return@withTransaction
-                db.books().update(current.copy(fileHash = new))
-                rewriteBaseRows(old, new, entry)
-                val localRow = db.folderSyncBases().forFolder(new).firstOrNull { it.targetId == FolderRevisionCommit.LOCAL }
-                if (localRow == null) FolderRevisionCommit.initializeLocal(db, bookId, entry)
-            }
-            clearJournal()
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            throw e
+        rewriteRemote(old, new, entry, book.title)
+        db.withTransaction {
+            val current = db.books().get(bookId) ?: return@withTransaction
+            if (current.fileHash != old) return@withTransaction
+            db.books().update(current.copy(fileHash = new))
+            rewriteBaseRows(old, new, entry)
+            val localRow = db.folderSyncBases().forFolder(new).firstOrNull { it.targetId == FolderRevisionCommit.LOCAL }
+            if (localRow == null) FolderRevisionCommit.initializeLocal(db, bookId, entry)
         }
+        clearJournal()
     }
 
     /** Rewrites the shared documents: metadata v3 (+base), the folder index with the marker. */

@@ -1,9 +1,9 @@
 package app.yomu.data.audio
 
 import app.yomu.domain.model.AudioChapter
+import app.yomu.domain.model.AudioOrigin
 import app.yomu.domain.model.AudioTrack
 import app.yomu.domain.model.AudiobookManifest
-import app.yomu.domain.model.AudioOrigin
 import app.yomu.domain.model.ChapterMarks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,11 +11,11 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -295,6 +295,7 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
         private val JSON = "application/json".toMediaType()
         private val json = Json { ignoreUnknownKeys = true; isLenient = true }
         private const val MAX_PLAYLIST = 500
+
         // Playlists come 20 videos per page.
         private const val MAX_PAGES = 30
         private const val CACHE_MARGIN_MS = 30 * 60_000L
@@ -389,7 +390,8 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
                 .map { YouTubeStream(it.str("url")!!, it.str("mimeType")?.substringBefore(';'), false, headers, it.str("contentLength")?.toLongOrNull()) }
             val muxed = formats("formats").filter { it["itag"]?.jsonPrimitive?.intOrNull == 18 }
                 .map { YouTubeStream(it.str("url")!!, "video/mp4", false, headers) }
-            val hls = listOfNotNull(streaming.str("hlsManifestUrl")?.let { YouTubeStream(it, "application/x-mpegURL", true, headers) })
+            val hls =
+                listOfNotNull(streaming.str("hlsManifestUrl")?.let { YouTubeStream(it, "application/x-mpegURL", true, headers) })
             return audio + muxed + hls
         }
 
@@ -536,9 +538,12 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
             val out = mutableListOf<JsonObject>()
             fun walk(e: JsonElement) {
                 when (e) {
-                    is JsonObject -> e.forEach { (k, v) -> if (k == key && v is JsonObject) out += v; walk(v) }
+                    is JsonObject -> e.forEach { (k, v) ->
+                        if (k == key && v is JsonObject) out += v
+                        walk(v)
+                    }
                     is JsonArray -> e.forEach(::walk)
-                    else -> Unit
+                    is JsonPrimitive -> Unit
                 }
             }
             walk(root)

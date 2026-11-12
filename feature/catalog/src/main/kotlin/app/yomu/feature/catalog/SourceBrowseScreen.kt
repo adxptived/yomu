@@ -34,10 +34,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.Tune
@@ -45,12 +47,13 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconToggleButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import app.yomu.core.ui.components.rememberHaptic
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
@@ -61,16 +64,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -86,6 +83,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -108,6 +107,7 @@ import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.motionItem
+import app.yomu.core.ui.components.rememberHaptic
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.source.FilterList
 import app.yomu.source.SItem
@@ -336,7 +336,7 @@ private fun BrowseList(
             if (listMode) {
                 LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = Dimens.xl)) {
                     items(count = items.itemCount, key = items.itemKey { it.url }) { i ->
-                        val item = items[i] ?: return@items
+                        val item = items.peek(i) ?: return@items
                         if (item.isNavigation) {
                             ListItem(
                                 headlineContent = { Text(item.title) },
@@ -372,7 +372,7 @@ private fun BrowseList(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     items(count = items.itemCount, key = items.itemKey { it.url }) { i ->
-                        val item = items[i] ?: return@items
+                        val item = items.peek(i) ?: return@items
                         BookGridItem(
                             title = item.title,
                             subtitle = item.author,

@@ -45,7 +45,8 @@ class SyncWriteTest {
         val edited = initial.state.copy(notes = initial.state.notes.map { it.copy(text = "remote edit", updatedAt = 1) })
         val backend = Backend(loseResponse = true)
         assertTrue(runCatching { mergeAndWrite(db, backend, null, edited, initial.base, 2000, SyncMerger.Options()) }.exceptionOrNull() is IOException)
-        assertEquals("original", db.annotations().allNotes().single().text)
+        // The merge is committed locally before the write: the base stays at the old value, so the retry publishes it.
+        assertEquals("remote edit", db.annotations().allNotes().single().text)
         val accepted = SyncManager.decodeRemote(backend.written!!)
         val retry = mergeAndWrite(db, backend, null, accepted, initial.base, 3000, SyncMerger.Options())
         assertEquals("remote edit", db.annotations().allNotes().single().text)
@@ -66,17 +67,18 @@ class SyncWriteTest {
         assertEquals(accepted.annotationDeletionProofs, retry.state.annotationDeletionProofs)
     }
 
-    @Test fun failedConditionalWriteRollsBackLocalMerge() = runBlocking {
+    @Test fun aRefusedConditionalWriteKeepsTheMergedLocalStateForTheNextCycle() = runBlocking {
         val backend = Backend(SyncConflictException())
         val e = runCatching { mergeAndWrite(db, backend, null, remote, null, 100, SyncMerger.Options()) }.exceptionOrNull()
         assertTrue(e is SyncConflictException)
-        assertTrue(db.words().all().isEmpty())
         assertNull(backend.written)
+        // The write runs outside the merge transaction: a refused write must not hold or lose the local merge.
+        assertEquals("word", db.words().all().single().term)
     }
-    @Test fun failedNetworkWriteAlsoRollsBackLocalMerge() = runBlocking {
+    @Test fun aFailedNetworkWriteKeepsTheMergedLocalStateForTheNextCycle() = runBlocking {
         val backend = Backend(IOException("offline"))
         assertTrue(runCatching { mergeAndWrite(db, backend, null, remote, null, 100, SyncMerger.Options()) }.exceptionOrNull() is IOException)
-        assertTrue(db.words().all().isEmpty())
+        assertEquals("word", db.words().all().single().term)
     }
     @Test fun acceptedWriteCommitsLocalMerge() = runBlocking {
         val backend = Backend()

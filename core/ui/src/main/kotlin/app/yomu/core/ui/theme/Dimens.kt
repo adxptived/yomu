@@ -16,8 +16,10 @@ object Dimens {
     val touch = 48.dp
     val coverWidth = 110.dp
     val gridMin = 112.dp
+
     /** Corner radius of cards and grouped panels. */
     val card = 22.dp
+
     /** Height of the floating navigation bar (without the system navigation inset). */
     val navBar = 64.dp
 }

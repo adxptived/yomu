@@ -139,7 +139,9 @@ class LocalBookBackupTest {
             val stored = FolderManifestCodec.encode(FolderManifest(folders = listOf(changed))).decodeToString()
             second.folderSyncBases().upsert(FolderSyncBaseEntity(FolderRevisionCommit.LOCAL, id, stored))
             val error = runCatching { BackupManager(context, second, AppSettings(context)).restore(out.toByteArray().inputStream()) }.exceptionOrNull()
-            assertTrue(error is java.io.IOException && error.message!!.contains("revision conflicts"))
+            // The device already read further in this folder: its revision wins and the incoming one is skipped,
+            // instead of aborting the whole restore.
+            assertNull(error)
             assertEquals(changed, FolderRevisionCommit.localRevision(second, id))
             assertEquals(bookId, second.books().all().single().id)
         } finally { first.close(); second.close(); root.deleteRecursively() }

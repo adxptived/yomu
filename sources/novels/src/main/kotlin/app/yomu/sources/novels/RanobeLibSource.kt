@@ -175,6 +175,7 @@ class RanobeLibSource(
     companion object {
         const val SITE_ID = "3"
         private const val SEPARATOR = "|"
-        private val DETAIL_FIELDS = listOf("summary", "genres", "tags", "authors", "artists", "status_id", "chap_count", "eng_name")
+        private val DETAIL_FIELDS =
+            listOf("summary", "genres", "tags", "authors", "artists", "status_id", "chap_count", "eng_name")
     }
 }

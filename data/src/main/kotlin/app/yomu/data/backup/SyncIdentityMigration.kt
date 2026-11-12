@@ -107,8 +107,7 @@ internal object SyncIdentityMigration {
             if (recomputeRevisions) recomputeRevisions(migrated, next, mapping) else migrated
         }
         Metadata(next, nextBase)
-    } catch (e: IOException) { throw e }
-      catch (e: Exception) { throw IOException("Cannot migrate the identity; no data was changed", e) }
+    } catch (e: IOException) { throw e } catch (e: Exception) { throw IOException("Cannot migrate the identity; no data was changed", e) }
 
     /** Shared revisions embed the identity; private fingerprints do not (values survive, keys follow). */
     private fun recomputeRevisions(base: SyncBase, state: SyncState, mapping: Map<String, String>): SyncBase {
@@ -147,6 +146,5 @@ internal object SyncIdentityMigration {
         if (byKey.any { (_, group) -> group.size > 1 && group.any { it != group.first() } })
             throw IOException("Conflicting tracker bindings")
         byKey.map { it.value.first() }
-    } catch (e: IOException) { throw e }
-      catch (e: Exception) { throw IOException("Cannot migrate tracker bindings; no data was changed", e) }
+    } catch (e: IOException) { throw e } catch (e: Exception) { throw IOException("Cannot migrate tracker bindings; no data was changed", e) }
 }

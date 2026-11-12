@@ -2,9 +2,9 @@ package app.yomu.data.backup
 
 import app.yomu.core.database.HighlightEntity
 import app.yomu.core.database.NoteEntity
-import java.security.MessageDigest
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.security.MessageDigest
 
 /** Content-based deletion preconditions. Private fingerprints remain local, never in the shared file. */
 internal object AnnotationRevisions {
@@ -15,6 +15,7 @@ internal object AnnotationRevisions {
     fun bookmark(value: SyncBookmark) = hash(json.encodeToString(SyncBookmark.serializer(), value))
 
     @Serializable private data class PrivateNote(val id: Long, val locator: String?, val text: String, val tags: String, val created: Long, val updated: Long)
+
     @Serializable private data class HighlightPrivate(val favorite: Boolean, val notes: List<PrivateNote>)
     fun privateHighlight(highlight: HighlightEntity, notes: List<NoteEntity>): String = hash(json.encodeToString(
         HighlightPrivate.serializer(), HighlightPrivate(highlight.isFavorite, notes.filter { it.highlightId == highlight.id }.sortedBy { it.id }

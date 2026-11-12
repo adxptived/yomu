@@ -53,6 +53,7 @@ import kotlinx.coroutines.launch
 import app.yomu.core.ui.R as CoreR
 
 /** Entry point of the editor (route argument: book id). */
+@Suppress("SpreadOperator") // getString takes a vararg; the event stores its arguments as a list.
 @Composable
 fun EditorScreen(viewModel: EditorViewModel, onBack: () -> Unit) {
     val phase by viewModel.phase.collectAsStateWithLifecycle()

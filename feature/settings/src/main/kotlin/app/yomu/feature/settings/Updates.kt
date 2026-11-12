@@ -2,8 +2,8 @@ package app.yomu.feature.settings
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -24,12 +24,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
 import timber.log.Timber
 import java.io.File
 import java.io.IOException
@@ -58,12 +58,16 @@ sealed interface UpdateState {
     data object Checking : UpdateState
     data class UpToDate(val version: String) : UpdateState
     data class Available(val release: ReleaseInfo) : UpdateState
+
     /** The APK is being downloaded; [progress] from 0 to 1, null while the size is unknown. */
     data class Downloading(val release: ReleaseInfo, val progress: Float?) : UpdateState
+
     /** Downloaded and verified: the system installer takes it from here. */
     data class ReadyToInstall(val release: ReleaseInfo, val file: File) : UpdateState
+
     /** The repository has no published release yet. */
     data object NoReleases : UpdateState
+
     /** The check or the download of [release] failed. */
     data class Failed(val error: Throwable, val release: ReleaseInfo? = null) : UpdateState
 }
@@ -372,7 +376,11 @@ object UpdateDownloader {
     ): File = withContext(Dispatchers.IO) {
         val url = release.apkUrl?.takeIf { it.startsWith("https://") } ?: throw IOException("The release has no APK for this device")
         val name = release.apkName ?: "yomu-${release.version}.apk"
-        val expected = release.checksumsUrl?.let { sums -> UpdateChecker.parseChecksums(readText(sums, connect))[name] ?: throw UpdateChecksumException(name) }
+        // Never install an APK whose bytes were not verified: without a published checksum an intercepted download
+        // could be any package signed with the same key (including a debug-signed build).
+        val sums = release.checksumsUrl ?: throw UpdateChecksumException("$name (the release publishes no ${UpdateChecker.CHECKSUMS})")
+        val expected = UpdateChecker.parseChecksums(readText(sums, connect))[name]
+            ?: throw UpdateChecksumException("$name (not listed in ${UpdateChecker.CHECKSUMS})")
         dir.mkdirs()
         val target = File(dir, name)
         val part = File(dir, "$name.part")
@@ -606,7 +614,8 @@ object ReleaseNotes {
         .replace(SPACES, " ")
         .trim()
 
-    private val STOP = listOf("### Установка / Install", "## What's Changed", "**Full Changelog**", "## New Contributors")
+    private val STOP =
+        listOf("### Установка / Install", "## What's Changed", "**Full Changelog**", "## New Contributors")
     private val BULLET = Regex("""^([-*+]|\d+[.)])\s+""")
     private val RULE = Regex("""^([-*_]\s*){3,}$""")
     private val IMAGE = Regex("""!\[[^\]]*]\([^)]*\)""")

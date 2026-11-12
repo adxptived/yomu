@@ -63,6 +63,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -70,6 +71,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -80,7 +82,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -89,15 +90,16 @@ import app.yomu.core.common.ScreenErrors
 import app.yomu.core.common.Share
 import app.yomu.core.datastore.AppSettings
 import app.yomu.core.datastore.AppSettings.Companion.defaultSelectionActions
-import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.PreferenceHeader
+import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.domain.model.CustomAction
 import app.yomu.domain.model.SelectionAction
 import app.yomu.feature.annotations.icon
 import app.yomu.feature.annotations.label
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.security.MessageDigest
@@ -282,7 +284,8 @@ private fun CustomActionDialog(initial: CustomAction, onDismiss: () -> Unit, onS
 internal fun FontsSection(vm: SettingsViewModel) {
     val fonts by vm.fonts.collectAsStateWithLifecycle()
     var delete by remember { mutableStateOf<File?>(null) }
-    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::importFont) }
+    val pick =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::importFont) }
     LaunchedEffect(Unit) { vm.loadFonts() }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
         item(key = "hint") {
@@ -291,7 +294,8 @@ internal fun FontsSection(vm: SettingsViewModel) {
         item(key = "add") { PreferenceItem(stringResource(R.string.set_font_import), stringResource(R.string.set_font_import_sum), Icons.Filled.Add, onClick = { pick.launch(arrayOf("font/*", "application/x-font-ttf", "application/x-font-otf", "application/octet-stream")) }) }
         if (fonts.isEmpty()) item(key = "empty") { EmptyState(title = stringResource(R.string.set_fonts_empty), icon = Icons.Outlined.FontDownload, modifier = Modifier.fillMaxWidth()) }
         items(fonts, key = { it.name }) { f ->
-            val family = remember(f) { runCatching { FontFamily(Typeface.createFromFile(f)) }.getOrDefault(FontFamily.Default) }
+            val family =
+                remember(f) { runCatching { FontFamily(Typeface.createFromFile(f)) }.getOrDefault(FontFamily.Default) }
             ListItem(
                 headlineContent = { Text(f.nameWithoutExtension) },
                 supportingContent = { Text(stringResource(R.string.set_font_preview), fontFamily = family, fontSize = 18.sp) },
@@ -368,25 +372,36 @@ private fun shareLogs(context: Context, files: List<File>) {
 
 // region Security
 
-/** Salted PBKDF2 hashing of the app lock PIN. Stored as "salt:hash" (Base64). */
+/**
+ * Salted PBKDF2 hashing of the app lock PIN.
+ * New hashes are stored as "2:salt:hash" (Base64) with the current OWASP work factor; older "salt:hash" values
+ * (20 000 iterations) still verify, so existing users are not locked out.
+ */
 object PinHasher {
-    private const val ITERATIONS = 20_000
+    /** OWASP 2023 recommendation for PBKDF2-HMAC-SHA256. */
+    private const val ITERATIONS = 600_000
+    private const val LEGACY_ITERATIONS = 20_000
+    private const val VERSION = "2"
 
     fun hash(pin: String): String {
         val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
-        return b64(salt) + ":" + b64(derive(pin, salt))
+        return "$VERSION:${b64(salt)}:${b64(derive(pin, salt, ITERATIONS))}"
     }
 
     fun verify(pin: String, stored: String): Boolean {
         val parts = stored.split(':')
-        if (parts.size != 2) return false
-        val salt = runCatching { Base64.getDecoder().decode(parts[0]) }.getOrNull() ?: return false
-        val expected = runCatching { Base64.getDecoder().decode(parts[1]) }.getOrNull() ?: return false
-        return MessageDigest.isEqual(expected, derive(pin, salt))
+        if (parts.isEmpty()) return false
+        val versioned = parts.size == 3 && parts[0] == VERSION
+        val saltIndex = if (versioned) 1 else 0
+        if (parts.size != saltIndex + 2) return false
+        val salt = runCatching { Base64.getDecoder().decode(parts[saltIndex]) }.getOrNull() ?: return false
+        val expected = runCatching { Base64.getDecoder().decode(parts[saltIndex + 1]) }.getOrNull() ?: return false
+        val iterations = if (versioned) ITERATIONS else LEGACY_ITERATIONS
+        return MessageDigest.isEqual(expected, derive(pin, salt, iterations))
     }
 
-    private fun derive(pin: String, salt: ByteArray): ByteArray =
-        SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(PBEKeySpec(pin.toCharArray(), salt, ITERATIONS, 256)).encoded
+    private fun derive(pin: String, salt: ByteArray, iterations: Int): ByteArray =
+        SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(PBEKeySpec(pin.toCharArray(), salt, iterations, 256)).encoded
 
     private fun b64(b: ByteArray) = Base64.getEncoder().encodeToString(b)
 }
@@ -442,7 +457,7 @@ internal fun ColumnScope.SecuritySection(vm: SettingsViewModel) {
 private fun PinSetupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     var first by remember { mutableStateOf("") }
     var second by remember { mutableStateOf("") }
-    val valid = first.length >= 4 && first == second
+    val valid = first.length >= 6 && first == second
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.set_pin_title)) },
@@ -468,6 +483,8 @@ fun AppLockScreen(settings: AppSettings, onUnlocked: () -> Unit) {
     val scope = rememberCoroutineScope()
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
+    var failures by remember { mutableIntStateOf(0) }
+    var checking by remember { mutableStateOf(false) }
     val bio by settings.lockBiometric.state()
     val canBio = remember { biometricAvailable(context) }
     val title = stringResource(R.string.lock_title)
@@ -475,9 +492,10 @@ fun AppLockScreen(settings: AppSettings, onUnlocked: () -> Unit) {
 
     fun promptBiometric() {
         val activity = context.findFragmentActivity() ?: return
-        val prompt = BiometricPrompt(activity, ContextCompat.getMainExecutor(activity), object : BiometricPrompt.AuthenticationCallback() {
-            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) = onUnlocked()
-        })
+        val prompt =
+            BiometricPrompt(activity, ContextCompat.getMainExecutor(activity), object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) = onUnlocked()
+            })
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
             .setNegativeButtonText(usePin)
@@ -488,9 +506,25 @@ fun AppLockScreen(settings: AppSettings, onUnlocked: () -> Unit) {
 
     LaunchedEffect(bio, canBio) { if (bio && canBio) promptBiometric() }
 
-    fun submit() = scope.launch(ScreenErrors) {
-        if (PinHasher.verify(pin, settings.pinHash.get())) onUnlocked() else { error = true; pin = "" }
+    // A four-digit PIN has 10 000 combinations: throttling wrong tries is what makes it more than a speed bump.
+    suspend fun tryPin(value: String) {
+        if (checking) return
+        checking = true
+        try {
+            if (PinHasher.verify(value, settings.pinHash.get())) {
+                onUnlocked()
+            } else {
+                error = true
+                pin = ""
+                failures++
+                if (failures > 3) delay(minOf(30_000L, 500L shl (failures - 3).coerceAtMost(6)))
+            }
+        } finally {
+            checking = false
+        }
     }
+
+    fun submit() = scope.launch(ScreenErrors) { tryPin(pin) }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().systemBarsPadding().padding(Dimens.xl), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -519,9 +553,9 @@ fun AppLockScreen(settings: AppSettings, onUnlocked: () -> Unit) {
                                     "bio" -> promptBiometric()
                                     else -> if (pin.length < 12) {
                                         pin += k
-                                        if (pin.length >= 4) scope.launch(ScreenErrors) {
-                                            if (PinHasher.verify(pin, settings.pinHash.get())) onUnlocked()
-                                        }
+                                        // Auto-submit only for the classic four-digit PIN; longer PINs are confirmed
+                                        // with OK, otherwise the attempt would be made before the last digit.
+                                        if (pin.length == 4) scope.launch(ScreenErrors) { tryPin(pin) }
                                     }
                                 }
                             },

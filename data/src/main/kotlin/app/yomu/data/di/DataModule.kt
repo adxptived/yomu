@@ -9,8 +9,6 @@ import app.yomu.data.audio.AudiobookStore
 import app.yomu.data.audio.YouTubeClient
 import app.yomu.data.backup.BackupManager
 import app.yomu.data.backup.MihonImporter
-import app.yomu.data.tracking.TrackerManager
-import app.yomu.data.tracking.TrackerStore
 import app.yomu.data.backup.SyncManager
 import app.yomu.data.book.pdf.PdfAnnotationStore
 import app.yomu.data.catalog.CatalogRepository
@@ -23,11 +21,14 @@ import app.yomu.data.library.LibraryTabs
 import app.yomu.data.ocr.OcrService
 import app.yomu.data.repository.AnnotationRepositoryImpl
 import app.yomu.data.repository.BookRepositoryImpl
-import app.yomu.data.repository.StatsRepositoryImpl
 import app.yomu.data.repository.ReadingHistoryRepository
+import app.yomu.data.repository.StatsRepositoryImpl
 import app.yomu.data.repository.WordRepositoryImpl
 import app.yomu.data.source.ExtensionManager
+import app.yomu.data.source.SourceHealthTracker
 import app.yomu.data.source.SourceManager
+import app.yomu.data.tracking.TrackerManager
+import app.yomu.data.tracking.TrackerStore
 import app.yomu.data.translation.BookTranslator
 import app.yomu.data.translation.MlKitEngine
 import app.yomu.data.translation.TranslationService
@@ -36,7 +37,6 @@ import app.yomu.domain.repository.AnnotationRepository
 import app.yomu.domain.repository.BookRepository
 import app.yomu.domain.repository.StatsRepository
 import app.yomu.domain.repository.WordRepository
-import app.yomu.data.source.SourceHealthTracker
 import okhttp3.OkHttpClient
 import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.bind

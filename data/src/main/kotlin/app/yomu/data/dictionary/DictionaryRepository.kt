@@ -138,7 +138,7 @@ class DictionaryRepository(
                 if (pending.size >= 4) {
                     val chunk = pending.toList()
                     pending.clear()
-                    kotlinx.coroutines.runBlocking { db.withTransaction { chunk.forEach { dao.insertEntries(it) } } }
+                    db.withTransaction { chunk.forEach { dao.insertEntries(it) } }
                     _importProgress.value = DictImportProgress(h.name, count)
                 }
             }
@@ -146,10 +146,12 @@ class DictionaryRepository(
             db.withTransaction { pending.forEach { dao.insertEntries(it) } }
             dao.refreshCount(id)
             _importProgress.value = DictImportProgress(h.name, count, done = true)
-        } catch (e: Throwable) {
-            // Cancelled (the screen was left) or failed: the half-imported dictionary must not stay in the list.
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // Cancelled (the screen was left): the half-imported dictionary must not stay in the list.
             withContext(NonCancellable) { dao.delete(id) }
-            if (e is kotlinx.coroutines.CancellationException) throw e
+            throw e
+        } catch (e: Throwable) {
+            withContext(NonCancellable) { dao.delete(id) }
             throw AppError.CorruptedFile(e.message, e)
         }
     }
@@ -166,11 +168,12 @@ class DictionaryRepository(
     suspend fun lookup(query: String, lang: String? = null, allowOnline: Boolean = true, record: Boolean = true): LookupResult = withContext(Dispatchers.IO) {
         val q = query.trim()
         if (q.isEmpty()) return@withContext LookupResult(query, null, emptyList())
-        if (record) dao.addHistory(q, System.currentTimeMillis())
+        // Incognito: a looked-up word must not become a permanent search history entry.
+        if (record && !settings.incognito.get()) dao.addHistory(q, System.currentTimeMillis())
         val japanese = q.any { TextTools.isCjk(it) }
         val offline = if (japanese) lookupJapanese(q) else lookupWord(q, lang)
         if (offline != null) return@withContext offline
-        if (allowOnline && settings.onlineDictionary.get() && monitor.isOnline) {
+        if (allowOnline && !settings.incognito.get() && settings.onlineDictionary.get() && monitor.isOnline) {
             runCatching { online(q, lang ?: Lemmatizer.guessLang(q)) }.getOrNull()?.let { return@withContext it }
         }
         LookupResult(q, null, emptyList())

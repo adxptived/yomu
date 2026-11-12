@@ -10,6 +10,7 @@ import java.util.Locale
 
 /** Image-folder protocol primitives. Existing legacy identities still require migration. */
 @Serializable internal data class FolderPage(val path: String, val sha256: String, val size: Long)
+
 @Serializable internal data class FolderEntry(val id: String, val title: String, val pages: List<FolderPage>)
 
 /**

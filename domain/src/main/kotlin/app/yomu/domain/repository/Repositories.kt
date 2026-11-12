@@ -21,9 +21,14 @@ interface BookRepository {
     suspend fun getBook(id: Long): Book?
     suspend fun update(book: Book)
     suspend fun setStatus(ids: Collection<Long>, status: ReadingStatus)
+    suspend fun setFavorite(ids: Collection<Long>, favorite: Boolean)
     suspend fun delete(ids: Collection<Long>, deleteFiles: Boolean)
     suspend fun saveProgress(bookId: Long, locator: Locator)
     suspend fun getProgress(bookId: Long): Locator?
+
+    /** Position inside one chapter of a text book, remembered separately from the book position. */
+    suspend fun saveChapterProgress(bookId: Long, chapter: Int, locator: Locator)
+    suspend fun getChapterProgress(bookId: Long, chapter: Int): Locator?
     suspend fun saveReaderSettings(bookId: Long, json: String?)
     fun observeCollections(): Flow<List<BookCollection>>
     suspend fun createCollection(name: String): Long

@@ -18,6 +18,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.RemoteViews
+import app.yomu.AppLockController
 import app.yomu.R
 import app.yomu.YomuActivity
 import app.yomu.data.catalog.CatalogRepository
@@ -139,7 +140,14 @@ object ContinueWidgets : KoinComponent {
     private fun entries(): Flow<List<WidgetEntry>> {
         val books = get<BookRepositoryImpl>()
         val catalog = get<CatalogRepository>()
-        return combine(books.observeContinueReading(MAX_ROWS), catalog.observeFavorites(), get<app.yomu.core.datastore.AppSettings>().hideCovers.flow) { b, o, hide ->
+        val settings = get<app.yomu.core.datastore.AppSettings>()
+        val lock = get<AppLockController>()
+        // Incognito or a locked app: the home screen must not show what the user is reading.
+        return combine(
+            books.observeContinueReading(MAX_ROWS), catalog.observeFavorites(), settings.hideCovers.flow,
+            settings.incognito.flow, lock.locked,
+        ) { b, o, hide, incognito, locked ->
+            if (incognito || locked == true) return@combine emptyList()
             val local = b.map { WidgetEntry(it.id, false, it.title, it.authors.firstOrNull(), it.progress, 0, it.coverPath.takeUnless { hide }, it.lastReadAt ?: 0) }
             val remote = o.filter { it.lastReadAt > 0 && it.unread > 0 }.map { e ->
                 val fraction = if (e.chapterCount <= 0) 0f else (e.chapterCount - e.unread).coerceAtLeast(0).toFloat() / e.chapterCount

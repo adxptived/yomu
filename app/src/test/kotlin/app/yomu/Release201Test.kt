@@ -193,19 +193,6 @@ class Release201Test {
         awaitText("For local files, chapter numbers cannot be determined reliably")
     }
 
-    /** A tracker that answers from memory. */
-    private class FakeTracker(service: TrackService, store: TrackerStore, private val answer: (Long) -> TrackEntry?) :
-        Tracker(service, store, TrackerKeys(), { OkHttpClient() }) {
-        val saved = mutableListOf<TrackEntry>()
-        override val redirectHost = "test-${service.id}"
-        override fun authUrl() = "https://example.invalid/"
-        override suspend fun finishLogin(redirect: String) = Unit
-        override suspend fun search(query: String) = emptyList<TrackSearchResult>()
-        override suspend fun find(remoteId: Long): TrackEntry? = answer(remoteId)
-        override suspend fun save(entry: TrackEntry): TrackEntry = entry.also { saved += it }
-        override suspend fun delete(entry: TrackEntry) = Unit
-    }
-
     @Test
     fun refreshAllReadsEveryEntryAndKeepsGoingAfterAnError() = runBlocking {
         val id = seedTitle("Refreshed")
@@ -235,4 +222,17 @@ class Release201Test {
         manager.refreshAll()
         assertEquals(a.updatedAt, db.tracks().forItem(id).first { it.service == TrackService.ANILIST.id }.updatedAt)
     }
+}
+
+/** A tracker that answers from memory (a test helper, outside the test class so the runner does not collect it). */
+private class FakeTracker(service: TrackService, store: TrackerStore, private val answer: (Long) -> TrackEntry?) :
+    Tracker(service, store, TrackerKeys(), { OkHttpClient() }) {
+    val saved = mutableListOf<TrackEntry>()
+    override val redirectHost = "test-${service.id}"
+    override fun authUrl(state: String) = "https://example.invalid/"
+    override suspend fun finishLogin(redirect: String) = Unit
+    override suspend fun search(query: String) = emptyList<TrackSearchResult>()
+    override suspend fun find(remoteId: Long): TrackEntry? = answer(remoteId)
+    override suspend fun save(entry: TrackEntry): TrackEntry = entry.also { saved += it }
+    override suspend fun delete(entry: TrackEntry) = Unit
 }

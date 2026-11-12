@@ -20,7 +20,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.Closeable
 import java.io.File
-import java.util.concurrent.ConcurrentHashMap
 
 data class PdfLink(val bounds: RectF, val page: Int?, val uri: String?)
 
@@ -36,10 +35,11 @@ class PdfSource private constructor(private val core: PdfiumCore, private val do
     private val mutex = Mutex()
     val pageCount: Int = doc.getPageCount()
 
-    // Filled from whichever thread a caller resumes on.
-    private val sizes = ConcurrentHashMap<Int, Pair<Int, Int>>()
-    private val texts = ConcurrentHashMap<Int, String>()
-    private val lines = ConcurrentHashMap<Int, List<PdfLine>>()
+    // Filled from whichever thread a caller resumes on. Bounded: a long book must not keep the text and line boxes
+    // of every page in memory for the whole reading session.
+    private val sizes = BoundedCache<Pair<Int, Int>>(256)
+    private val texts = BoundedCache<String>(32)
+    private val lines = BoundedCache<List<PdfLine>>(32)
 
     @Volatile private var closed = false
 
@@ -66,12 +66,22 @@ class PdfSource private constructor(private val core: PdfiumCore, private val do
         val visibleH = 1f - c.top - c.bottom
         val fullW = (width / visibleW.coerceAtLeast(0.2f)).toInt()
         val fullH = (fullW.toFloat() * ph / pw).toInt()
-        val outH = (fullH * visibleH).toInt().coerceAtLeast(1)
-        val bmp = Bitmap.createBitmap(width.coerceAtLeast(1), outH, Bitmap.Config.ARGB_8888)
+        var outH = (fullH * visibleH).toInt().coerceAtLeast(1)
+        // A tall page at a large width can request a bitmap of hundreds of megabytes. Cap the area instead of
+        // trusting the caller: the view scales the result to its bounds, so a smaller bitmap changes nothing but memory.
+        val pixels = width.coerceAtLeast(1).toLong() * outH
+        val scale = if (pixels > MAX_PIXELS) kotlin.math.sqrt(MAX_PIXELS.toDouble() / pixels) else 1.0
+        val outW = (width.coerceAtLeast(1) * scale).toInt().coerceAtLeast(1)
+        outH = (outH * scale).toInt().coerceAtLeast(1)
+        val renderW = (fullW * scale).toInt().coerceAtLeast(1)
+        val renderH = (fullH * scale).toInt().coerceAtLeast(1)
+        // Night mode inverts every pixel: RGB_565 halves the memory of pages that are only displayed.
+        val config = if (night) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565
+        val bmp = Bitmap.createBitmap(outW, outH, config)
         bmp.eraseColor(Color.WHITE)
         withDoc { d ->
             d.openPage(index).use { p ->
-                p.renderPageBitmap(bmp, -(fullW * c.left).toInt(), -(fullH * c.top).toInt(), fullW, fullH, annotations, false, Color.WHITE, Color.WHITE)
+                p.renderPageBitmap(bmp, -(renderW * c.left).toInt(), -(renderH * c.top).toInt(), renderW, renderH, annotations, false, Color.WHITE, Color.WHITE)
             }
         }
         if (night) invert(bmp)
@@ -192,6 +202,8 @@ class PdfSource private constructor(private val core: PdfiumCore, private val do
         if (query.isBlank()) return emptyList()
         val out = mutableListOf<PdfTextHit>()
         for (i in 0 until pageCount) {
+            // Give the reader a chance between pages instead of monopolising the pdfium lock for a whole search.
+            kotlinx.coroutines.yield()
             val text = text(i)
             var from = 0
             while (out.size < limit) {
@@ -258,6 +270,8 @@ class PdfSource private constructor(private val core: PdfiumCore, private val do
     }
 
     companion object {
+        /** Largest rendered page (≈24 MB of ARGB_8888 or 12 MB of RGB_565); larger requests are scaled down. */
+        private const val MAX_PIXELS = 6_000_000L
         private val closer = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         @Volatile private var core: PdfiumCore? = null
@@ -317,6 +331,19 @@ class PdfSource private constructor(private val core: PdfiumCore, private val do
 }
 
 class PdfPasswordRequired(cause: Throwable) : Exception("Password required", cause)
+
+/** A small access-ordered map: the last [max] entries survive, older ones are dropped on their own. */
+private class BoundedCache<V>(private val max: Int) {
+    private val map = object : LinkedHashMap<Int, V>(max, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, V>): Boolean = size > max
+    }
+
+    @Synchronized operator fun get(key: Int): V? = map[key]
+
+    @Synchronized operator fun set(key: Int, value: V) {
+        map[key] = value
+    }
+}
 
 /** The first [limit] bytes of the file behind [pfd], for pdfium. */
 private class LimitedSource(pfd: ParcelFileDescriptor, private val limit: Long) : io.legere.pdfiumandroid.PdfiumSource {

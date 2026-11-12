@@ -86,11 +86,11 @@ jobs:
           echo "$YOMU_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
           echo "YOMU_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
-      - name: Warn about debug signing
+      - name: Require signing keystore
         if: env.HAS_KEYSTORE != 'true'
-        run: >-
-          echo "::warning::YOMU_KEYSTORE_BASE64 is not set: the APKs are signed with a throwaway debug key and the
-          release is published as a pre-release (it will not install over a signed version). See docs/RELEASING.md."
+        run: |
+          echo "::error::YOMU_KEYSTORE_BASE64 is not set: refusing to publish a release signed with the public debug key."
+          exit 1
 
       - name: Tests
         if: ${{ !inputs.skip_tests }}
@@ -119,7 +119,6 @@ jobs:
             abi=$(basename "$apk" .apk | sed -E 's/^app-//; s/-release(-unsigned)?$//')
             cp "$apk" "dist/yomu-$TAG-$abi.apk"
           done
-          cp app/build/outputs/mapping/release/mapping.txt "dist/yomu-$TAG-mapping.txt"
           (cd dist && sha256sum *.apk > SHA256SUMS.txt && cat SHA256SUMS.txt)
           apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -n1)
           if [ -n "$apksigner" ]; then
@@ -173,7 +172,6 @@ jobs:
           files: |
             dist/*.apk
             dist/SHA256SUMS.txt
-            dist/*-mapping.txt
 
       - name: Summary
         if: success()

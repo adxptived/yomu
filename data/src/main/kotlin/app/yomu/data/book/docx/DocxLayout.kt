@@ -757,7 +757,8 @@ class DocxLayout private constructor(
         if ((r.smallCaps == true) != (base.smallCaps == true)) s.append(if (r.smallCaps == true) "font-variant:small-caps;" else "font-variant:normal;")
         if ((r.spacingPx ?: 0.0) != (base.spacingPx ?: 0.0)) s.append("letter-spacing:").append((r.spacingPx ?: 0.0).css()).append("px;")
         val u = r.underline?.takeIf { it != "none" }
-        val lines = listOfNotNull(u?.let { "underline" }, if (r.strike == true || r.dstrike == true) "line-through" else null)
+        val lines =
+            listOfNotNull(u?.let { "underline" }, if (r.strike == true || r.dstrike == true) "line-through" else null)
         if (lines.isNotEmpty()) {
             s.append("text-decoration:").append(lines.joinToString(" "))
             when {

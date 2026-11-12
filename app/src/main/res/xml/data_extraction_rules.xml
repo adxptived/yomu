@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android backup: settings and the database only; books, caches and drafts are excluded (use the in-app backup for files). -->
+<!--
+  Android backup: the database only. Books, caches and drafts are excluded (use the in-app backup for files), and
+  so is datastore/: it holds the PIN hash, WebDAV password, tracker/GitHub/LLM keys — secrets must not go to Google's
+  cloud, and restoring an unknown PIN lock would lock the user out of their own new device.
+-->
 <data-extraction-rules>
     <cloud-backup>
         <include domain="database" path="." />
-        <include domain="file" path="datastore/" />
     </cloud-backup>
     <device-transfer>
         <include domain="database" path="." />
-        <include domain="file" path="datastore/" />
         <include domain="file" path="books/" />
         <include domain="file" path="covers/" />
         <include domain="file" path="dictionaries/" />

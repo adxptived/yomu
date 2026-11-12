@@ -59,7 +59,8 @@ data class AvailableExtension(
  */
 @OptIn(ExperimentalSerializationApi::class)
 class ExtensionStores(private val client: () -> OkHttpClient) {
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true; explicitNulls = false; coerceInputValues = true }
+    private val json =
+        Json { ignoreUnknownKeys = true; isLenient = true; explicitNulls = false; coerceInputValues = true }
     private val protoBuf = ProtoBuf
 
     /**
@@ -82,6 +83,12 @@ class ExtensionStores(private val client: () -> OkHttpClient) {
             u = "https://raw.githubusercontent.com/$owner/$repo/$branch" + if (rest.isNotEmpty()) "/$rest" else ""
         }
         val last = u.substringAfterLast('/')
+        if (u.startsWith("http://")) {
+            // A loopback index is a local development store; anything else over plain HTTP can be replaced in transit.
+            val host = runCatching { java.net.URI(u).host }.getOrNull()
+            val loopback = host == "localhost" || host == "127.0.0.1" || host == "::1" || host?.startsWith("127.") == true
+            if (!loopback) throw IOException("Extension stores must use https://: a plain-HTTP index can be replaced on the way")
+        }
         return if (last.contains('.') && !u.substringAfter("://").substringBefore('/').endsWith(last)) u else "$u/index.min.json"
     }
 

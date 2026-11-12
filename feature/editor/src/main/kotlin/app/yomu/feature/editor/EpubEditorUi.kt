@@ -1,17 +1,11 @@
 package app.yomu.feature.editor
 
-import app.yomu.data.book.EpubPaths
-import androidx.compose.ui.semantics.Role
-import androidx.compose.material3.RadioButton
-import androidx.compose.foundation.selection.selectable
-import app.yomu.core.ui.components.ChapterPickerDialog
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +25,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -67,6 +63,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -86,12 +83,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.common.Files
+import app.yomu.core.ui.components.ChapterPickerDialog
 import app.yomu.core.ui.components.ChipItem
 import app.yomu.core.ui.components.ChoiceDialog
 import app.yomu.core.ui.components.ConfirmDialog
@@ -106,6 +105,7 @@ import app.yomu.core.ui.components.YomuFab
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.data.book.EpubMeta
+import app.yomu.data.book.EpubPaths
 import coil3.compose.AsyncImage
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
@@ -500,7 +500,8 @@ private fun MetadataTab(viewModel: EditorViewModel, s: EpubState) {
     var date by remember(m) { mutableStateOf(m.date.orEmpty()) }
     var subjects by remember(m) { mutableStateOf(m.subjects.joinToString(", ")) }
     var description by remember(m) { mutableStateOf(m.description.orEmpty()) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(viewModel::setCover) }
+    val picker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(viewModel::setCover) }
     fun list(v: String) = v.split(',', ';').map { it.trim() }.filter { it.isNotEmpty() }
     val edited = EpubMeta(
         title = title.trim(),
@@ -642,7 +643,8 @@ private fun ImagesTab(viewModel: EditorViewModel, s: EpubState) {
     var pendingAdd by remember { mutableStateOf<Uri?>(null) }
     var replaceTarget by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf<ManifestImage?>(null) }
-    val addPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> pendingAdd = uri }
+    val addPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> pendingAdd = uri }
     val replacePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val target = replaceTarget
         if (uri != null && target != null) viewModel.replaceImage(target, uri)

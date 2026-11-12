@@ -41,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -83,6 +84,17 @@ internal fun TypesetScreen(viewModel: EditorViewModel, s: MangaState, index: Int
     }
     var base by remember { mutableStateOf<ImageBitmap?>(null) }
     var lettered by remember { mutableStateOf<ImageBitmap?>(null) }
+    var baseBmp by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var letteredBmp by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    // Preview bitmaps are full pages; without releasing them every edit leaks several megabytes.
+    DisposableEffect(baseBmp) {
+        val shown = baseBmp
+        onDispose { shown?.recycle() }
+    }
+    DisposableEffect(letteredBmp) {
+        val shown = letteredBmp
+        onDispose { shown?.recycle() }
+    }
     var blocks by remember { mutableStateOf<List<TypesetBlock>>(emptyList()) }
     var busy by remember { mutableStateOf(false) }
     var drawing by remember { mutableStateOf(false) }
@@ -92,14 +104,18 @@ internal fun TypesetScreen(viewModel: EditorViewModel, s: MangaState, index: Int
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(index) {
-        base = runCatching { viewModel.typesetPreview(index, emptyList()).asImageBitmap() }.getOrElse { e ->
+        val bmp = runCatching { viewModel.typesetPreview(index, emptyList()) }.getOrElse { e ->
             if (e is CancellationException) throw e
             viewModel.fail(e)
             null
         }
+        base = bmp?.asImageBitmap()
+        baseBmp = bmp
     }
     LaunchedEffect(showResult, blocks) {
-        lettered = if (showResult && blocks.isNotEmpty()) runCatching { viewModel.typesetPreview(index, blocks).asImageBitmap() }.getOrNull() else null
+        val bmp = if (showResult && blocks.isNotEmpty()) runCatching { viewModel.typesetPreview(index, blocks) }.getOrNull() else null
+        lettered = bmp?.asImageBitmap()
+        letteredBmp = bmp
     }
 
     fun recognize(region: RectF?) {

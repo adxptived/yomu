@@ -8,6 +8,8 @@
     <string name="catalog_all_languages">All languages</string>
     <string name="catalog_downloads">Downloads</string>
     <string name="catalog_add_opds">Add OPDS catalog</string>
+    <string name="opds_url_placeholder">https://example.org/opds</string>
+    <string name="title_open_webview">WebView</string>
     <string name="catalog_add_opds_hint">Calibre, Flibusta, Standard Ebooks, your own server…</string>
     <string name="catalog_local_folder">Local folder…</string>
     <string name="catalog_check_updates">Check for updates</string>

@@ -102,12 +102,14 @@ fun NoteDialog(
 @Composable
 fun MarkdownText(markdown: String, modifier: Modifier = Modifier, maxLines: Int = Int.MAX_VALUE) {
     val colors = MaterialTheme.colorScheme
-    val annotated = remember(markdown, colors) { Markdown.render(markdown, colors.primary, colors.surfaceVariant, colors.onSurfaceVariant) }
+    val annotated =
+        remember(markdown, colors) { Markdown.render(markdown, colors.primary, colors.surfaceVariant, colors.onSurfaceVariant) }
     Text(annotated, modifier = modifier, style = MaterialTheme.typography.bodyMedium, maxLines = maxLines)
 }
 
 object Markdown {
-    private val inline = Regex("""\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|`(.+?)`|\[\[(.+?)]]|\[(.+?)]\((\S+?)\)|~~(.+?)~~""")
+    private val inline =
+        Regex("""\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|`(.+?)`|\[\[(.+?)]]|\[(.+?)]\((\S+?)\)|~~(.+?)~~""")
 
     fun render(md: String, link: Color, codeBg: Color, muted: Color): AnnotatedString = buildAnnotatedString {
         val lines = md.replace("\r\n", "\n").split('\n')

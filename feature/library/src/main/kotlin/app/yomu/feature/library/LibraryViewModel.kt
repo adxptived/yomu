@@ -11,6 +11,8 @@ import androidx.paging.filter
 import app.yomu.core.common.ScreenErrors
 import app.yomu.core.datastore.AppSettings
 import app.yomu.core.datastore.stateIn
+import app.yomu.data.audio.AudiobookStore
+import app.yomu.data.audio.YouTubeResult
 import app.yomu.data.catalog.CatalogRepository
 import app.yomu.data.download.DownloadOverview
 import app.yomu.data.download.DownloadSummary
@@ -22,8 +24,8 @@ import app.yomu.data.work.LibraryScanWorker
 import app.yomu.domain.catalog.NaturalOrder
 import app.yomu.domain.model.BatchMetadata
 import app.yomu.domain.model.Book
-import app.yomu.domain.model.CatalogEntry
 import app.yomu.domain.model.BookFormat
+import app.yomu.domain.model.CatalogEntry
 import app.yomu.domain.model.LibraryFilter
 import app.yomu.domain.model.LibraryQuery
 import app.yomu.domain.model.LibrarySort
@@ -45,8 +47,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
-import app.yomu.data.audio.AudiobookStore
-import app.yomu.data.audio.YouTubeResult
 
 /** "Type" options of the library filter: groups of book formats and the online titles. */
 enum class FormatGroup(val formats: Set<BookFormat>) {
@@ -150,6 +150,17 @@ class LibraryViewModel(
     private val _selection = MutableStateFlow<Set<Long>>(emptySet())
     private val _events = Channel<LibraryEvent>(Channel.BUFFERED)
 
+    init {
+        // Filters survive restarts; the search text is transient on purpose.
+        viewModelScope.launch(ScreenErrors) {
+            filter.value = runCatching { settings.libraryFilter.get() }.getOrDefault(LibraryFilter())
+            types.value = runCatching { settings.libraryTypes.get() }.getOrDefault(emptySet())
+                .mapNotNull { name -> FormatGroup.entries.firstOrNull { it.name == name } }.toSet()
+            launch { filter.collect { settings.libraryFilter.set(it) } }
+            launch { types.collect { settings.libraryTypes.set(it.map { group -> group.name }.toSet()) } }
+        }
+    }
+
     val events: Flow<LibraryEvent> = _events.receiveAsFlow()
     val searchText: StateFlow<String> = search
     val filterState: StateFlow<LibraryFilter> = filter
@@ -165,9 +176,10 @@ class LibraryViewModel(
     val importProgress = importer.progress
     val downloadSummary: StateFlow<DownloadSummary> = downloads.summary.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DownloadSummary())
 
-    private val query: Flow<LibraryQuery> = combine(search.debounce(200), settings.librarySort.flow, settings.libraryAscending.flow, filter) { s, so, asc, f ->
-        LibraryQuery(s, so, asc, f)
-    }
+    private val query: Flow<LibraryQuery> =
+        combine(search.debounce(200), settings.librarySort.flow, settings.libraryAscending.flow, filter) { s, so, asc, f ->
+            LibraryQuery(s, so, asc, f)
+        }
 
     val paged: Flow<PagingData<Book>> = query.flatMapLatest { books.pagedBooks(it) }.cachedIn(viewModelScope)
         .combine(pendingDelete) { data, pending -> if (pending.isEmpty()) data else data.filter { it.id !in pending } }
@@ -188,14 +200,16 @@ class LibraryViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
     /** Number of active filters (type, status, tag, language), for the badge of the filter button. */
-    val activeFilters: StateFlow<Int> = combine(filter, types) { f, t -> t.size + f.statuses.size + (if (f.tag != null) 1 else 0) + (if (f.language != null) 1 else 0) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+    val activeFilters: StateFlow<Int> = combine(filter, types) { f, t ->
+        t.size + f.statuses.size + (if (f.tag != null) 1 else 0) + (if (f.language != null) 1 else 0) + (if (f.favoritesOnly) 1 else 0)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     // ---- online titles (added with the heart in the catalog) ----
     private val onlineAll: StateFlow<List<CatalogEntry>> = catalog.observeFavorites().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Tabs of every online title: title id → tab ids. */
     val onlineTabs: StateFlow<Map<Long, Set<Long>>> = tabs.observeOnline().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     /** Number of online titles; -1 until they are loaded. */
     val onlineCount: StateFlow<Int> = catalog.observeFavorites().map { it.size }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), -1)
 
@@ -234,6 +248,7 @@ class LibraryViewModel(
         f.copy(statuses = if (status in f.statuses) f.statuses - status else f.statuses + status)
     }
 
+    fun toggleFavorites() = filter.update { it.copy(favoritesOnly = !it.favoritesOnly) }
     fun setCollection(id: Long?) = filter.update { it.copy(collectionId = id) }
     fun setTag(tag: String?) = filter.update { it.copy(tag = tag) }
     fun setLanguage(lang: String?) = filter.update { it.copy(language = lang) }
@@ -363,6 +378,8 @@ class LibraryViewModel(
     // ---- bulk actions ----
     fun setStatus(ids: Set<Long>, status: ReadingStatus) = viewModelScope.launch(ScreenErrors) { books.setStatus(ids, status); clearSelection() }
 
+    fun setFavorite(ids: Set<Long>, favorite: Boolean) = viewModelScope.launch(ScreenErrors) { books.setFavorite(ids, favorite); clearSelection() }
+
     fun addToCollection(ids: Set<Long>, collectionId: Long) = viewModelScope.launch(ScreenErrors) { books.addToCollection(ids, collectionId); clearSelection() }
 
     fun removeFromCollection(ids: Set<Long>, collectionId: Long) = viewModelScope.launch(ScreenErrors) { books.removeFromCollection(ids, collectionId); clearSelection() }
@@ -452,24 +469,30 @@ class LibraryViewModel(
         clearSelection()
     }
 
-    /** Hides the books at once; they are removed for real when the undo snackbar is dismissed. */
+    /** Hides the books at once; they are removed for real only when the user dismisses the undo snackbar. */
     fun requestDelete(ids: Set<Long>) {
         pendingDelete.update { it + ids }
         clearSelection()
         _events.trySend(LibraryEvent.Deleted(ids))
     }
 
-    fun undoDelete(ids: Set<Long>) = pendingDelete.update { it - ids }
+    /** Books hidden by [requestDelete] whose undo snackbar is still pending (shown again when the screen returns). */
+    val pendingDeletions: StateFlow<Set<Long>> = pendingDelete
+
+    fun undoDelete(ids: Set<Long>) {
+        pendingDelete.update { it - ids }
+    }
 
     fun commitDelete(ids: Set<Long>, deleteFiles: Boolean = false) = viewModelScope.launch(ScreenErrors) {
-        books.delete(ids, deleteFiles)
         pendingDelete.update { it - ids }
+        books.delete(ids, deleteFiles)
         clearSelection()
     }
 
     override fun onCleared() {
-        val pending = pendingDelete.value
-        if (pending.isNotEmpty()) kotlinx.coroutines.GlobalScope.launch { books.delete(pending, false) }
+        // Pending deletions are dropped, not executed: a screen that went away without the user answering the
+        // undo prompt must not delete books silently. The rows were never touched, so they simply appear again.
+        pendingDelete.value = emptySet()
         super.onCleared()
     }
 }

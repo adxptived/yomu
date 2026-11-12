@@ -14,6 +14,7 @@ import app.yomu.core.ui.components.HintStore
 import app.yomu.core.ui.components.KeyBus
 import app.yomu.core.ui.components.LauncherIcons
 import app.yomu.ui.YomuRoot
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
@@ -40,8 +41,13 @@ class YomuActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.CREATED) {
-                viewModel.state.filterNotNull().map { it.secureScreen }.distinctUntilChanged().collect { secure ->
-                    if (secure) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE) else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                // FLAG_SECURE is on while the app lock is showing too: the recent-apps thumbnail and screenshots
+                // must not show the library behind the lock overlay.
+                combine(
+                    viewModel.state.filterNotNull().map { it.secureScreen }.distinctUntilChanged(),
+                    lock.locked.map { it == true }.distinctUntilChanged(),
+                ) { secure, locked -> secure || locked }.collect { hide ->
+                    if (hide) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE) else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
                 }
             }
         }

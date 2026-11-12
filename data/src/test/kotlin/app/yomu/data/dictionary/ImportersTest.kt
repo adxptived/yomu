@@ -1,6 +1,7 @@
 package app.yomu.data.dictionary
 
 import app.yomu.domain.model.DictFormat
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -15,7 +16,9 @@ class ImportersTest {
     @TempDir
     lateinit var dir: File
 
-    private fun DictImporter.entries(): List<RawEntry> = mutableListOf<RawEntry>().also { list -> read { list += it } }
+    private fun DictImporter.entries(): List<RawEntry> = runBlocking {
+        mutableListOf<RawEntry>().also { list -> read { list += it } }
+    }
 
     /** Writes a StarDict triple (.ifo/.idx/.dict) and returns the .ifo file. */
     private fun starDict(name: String, words: List<Pair<String, ByteArray>>, sameType: String?, gzipDict: Boolean = false): File {

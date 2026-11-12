@@ -100,6 +100,8 @@
     <string name="set_single_tap">Single tap</string>
     <string name="set_double_tap">Double tap</string>
     <string name="set_web_search">Web search</string>
+    <string name="set_dictionary_app">External dictionary</string>
+    <string name="set_dictionary_system">Ask each time</string>
     <string name="set_custom_search_url">Search URL</string>
     <string name="set_custom_search_url_sum">Use {text} for the selected text</string>
     <string name="set_tts">Read aloud</string>

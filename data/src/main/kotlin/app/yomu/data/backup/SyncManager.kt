@@ -12,9 +12,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.intOrNull
 import okhttp3.OkHttpClient
 import java.io.File
 import java.io.IOException
@@ -70,6 +70,10 @@ class SyncManager(
                 settings.lastSyncError.set("")
                 SyncProblemStore(context).clear()
                 changed
+            } catch (e: SyncDeferredException) {
+                // An open image-folder reader defers the sync; this is not a problem to report or a failure to retry
+                // loudly. The next scheduled sync picks it up.
+                0
             } catch (e: Exception) {
                 throw failed(e)
             }
@@ -155,6 +159,7 @@ class SyncManager(
 
     private suspend fun failed(e: Exception): Throwable {
         if (e is kotlinx.coroutines.CancellationException) return e
+        if (e is SyncDeferredException) return e
         val displayed = when (e) {
             is FolderSyncProblem -> e.forDisplay(context)
             is AnnotationSyncProblem -> e.forDisplay(context)
@@ -205,97 +210,89 @@ class SyncManager(
         persistProblemInfo(info)
     }
 
+    @Suppress("InstanceOfCheckForException") // SyncProblem is a marker interface: a catch block cannot name it.
     internal suspend fun runOnce(backend: SyncBackend): Int {
         val lease = FolderReadSyncGate.sync(db)
         try {
-        // A partially written adoption must resume before anything else touches the documents;
-        // syncing over it could mistake the half-migrated book for a different one.
-        if (BookAdoption.loadJournal(context) != null || FolderAdoption.loadJournal(context) != null)
-            throw IOException("An interrupted migration must be resumed before syncing; open Settings → Sync conflicts")
-        val file = backend.read()
-        val document = file?.let { decodeDocument(it.bytes) }
-        val remote = document?.state
-        val folderSnapshot = document?.folderSnapshot
-        if (folderSnapshot == null && remote != null && FolderMetadataSnapshotCodec.folderHashes(remote).isNotEmpty())
-            throw IOException("Folder metadata has no page revision; resolve the conflict before syncing")
-        val base = loadBase(context)
-        requireRemoteWhenKnown(file, base, backend.id)
-        // File transfer is opt-in on each device. Shared-folder providers cannot guarantee atomic compare-and-swap.
-        val fileSync = settings.syncBookFiles.get()
-        if (fileSync && backend is FolderFilesTransport) {
-            // Follow other devices' migration markers first: a legacy folder whose identity was
-            // migrated elsewhere adopts the stable identity instead of blocking the file sync.
-            val folderAdoption = FolderAdoption(context, db, backend, backend.id, ::persistProblemInfo)
-            for (book in db.books().all().filter { it.format == "FOLDER" && it.fileHash?.let(FolderManifestCodec::validId) != true }) {
-                try { folderAdoption.follow(book.id) }
-                catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                catch (e: Exception) { if (e !is SyncProblem) recordProblem(e) }
+            // A partially written adoption must resume before anything else touches the documents;
+            // syncing over it could mistake the half-migrated book for a different one.
+            if (BookAdoption.loadJournal(context) != null || FolderAdoption.loadJournal(context) != null)
+                throw IOException("An interrupted migration must be resumed before syncing; open Settings → Sync conflicts")
+            val file = backend.read()
+            val document = file?.let { decodeDocument(it.bytes) }
+            val remote = document?.state
+            val folderSnapshot = document?.folderSnapshot
+            if (folderSnapshot == null && remote != null && FolderMetadataSnapshotCodec.folderHashes(remote).isNotEmpty())
+                throw IOException("Folder metadata has no page revision; resolve the conflict before syncing")
+            val base = loadBase(context)
+            requireRemoteWhenKnown(file, base, backend.id)
+            // File transfer is opt-in on each device. Shared-folder providers cannot guarantee atomic compare-and-swap.
+            val fileSync = settings.syncBookFiles.get()
+            if (fileSync && backend is FolderFilesTransport) {
+                // Follow other devices' migration markers first: a legacy folder whose identity was
+                // migrated elsewhere adopts the stable identity instead of blocking the file sync.
+                val folderAdoption = FolderAdoption(context, db, backend, backend.id, ::persistProblemInfo)
+                for (book in db.books().all().filter { it.format == "FOLDER" && it.fileHash?.let(FolderManifestCodec::validId) != true }) {
+                    try { folderAdoption.follow(book.id) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { if (e !is SyncProblem) recordProblem(e) }
+                }
+                FolderSyncCoordinator(context, db, importer).requirePortableFolderIdentities()
             }
-            FolderSyncCoordinator(context, db, importer).requirePortableFolderIdentities()
-        }
-        val filesResult = if (fileSync && backend is BookFilesTransport) {
-            BookFileSync(context, db, importer, ::persistProblemInfo).syncDetailed(backend, backend.id)
-        } else BookFileSync.SyncFilesResult(0, emptyList(), emptyList())
-        val imported = filesResult.imported
-        if (fileSync && backend is BookFilesTransport) {
-            val adoption = BookAdoption(context, db, settings, backend, backend.id, ::persistProblemInfo)
-            // Follow other devices' replacement markers (their index entry is the commit point),
-            // then adopt self-modified PDF versions. Per-book failures do not stop the other books.
-            for (id in filesResult.followBooks) {
-                try { adoption.follow(id, forced = false) }
-                catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                catch (e: Exception) { if (e !is SyncProblem) recordProblem(e) }
+            val filesResult = if (fileSync && backend is BookFilesTransport) {
+                BookFileSync(context, db, importer, ::persistProblemInfo).syncDetailed(backend, backend.id)
+            } else BookFileSync.SyncFilesResult(0, emptyList(), emptyList())
+            val imported = filesResult.imported
+            if (fileSync && backend is BookFilesTransport) {
+                val adoption = BookAdoption(context, db, settings, backend, backend.id, ::persistProblemInfo)
+                // Follow other devices' replacement markers (their index entry is the commit point),
+                // then adopt self-modified PDF versions. Per-book failures do not stop the other books.
+                for (id in filesResult.followBooks) {
+                    try { adoption.follow(id, forced = false) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { if (e !is SyncProblem) recordProblem(e) }
+                }
+                for (id in filesResult.changedBooks) {
+                    try { adoption.autoAdopt(id) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { if (e !is SyncProblem) recordProblem(e) }
+                }
             }
-            for (id in filesResult.changedBooks) {
-                try { adoption.autoAdopt(id) }
-                catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                catch (e: Exception) { if (e !is SyncProblem) recordProblem(e) }
+            val folderResult = if (fileSync && backend is FolderFilesTransport) {
+                FolderSyncCoordinator(context, db, importer, ::persistProblemInfo).sync(backend, backend.id, folderSnapshot)
+            } else FolderSyncCoordinator.FolderSyncResult(0, emptySet())
+            val importedFolders = folderResult.changed
+            val deletion = if (fileSync && backend is BookFilesTransport) {
+                BookDeletionSync(context, db, settings, backend, backend.id, ::persistProblemInfo)
+            } else null
+            if (deletion != null) {
+                // Other devices' removals apply before the merge so deleted books stop contributing,
+                // and this device's removals publish against the last agreed state (its own
+                // tombstones, written by the merge below, must not count as a competing change).
+                try { deletion.receive() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: IOException) { /* recorded inside; a refused deletion must not stop the sync */ }
+                try { deletion.publish(remote) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: IOException) { /* recorded inside */ }
             }
-        }
-        val folderResult = if (fileSync && backend is FolderFilesTransport) {
-            FolderSyncCoordinator(context, db, importer, ::persistProblemInfo).sync(backend, backend.id, folderSnapshot)
-        } else FolderSyncCoordinator.FolderSyncResult(0, emptySet())
-        val importedFolders = folderResult.changed
-        val deletion = if (fileSync && backend is BookFilesTransport) {
-            BookDeletionSync(context, db, settings, backend, backend.id, ::persistProblemInfo)
-        } else null
-        if (deletion != null) {
-            // Other devices' removals apply before the merge so deleted books stop contributing,
-            // and this device's removals publish against the last agreed state (its own
-            // tombstones, written by the merge below, must not count as a competing change).
-            try { deletion.receive() } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (e: IOException) { /* recorded inside; a refused deletion must not stop the sync */ }
-            try { deletion.publish(remote) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (e: IOException) { /* recorded inside */ }
-        }
-        val options = SyncMerger.Options(
-            catalog = settings.syncCatalog.get(), deletions = settings.syncDeletions.get(), device = deviceName(),
-            progress = settings.syncProgress.get(), annotations = settings.syncAnnotations.get(),
-            bookmarks = settings.syncBookmarks.get(), words = settings.syncWords.get(),
-        )
-        val stableFolders = db.books().all().filter { it.format == "FOLDER" && it.fileHash?.let(FolderManifestCodec::validId) == true }
-        val outcome = if (folderSnapshot != null || stableFolders.isNotEmpty()) {
-            val revisions = folderSnapshot?.revisions.orEmpty().associateByTo(LinkedHashMap()) { it.id }
-            for (book in stableFolders) {
-                val id = book.fileHash!!
-                revisions[id] = FolderRevisionCommit.localRevision(db, id)
-                    ?: throw IOException("Folder position revision is missing: ${book.title}")
+            val options = SyncMerger.Options(
+                catalog = settings.syncCatalog.get(), deletions = settings.syncDeletions.get(), device = deviceName(),
+                progress = settings.syncProgress.get(), annotations = settings.syncAnnotations.get(),
+                bookmarks = settings.syncBookmarks.get(), words = settings.syncWords.get(),
+            )
+            val stableFolders = db.books().all().filter { it.format == "FOLDER" && it.fileHash?.let(FolderManifestCodec::validId) == true }
+            val outcome = if (folderSnapshot != null || stableFolders.isNotEmpty()) {
+                val revisions = folderSnapshot?.revisions.orEmpty().associateByTo(LinkedHashMap()) { it.id }
+                for (book in stableFolders) {
+                    val id = book.fileHash!!
+                    revisions[id] = FolderRevisionCommit.localRevision(db, id)
+                        ?: throw IOException("Folder position revision is missing: ${book.title}")
+                }
+                mergeFolderMetadataAndWrite(context, db, backend, file, folderSnapshot, base, System.currentTimeMillis(), options, revisions.values.toList(),
+                    pendingEdits = folderResult.pendingEdits,
+                    legacyRemote = if (folderSnapshot == null) remote else null)
+            } else mergeAndWrite(db, backend, file, remote, base, System.currentTimeMillis(), options)
+            // Only after the file was written: the base describes what the shared file and this device agree on.
+            saveBase(context, outcome.base)
+            val trackChanges = if (backend is TrackLinkTransport && settings.syncTrackLinks.get()) {
+                TrackLinkSync(context, db).sync(backend, backend.id, settings.syncCatalog.get(), settings.syncDeletions.get())
+            } else 0
+            if (deletion != null) {
+                // Refresh the per-book deletion baselines from the merged state.
+                try { deletion.captureBaselines(outcome.state) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: IOException) { /* the next sync captures them again */ }
             }
-            mergeFolderMetadataAndWrite(context, db, backend, file, folderSnapshot, base, System.currentTimeMillis(), options, revisions.values.toList(),
-                pendingEdits = folderResult.pendingEdits,
-                legacyRemote = if (folderSnapshot == null) remote else null)
-        } else mergeAndWrite(db, backend, file, remote, base, System.currentTimeMillis(), options)
-        // Only after the file was written: the base describes what the shared file and this device agree on.
-        saveBase(context, outcome.base)
-        val trackChanges = if (backend is TrackLinkTransport && settings.syncTrackLinks.get()) {
-            TrackLinkSync(context, db).sync(backend, backend.id, settings.syncCatalog.get(), settings.syncDeletions.get())
-        } else 0
-        if (deletion != null) {
-            // Refresh the per-book deletion baselines from the merged state.
-            try { deletion.captureBaselines(outcome.state) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (e: IOException) { /* the next sync captures them again */ }
-        }
-        return outcome.changed + imported + importedFolders + trackChanges
+            return outcome.changed + imported + importedFolders + trackChanges
         } finally { lease.close() }
     }
 
@@ -340,6 +337,10 @@ class SyncManager(
             require(state.version in 1..2) { "Unsupported sync file version: ${state.version}" }
             fun <T> unique(keys: List<T>) = require(keys.size == keys.toSet().size) { "Duplicate sync record" }
             unique(state.books.map { it.hash })
+            state.books.forEach { book ->
+                unique(book.chapterProgress.map { it.chapter })
+                require(book.chapterProgress.all { it.chapter >= 0 }) { "Invalid chapter position" }
+            }
             unique(state.highlights.map { SyncKeys.highlight(it.hash, it.createdAt, it.text) })
             unique(state.notes.map { SyncKeys.note(it.hash, it.createdAt) })
             unique(state.bookmarks.map { SyncKeys.bookmark(it.hash, it.createdAt) })

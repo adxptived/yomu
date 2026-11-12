@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="library_title">Library</string>
+    <string name="tracking_error">Tracking error</string>
     <plurals name="library_count">
         <item quantity="one">%d book</item>
         <item quantity="other">%d books</item>
@@ -54,6 +55,14 @@
     <string name="status_new">New</string>
     <string name="status_reading">Reading</string>
     <string name="status_finished">Finished</string>
+    <string name="status_on_hold">On hold</string>
+    <string name="status_dropped">Dropped</string>
+    <string name="status_planned">Plan to read</string>
+    <string name="library_favorites">Favorites</string>
+    <string name="library_favorites_only">Favorites only</string>
+    <string name="library_add_favorite">Add to favorites</string>
+    <string name="details_favorite">Add to favorites</string>
+    <string name="details_unfavorite">Remove from favorites</string>
     <string name="sort_title">Title</string>
     <string name="sort_author">Author</string>
     <string name="sort_added">Date added</string>

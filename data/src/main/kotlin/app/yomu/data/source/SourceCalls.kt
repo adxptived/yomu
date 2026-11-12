@@ -56,12 +56,11 @@ object SourceCalls {
         while (true) {
             try {
                 return block(attempt)
+            } catch (e: TimeoutCancellationException) {
+                // Inner withTimeout of the block: treated like any other timeout below.
+                if (attempt + 1 >= attempts || !retryIf(e)) throw e
             } catch (e: CancellationException) {
-                if (e is TimeoutCancellationException && attempt + 1 < attempts && retryIf(e)) {
-                    // Inner withTimeout of the block: treated like any other timeout below.
-                } else {
-                    throw e
-                }
+                throw e
             } catch (e: Throwable) {
                 if (attempt + 1 >= attempts || !retryIf(e)) throw e
             }

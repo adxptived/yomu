@@ -13,6 +13,24 @@ import androidx.sqlite.db.SupportSQLiteQuery
 import kotlinx.coroutines.flow.Flow
 
 @Dao
+interface ChapterProgressDao {
+    @Upsert
+    suspend fun save(row: ChapterProgressEntity)
+
+    @Query("SELECT * FROM chapter_progress WHERE bookId = :bookId AND chapter = :chapter")
+    suspend fun get(bookId: Long, chapter: Int): ChapterProgressEntity?
+
+    @Query("SELECT * FROM chapter_progress")
+    suspend fun all(): List<ChapterProgressEntity>
+
+    @Query("DELETE FROM chapter_progress WHERE bookId = :bookId")
+    suspend fun clear(bookId: Long)
+
+    @Query("DELETE FROM chapter_progress")
+    suspend fun clearAll()
+}
+
+@Dao
 interface BookDao {
     @RawQuery(observedEntities = [BookEntity::class, BookTagCrossRef::class, BookCollectionCrossRef::class])
     fun pagingSource(query: SupportSQLiteQuery): PagingSource<Int, BookEntity>
@@ -64,6 +82,9 @@ interface BookDao {
 
     @Query("UPDATE books SET status = :status WHERE id IN (:ids)")
     suspend fun setStatus(ids: Collection<Long>, status: String)
+
+    @Query("UPDATE books SET favorite = :favorite WHERE id IN (:ids)")
+    suspend fun setFavorite(ids: Collection<Long>, favorite: Boolean)
 
     @Query("UPDATE books SET progress = :progress, lastReadAt = :at, status = CASE WHEN status = 'NEW' THEN 'READING' ELSE status END WHERE id = :id")
     suspend fun updateProgress(id: Long, progress: Float, at: Long)
@@ -519,7 +540,7 @@ interface CatalogDao {
     @Query("SELECT * FROM catalog_items WHERE sourceId = :sourceId AND url = :url LIMIT 1")
     suspend fun find(sourceId: Long, url: String): CatalogItemEntity?
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(item: CatalogItemEntity): Long
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -676,11 +697,25 @@ interface DownloadDao {
     @Query("SELECT COUNT(*) FROM downloads WHERE status = 'DONE' AND updatedAt >= :since")
     suspend fun doneSince(since: Long): Int
 
+    /** Drops tasks that finished long ago: the list and its history table must not grow forever. */
+    @Query("DELETE FROM downloads WHERE status IN ('DONE','CANCELLED') AND updatedAt < :before")
+    suspend fun deleteFinishedBefore(before: Long): Int
+
     @Query("SELECT * FROM downloads WHERE chapterId IN (:chapterIds) AND status IN ('QUEUED','RUNNING','PAUSED','FAILED')")
     suspend fun pendingForChapters(chapterIds: Collection<Long>): List<DownloadTaskEntity>
 
     @Query("SELECT * FROM downloads WHERE id = :id")
     suspend fun get(id: Long): DownloadTaskEntity?
+
+    /**
+     * Marks a task done only while it still runs: a cancel between the last progress check and this write must not
+     * resurrect the task and put the cancelled file into the library. Returns the number of rows changed.
+     */
+    @Query(
+        "UPDATE downloads SET status = 'DONE', destPath = :path, pagesDone = :pagesDone, pagesTotal = :pagesTotal, " +
+            "error = NULL, updatedAt = :at WHERE id = :id AND status = 'RUNNING'",
+    )
+    suspend fun complete(id: Long, path: String?, pagesDone: Int, pagesTotal: Int, at: Long): Int
 
     @Insert
     suspend fun insert(task: DownloadTaskEntity): Long
@@ -760,6 +795,16 @@ interface OcrCacheDao {
 
     @Query("DELETE FROM ocr_cache")
     suspend fun clear()
+
+    @Query("DELETE FROM ocr_cache WHERE `key` = :key")
+    suspend fun remove(key: String)
+
+    @Query("DELETE FROM ocr_cache WHERE at < :before")
+    suspend fun deleteBefore(before: Long)
+
+    /** Keeps the [keep] newest entries (pages read recently). */
+    @Query("DELETE FROM ocr_cache WHERE `key` NOT IN (SELECT `key` FROM ocr_cache ORDER BY at DESC LIMIT :keep)")
+    suspend fun trimTo(keep: Int)
 }
 
 /** A tracking entry with the title of the online library it belongs to (2.0.1). */
@@ -825,12 +870,16 @@ interface TrackDao {
 interface FolderSyncBaseDao {
     @Query("SELECT * FROM folder_sync_bases WHERE targetId = :targetId")
     suspend fun forTarget(targetId: String): List<FolderSyncBaseEntity>
+
     @Query("SELECT * FROM folder_sync_bases WHERE folderId = :folderId")
     suspend fun forFolder(folderId: String): List<FolderSyncBaseEntity>
+
     @Upsert
     suspend fun upsert(base: FolderSyncBaseEntity)
+
     @Query("DELETE FROM folder_sync_bases WHERE targetId = :targetId AND folderId = :folderId")
     suspend fun delete(targetId: String, folderId: String)
+
     @Query("DELETE FROM folder_sync_bases")
     suspend fun clear()
 }

@@ -305,7 +305,8 @@ class AudiobookStore(
             val docId = if (DocumentsContract.isDocumentUri(context, uri)) DocumentsContract.getDocumentId(uri) else DocumentsContract.getTreeDocumentId(uri)
             fun walk(id: String, prefix: String, depth: Int) {
                 val children = DocumentsContract.buildChildDocumentsUriUsingTree(uri, id)
-                val cols = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE)
+                val cols =
+                    arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE)
                 val dirs = mutableListOf<Pair<String, String>>()
                 context.contentResolver.query(children, cols, null, null, null)?.use { c ->
                     while (c.moveToNext()) {

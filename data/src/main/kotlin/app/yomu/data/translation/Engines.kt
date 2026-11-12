@@ -74,7 +74,8 @@ class MlKitEngine(private val context: Context) : TranslationEngine {
         ?: throw TranslationException("Language $lang is not supported offline", TranslationException.Kind.UNSUPPORTED_LANGUAGE)
 
     override suspend fun translate(text: String, from: String?, to: String): String {
-        val source = code(from ?: detectLanguage(text) ?: throw TranslationException("Cannot detect language", TranslationException.Kind.UNSUPPORTED_LANGUAGE))
+        val source =
+            code(from ?: detectLanguage(text) ?: throw TranslationException("Cannot detect language", TranslationException.Kind.UNSUPPORTED_LANGUAGE))
         val target = code(to)
         if (source == target) return text
         val downloaded = downloadedModels()

@@ -14,4 +14,5 @@ val ScreenErrors: CoroutineExceptionHandler = CoroutineExceptionHandler { _, e -
  * For small UI work started by gestures (for example looking up a link under a tap in a PDF page while the reader is
  * closing): a failure is only logged, there is nothing for the user to retry.
  */
-val QuietErrors: CoroutineExceptionHandler = CoroutineExceptionHandler { _, e -> Timber.w(e, "Ignored error in UI work") }
+val QuietErrors: CoroutineExceptionHandler =
+    CoroutineExceptionHandler { _, e -> Timber.w(e, "Ignored error in UI work") }

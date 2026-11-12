@@ -19,14 +19,18 @@ import app.yomu.core.ui.components.NavTab
 import app.yomu.core.ui.theme.Accent
 import app.yomu.core.ui.theme.ThemeConfig
 import app.yomu.core.ui.theme.ThemeMode
+import app.yomu.data.audio.AudiobookStore
 import app.yomu.data.library.ImportOutcome
 import app.yomu.data.library.ImportService
+import app.yomu.data.repository.ReadingHistoryRepository
 import app.yomu.data.work.Notifications
+import app.yomu.feature.audio.AudioSessionActivity
 import app.yomu.feature.settings.AppUpdates
 import app.yomu.profile.ProfileTrackingViewModel
 import app.yomu.profile.ProfileViewModel
 import app.yomu.ui.WhatsNew
 import app.yomu.ui.whatsNewSince
+import app.yomu.widget.ContinueWidgets
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -45,10 +49,6 @@ import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.bind
 import org.koin.dsl.module
-import app.yomu.widget.ContinueWidgets
-import app.yomu.data.audio.AudiobookStore
-import app.yomu.feature.audio.AudioSessionActivity
-import app.yomu.data.repository.ReadingHistoryRepository
 
 val appModule = module {
     single { app.yomu.core.common.AppScope() }
@@ -96,7 +96,9 @@ class AppLockController(private val settings: AppSettings) : DefaultLifecycleObs
 
     /** `null` until the settings are read. */
     val locked: StateFlow<Boolean?> = _locked.asStateFlow()
+
     @Volatile private var enabled = false
+
     @Volatile private var timeoutMs = 0L
     private var backgroundAt = 0L
 
@@ -147,10 +149,13 @@ sealed interface MainEvent {
     data class OpenBook(val bookId: Long) : MainEvent
     data class Lookup(val text: String) : MainEvent
     data class Imported(val added: Int, val failed: Int, val error: Throwable?) : MainEvent
+
     /** "Add to Mihon/Tachiyomi" links of extension repositories (tachiyomi://add-repo?url=…, mihon://extension-store?url=…). */
     data class AddExtensionStore(val url: String) : MainEvent
+
     /** A tap on a download notification. */
     data object OpenDownloads : MainEvent
+
     /** An online chapter to read (the "Continue reading" widget). */
     data class OpenChapter(val chapterId: Long) : MainEvent
     data class OpenTitle(val entryId: Long) : MainEvent

@@ -16,7 +16,12 @@ data class SyncBook(
     val status: String,
     /** Names of the tabs of the book; null = not known (written by 1.x). */
     val tabs: List<String>? = null,
+    /** Last position inside each chapter of a text book, newest wins per chapter. */
+    val chapterProgress: List<SyncChapterProgress> = emptyList(),
 )
+
+@Serializable
+data class SyncChapterProgress(val chapter: Int, val locator: String, val updatedAt: Long)
 
 @Serializable
 data class SyncHighlight(val hash: String, val locator: String, val chapter: Int, val text: String, val color: String, val style: String, val isQuote: Boolean, val tags: String, val note: String?, val createdAt: Long, val updatedAt: Long)

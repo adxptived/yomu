@@ -56,8 +56,13 @@ class TrackerManager(
 
     fun tracker(service: TrackService): Tracker = trackers.first { it.service == service }
 
-    /** The tracker whose redirect this is (`yomu://anilist-auth…`). */
-    fun trackerForRedirect(uri: String): Tracker? = trackers.firstOrNull { !it.passwordLogin && uri.startsWith(it.redirectUri) }
+    /** The tracker whose redirect this is (`yomu://anilist-auth…`); scheme and host must match exactly. */
+    fun trackerForRedirect(uri: String): Tracker? {
+        val parsed = runCatching { java.net.URI(uri) }.getOrNull() ?: return null
+        if (!parsed.scheme.equals("yomu", ignoreCase = true)) return null
+        val host = parsed.host ?: return null
+        return trackers.firstOrNull { !it.passwordLogin && it.redirectHost.equals(host, ignoreCase = true) }
+    }
 
     fun observe(itemId: Long): Flow<List<TrackEntity>> = db.tracks().observe(itemId)
     fun observeBook(bookId: Long): Flow<List<TrackEntity>> = db.tracks().observeBook(bookId)
@@ -304,10 +309,21 @@ class TrackerManager(
 class TrackSyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params), KoinComponent {
     private val trackers: TrackerManager by inject()
 
-    override suspend fun doWork(): Result = runCatching { trackers.pushPending() }.fold({ left -> if (left == 0) Result.success() else Result.retry() }, { Result.retry() })
+    override suspend fun doWork(): Result = try {
+        val left = trackers.pushPending()
+        // Still pending means the service is unreachable; give up after a few attempts instead of retrying forever
+        // (the change is not lost: it stays pending in the database and is sent on the next sign-in or sync).
+        if (left == 0) Result.success() else if (runAttemptCount >= MAX_ATTEMPTS) Result.failure() else Result.retry()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Timber.w(e, "Tracking sync")
+        if (runAttemptCount >= MAX_ATTEMPTS) Result.failure() else Result.retry()
+    }
 
     companion object {
         private const val NAME = "tracking_sync"
+        private const val MAX_ATTEMPTS = 5
 
         /** [restart]: start over without the backoff of earlier failures (after signing in). */
         fun schedule(context: Context, restart: Boolean = false) {

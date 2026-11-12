@@ -10,7 +10,7 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "books",
-    indices = [Index("title"), Index("sortTitle"), Index("addedAt"), Index("lastReadAt"), Index("format"), Index("status"), Index("language"), Index(value = ["uri"], unique = true), Index("fileHash")],
+    indices = [Index("title"), Index("sortTitle"), Index("addedAt"), Index("lastReadAt"), Index("format"), Index("status"), Index("language"), Index(value = ["uri"], unique = true), Index("fileHash"), Index("scanFolder"), Index("favorite")],
 )
 data class BookEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -36,6 +36,21 @@ data class BookEntity(
     val progress: Float,
     val readerSettingsJson: String?,
     val scanFolder: String? = null,
+    val favorite: Boolean = false,
+)
+
+/** Reading position inside one chapter of a text book; restored when the reader comes back to that chapter. */
+@Entity(
+    tableName = "chapter_progress",
+    primaryKeys = ["bookId", "chapter"],
+    indices = [Index("bookId")],
+    foreignKeys = [ForeignKey(entity = BookEntity::class, parentColumns = ["id"], childColumns = ["bookId"], onDelete = ForeignKey.CASCADE)],
+)
+data class ChapterProgressEntity(
+    val bookId: Long,
+    val chapter: Int,
+    val locatorJson: String,
+    val updatedAt: Long,
 )
 
 @Fts4(contentEntity = BookEntity::class, tokenizer = FtsOptions.TOKENIZER_UNICODE61)
@@ -246,7 +261,7 @@ data class CatalogItemEntity(
 
 @Entity(
     tableName = "chapters",
-    indices = [Index(value = ["itemId", "url"], unique = true), Index("lastReadAt"), Index("isNew")],
+    indices = [Index(value = ["itemId", "url"], unique = true), Index("lastReadAt"), Index("isNew"), Index("downloaded")],
     foreignKeys = [ForeignKey(entity = CatalogItemEntity::class, parentColumns = ["id"], childColumns = ["itemId"], onDelete = ForeignKey.CASCADE)],
 )
 data class ChapterEntity(
@@ -270,7 +285,7 @@ data class ChapterEntity(
     val memo: String? = null,
 )
 
-@Entity(tableName = "downloads", indices = [Index("status"), Index("chapterId")])
+@Entity(tableName = "downloads", indices = [Index("status"), Index("chapterId"), Index("url")])
 data class DownloadTaskEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val kind: String,

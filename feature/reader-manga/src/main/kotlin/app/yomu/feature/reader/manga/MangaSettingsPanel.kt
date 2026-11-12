@@ -120,6 +120,7 @@ fun MangaPageSettings(s: MangaSettings, update: MangaSettingsUpdate) {
     )
     PreferenceSwitch(stringResource(R.string.mr_crop), s.cropBorders, { v -> update { it.copy(cropBorders = v) } })
     PreferenceSwitch(stringResource(R.string.mr_page_number), s.showPageNumber, { v -> update { it.copy(showPageNumber = v) } })
+    PreferenceSwitch(stringResource(R.string.mr_zoom_lock), s.zoomLock, { v -> update { it.copy(zoomLock = v) } }, summary = stringResource(R.string.mr_zoom_lock_summary))
     PreferenceSlider(
         stringResource(R.string.mr_preload),
         s.preload.toFloat(),

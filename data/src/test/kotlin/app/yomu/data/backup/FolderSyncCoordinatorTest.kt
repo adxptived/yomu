@@ -331,7 +331,7 @@ class FolderSyncCoordinatorTest {
         assertNotNull(aBase); assertNotNull(bBase)
     }
 
-    @Test fun failedQualifiedMetadataWriteRollsBackIncomingMerge() = runBlocking {
+    @Test fun failedQualifiedMetadataWriteKeepsIncomingMergeForRetry() = runBlocking {
         val a = Device("a"); val b = Device("b"); val remote = Server()
         val folder = File(a.context.filesDir, "original").apply { mkdirs() }
         File(folder, "1.jpg").writeText("one")
@@ -343,7 +343,8 @@ class FolderSyncCoordinatorTest {
         val previous = remote.read()!!; val snapshot = FolderMetadataSnapshotCodec.decode(previous.bytes)
         remote.failMetadataWrite = true
         assertTrue(runCatching { mergeFolderMetadataAndWrite(b.context, b.db, remote, previous, snapshot, null, 101, SyncMerger.Options(), revisions) }.exceptionOrNull() is SyncConflictException)
-        assertTrue(b.db.annotations().allHighlights().isEmpty())
+        // The merge is committed before the network write; the base is not advanced, so the next cycle publishes it.
+        assertEquals(1, b.db.annotations().allHighlights().size)
         assertArrayEquals(previous.bytes, remote.metadata)
     }
 
@@ -567,8 +568,9 @@ class FolderSyncCoordinatorTest {
         File(folder, "1.jpg").writeText("one")
         val id = a.importUserFolder(folder)
         val reader = a.books.beginFolderReading(id)!!
+        // Reading an image folder is a normal state: the sync is deferred, not reported as a failure.
         val failure = runCatching { a.syncAll(remote) }.exceptionOrNull()
-        assertTrue(failure is IOException && failure.message!!.contains("Close"))
+        assertTrue(failure is SyncDeferredException)
         assertNull(remote.metadata); assertNull(remote.index)
         reader.close(); reader.close() // leases are idempotent
         a.syncAll(remote)

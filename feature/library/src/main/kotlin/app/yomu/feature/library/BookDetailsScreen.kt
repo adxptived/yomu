@@ -1,12 +1,6 @@
 package app.yomu.feature.library
 
 import android.os.Build
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.material3.RadioButton
-import androidx.compose.foundation.selection.selectable
-import app.yomu.data.translation.BookTranslator
-import app.yomu.core.ui.components.ChapterPickerDialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,23 +16,27 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarOutline
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.Collections
@@ -53,12 +51,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -80,28 +77,31 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.common.Files
 import app.yomu.core.common.ScreenErrors
+import app.yomu.core.ui.components.ChapterPickerDialog
 import app.yomu.core.ui.components.CoverImage
 import app.yomu.core.ui.components.CoverTheme
-import app.yomu.core.ui.components.rememberCoverColor
-import androidx.compose.foundation.layout.heightIn
 import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.YomuFab
 import app.yomu.core.ui.components.coverTint
+import app.yomu.core.ui.components.rememberCoverColor
 import app.yomu.core.ui.components.sharedCover
 import app.yomu.core.ui.theme.Dimens
-import app.yomu.feature.catalog.TrackingButton
-import app.yomu.feature.catalog.TrackingSheet
+import app.yomu.data.translation.BookTranslator
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.ReadingStatus
 import app.yomu.domain.translation.CommonLanguages
+import app.yomu.feature.catalog.TrackingButton
+import app.yomu.feature.catalog.TrackingSheet
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import java.io.File
@@ -142,14 +142,15 @@ private fun BookDetailsContent(
     val collections by viewModel.collections.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var menu by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf(false) }
-    var tagDialog by remember { mutableStateOf(false) }
-    var deleteDialog by remember { mutableStateOf(false) }
-    var translateDialog by remember { mutableStateOf(false) }
-    var showTracking by remember { mutableStateOf(false) }
+    var menu by rememberSaveable { mutableStateOf(false) }
+    var editing by rememberSaveable { mutableStateOf(false) }
+    var tagDialog by rememberSaveable { mutableStateOf(false) }
+    var deleteDialog by rememberSaveable { mutableStateOf(false) }
+    var translateDialog by rememberSaveable { mutableStateOf(false) }
+    var showTracking by rememberSaveable { mutableStateOf(false) }
     var descriptionExpanded by rememberSaveable { mutableStateOf(false) }
-    val pickCover = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { it?.let(viewModel::setCover) }
+    val pickCover =
+        rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { it?.let(viewModel::setCover) }
 
     val current = book
     LaunchedEffect(current) { if (current === BookDetailsViewModel.MISSING) onBack() }
@@ -166,6 +167,13 @@ private fun BookDetailsContent(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
                 actions = {
                     if (current != null && current.id > 0) {
+                        IconButton(onClick = { viewModel.setFavorite(!current.favorite) }) {
+                            Icon(
+                                if (current.favorite) Icons.Default.Star else Icons.Default.StarOutline,
+                                stringResource(if (current.favorite) R.string.details_unfavorite else R.string.details_favorite),
+                                tint = if (current.favorite) MaterialTheme.colorScheme.tertiary else LocalContentColor.current,
+                            )
+                        }
                         IconButton(onClick = { editing = true }) { Icon(Icons.Default.Edit, stringResource(R.string.details_edit_metadata)) }
                         Box {
                             IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(app.yomu.core.ui.R.string.more)) }
@@ -277,13 +285,13 @@ private fun BookDetailsContent(
                         Text("  ${(current.progress * 100).toInt()}%", style = MaterialTheme.typography.labelLarge)
                     }
                 }
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    ReadingStatus.entries.forEachIndexed { i, s ->
-                        SegmentedButton(
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
+                    ReadingStatus.entries.forEach { s ->
+                        FilterChip(
                             selected = current.status == s,
                             onClick = { viewModel.setStatus(s) },
-                            shape = SegmentedButtonDefaults.itemShape(i, ReadingStatus.entries.size),
-                        ) { Text(stringResource(s.label())) }
+                            label = { Text(stringResource(s.label())) },
+                        )
                     }
                 }
                 TrackingButton(tracks.size) { showTracking = true }
@@ -363,6 +371,7 @@ private fun TranslateBookDialog(viewModel: BookDetailsViewModel, onDismiss: () -
     var target by remember { mutableStateOf("") }
     var bilingual by remember { mutableStateOf(true) }
     var chapters by remember { mutableStateOf<List<BookTranslator.Chapter>?>(null) }
+
     /** null = the whole book. */
     var chosen by remember { mutableStateOf<Set<Int>?>(null) }
     var picking by remember { mutableStateOf(false) }
@@ -483,6 +492,9 @@ internal fun ReadingStatus.label(): Int = when (this) {
     ReadingStatus.NEW -> R.string.status_new
     ReadingStatus.READING -> R.string.status_reading
     ReadingStatus.FINISHED -> R.string.status_finished
+    ReadingStatus.ON_HOLD -> R.string.status_on_hold
+    ReadingStatus.DROPPED -> R.string.status_dropped
+    ReadingStatus.PLAN_TO_READ -> R.string.status_planned
 }
 
 @Composable

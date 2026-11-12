@@ -127,17 +127,23 @@ class EpubController(
     var wordTap = WordTapGesture.DOUBLE_TAP
     var accent: Long = 0xFF6750A4
     var reduceMotion = false
+
     /** Keeps the bottom margin free for the reader's status line (page, clock). */
     var footerSpace = false
     var prevLabel = "‹"
     var nextLabel = "›"
     private var pendingTarget: EpubTarget? = null
+
+    /** The chapter the WebView actually shows: [chapter] may already point at the next one while it loads. */
+    private var loadedChapter = 0
     private var highlights: List<Highlight> = emptyList()
     private var savedWords: List<String> = emptyList()
     private var nonce = 0
 
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
     fun attach(view: EpubWebView) {
+        // A re-created composition attaches a new view before the old one is released: keep the newest.
+        webView?.takeIf { it !== view }?.let { detach(it) }
         webView = view
         view.settings.apply {
             javaScriptEnabled = true
@@ -160,13 +166,16 @@ class EpubController(
         view.webViewClient = Client()
     }
 
-    fun detach() {
-        webView?.let {
-            it.stopLoading()
-            it.removeJavascriptInterface("YomuBridge")
-            it.destroy()
-        }
+    /**
+     * Releases [view] only if it is still the attached one. A late [onDispose] of an old composition must not
+     * destroy a WebView that a newer composition has already attached.
+     */
+    fun detach(view: EpubWebView) {
+        if (webView !== view) return
         webView = null
+        view.stopLoading()
+        view.removeJavascriptInterface("YomuBridge")
+        view.destroy()
     }
 
     private fun customFonts(): List<File> = fontsDir.listFiles()?.filter { it.isFile }.orEmpty()
@@ -231,6 +240,14 @@ class EpubController(
     }
 
     fun refreshConfig() = js("yomu.setConfig(${config(null)}, ${JsonPrimitive(css())})")
+
+    /** Number of text columns (2 for a landscape spread); reflows the current chapter at the same offset. */
+    fun updateColumns(value: Int) {
+        val v = value.coerceIn(1, 2)
+        if (v == columns) return
+        columns = v
+        refreshConfig()
+    }
 
     fun next() = js("yomu.next()")
     fun prev() = js("yomu.prev()")
@@ -440,6 +457,7 @@ class EpubController(
         @JavascriptInterface
         fun onReady(data: String) = ui {
             runCatching { json.decodeFromString<ReadyInfo>(data) }
+            loadedChapter = chapter
             loading = false
             pushHighlights()
             pushWords()
@@ -450,7 +468,8 @@ class EpubController(
         fun onProgress(data: String) = ui {
             runCatching { json.decodeFromString<EpubProgress>(data) }.getOrNull()?.let {
                 progress = it
-                listener?.onProgress(chapter, it)
+                // A late report of the previous chapter must not be saved with the number of the new one.
+                listener?.onProgress(loadedChapter, it)
             }
         }
 

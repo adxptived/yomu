@@ -2,7 +2,6 @@ package app.yomu.feature.reader.epub
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import app.yomu.core.ui.components.RequireWebView
@@ -13,8 +12,8 @@ fun EpubReaderView(controller: EpubController, modifier: Modifier = Modifier, on
     RequireWebView(modifier) {
         AndroidView(
             factory = { ctx -> EpubWebView(ctx).also { controller.attach(it); onAttached() } },
+            onRelease = { controller.detach(it) },
             modifier = modifier.fillMaxSize(),
         )
     }
-    DisposableEffect(controller) { onDispose { controller.detach() } }
 }

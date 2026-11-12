@@ -20,12 +20,12 @@ internal object FolderPositions {
     /** Null when the reference points at a changed or removed page (lenient maps only). */
     internal fun remapOrNull(locator: String, map: FolderPositionMap): Pair<String, Float>? {
         val obj = try { json.parseToJsonElement(locator).jsonObject } catch (e: Exception) { throw IOException("Invalid saved page position", e) }
-        val chapter = try { obj["chapter"]?.jsonPrimitive?.intOrNull ?: if ("chapter" !in obj) 0 else throw IOException("Invalid page number") }
-            catch (e: Exception) { throw IOException("Invalid page number", e) }
+        val chapter = try { obj["chapter"]?.jsonPrimitive?.intOrNull ?: if ("chapter" !in obj) 0 else throw IOException("Invalid page number") } catch (e: Exception) { throw IOException("Invalid page number", e) }
         val index = map.index(chapter)
         if (index < 0) return null
         val progress = map.progress(index)
-        val next = JsonObject(obj + mapOf("chapter" to JsonPrimitive(index), "totalProgression" to JsonPrimitive(progress)))
+        val next =
+            JsonObject(obj + mapOf("chapter" to JsonPrimitive(index), "totalProgression" to JsonPrimitive(progress)))
         return next.toString() to progress
     }
 

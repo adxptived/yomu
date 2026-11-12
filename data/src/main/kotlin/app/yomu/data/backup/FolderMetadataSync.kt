@@ -9,6 +9,9 @@ import java.io.IOException
 /**
  * Atomic metadata write with page revisions embedded alongside the metadata.
  * Existing legacy path-based folder identities still require safe migration.
+ *
+ * Folder snapshots hash every page of every folder: that file work runs before the merge, never inside the database
+ * transaction. The network write also runs after the transaction commits (see [mergeAndWrite]).
  */
 internal suspend fun mergeFolderMetadataAndWrite(
     context: Context,
@@ -22,15 +25,14 @@ internal suspend fun mergeFolderMetadataAndWrite(
     destinations: List<FolderEntry>,
     pendingEdits: Set<String> = emptySet(),
     legacyRemote: SyncState? = null,
-): SyncMerger.Outcome = db.withTransaction {
+): SyncMerger.Outcome {
     if (remote != null && legacyRemote != null) throw IOException("Ambiguous sync metadata source")
     if (legacyRemote != null && FolderMetadataSnapshotCodec.folderHashes(legacyRemote).isNotEmpty())
         throw IOException("Folder metadata has no page revision")
     // An immutable revision in this same write identifies the page numbering in all metadata.
     // The separate folder index may advance before or after this write; future reads translate
     // from the explicitly recorded revision rather than guessing from that index.
-    try { FolderManifestCodec.validate(FolderManifest(folders = destinations)) }
-    catch (e: Exception) { throw IOException("Invalid destination folder revisions", e) }
+    try { FolderManifestCodec.validate(FolderManifest(folders = destinations)) } catch (e: Exception) { throw IOException("Invalid destination folder revisions", e) }
     val byId = destinations.associateBy { it.id }
     val local = db.books().all().filter { it.format == "FOLDER" && it.fileHash?.let(FolderManifestCodec::validId) == true }
     for (book in local) {
@@ -43,10 +45,10 @@ internal suspend fun mergeFolderMetadataAndWrite(
         if (observed.pages != revision.pages) throw IOException("Folder changed during sync: ${book.title}")
     }
     val translated = remote?.let { FolderMetadataSnapshotCodec.translate(it, destinations).state } ?: legacyRemote
-    val outcome = SyncMerger(db).merge(translated, base, backend.id, now, options)
+    val outcome = db.withTransaction { SyncMerger(db).merge(translated, base, backend.id, now, options) }
     val ids = FolderMetadataSnapshotCodec.folderHashes(outcome.state)
     val qualified = ids.sorted().map { id -> byId[id] ?: throw IOException("Folder metadata has no known revision: $id") }
     val snapshot = FolderMetadataSnapshot(state = outcome.state, revisions = qualified)
     backend.write(FolderMetadataSnapshotCodec.encode(snapshot), previous)
-    outcome
+    return outcome
 }

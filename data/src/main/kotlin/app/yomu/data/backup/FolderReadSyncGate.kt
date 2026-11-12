@@ -1,11 +1,14 @@
 package app.yomu.data.backup
 
 import app.yomu.core.database.YomuDatabase
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.Closeable
 import java.io.IOException
 import java.util.IdentityHashMap
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.withTimeoutOrNull
+
+/** The sync target is temporarily unavailable for a reason that is not a failure (a folder reader is open). */
+internal class SyncDeferredException(message: String) : IOException(message)
 
 /** Process-local exclusion between stable-folder readers and sync. Not a cross-process lock. */
 internal object FolderReadSyncGate {
@@ -44,7 +47,8 @@ internal object FolderReadSyncGate {
 
     @Synchronized fun sync(db: YomuDatabase): Closeable {
         val state = states.getOrPut(db) { State() }
-        if (state.syncing || state.readers > 0) throw IOException("Close the image-folder reader before synchronizing")
+        // Reading an image folder is a normal, temporary state: the sync is deferred, not broken.
+        if (state.syncing || state.readers > 0) throw SyncDeferredException("An image folder is open; the sync will run later")
         state.syncing = true
         return lease(db, state, reader = false)
     }

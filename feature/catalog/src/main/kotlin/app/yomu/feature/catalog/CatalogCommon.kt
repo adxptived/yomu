@@ -159,4 +159,3 @@ private fun hostOf(rest: String): String {
 
 private fun isHomeServer(host: String): Boolean =
     host.equals("localhost", true) || IPV4.matches(host) || host.endsWith(".local", true) || host.endsWith(".lan", true)
-

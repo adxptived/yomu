@@ -179,6 +179,27 @@
     <string name="rs_pdf_crop">Обрезать поля автоматически</string>
     <string name="rs_pdf_crop_summary">Находит пустые поля на каждой странице</string>
     <string name="rs_pdf_crop_manual">Обрезка вручную</string>
+    <string name="rs_pdf_crop_left">Обрезать слева, %</string>
+    <string name="rs_pdf_crop_right">Обрезать справа, %</string>
+    <string name="rs_pdf_crop_top">Обрезать сверху, %</string>
+    <string name="rs_pdf_crop_bottom">Обрезать снизу, %</string>
+    <string name="rs_pdf_contrast">Контраст</string>
+    <string name="rs_pdf_grayscale">Оттенки серого</string>
+    <string name="rs_pdf_zoom_lock">Фиксировать масштаб</string>
+    <string name="rs_zoom_lock_summary">Следующие страницы открываются в текущем увеличении</string>
+    <string name="rs_auto_night_mode">Ночная тема</string>
+    <string name="rs_auto_night_system">Как в приложении</string>
+    <string name="rs_auto_night_schedule">По расписанию</string>
+    <string name="rs_night_from">Ночь начинается в</string>
+    <string name="rs_night_to">Ночь заканчивается в</string>
+    <string name="rs_dual_landscape">Две страницы в горизонтали</string>
+    <string name="rs_dual_landscape_summary">Две колонки текста, когда экран шире, чем выше</string>
+    <string name="tts_channel">Чтение вслух</string>
+    <string name="reader_pages">Страницы</string>
+    <string name="reader_time_left_m">≈ %1$d мин</string>
+    <string name="reader_time_left_hm">≈ %1$d ч %2$d мин</string>
+    <string name="reader_zoom_lock_on">Масштаб зафиксирован: следующие страницы откроются так же</string>
+    <string name="reader_zoom_lock_off">Масштаб не зафиксирован: нажмите, чтобы открывать следующие страницы так же</string>
     <string name="rs_pdf_reflow">Перекомпоновка текста</string>
     <string name="rs_pdf_reflow_summary">Показывает текстовый слой с вашими настройками шрифта</string>
 
@@ -311,6 +332,8 @@
     <string name="rs_night_theme">Ночная тема</string>
     <string name="rs_edge_gestures">Жесты по краям экрана</string>
     <string name="rs_edge_gestures_summary">Свайп вверх или вниз у левого края меняет яркость, у правого — тёплый фильтр</string>
+    <string name="rs_edge_brightness">Свайп яркости (левый край)</string>
+    <string name="rs_edge_warm">Свайп тёплого фильтра (правый край)</string>
     <string name="rs_brightness_pill">Яркость</string>
     <string name="rs_warm_pill">Тёплый фильтр</string>
     <string name="hint_reader_edges">Проведите вверх или вниз у левого края, чтобы изменить яркость, у правого — тёплый фильтр.</string>

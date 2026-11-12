@@ -29,8 +29,7 @@ internal object FolderIdentityMigration {
         if (mapping.any { (old, new) -> old in hashes && new in hashes })
             throw IOException("Both legacy and stable folder identities already have metadata")
         SyncIdentityMigration.metadata(state, base, m, ::validAny, recomputeRevisions = false)
-    } catch (e: IOException) { throw e }
-      catch (e: Exception) { throw IOException("Cannot migrate folder identity; no data was changed", e) }
+    } catch (e: IOException) { throw e } catch (e: Exception) { throw IOException("Cannot migrate folder identity; no data was changed", e) }
 
     fun links(links: List<TrackLink>, mapping: Map<String, String>): List<TrackLink> = try {
         val owners = links.mapNotNull { it.owner.bookHash }.toSet()
@@ -38,6 +37,5 @@ internal object FolderIdentityMigration {
         if (mapping.any { (old, new) -> old in owners && new in owners })
             throw IOException("Both legacy and stable folder identities already have tracker bindings")
         SyncIdentityMigration.links(links, m, ::validAny)
-    } catch (e: IOException) { throw e }
-      catch (e: Exception) { throw IOException("Cannot migrate folder tracker bindings; no data was changed", e) }
+    } catch (e: IOException) { throw e } catch (e: Exception) { throw IOException("Cannot migrate folder tracker bindings; no data was changed", e) }
 }

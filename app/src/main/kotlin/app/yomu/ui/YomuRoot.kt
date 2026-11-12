@@ -13,9 +13,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.AppLockController
 import app.yomu.MainViewModel
 import app.yomu.core.ui.components.HintStore
+import app.yomu.core.ui.components.LauncherIcons
 import app.yomu.core.ui.components.LocalHapticsEnabled
 import app.yomu.core.ui.components.LocalHideCovers
-import app.yomu.core.ui.components.LauncherIcons
 import app.yomu.core.ui.components.LocalHintStore
 import app.yomu.core.ui.components.LocalLauncherIcons
 import app.yomu.core.ui.components.LocalReduceMotion

@@ -30,7 +30,7 @@ class MangaUpdatesTracker(store: TrackerStore, keys: TrackerKeys, client: () -> 
     Tracker(TrackService.MANGAUPDATES, store, keys, client) {
     override val redirectHost = "mangaupdates-password-only"
     override val passwordLogin = true
-    override fun authUrl(): String = throw TrackerException("MangaUpdates: password sign-in required")
+    override fun authUrl(state: String): String = throw TrackerException("MangaUpdates: password sign-in required")
     override suspend fun finishLogin(redirect: String): Unit = throw TrackerException("MangaUpdates: password sign-in required")
 
     override suspend fun loginWithPassword(username: String, password: String) {
@@ -50,14 +50,19 @@ class MangaUpdatesTracker(store: TrackerStore, keys: TrackerKeys, client: () -> 
     }
 
     private suspend fun profileRequest(token: String): String? {
-        val text = execute(Request.Builder().url("$baseUrl/v1/account/profile").header("Authorization", "Bearer $token").get().build(), allowNotFound = true)
+        val text =
+            execute(Request.Builder().url("$baseUrl/v1/account/profile").header("Authorization", "Bearer $token").get().build(), allowNotFound = true)
         return text?.let { json.parseToJsonElement(it)["username"].str() }
     }
 
     private suspend fun send(request: Request): String? {
         val used = token()
-        return try { execute(request.newBuilder().header("Authorization", "Bearer $used").build()) }
-        catch (e: TrackerException) { if (!e.unauthorized) throw e; throw TrackerException("${service.displayName}: sign in again", unauthorized = true, cause = e, code = 401) }
+        return try {
+            execute(request.newBuilder().header("Authorization", "Bearer $used").build())
+        } catch (e: TrackerException) {
+            if (e.unauthorized) throw TrackerException("${service.displayName}: sign in again", unauthorized = true, cause = e, code = 401)
+            throw e
+        }
     }
 
     private suspend fun postList(path: String, body: String): String? =

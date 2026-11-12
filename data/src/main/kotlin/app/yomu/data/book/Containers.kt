@@ -69,7 +69,8 @@ class RarContainer(file: File, private val deleteOnClose: Boolean) : ResourceCon
 
     override fun open(path: String): InputStream? {
         val h = headers[path] ?: return null
-        val bytes = synchronized(archive) { java.io.ByteArrayOutputStream().also { archive.extractFile(h, it) }.toByteArray() }
+        val bytes =
+            synchronized(archive) { java.io.ByteArrayOutputStream().also { archive.extractFile(h, it) }.toByteArray() }
         return ByteArrayInputStream(bytes)
     }
 
@@ -111,11 +112,17 @@ class SevenZContainer private constructor(private val sevenZ: SevenZFile, privat
 
 /** A plain directory on the file system. */
 class DirContainer(private val root: File) : ResourceContainer {
+    private val rootPath = root.canonicalPath
     override val entries: List<String> = root.walkTopDown().filter { it.isFile }.map { it.relativeTo(root).path.replace('\\', '/') }.toList()
     override val entrySet: Set<String> = entries.toSet()
-    override fun open(path: String): InputStream? = File(root, path).takeIf { it.isFile }?.inputStream()
-    override fun exists(path: String): Boolean = File(root, path).isFile
-    override fun size(path: String): Long = File(root, path).length()
+
+    /** A path from a book's markup may contain "..": never read outside the book's own folder. */
+    private fun resolve(path: String): File? = File(root, path).canonicalFile
+        .takeIf { it.path.startsWith(rootPath + File.separator) && it.isFile }
+
+    override fun open(path: String): InputStream? = resolve(path)?.inputStream()
+    override fun exists(path: String): Boolean = resolve(path) != null
+    override fun size(path: String): Long = resolve(path)?.length() ?: -1
     override fun close() = Unit
 }
 

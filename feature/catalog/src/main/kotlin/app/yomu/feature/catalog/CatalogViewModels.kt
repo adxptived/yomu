@@ -14,23 +14,20 @@ import androidx.paging.cachedIn
 import app.yomu.core.common.AppError
 import app.yomu.core.common.ScreenErrors
 import app.yomu.core.common.runCatchingApp
+import app.yomu.core.database.TrackEntity
 import app.yomu.core.datastore.AppSettings
 import app.yomu.core.datastore.stateIn
-import app.yomu.data.catalog.CatalogRepository
 import app.yomu.data.audio.AudiobookStore
-import app.yomu.data.library.ImportOutcome
+import app.yomu.data.catalog.CatalogRepository
 import app.yomu.data.catalog.CatalogRepository.BrowseMode
 import app.yomu.data.catalog.GlobalSearchResult
 import app.yomu.data.catalog.HistoryEntry
 import app.yomu.data.download.DownloadRepository
+import app.yomu.data.library.ImportOutcome
 import app.yomu.data.source.SourceHealth
 import app.yomu.data.source.SourceInfo
 import app.yomu.data.source.SourceManager
 import app.yomu.data.tracking.TrackerManager
-import app.yomu.core.database.TrackEntity
-import app.yomu.domain.tracking.TrackEntry
-import app.yomu.domain.tracking.TrackSearchResult
-import app.yomu.domain.tracking.TrackService
 import app.yomu.data.work.UpdateWorker
 import app.yomu.domain.catalog.ChapterDisplay
 import app.yomu.domain.catalog.ChapterOrder
@@ -46,6 +43,9 @@ import app.yomu.domain.model.ChapterInfo
 import app.yomu.domain.model.ContentType
 import app.yomu.domain.model.DownloadItem
 import app.yomu.domain.model.DownloadStatus
+import app.yomu.domain.tracking.TrackEntry
+import app.yomu.domain.tracking.TrackSearchResult
+import app.yomu.domain.tracking.TrackService
 import app.yomu.source.CatalogSource
 import app.yomu.source.FilterList
 import app.yomu.source.HttpSource
@@ -61,8 +61,8 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -195,6 +195,7 @@ class CatalogHomeViewModel(
 
     /** Number of library titles before filtering. */
     val libraryTotal: StateFlow<Int> = allFavorites.map { it.size }.state(this, 0)
+
     /** The library tabs (shared with the books) and the tabs of each online title. */
     val tabs: StateFlow<List<BookCollection>> = catalog.tabs.observe().state(this, emptyList())
     val tabMembers: StateFlow<Map<Long, Set<Long>>> = catalog.tabs.observeOnline().state(this, emptyMap())
@@ -259,6 +260,7 @@ class CatalogHomeViewModel(
 
     fun removeHistory(chapterId: Long) = viewModelScope.launch(ScreenErrors) { catalog.removeHistory(chapterId) }
     fun clearHistory() = viewModelScope.launch(ScreenErrors) { catalog.clearHistory() }
+
     /** Creates a library tab; [addEntries] join it right away. */
     fun createTab(name: String, addEntries: Collection<Long> = emptyList()) = viewModelScope.launch(ScreenErrors) {
         if (name.isBlank()) return@launch
@@ -362,29 +364,38 @@ interface BrowseModel {
     val supportsSearch: Boolean
     val content: SourceContent
     val webUrl: String?
+
     /** Tabs of the screen in order: popular, latest (when the source has it), search. A navigation list has one. */
     val tabs: List<BrowseTab>
     val initialTab: BrowseTab
+
     /** Popular titles, or the entries of a navigation list. */
     val popular: Flow<PagingData<SItem>>
     val latest: Flow<PagingData<SItem>>
+
     /** The last search; null until the first one (the Search tab then shows recent searches and the filters). */
     val results: StateFlow<SearchResults?>
     val query: MutableStateFlow<String>
     val filters: StateFlow<FilterList>
+
     /** Bumped on every filter edit so that Compose re-reads the mutable filter states. */
     val filterVersion: StateFlow<Int>
+
     /**
      * Bumped only when the filters are replaced or put back (reset, reload, tags that arrived): the panel then reads
      * every control again. A single edit redraws only its own control (1.8.0).
      */
     val filterEpoch: StateFlow<Int> get() = filterVersion
+
     /** The source is still building its filters (some extensions load their tags in the background). */
     val filtersLoading: StateFlow<Boolean> get() = NotLoading
+
     /** Filters that differ from the source's defaults (chips above the results, the badge on the filter button). */
     val activeFilters: StateFlow<List<ActiveFilter>>
+
     /** The same source in its other languages, for the language switch of the top bar (1.9.0); empty for most. */
     val variants: StateFlow<List<SourceVariant>> get() = NoVariants
+
     /** Saves the chosen filters as those of [targetId], another language of this source, before switching to it. */
     suspend fun carryFiltersTo(targetId: Long) = Unit
     val searchHistory: StateFlow<List<String>>
@@ -395,6 +406,7 @@ interface BrowseModel {
     fun clearSearchHistory()
     fun onFilterChanged()
     fun resetFilters()
+
     /** Asks the source for its filters again, keeping the choices (for "press reset to load the tags" sources). */
     fun reloadFilters() = Unit
     fun resetFilter(path: List<Int>)
@@ -456,8 +468,10 @@ class SourceBrowseViewModel(
         else -> buildList {
             add(BrowseTab.POPULAR)
             if (supportsLatest) add(BrowseTab.LATEST)
-            // Only a source without text search is asked for its filters here, to know whether it has any.
-            if (supportsSearch || runCatching { source?.getFilterList()?.isNotEmpty() == true }.getOrDefault(false)) add(BrowseTab.SEARCH)
+            // No getFilterList() here: this property is built on the main thread, and extensions may build filters
+            // slowly or with network calls. The tab is always offered; a source that cannot search answers with its
+            // filters or an explanatory error instead of freezing the screen.
+            add(BrowseTab.SEARCH)
         }
     }
     override val initialTab: BrowseTab = tabs.firstOrNull { it.name == initialTabName }
@@ -488,6 +502,7 @@ class SourceBrowseViewModel(
 
     private val _results = MutableStateFlow<SearchResults?>(null)
     override val results: StateFlow<SearchResults?> = _results.asStateFlow()
+
     /** Scope of the current search's cached pages; cancelled when the next search starts. */
     private var searchScope: CoroutineScope? = null
     private var searchCount = 0
@@ -623,7 +638,8 @@ class SourceBrowseViewModel(
 
     private fun startSearch(q: String) {
         searchScope?.cancel()
-        val scope = CoroutineScope(viewModelScope.coroutineContext + SupervisorJob(viewModelScope.coroutineContext[Job]))
+        val scope =
+            CoroutineScope(viewModelScope.coroutineContext + SupervisorJob(viewModelScope.coroutineContext[Job]))
         searchScope = scope
         // Normally the filters are there; a search opened from another screen right away waits for them.
         val snapshot = CompletableDeferred<FilterList>()
@@ -656,7 +672,11 @@ class SourceBrowseViewModel(
         settings.sourceSearchHistory.set((listOf(q) + old.filterNot { it.equals(q, ignoreCase = true) }).take(SEARCH_HISTORY_MAX))
     }
 
-    override fun onFilterChanged() { filterVersion.value++ }
+    override fun onFilterChanged() {
+        filterVersion.value++
+        // Saved as soon as they are chosen: leaving the screen (or a process death) must not lose them.
+        saveFilters()
+    }
 
     /** The source's defaults, asked from the source again (which is what makes some extensions load their tags). */
     override fun resetFilters() {
@@ -679,13 +699,15 @@ class SourceBrowseViewModel(
         if (SourceFilterState.reset(filters.value, defaults, path)) {
             filterVersion.value++
             epoch.value++
-            if (_results.value != null) submit() else saveFilters()
+            saveFilters()
+            // Re-run the search that is on screen, not whatever is typed in the field meanwhile.
+            _results.value?.let { startSearch(it.query) }
         }
     }
 
     /** "Reset all" above the results: the source's defaults, searched again. */
     override fun clearFilters() {
-        resetThen { if (_results.value != null) submit() }
+        resetThen { _results.value?.let { startSearch(it.query) } }
     }
 
     /** Stores the item and asks the screen to open its title page. */
@@ -864,6 +886,7 @@ class TitleViewModel(
 
     /** Scanlation groups of the title, most chapters first. */
     val scanlators: StateFlow<List<String>> = allChapters.map { ChapterDisplay().scanlatorsOf(it.orEmpty()) }.state(this, emptyList())
+
     /** The library tabs and the ones this title is in. */
     val tabs: StateFlow<List<BookCollection>> = catalog.tabs.observe().state(this, emptyList())
     val entryTabs: StateFlow<Set<Long>> = catalog.tabs.observeOnline().map { it[entryId].orEmpty() }.state(this, emptySet())

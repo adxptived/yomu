@@ -56,25 +56,31 @@ class CloudflareInterceptor(
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val lock = hostLocks.computeIfAbsent(request.url.host) { ReentrantReadWriteLock() }
-
-        val (response, clearance) = lock.read {
-            val response = chain.proceed(request)
-            if (!shouldIntercept(response)) return response
-            response to clearance(request.url)
-        }
-
-        lock.write {
-            // Another request may have solved the challenge while this one waited
-            if (isCleared(request.url, clearance)) {
-                response.close()
-            } else {
-                if (!prepareWebView()) return response
-                solve(request, response, clearance)
+        val host = request.url.host
+        val lock = hostLocks.computeIfAbsent(host) { ReentrantReadWriteLock() }
+        try {
+            val (response, clearance) = lock.read {
+                val response = chain.proceed(request)
+                if (!shouldIntercept(response)) return response
+                response to clearance(request.url)
             }
-        }
 
-        return chain.proceed(request)
+            lock.write {
+                // Another request may have solved the challenge while this one waited
+                if (isCleared(request.url, clearance)) {
+                    response.close()
+                } else {
+                    if (!prepareWebView()) return response
+                    solve(request, response, clearance)
+                }
+            }
+
+            return chain.proceed(request)
+        } finally {
+            // The lock is only needed while a challenge is being solved: keeping one per host forever leaks them
+            // (a source can use hundreds of hosts), so it is dropped once nobody waits on it.
+            if (!lock.hasQueuedThreads() && !lock.isWriteLocked && lock.readLockCount == 0) hostLocks.remove(host, lock)
+        }
     }
 
     override fun intercept(chain: Interceptor.Chain, request: Request, response: Response): Response {

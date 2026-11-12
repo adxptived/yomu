@@ -138,7 +138,6 @@ class AudioPlayerViewModel(
     /** Share of the book heard, or null while some track length is unknown. */
     fun bookProgress(s: PlayerSnapshot): Float? = durationsFor(s)?.let { PlayerMath.bookProgress(it, s.track, s.positionMs) }
 
-
     fun jump(entry: AudioNavEntry) {
         val p = audio.player() ?: return
         p.seekTo(entry.track, entry.startMs)

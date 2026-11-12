@@ -40,8 +40,8 @@ import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.ExpandMore
-import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.FilterAltOff
+import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Palette
@@ -57,6 +57,7 @@ import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Badge
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -73,14 +74,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.runtime.mutableIntStateOf
-import java.util.IdentityHashMap
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -100,6 +99,7 @@ import app.yomu.core.ui.components.motionItem
 import app.yomu.core.ui.components.motionSpec
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.source.Filter
+import java.util.IdentityHashMap
 import app.yomu.core.ui.R as CoreR
 
 /**

@@ -4,14 +4,13 @@ import android.content.Context
 import android.net.Uri
 import android.util.AtomicFile
 import app.yomu.core.common.Files
-import app.yomu.core.database.BookEntity
 import app.yomu.core.database.YomuDatabase
 import app.yomu.data.library.ImportOutcome
 import app.yomu.data.library.ImportService
 import app.yomu.domain.model.BookFormat
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -70,6 +69,7 @@ internal data class BookFileIndex(
 /** The per-target baseline of one book: what this device last agreed on, shared and private. */
 @Serializable
 internal data class BookBaseline(val shared: BookDeletionGuard.SharedRevision, val privateState: String)
+
 @Serializable
 internal data class BookFileBase(val version: Int = 1, val syncId: String, val present: Set<String> = emptySet(), val suppressed: Set<String> = emptySet(), val indexKnown: Boolean = false, val baselines: Map<String, BookBaseline> = emptyMap())
 
@@ -97,8 +97,7 @@ internal class BookFileSync(
             val current = db.books().get(snapshot.bookId)
             if (current == null || current.fileHash != snapshot.hash || current.uri != snapshot.uri.toString())
                 throw IOException("Book changed during synchronization: ${snapshot.title}")
-            val actual = try { Files.open(context, snapshot.uri).use { digest(it) } }
-                catch (e: Exception) { throw IOException("Cannot verify book after transfer: ${snapshot.title}", e) }
+            val actual = try { Files.open(context, snapshot.uri).use { digest(it) } } catch (e: Exception) { throw IOException("Cannot verify book after transfer: ${snapshot.title}", e) }
             if (actual != snapshot.digest) throw IOException("Book changed during synchronization: ${snapshot.title}")
         }
     }

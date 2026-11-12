@@ -22,7 +22,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /** A page of the manga working copy. [rotation] (0/90/180/270) is applied on export. */
-data class MangaPage(val file: String, val rotation: Int = 0)
+data class MangaPage(val file: String, val rotation: Int = 0, val missing: Boolean = false)
 
 /** Subset of ComicInfo.xml (Anansi schema v2) edited in the app; unknown elements are preserved in [extra]. */
 data class ComicInfo(
@@ -38,13 +38,16 @@ data class ComicInfo(
     val year: String = "",
     /** Right-to-left manga ("YesAndRightToLeft"). */
     val manga: Boolean = false,
+    /** The raw `<Pages>` subtree of the source file, preserved so a save does not drop per-page metadata. */
+    val pagesXml: String = "",
     val extra: Map<String, String> = emptyMap(),
 ) {
     val isEmpty: Boolean get() = this == ComicInfo()
 }
 
 object ComicInfoXml {
-    private val KNOWN = setOf("Title", "Series", "Number", "Volume", "Writer", "Penciller", "Genre", "LanguageISO", "Summary", "Year", "Manga", "PageCount", "Pages")
+    private val KNOWN =
+        setOf("Title", "Series", "Number", "Volume", "Writer", "Penciller", "Genre", "LanguageISO", "Summary", "Year", "Manga", "PageCount", "Pages")
 
     fun parse(xml: String): ComicInfo {
         val doc = Jsoup.parse(xml, "", Parser.xmlParser())
@@ -52,10 +55,13 @@ object ComicInfoXml {
         fun v(name: String) = root.children().firstOrNull { it.tagName().equals(name, true) }?.wholeText()?.trim().orEmpty()
         val extra = root.children().filter { el -> KNOWN.none { it.equals(el.tagName(), true) } && el.children().isEmpty() }
             .associate { it.tagName() to it.wholeText().trim() }
+        val mangaValue = v("Manga")
         return ComicInfo(
             title = v("Title"), series = v("Series"), number = v("Number"), volume = v("Volume"), writer = v("Writer"),
             penciller = v("Penciller"), genre = v("Genre"), languageIso = v("LanguageISO"), summary = v("Summary"), year = v("Year"),
-            manga = v("Manga").equals("YesAndRightToLeft", true), extra = extra,
+            manga = mangaValue.equals("Yes", true) || mangaValue.equals("YesAndRightToLeft", true) || mangaValue.equals("true", true),
+            pagesXml = root.children().firstOrNull { it.tagName().equals("Pages", true) }?.html()?.trim().orEmpty(),
+            extra = extra,
         )
     }
 
@@ -76,6 +82,7 @@ object ComicInfoXml {
         el("Genre", info.genre)
         el("LanguageISO", info.languageIso)
         info.extra.forEach { (k, v) -> if (k.matches(Regex("[A-Za-z][A-Za-z0-9_]*"))) el(k, v) }
+        if (info.pagesXml.isNotBlank()) append("  <Pages>").append(info.pagesXml).append("</Pages>\n")
         el("PageCount", pageCount.toString())
         el("Manga", if (info.manga) "YesAndRightToLeft" else "No")
         append("</ComicInfo>\n")
@@ -101,18 +108,23 @@ class MangaWorkspace(val root: File) {
         pages = runCatching {
             Json.parseToJsonElement(File(root, PAGES).readText()).jsonArray.map { e ->
                 val o = e.jsonObject
-                MangaPage(o["file"]!!.jsonPrimitive.content, o["rotation"]?.jsonPrimitive?.intOrNull ?: 0)
+                val file = o["file"]!!.jsonPrimitive.content
+                MangaPage(file, o["rotation"]?.jsonPrimitive?.intOrNull ?: 0, missing = !File(root, file).isFile)
             }
-        }.getOrDefault(emptyList()).filter { File(root, it.file).isFile }
+        }.getOrDefault(emptyList())
         info = runCatching { infoFromJson(Json.parseToJsonElement(File(root, INFO).readText()).jsonObject) }.getOrDefault(ComicInfo())
     }
 
     fun file(page: MangaPage) = File(root, page.file)
 
+    /** Pages whose image file disappeared: shown by validate() instead of vanishing from the list silently. */
+    fun validate(): List<Issue> = pages.filter { it.missing }.map { Issue(IssueCode.MISSING_FILE, it.file) }
+
     fun newImageName(ext: String): String = "$IMG_DIR/${UUID.randomUUID().toString().substring(0, 13)}.${ext.lowercase()}"
 
     fun savePages(list: List<MangaPage>) {
-        val json = JsonArray(list.map { p -> buildJsonObject { put("file", p.file); if (p.rotation != 0) put("rotation", p.rotation) } })
+        val json =
+            JsonArray(list.map { p -> buildJsonObject { put("file", p.file); if (p.rotation != 0) put("rotation", p.rotation) } })
         File(root, PAGES).writeText(json.toString())
         pages = list
     }
@@ -212,6 +224,7 @@ class MangaWorkspace(val root: File) {
             put("summary", i.summary)
             put("year", i.year)
             put("manga", i.manga)
+            if (i.pagesXml.isNotBlank()) put("pagesXml", i.pagesXml)
             put("extra", JsonObject(i.extra.mapValues { JsonPrimitive(it.value) }))
         }
 
@@ -221,6 +234,7 @@ class MangaWorkspace(val root: File) {
                 title = s("title"), series = s("series"), number = s("number"), volume = s("volume"), writer = s("writer"),
                 penciller = s("penciller"), genre = s("genre"), languageIso = s("languageIso"), summary = s("summary"), year = s("year"),
                 manga = o["manga"]?.jsonPrimitive?.booleanOrNull ?: false,
+                pagesXml = s("pagesXml"),
                 extra = o["extra"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content }.orEmpty(),
             )
         }

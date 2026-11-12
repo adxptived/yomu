@@ -3,8 +3,8 @@ package app.yomu.feature.reader
 import android.content.Context
 import android.net.Uri
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.isSpecified
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.yomu.core.common.AppError
@@ -55,8 +55,6 @@ import app.yomu.domain.model.SearchHit
 import app.yomu.domain.model.TapZoneLayout
 import app.yomu.domain.model.TextPreset
 import app.yomu.domain.model.TextReaderSettings
-import app.yomu.feature.reader.manga.TapAction
-import app.yomu.feature.reader.manga.TapZones
 import app.yomu.domain.model.TocItem
 import app.yomu.domain.text.TextTools
 import app.yomu.feature.reader.epub.ChapterText
@@ -70,6 +68,8 @@ import app.yomu.feature.reader.epub.EpubWord
 import app.yomu.feature.reader.manga.MangaController
 import app.yomu.feature.reader.manga.MangaListener
 import app.yomu.feature.reader.manga.OverlayBlock
+import app.yomu.feature.reader.manga.TapAction
+import app.yomu.feature.reader.manga.TapZones
 import app.yomu.feature.reader.pdf.PdfController
 import app.yomu.feature.reader.pdf.PdfListener
 import app.yomu.feature.reader.pdf.PdfSelection
@@ -84,6 +84,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -143,6 +144,9 @@ data class SeekPreview(val page: Int, val pages: Int, val approximate: Boolean, 
 /** The place before a jump (slider, contents, search, "go to page"), to return with one tap. */
 data class JumpBack(val locator: Locator, val page: Int)
 
+/** How many jump positions the "back" button remembers; older ones fall off the front. */
+private const val JUMP_STACK_MAX = 50
+
 data class SearchState(val query: String = "", val loading: Boolean = false, val hits: List<SearchHit> = emptyList(), val done: Boolean = false)
 
 sealed interface ReaderEvent {
@@ -154,8 +158,10 @@ sealed interface ReaderEvent {
     data class Error(val error: Throwable) : ReaderEvent
     data class OpenUrl(val url: String) : ReaderEvent
     data object Finished : ReaderEvent
+
     /** Open the note dialog for the current page (long-press menu). */
     data object PageNote : ReaderEvent
+
     /** Saving to the gallery is not possible here (Android 9 and older): ask where to save the page. */
     data class SavePageAs(val file: java.io.File, val name: String, val mime: String) : ReaderEvent
 }
@@ -221,10 +227,27 @@ class ReaderViewModel(
         .stateIn(viewModelScope, SharingStarted.Eagerly, TextReaderSettings())
     private val appDark = MutableStateFlow(false)
     fun setAppDark(dark: Boolean) { appDark.value = dark }
+    private val landscape = MutableStateFlow(false)
+    fun setLandscape(value: Boolean) { landscape.value = value }
+
+    private fun textColumns(s: TextReaderSettings, wide: Boolean): Int =
+        if (s.dualPageLandscape && wide && s.paged && !s.verticalText) 2 else 1
+
+    /** Re-emits once a minute so a night schedule switches without reopening the reader. */
+    private val minuteTick = MutableStateFlow(0L)
 
     /** [textSettings] with the auto night theme applied; what the page, the PDF and the reader colours use. */
-    val effectiveText: StateFlow<TextReaderSettings> = combine(textSettings, appDark) { s, dark ->
-        if (s.autoNight && dark) s.copy(theme = s.nightTheme) else s
+    val effectiveText: StateFlow<TextReaderSettings> = combine(textSettings, appDark, minuteTick) { s, dark, _ ->
+        val night = when (s.autoNightMode) {
+            app.yomu.domain.model.AutoNightMode.SYSTEM -> dark
+            app.yomu.domain.model.AutoNightMode.SCHEDULE -> {
+                val hour = java.time.LocalTime.now().hour
+                if (s.nightFromHour == s.nightToHour) false
+                else if (s.nightFromHour < s.nightToHour) hour in s.nightFromHour until s.nightToHour
+                else hour >= s.nightFromHour || hour < s.nightToHour
+            }
+        }
+        if (s.autoNight && night) s.copy(theme = s.nightTheme) else s
     }.stateIn(viewModelScope, SharingStarted.Eagerly, TextReaderSettings())
     val mangaSettings: StateFlow<MangaSettings> = combine(settings.mangaSettings.flow, bookOverride) { g, o -> o.manga ?: g }
         .stateIn(viewModelScope, SharingStarted.Eagerly, MangaSettings())
@@ -286,6 +309,7 @@ class ReaderViewModel(
     private var sessionStart = 0L
     private var sessionPages = 0
     private var sessionChars = 0L
+
     /** Last page turn / scroll / tap: time after it without any activity is not counted as reading. */
     private var lastActivity = 0L
     private var onlineEntryId: Long? = null
@@ -293,15 +317,40 @@ class ReaderViewModel(
     private var lastPage = -1
     private var tapZonesShown = false
     private var saveJob: Job? = null
+
     /** The position waiting for [scheduleSave]'s debounce; written right away when the reader is left. */
     @Volatile private var pendingLocator: Locator? = null
     private val openBookMutex = Mutex()
+    private val chapterOpenMutex = Mutex()
+    private var chapterOpenJob: Job? = null
     private var folderReadSession: BookRepositoryImpl.FolderReadSession? = null
 
     init {
         tts.onSentence = { i -> onTtsSentence(i) }
         tts.onQueueFinished = { onTtsQueueFinished() }
-        tts.onError = { events.trySend(ReaderEvent.Message(R.string.reader_tts_error)) }
+        // A failing engine must not leave the UI saying "reading" with no sound and a stalled queue.
+        tts.onError = {
+            events.trySend(ReaderEvent.Message(R.string.reader_tts_error))
+            stopTts()
+        }
+        viewModelScope.launch(ScreenErrors) { settings.dictionaryApp.flow.collect { dictionaryAppCache = it } }
+        TtsBus.controls = object : TtsBus.Controls {
+            override fun play() = resumeTts()
+            override fun pause() = pauseTts()
+            override fun stop() = stopTts()
+        }
+        viewModelScope.launch(ScreenErrors) { tts.playing.collect { playing -> TtsBus.update { it.copy(playing = playing) } } }
+        viewModelScope.launch(ScreenErrors) {
+            while (true) {
+                delay(60_000 - System.currentTimeMillis() % 60_000 + 100)
+                minuteTick.value = System.currentTimeMillis()
+            }
+        }
+        viewModelScope.launch(ScreenErrors) {
+            combine(effectiveText, landscape) { s, wide -> textColumns(s, wide) }
+                .distinctUntilChanged()
+                .collect { cols -> (current() as? ReaderContent.Text)?.controller?.updateColumns(cols) }
+        }
         viewModelScope.launch(ScreenErrors) {
             runCatching { if (isOnline) openOnline(args.chapterId) else openBook(args.bookId, null) }
                 .onFailure { e ->
@@ -316,10 +365,15 @@ class ReaderViewModel(
         viewModelScope.launch(ScreenErrors) { savedWords.collect { w -> (current() as? ReaderContent.Text)?.controller?.setSavedWords(w.toList()) } }
         viewModelScope.launch(ScreenErrors) { settings.wordTap.flow.collect { g -> (current() as? ReaderContent.Text)?.controller?.let { it.wordTap = g; it.refreshConfig() } } }
         viewModelScope.launch(ScreenErrors) {
+            var previous: app.yomu.domain.model.CommonReaderSettings? = null
             common.collect { c ->
                 tts.speed = c.ttsSpeed
                 tts.pitch = c.ttsPitch
                 tts.voiceName = c.ttsVoice
+                val voiceChanged = previous?.let { it.ttsSpeed != c.ttsSpeed || it.ttsPitch != c.ttsPitch || it.ttsVoice != c.ttsVoice } == true
+                // The whole chapter is queued in advance, so a new rate only reaches the rest of the queue after a restart.
+                if (voiceChanged && tts.playing.value) tts.restartCurrent()
+                previous = c
                 (current() as? ReaderContent.Text)?.controller?.let { t ->
                     if (t.footerSpace != c.footer) { t.footerSpace = c.footer; t.refreshConfig() }
                 }
@@ -328,6 +382,11 @@ class ReaderViewModel(
     }
 
     fun current(): ReaderContent? = (_content.value as? UiState.Data)?.value
+
+    /** App chosen for the "dictionary" selection action (kept in memory: the UI asks synchronously). */
+    @Volatile private var dictionaryAppCache = app.yomu.domain.model.DictionaryApp.SYSTEM
+
+    fun dictionaryApp(): app.yomu.domain.model.DictionaryApp = dictionaryAppCache
 
     // ================================================================== opening
     fun submitPassword(password: String) {
@@ -379,74 +438,83 @@ class ReaderViewModel(
         folderReadSession = null
         var lease = books.beginFolderReading(id)
         try {
-        val b = books.getBook(id) ?: throw AppError.CorruptedFile("Book $id not found")
-        book = b
-        _title.value = b.title
-        _imageCanvas.value = !b.format.isText
-        bookOverride.value = b.readerSettingsJson?.let { runCatching { SettingsJson.decodeFromString(BookReaderSettings.serializer(), it) }.getOrNull() } ?: BookReaderSettings()
-        if (lease != null && args.locatorJson != null && args.positionReference == null)
-            throw java.io.IOException("This saved position may be outdated; reopen it from the current list")
-        val saved = if (args.positionReference != null) {
-            books.resolveSavedPosition(id, args.positionReference) ?: books.getProgress(id)
-        } else {
-            args.locatorJson?.let { runCatching { SettingsJson.decodeFromString(Locator.serializer(), it) }.getOrNull() } ?: books.getProgress(id)
-        }
-        if (b.status == ReadingStatus.NEW) books.setStatus(listOf(id), ReadingStatus.READING)
-        when (b.engine) {
-            // Navigation opens audiobooks in the player; the reader never gets one.
-            EngineType.AUDIO -> throw AppError.UnsupportedFormat(b.format.name)
-            EngineType.TEXT -> {
-                val uri = BookFiles.readingUri(context, b)
-                val doc = withContext(Dispatchers.IO) { EpubTextDocument.open(Containers.open(context, uri, BookFormat.EPUB)) }
-                val c = newTextController(doc)
-                _toc.value = doc.toc
-                initialTarget = if (saved != null) {
-                    if (saved.offset == null && saved.progression == 0f && saved.totalProgression > 0f) {
-                        val (ch, p) = doc.locate(saved.totalProgression)
-                        ch to EpubTarget.Progression(p)
+            val b = books.getBook(id) ?: throw AppError.CorruptedFile("Book $id not found")
+            book = b
+            _title.value = b.title
+            _imageCanvas.value = !b.format.isText
+            bookOverride.value = b.readerSettingsJson?.let { runCatching { SettingsJson.decodeFromString(BookReaderSettings.serializer(), it) }.getOrNull() } ?: BookReaderSettings()
+            if (lease != null && args.locatorJson != null && args.positionReference == null)
+                throw java.io.IOException("This saved position may be outdated; reopen it from the current list")
+            val saved = if (args.positionReference != null) {
+                books.resolveSavedPosition(id, args.positionReference) ?: books.getProgress(id)
+            } else {
+                args.locatorJson?.let { runCatching { SettingsJson.decodeFromString(Locator.serializer(), it) }.getOrNull() } ?: books.getProgress(id)
+            }
+            if (b.status == ReadingStatus.NEW) books.setStatus(listOf(id), ReadingStatus.READING)
+            when (b.engine) {
+                // Navigation opens audiobooks in the player; the reader never gets one.
+                EngineType.AUDIO -> throw AppError.UnsupportedFormat(b.format.name)
+                EngineType.TEXT -> {
+                    val uri = BookFiles.readingUri(context, b)
+                    val doc =
+                        withContext(Dispatchers.IO) { EpubTextDocument.open(Containers.open(context, uri, BookFormat.EPUB)) }
+                    // An empty or unreadable book would show a blank page with no explanation.
+                    if (doc.chapterCount < 1) throw AppError.CorruptedFile("The book has no readable chapters")
+                    val c = newTextController(doc)
+                    _toc.value = doc.toc
+                    initialTarget = if (saved != null) {
+                        if (saved.offset == null && saved.progression == 0f && saved.totalProgression > 0f) {
+                            val (ch, p) = doc.locate(saved.totalProgression)
+                            ch to EpubTarget.Progression(p)
+                        } else {
+                            saved.chapter to (saved.offset?.let { EpubTarget.Offset(it) } ?: EpubTarget.Progression(saved.progression))
+                        }
                     } else {
-                        saved.chapter to (saved.offset?.let { EpubTarget.Offset(it) } ?: EpubTarget.Progression(saved.progression))
+                        0 to null
                     }
-                } else {
-                    0 to null
+                    _position.value = ReaderPosition(chapterCount = doc.chapterCount)
+                    _content.value = UiState.Data(ReaderContent.Text(c))
                 }
-                _position.value = ReaderPosition(chapterCount = doc.chapterCount)
-                _content.value = UiState.Data(ReaderContent.Text(c))
-            }
-            EngineType.PDF -> {
-                val uri = Uri.parse(b.uri)
-                val src = withContext(Dispatchers.IO) {
-                    // Highlights another device wrote into the file come in first; the reader draws them itself, so it
-                    // opens the file without Yomu's own annotations.
-                    runCatching { pdfAnnotations.importFromFile(b.id) }.onFailure { Timber.w(it, "PDF annotations") }
-                    PdfSource.open(context, uri, password, limit = pdfAnnotations.renderLimit(b.id, uri))
+                EngineType.PDF -> {
+                    val uri = Uri.parse(b.uri)
+                    val src = withContext(Dispatchers.IO) {
+                        // Highlights another device wrote into the file come in first; the reader draws them itself, so it
+                        // opens the file without Yomu's own annotations.
+                        runCatching { pdfAnnotations.importFromFile(b.id) }.onFailure { Timber.w(it, "PDF annotations") }
+                        PdfSource.open(context, uri, password, limit = pdfAnnotations.renderLimit(b.id, uri))
+                    }
+                    if (src.pageCount < 1) {
+                        src.close()
+                        throw AppError.CorruptedFile("The PDF has no pages")
+                    }
+                    val c = PdfController(src)
+                    c.settings = pdfSettings.value
+                    c.page = (saved?.chapter ?: 0).coerceIn(0, (src.pageCount - 1).coerceAtLeast(0))
+                    c.highlights = highlights.value
+                    _toc.value = runCatching { src.toc() }.getOrDefault(emptyList())
+                    _position.value = ReaderPosition(chapter = c.page, chapterCount = src.pageCount, page = c.page, pages = src.pageCount)
+                    _content.value = UiState.Data(ReaderContent.Pdf(c))
+                    onPageChanged(c.page)
                 }
-                val c = PdfController(src)
-                c.settings = pdfSettings.value
-                c.page = (saved?.chapter ?: 0).coerceIn(0, (src.pageCount - 1).coerceAtLeast(0))
-                c.highlights = highlights.value
-                _toc.value = runCatching { src.toc() }.getOrDefault(emptyList())
-                _position.value = ReaderPosition(chapter = c.page, chapterCount = src.pageCount, page = c.page, pages = src.pageCount)
-                _content.value = UiState.Data(ReaderContent.Pdf(c))
-                onPageChanged(c.page)
+                EngineType.MANGA -> {
+                    val uri = BookFiles.readingUri(context, b)
+                    val pages =
+                        withContext(Dispatchers.IO) { PageSources.open(context, b, uri, folderProofs = lease?.pages) }
+                    if (pages.count == 0) throw AppError.CorruptedFile("No pages")
+                    openManga(pages, (saved?.chapter ?: 0))
+                }
             }
-            EngineType.MANGA -> {
-                val uri = BookFiles.readingUri(context, b)
-                val pages = withContext(Dispatchers.IO) { PageSources.open(context, b, uri, folderProofs = lease?.pages) }
-                if (pages.count == 0) throw AppError.CorruptedFile("No pages")
-                openManga(pages, (saved?.chapter ?: 0))
-            }
-        }
-        sessionStart = System.currentTimeMillis()
-        lastActivity = sessionStart
-        folderReadSession = lease
-        lease = null
+            sessionStart = System.currentTimeMillis()
+            lastActivity = sessionStart
+            folderReadSession = lease
+            lease = null
         } finally { lease?.close() }
     }
 
     private fun newTextController(doc: app.yomu.feature.reader.epub.TextDocument): EpubController {
         val c = EpubController(context, doc, File(context.filesDir, "fonts").apply { mkdirs() })
         c.listener = this
+        c.columns = textColumns(effectiveText.value, landscape.value)
         c.updateSettings(effectiveText.value, relayout = false)
         c.footerSpace = common.value.footer
         c.prevLabel = context.getString(R.string.reader_prev_chapter)
@@ -517,7 +585,8 @@ class ReaderViewModel(
             val pages = if (local != null) {
                 withContext(Dispatchers.IO) {
                     val fmt = if (local.isDirectory) BookFormat.FOLDER else BookFormat.CBZ
-                    val fake = Book(id = -chapterId, title = ch.name, format = fmt, uri = Uri.fromFile(local).toString())
+                    val fake =
+                        Book(id = -chapterId, title = ch.name, format = fmt, uri = Uri.fromFile(local).toString())
                     PageSources.open(context, fake, Uri.fromFile(local))
                 }
             } else {
@@ -534,20 +603,27 @@ class ReaderViewModel(
     fun openAdjacentChapter(next: Boolean) {
         // Other groups' releases of the current chapter are skipped; the current group is preferred.
         val target = ChapterOrder.adjacent(chapters, _chapterId.value, forward = next) ?: return
-        viewModelScope.launch(ScreenErrors) {
-            flushStats()
-            if (next) catalog.saveProgress(_chapterId.value, 0, finished = true)
-            _content.value = UiState.Loading
-            runCatching { openOnline(target.id) }.onFailure { _content.value = UiState.Error(AppError.from(it)) }
-        }
+        openChapter(target.id, finished = next)
     }
 
     fun openChapterAt(index: Int) {
         val target = chapters.getOrNull(index) ?: return
-        viewModelScope.launch(ScreenErrors) {
-            flushStats()
-            _content.value = UiState.Loading
-            runCatching { openOnline(target.id) }.onFailure { _content.value = UiState.Error(AppError.from(it)) }
+        openChapter(target.id, finished = false)
+    }
+
+    /**
+     * One chapter open at a time: two quick taps must not load two containers, where the loser is never closed.
+     * A newer request replaces the older one instead of running beside it.
+     */
+    private fun openChapter(targetId: Long, finished: Boolean) {
+        chapterOpenJob?.cancel()
+        chapterOpenJob = viewModelScope.launch(ScreenErrors) {
+            chapterOpenMutex.withLock {
+                flushStats()
+                if (finished) catalog.saveProgress(_chapterId.value, 0, finished = true)
+                _content.value = UiState.Loading
+                runCatching { openOnline(targetId) }.onFailure { _content.value = UiState.Error(AppError.from(it)) }
+            }
         }
     }
 
@@ -573,6 +649,8 @@ class ReaderViewModel(
 
     override fun onProgress(chapter: Int, progress: EpubProgress) {
         val c = (current() as? ReaderContent.Text)?.controller ?: return
+        // Reports that belong to a chapter the controller already left would move the saved position backwards.
+        if (chapter != c.chapter) return
         val doc = c.document
         chapterLengths[chapter] = progress.total
         markActivity()
@@ -617,7 +695,19 @@ class ReaderViewModel(
                     TapAction.MENU -> toggleChrome()
                 }
             }
-            is ReaderContent.Pdf -> toggleChrome()
+            is ReaderContent.Pdf -> {
+                val c = current() as ReaderContent.Pdf
+                if (!common.value.tapToTurn) {
+                    toggleChrome()
+                } else {
+                    val action = TapZones.action(common.value.textTapZones, false, false, x, y, sideFraction = 0.25f)
+                    when (action) {
+                        TapAction.PREV -> if (c.controller.page > 0) c.controller.goTo(c.controller.page - 1)
+                        TapAction.NEXT -> if (c.controller.page < c.controller.pageCount - 1) c.controller.goTo(c.controller.page + 1)
+                        TapAction.MENU -> toggleChrome()
+                    }
+                }
+            }
             else -> toggleChrome()
         }
     }
@@ -896,7 +986,11 @@ class ReaderViewModel(
         pendingLocator = null
         // Incognito: the position is kept only while the reader is open.
         if (settings.incognito.get()) return
-        withContext(NonCancellable) { books.saveProgress(args.bookId, locator) }
+        withContext(NonCancellable) {
+            books.saveProgress(args.bookId, locator)
+            // Text books remember every chapter separately: coming back to a chapter restores where it was left.
+            if (current() is ReaderContent.Text && locator.offset != null) books.saveChapterProgress(args.bookId, locator.chapter, locator)
+        }
     }
 
     private fun markFinishedQuietly() {
@@ -904,6 +998,8 @@ class ReaderViewModel(
         // App-lifetime: finishing the last page and backing out at once must still mark the book.
         @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
         kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+            // Incognito: reading a book to the end must not change its status behind the user's back.
+            if (settings.incognito.get()) return@launch
             runCatching { books.setStatus(listOf(args.bookId), ReadingStatus.FINISHED) }
         }
     }
@@ -915,6 +1011,8 @@ class ReaderViewModel(
 
     fun onPause() {
         saveJob?.cancel()
+        // In a pocket the auto scroll would keep turning pages and the position would drift while the app is away.
+        if (autoScroll.value) stopAutoScroll()
         // Home or the recents screen may be followed by the process being killed: save before that can happen.
         @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
         kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) { runCatching { flushProgress() } }
@@ -968,8 +1066,18 @@ class ReaderViewModel(
     // ================================================================== navigation
     fun goToToc(item: TocItem) {
         rememberJump()
+        val anchor = item.anchor
         when (val c = current()) {
-            is ReaderContent.Text -> if (isOnline) openChapterAt(item.chapter) else c.controller.goTo(item.chapter, item.anchor?.let { EpubTarget.Anchor(it) } ?: EpubTarget.Progression(0f))
+            is ReaderContent.Text -> if (isOnline) {
+                openChapterAt(item.chapter)
+            } else if (anchor != null) {
+                c.controller.goTo(item.chapter, EpubTarget.Anchor(anchor))
+            } else {
+                // A chapter without an anchor opens where it was left last time.
+                viewModelScope.launch(ScreenErrors) {
+                    c.controller.goTo(item.chapter, savedTextTarget(item.chapter) ?: EpubTarget.Progression(0f))
+                }
+            }
             is ReaderContent.Pdf -> c.controller.goTo(item.chapter)
             is ReaderContent.Manga -> c.controller.goTo(item.chapter)
             null -> Unit
@@ -994,6 +1102,8 @@ class ReaderViewModel(
     /** Book weight units per screen page, measured on chapters long enough to be representative. */
     private var weightPerPage = 0f
     private var hereLocator: Locator? = null
+    /** Positions the reader jumped away from, newest last: "back" walks the whole chain, not just one step. */
+    private val jumpStack = ArrayDeque<JumpBack>()
     private val _jumpBack = MutableStateFlow<JumpBack?>(null)
     val jumpBack: StateFlow<JumpBack?> = _jumpBack
 
@@ -1043,17 +1153,22 @@ class ReaderViewModel(
 
     private fun rememberJump() {
         val l = hereLocator ?: return
-        _jumpBack.value = JumpBack(l, _position.value.bookPage)
+        val jump = JumpBack(l, _position.value.bookPage)
+        if (jumpStack.lastOrNull()?.locator == jump.locator) return
+        jumpStack.addLast(jump)
+        while (jumpStack.size > JUMP_STACK_MAX) jumpStack.removeFirst()
+        _jumpBack.value = jumpStack.last()
     }
 
-    /** Returns to where the reader was before the last jump. */
+    /** Returns to where the reader was before the last jump; another tap goes one jump further back. */
     fun jumpBack() {
-        val j = _jumpBack.value ?: return
-        _jumpBack.value = null
-        navigate(j.locator)
+        val jump = jumpStack.removeLastOrNull() ?: return
+        _jumpBack.value = jumpStack.lastOrNull()
+        navigate(jump.locator)
     }
 
     fun dismissJumpBack() {
+        jumpStack.clear()
         _jumpBack.value = null
     }
 
@@ -1093,15 +1208,39 @@ class ReaderViewModel(
         when (val c = current()) {
             is ReaderContent.Text -> if (isOnline) openAdjacentChapter(true) else c.controller.nextChapter()
             is ReaderContent.Manga -> if (isOnline) openAdjacentChapter(true)
-            else -> Unit
+            // For a PDF "chapter" is the page: the bottom bar's chapter buttons must still do something.
+            is ReaderContent.Pdf -> if (c.controller.page < c.controller.pageCount - 1) c.controller.goTo(c.controller.page + 1)
+            null -> Unit
         }
     }
 
     fun prevChapter() {
         when (val c = current()) {
-            is ReaderContent.Text -> if (isOnline) openAdjacentChapter(false) else c.controller.prevChapter()
+            is ReaderContent.Text -> {
+                if (isOnline) {
+                    openAdjacentChapter(false)
+                } else {
+                    val target = c.controller.chapter - 1
+                    if (target >= 0) viewModelScope.launch(ScreenErrors) {
+                        c.controller.goTo(target, savedTextTarget(target) ?: EpubTarget.Progression(1f))
+                    }
+                }
+            }
             is ReaderContent.Manga -> if (isOnline) openAdjacentChapter(false)
-            else -> Unit
+            is ReaderContent.Pdf -> if (c.controller.page > 0) c.controller.goTo(c.controller.page - 1)
+            null -> Unit
+        }
+    }
+
+    /** Position saved inside [chapter] of this text book, if it was read before. */
+    private suspend fun savedTextTarget(chapter: Int): EpubTarget? {
+        if (args.bookId <= 0) return null
+        val locator = books.getChapterProgress(args.bookId, chapter) ?: return null
+        val offset = locator.offset
+        return when {
+            offset != null -> EpubTarget.Offset(offset)
+            locator.progression > 0.001f -> EpubTarget.Progression(locator.progression)
+            else -> null
         }
     }
 
@@ -1208,7 +1347,8 @@ class ReaderViewModel(
                 val text = (current() as? ReaderContent.Text)?.controller?.let { c -> runCatching { c.visibleText() }.getOrNull()?.take(120) }
                 val title = text?.trim()?.ifBlank { null } ?: p.chapterTitle ?: context.getString(R.string.reader_page_n, p.page + 1)
                 val offset = (current() as? ReaderContent.Text)?.controller?.progress?.offset
-                val b = Bookmark(bookId = args.bookId, locator = Locator(p.chapter, p.progression, p.total, offset = offset, chapterTitle = p.chapterTitle), title = title)
+                val b =
+                    Bookmark(bookId = args.bookId, locator = Locator(p.chapter, p.progression, p.total, offset = offset, chapterTitle = p.chapterTitle), title = title)
                 val id = annotations.saveBookmark(b)
                 events.send(ReaderEvent.BookmarkAdded(b.copy(id = id)))
             }
@@ -1447,6 +1587,22 @@ class ReaderViewModel(
             }
             else -> events.trySend(ReaderEvent.Message(R.string.reader_tts_unavailable))
         }
+        if (_ttsActive.value) {
+            publishTts(true)
+            ReaderTtsService.start(context)
+        }
+    }
+
+    /** Title and chapter for the notification and the lock screen. */
+    private fun publishTts(active: Boolean) {
+        TtsBus.update {
+            it.copy(
+                active = active,
+                playing = if (active) it.playing else false,
+                title = _title.value,
+                subtitle = _position.value.chapterTitle ?: chapterOf,
+            )
+        }
     }
 
     private suspend fun speakTextFrom(c: EpubController, offset: Int) {
@@ -1476,6 +1632,7 @@ class ReaderViewModel(
     }
 
     private fun onTtsSentence(i: Int) {
+        _position.value.chapterTitle?.let { title -> TtsBus.update { it.copy(subtitle = title) } }
         val (ch, s, e) = ttsSentences.getOrNull(i) ?: return
         when (val c = current()) {
             is ReaderContent.Text -> if (c.controller.chapter == ch) c.controller.mark("tts", s, e, scroll = true)
@@ -1517,6 +1674,8 @@ class ReaderViewModel(
 
     fun stopTts() {
         _ttsActive.value = false
+        publishTts(false)
+        ReaderTtsService.stop(context)
         tts.stop()
         sleepJob?.cancel()
         sleepTimer.value = SleepTimer.OFF
@@ -1702,6 +1861,9 @@ class ReaderViewModel(
     override fun onCleared() {
         val folderLease = folderReadSession
         folderReadSession = null
+        TtsBus.controls = null
+        TtsBus.update { TtsStatus() }
+        ReaderTtsService.stop(context)
         tts.shutdown()
         autoScrollJob?.cancel()
         val c = current()

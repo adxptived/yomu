@@ -2,8 +2,6 @@ package app.yomu.feature.library
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -57,7 +55,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -79,10 +76,10 @@ import app.yomu.domain.stats.StatsCalculator
 import app.yomu.domain.stats.StatsPeriod
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -365,7 +362,8 @@ private fun DayHeader(day: HistoryDay) {
 @Composable
 private fun HistoryRow(item: ReadingHistoryItem, onOpen: () -> Unit, onDetails: () -> Unit, onRemove: () -> Unit, modifier: Modifier = Modifier) {
     var menu by remember { mutableStateOf(false) }
-    val time = remember(item.readAt) { DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(Locale.getDefault()).format(java.time.Instant.ofEpochMilli(item.readAt).atZone(ZoneId.systemDefault())) }
+    val time =
+        remember(item.readAt) { DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(Locale.getDefault()).format(java.time.Instant.ofEpochMilli(item.readAt).atZone(ZoneId.systemDefault())) }
     val meta = buildList {
         add(time)
         if (item.durationMs >= 60_000) add(formatDuration(item.durationMs))

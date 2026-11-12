@@ -65,8 +65,11 @@ data class InstalledExtension(
     val icon: Drawable? = null,
     internal val apkPath: String? = null,
 ) {
-    /** The signature shown to the user and remembered when they trust the extension. */
-    val signatureHash: String get() = signatures.lastOrNull() ?: "unsigned"
+    /**
+     * The signature shown to the user and remembered when they trust the extension: every current signer, sorted.
+     * A trust entry recorded before this change held one signer and still matches through the per-signer check.
+     */
+    val signatureHash: String get() = signatures.sorted().joinToString(",").ifEmpty { "unsigned" }
     val isNsfw: Boolean get() = contentWarning == ContentWarning.NSFW
 }
 
@@ -121,6 +124,7 @@ class ExtensionManager(
     val installed: StateFlow<List<InstalledExtension>> = _installed.asStateFlow()
 
     private val _loaded = MutableStateFlow<List<InstalledExtension>>(emptyList())
+
     /** Extensions whose sources are registered in the app. */
     val loaded: StateFlow<List<InstalledExtension>> = _loaded.asStateFlow()
 
@@ -144,9 +148,15 @@ class ExtensionManager(
     var lastStoreRefreshAt: Long = 0
         private set
 
-    private val storeCache = mutableMapOf<String, Pair<StoreInfo, List<AvailableExtension>>>()
-    private val storeErrors = mutableMapOf<String, String>()
+    private val storeCache = java.util.concurrent.ConcurrentHashMap<String, Pair<StoreInfo, List<AvailableExtension>>>()
+    private val storeErrors = java.util.concurrent.ConcurrentHashMap<String, String>()
     private var bundledChecked = false
+
+    /** Class loaders of loaded extensions, closed when a package is replaced or removed (they hold open dex files). */
+    private val loaders = java.util.concurrent.ConcurrentHashMap<String, ClassLoader>()
+    private fun closeLoader(pkg: String) {
+        loaders.remove(pkg)?.let { runCatching { (it as? java.io.Closeable)?.close() } }
+    }
 
     private val privateDir: File get() = File(context.filesDir, "extensions").also { it.mkdirs() }
 
@@ -228,7 +238,11 @@ class ExtensionManager(
         }
         if (format == ExtensionFormat.YOMU && meta.getInt(Y_META_API, 1) > EXTENSION_API_VERSION) return broken(BrokenReason.NEWER_API)
         if (signatures.isEmpty()) return broken(BrokenReason.UNSIGNED)
-        val isTrusted = signatures.any { it in storeKeys } || signatures.any { "${info.packageName}:$it" in trusted }
+        // Trust is decided by the certificates that signed these APK contents, never by the rotation history:
+        // a package signed with a revoked or compromised key that is only part of the history must not load.
+        val isTrusted = signatures.any { it in storeKeys } ||
+            "${info.packageName}:${base.signatureHash}" in trusted ||
+            signatures.all { "${info.packageName}:$it" in trusted }
         if (!isTrusted) return base.copy(status = ExtensionStatus.UNTRUSTED)
 
         // Nothing changed since the last scan: keep the already created sources (and their HTTP clients).
@@ -263,7 +277,9 @@ class ExtensionManager(
 
     private fun loadTachiyomi(info: PackageInfo, classes: String?, path: String): List<CatalogSource> {
         check(TachiyomiCompat.isInitialized) { "Tachiyomi compatibility layer is not initialized" }
+        closeLoader(info.packageName)
         val loader = ExtensionClassLoader(path, context.classLoader)
+        loaders[info.packageName] = loader
         return classNames(info, classes).flatMap { cls ->
             when (val obj = Class.forName(cls, false, loader).getDeclaredConstructor().newInstance()) {
                 is TSourceFactory -> obj.createSources()
@@ -274,7 +290,9 @@ class ExtensionManager(
     }
 
     private fun loadYomu(info: PackageInfo, classes: String?, path: String, app: ApplicationInfo): List<CatalogSource> {
+        closeLoader(info.packageName)
         val loader = PathClassLoader(path, app.nativeLibraryDir, context.classLoader)
+        loaders[info.packageName] = loader
         return classNames(info, classes).flatMap { cls ->
             when (val obj = Class.forName(cls, false, loader).getDeclaredConstructor().newInstance()) {
                 is SourceFactory -> obj.createSources()
@@ -416,8 +434,10 @@ class ExtensionManager(
     /** Downloads [ext] from its store and keeps it privately (no system installer needed). */
     suspend fun install(ext: AvailableExtension) = withContext(Dispatchers.IO) {
         if (!ext.isSupported) throw ExtensionException(ExtensionException.Reason.UNSUPPORTED_LIB, ext.libVersion?.toString())
+        // The package name comes from a remote index: it must never take part in a file path unvalidated.
+        if (!PACKAGE.matches(ext.pkg)) throw ExtensionException(ExtensionException.Reason.STORE_INVALID, ext.pkg)
         _installing.update { it + (ext.pkg to null) }
-        val tmp = File(context.cacheDir, "ext-${ext.pkg}.tmp")
+        val tmp = File.createTempFile("ext-", ".tmp", context.cacheDir)
         try {
             download(ext.apkUrl, tmp) { p -> _installing.update { it + (ext.pkg to p) } }
             installFile(tmp, ext.pkg)
@@ -443,6 +463,7 @@ class ExtensionManager(
     private suspend fun installFile(tmp: File, expectedPkg: String?): String {
         val pm = context.packageManager
         val info = archiveInfo(pm, tmp) ?: throw ExtensionException(ExtensionException.Reason.NOT_AN_APK)
+        if (!PACKAGE.matches(info.packageName)) throw ExtensionException(ExtensionException.Reason.NOT_AN_EXTENSION, info.packageName)
         if (formatOf(info) == null) throw ExtensionException(ExtensionException.Reason.NOT_AN_EXTENSION, info.packageName)
         if (expectedPkg != null && info.packageName != expectedPkg) throw ExtensionException(ExtensionException.Reason.PACKAGE_MISMATCH, info.packageName)
         val sigs = signaturesOf(info)
@@ -450,7 +471,7 @@ class ExtensionManager(
         val dest = File(privateDir, "${info.packageName}.$PRIVATE_EXT")
         val current = listOf(dest, File(privateDir, "${info.packageName}.apk")).firstOrNull { it.exists() }?.let { archiveInfo(pm, it) }
         if (current != null) {
-            if (signaturesOf(current).none { it in sigs }) throw ExtensionException(ExtensionException.Reason.SIGNATURE_MISMATCH, info.packageName)
+            if (!canUpgrade(current, info)) throw ExtensionException(ExtensionException.Reason.SIGNATURE_MISMATCH, info.packageName)
             if (versionCodeOf(info) < versionCodeOf(current)) throw ExtensionException(ExtensionException.Reason.DOWNGRADE, info.versionName)
         }
         writeReadOnly(tmp, dest)
@@ -484,6 +505,7 @@ class ExtensionManager(
             }
         }
         if (ext.isBundled) settings.removedBundledExtensions.update { it + ext.pkg }
+        closeLoader(ext.pkg)
         reload()
         return true
     }
@@ -553,7 +575,7 @@ class ExtensionManager(
                     Timber.w("Bundled extension ${b.file} does not match its index entry")
                     return@forEach
                 }
-                if (current != null && signaturesOf(current).none { it in sigs }) return@forEach
+                if (current != null && !canUpgrade(current, info)) return@forEach
                 writeReadOnly(tmp, dest)
                 settings.trustedExtensions.update { it + "${b.pkg}:${b.signingKey.lowercase()}" }
             } finally {
@@ -578,6 +600,9 @@ class ExtensionManager(
 
         private const val PRIVATE_EXT = "ext"
         private const val BUNDLED_DIR = "extensions"
+
+        /** A package name that is safe to use as a file name. */
+        private val PACKAGE = Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$")
 
         @Suppress("DEPRECATION")
         private val PACKAGE_FLAGS = PackageManager.GET_META_DATA or PackageManager.GET_CONFIGURATIONS or
@@ -623,12 +648,31 @@ class ExtensionManager(
         @Suppress("DEPRECATION")
         internal fun signaturesOf(info: PackageInfo): List<String> {
             val sigs = if (Build.VERSION.SDK_INT >= 28) {
-                val si = info.signingInfo ?: return emptyList()
-                if (si.hasMultipleSigners()) si.apkContentsSigners else si.signingCertificateHistory
+                // apkContentsSigners is the set that actually signed this APK; signingCertificateHistory also
+                // contains keys that are no longer in use (rotation), which must not grant trust.
+                info.signingInfo?.apkContentsSigners
             } else {
                 info.signatures
             }
             return sigs.orEmpty().map { sha256(it.toByteArray()) }
+        }
+
+        /** Signers used by earlier versions of the package (rotation); only for validating an upgrade. */
+        @SuppressLint("PackageManagerGetSignatures")
+        @Suppress("DEPRECATION")
+        internal fun signingHistoryOf(info: PackageInfo): List<String> {
+            val sigs = if (Build.VERSION.SDK_INT >= 28) info.signingInfo?.signingCertificateHistory else info.signatures
+            return sigs.orEmpty().map { sha256(it.toByteArray()) }
+        }
+
+        /** An update may keep the same signers or rotate to a key recorded in the installed package's history. */
+        internal fun canUpgrade(current: PackageInfo, next: PackageInfo): Boolean {
+            val old = signaturesOf(current).toSet()
+            val new = signaturesOf(next).toSet()
+            if (old == new) return true
+            if (old.isEmpty() || new.isEmpty()) return false
+            val history = signingHistoryOf(current).toSet()
+            return new.all { it in history }
         }
 
         internal fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }

@@ -48,6 +48,7 @@ import androidx.lifecycle.viewModelScope
 import app.yomu.core.common.AppError
 import app.yomu.core.common.ScreenErrors
 import app.yomu.core.common.UiState
+import app.yomu.core.datastore.AppSettings
 import app.yomu.core.ui.components.SkeletonBox
 import app.yomu.core.ui.components.rememberHaptic
 import app.yomu.core.ui.theme.Dimens
@@ -87,6 +88,7 @@ class WordLookupViewModel(
     private val dict: DictionaryRepository,
     private val words: WordRepositoryImpl,
     private val translation: TranslationService,
+    private val settings: AppSettings,
     val speaker: Speaker,
 ) : ViewModel() {
     private val _state = MutableStateFlow(WordLookupUi())
@@ -97,14 +99,16 @@ class WordLookupViewModel(
         job?.cancel()
         _state.value = WordLookupUi(request = request)
         job = viewModelScope.launch(ScreenErrors) {
-            val tr = async { runCatching { translation.translate(request.word, request.lang, null).translated }.getOrNull() }
+            // Incognito: no online call for every tapped word, and no dictionary history.
+            val online = !settings.incognito.get()
+            val tr = if (online) async { runCatching { translation.translate(request.word, request.lang, null).translated }.getOrNull() } else null
             val saved = words.find(request.word, request.lang)
             _state.update { it.copy(savedId = saved?.id) }
-            val r = runCatching { dict.lookup(request.word, request.lang) }
+            val r = runCatching { dict.lookup(request.word, request.lang, allowOnline = online, record = online) }
             _state.update { s ->
                 s.copy(result = r.fold({ if (it.entries.isEmpty()) UiState.Empty else UiState.Data(it) }, { UiState.Error(AppError.from(it)) }))
             }
-            val t = tr.await()
+            val t = tr?.await()
             _state.update { it.copy(translation = t?.takeIf { x -> !x.equals(request.word, ignoreCase = true) }) }
         }
     }

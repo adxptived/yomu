@@ -44,6 +44,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
@@ -82,7 +84,7 @@ interface PdfListener {
 @Composable
 fun PdfReaderView(controller: PdfController, listener: PdfListener, textSettings: TextReaderSettings, landscape: Boolean, modifier: Modifier = Modifier) {
     val settings = controller.settings
-    LaunchedEffect(settings) { controller.clearCache() }
+    LaunchedEffect(settings) { controller.invalidateBitmaps() }
     Box(modifier.fillMaxSize().background(if (settings.night) Color.Black else Color(0xFF2B2B2B))) {
         when {
             settings.reflow -> ReflowView(controller, listener, textSettings)
@@ -130,6 +132,20 @@ private fun PagedView(controller: PdfController, listener: PdfListener, dual: Bo
     }
     HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { p ->
         val zoomState = rememberZoomableState(zoomSpec = ZoomSpec(maximum = ZoomLimit(factor = 5f)))
+        if (controller.settings.zoomLock) {
+            // The page under the finger records its zoom; every page that comes into view opens at that level.
+            LaunchedEffect(zoomState) {
+                snapshotFlow { zoomState.contentTransformation.scale.scaleX }.collect { scale ->
+                    if (scale > 1.01f && pager.currentPage == p) controller.lockedZoom = scale
+                }
+            }
+            // Also keyed on the current page: the next page may already be composed with the old zoom.
+            LaunchedEffect(zoomState, p, pager.currentPage) {
+                val target = controller.lockedZoom
+                val current = zoomState.contentTransformation.scale.scaleX
+                if (target > 1.01f && current < target - 0.01f) zoomState.zoomBy(target / current)
+            }
+        }
         Box(Modifier.fillMaxSize().zoomable(zoomState), contentAlignment = Alignment.Center) {
             if (dual) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -154,6 +170,22 @@ private fun PdfPage(controller: PdfController, index: Int, listener: PdfListener
     var overlay by remember(index) { mutableStateOf<List<Pair<RectF, Color>>>(emptyList()) }
     var hlRects by remember(index) { mutableStateOf<List<Pair<Highlight, List<RectF>>>>(emptyList()) }
     val settings = controller.settings
+    val imageFilter = remember(settings.contrast, settings.grayscale) {
+        if (settings.contrast == 1f && !settings.grayscale) {
+            null
+        } else {
+            ColorFilter.colorMatrix(
+                ColorMatrix().apply {
+                    if (settings.grayscale) setToSaturation(0f)
+                    val c = settings.contrast
+                    if (c != 1f) {
+                        val t = (1f - c) * 127.5f
+                        timesAssign(ColorMatrix(floatArrayOf(c, 0f, 0f, 0f, t, 0f, c, 0f, 0f, t, 0f, 0f, c, 0f, t, 0f, 0f, 0f, 1f, 0f)))
+                    }
+                },
+            )
+        }
+    }
     LaunchedEffect(index, settings) { ratio = controller.ratio(index) }
     LaunchedEffect(index, widthPx, settings) {
         if (widthPx > 0) bitmap = runCatching { controller.bitmap(index, (widthPx * renderScale).toInt()).asImageBitmap() }.getOrNull()
@@ -257,7 +289,7 @@ private fun PdfPage(controller: PdfController, index: Int, listener: PdfListener
     ) {
         val bmp = bitmap
         if (bmp != null) {
-            Image(bmp, contentDescription = null, contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
+            Image(bmp, contentDescription = null, contentScale = ContentScale.FillBounds, colorFilter = imageFilter, modifier = Modifier.fillMaxSize())
         } else {
             Text("${index + 1}", color = Color.Gray, modifier = Modifier.align(Alignment.Center))
         }
@@ -308,9 +340,7 @@ private fun ReflowView(controller: PdfController, listener: PdfListener, s: Text
                         val (width, _) = controller.pdf.pageSize(index)
                         PdfReflow.paragraphs(pageLines, width.toFloat())
                     }
-                }
-                catch (e: CancellationException) { throw e }
-                catch (_: Exception) { textError = true; paragraphs = emptyList() }
+                } catch (e: CancellationException) { throw e } catch (_: Exception) { textError = true; paragraphs = emptyList() }
             }
             Column(Modifier.padding(horizontal = s.marginHorizontal.dp, vertical = 8.dp)) {
                 Text("— ${index + 1} —", color = fg.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally))

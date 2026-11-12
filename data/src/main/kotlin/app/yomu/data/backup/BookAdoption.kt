@@ -75,8 +75,7 @@ internal class BookAdoption(
     }
 
     private suspend fun digestOf(uri: Uri, title: String): Digest =
-        try { Files.open(context, uri).use { BookFileSync.digest(it) } }
-        catch (e: Exception) { throw IOException("Cannot read the book file: $title", e) }
+        try { Files.open(context, uri).use { BookFileSync.digest(it) } } catch (e: Exception) { throw IOException("Cannot read the book file: $title", e) }
 
     /**
      * Adopts the current local file as the book's new version. The book keeps its progress,
@@ -153,43 +152,35 @@ internal class BookAdoption(
     ) {
         val mapping = mapOf(old to new)
         writeJournal(Journal(old, new, sha, size, name, System.currentTimeMillis()))
-        try {
-            // The file index: remove the old entry, add the new one, collapse replacement chains.
-            val indexFile = files.readBookIndex()
-            val index = BookFileSync.decodeIndex(indexFile?.bytes)
-            val previousEntry = index.books.firstOrNull { it.bookHash == old }
-            val existingNew = index.books.firstOrNull { it.bookHash == new }
-            if (existingNew == null || index.replaced[old] != new || previousEntry != null) {
-                val markers = LinkedHashMap<String, String>()
-                for ((k, v) in index.replaced) markers[k] = if (v == old) new else v
-                markers[old] = new
-                val entries = index.books.filter { it.bookHash != old && it.bookHash != new } +
-                    (existingNew ?: BookFileEntry(new, sha, size, previousEntry?.name ?: name))
-                val encoded = json.encodeToString(
-                    BookFileIndex.serializer(),
-                    BookFileIndex(version = 2, books = entries, replaced = markers),
-                ).toByteArray()
-                files.writeBookIndex(encoded, indexFile)
-            }
-            uploadVersion(sha, size, sourceUri)
-            rekeyMetadata(mapping, title)
-            rewriteBookFileBase(mapping)
-            if (install?.replace == true) installVersion(install)
-            db.withTransaction {
-                val book = db.books().get(bookId) ?: throw IOException("The book is no longer in the library")
-                if (book.fileHash !in setOf(old, new)) throw IOException("The book identity changed during adoption: $title")
-                val digest = digestOf(Uri.parse(book.uri), book.title)
-                if (digest.bookHash != new) throw IOException("The local file does not match the adopted version: $title")
-                db.books().update(book.copy(fileHash = new))
-            }
-            clearJournal()
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // The journal stays: the next sync or adoption attempt resumes the same migration
-            // instead of treating the half-migrated book as a different one.
-            throw e
+        // The file index: remove the old entry, add the new one, collapse replacement chains.
+        val indexFile = files.readBookIndex()
+        val index = BookFileSync.decodeIndex(indexFile?.bytes)
+        val previousEntry = index.books.firstOrNull { it.bookHash == old }
+        val existingNew = index.books.firstOrNull { it.bookHash == new }
+        if (existingNew == null || index.replaced[old] != new || previousEntry != null) {
+            val markers = LinkedHashMap<String, String>()
+            for ((k, v) in index.replaced) markers[k] = if (v == old) new else v
+            markers[old] = new
+            val entries = index.books.filter { it.bookHash != old && it.bookHash != new } +
+                (existingNew ?: BookFileEntry(new, sha, size, previousEntry?.name ?: name))
+            val encoded = json.encodeToString(
+                BookFileIndex.serializer(),
+                BookFileIndex(version = 2, books = entries, replaced = markers),
+            ).toByteArray()
+            files.writeBookIndex(encoded, indexFile)
         }
+        uploadVersion(sha, size, sourceUri)
+        rekeyMetadata(mapping, title)
+        rewriteBookFileBase(mapping)
+        if (install?.replace == true) installVersion(install)
+        db.withTransaction {
+            val book = db.books().get(bookId) ?: throw IOException("The book is no longer in the library")
+            if (book.fileHash !in setOf(old, new)) throw IOException("The book identity changed during adoption: $title")
+            val digest = digestOf(Uri.parse(book.uri), book.title)
+            if (digest.bookHash != new) throw IOException("The local file does not match the adopted version: $title")
+            db.books().update(book.copy(fileHash = new))
+        }
+        clearJournal()
     }
 
     /** The blob is content-addressed and immutable: reuse a verified copy, otherwise publish one. */

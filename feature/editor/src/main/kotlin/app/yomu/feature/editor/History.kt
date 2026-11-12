@@ -26,9 +26,13 @@ class History(private val root: File, private val dir: File, private val limit: 
     private val steps = mutableListOf<Step>()
     private var position = 0 // number of applied steps
     private var nextId = 1L
+    private var savedPosition = 0
 
     val canUndo: Boolean get() = position > 0
     val canRedo: Boolean get() = position < steps.size
+
+    /** Undo/redo is back at the state that was last written to the book. */
+    val isAtSavePoint: Boolean get() = position == savedPosition
     val undoLabel: String? get() = steps.getOrNull(position - 1)?.label
     val redoLabel: String? get() = steps.getOrNull(position)?.label
     val size: Int get() = steps.size
@@ -37,10 +41,19 @@ class History(private val root: File, private val dir: File, private val limit: 
         load()
     }
 
+    /** Marks the current position as the one saved to the book, so undo/redo knows when nothing is unsaved. */
+    fun markSaved() {
+        savedPosition = position
+    }
+
     /** Runs [block] as one undoable step. If it throws, the touched files are restored and nothing is recorded. */
     fun <T> change(label: String, files: Collection<String>, block: () -> T): T {
+        // Reserve the id on disk before touching anything: a kill between snapshot and index write must not let
+        // the next run reuse the same directory and delete a snapshot that an older step still refers to.
+        val id = nextId++
+        save()
         val declared = files.map { it.trimStart('/') }.distinct()
-        val stepDir = File(dir, nextId.toString())
+        val stepDir = File(dir, id.toString())
         stepDir.deleteRecursively()
         snapshot(stepDir, "before", declared)
         val existing = listFiles()
@@ -58,7 +71,7 @@ class History(private val root: File, private val dir: File, private val limit: 
             val absent = File(stepDir, "before.absent")
             absent.writeText((absent.readLines().filter { it.isNotEmpty() } + created).joinToString("\n"))
         }
-        val step = Step(nextId++, label, declared + created)
+        val step = Step(id, label, declared + created)
         // A new change drops the redo tail.
         steps.subList(position, steps.size).toList().forEach { File(dir, it.id.toString()).deleteRecursively() }
         while (steps.size > position) steps.removeAt(steps.lastIndex)
@@ -104,10 +117,19 @@ class History(private val root: File, private val dir: File, private val limit: 
     fun sizeOnDisk(): Long = dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
     private fun trim() {
-        while (steps.size > limit || (steps.size > MIN_STEPS && sizeOnDisk() > MAX_BYTES)) {
+        // The byte limit applies from the first step: a single "whole book" operation can add a snapshot of every
+        // file, and waiting for MIN_STEPS such operations means gigabytes of history on a phone.
+        while (steps.size > 1 && sizeOnDisk() > MAX_BYTES) {
             val first = steps.removeAt(0)
             File(dir, first.id.toString()).deleteRecursively()
             position = (position - 1).coerceAtLeast(0)
+            savedPosition = (savedPosition - 1).coerceAtLeast(0)
+        }
+        while (steps.size > limit) {
+            val first = steps.removeAt(0)
+            File(dir, first.id.toString()).deleteRecursively()
+            position = (position - 1).coerceAtLeast(0)
+            savedPosition = (savedPosition - 1).coerceAtLeast(0)
         }
     }
 
@@ -158,7 +180,7 @@ class History(private val root: File, private val dir: File, private val limit: 
                 ),
             )
         }
-        File(dir, INDEX).writeText(json.toString())
+        writeTextAtomic(File(dir, INDEX), json.toString())
     }
 
     private fun load() {
@@ -169,24 +191,30 @@ class History(private val root: File, private val dir: File, private val limit: 
             steps.clear()
             obj["steps"]?.jsonArray?.forEach { e ->
                 val o = e.jsonObject
-                steps += Step(
+                val step = Step(
                     o["id"]!!.jsonPrimitive.long,
                     o["label"]!!.jsonPrimitive.content,
                     o["files"]!!.jsonArray.map { it.jsonPrimitive.content },
                 )
+                // A step whose snapshot directory is gone can never be undone or redone: drop it instead of
+                // pointing undo at nothing.
+                if (File(dir, step.id.toString()).isDirectory) steps += step
             }
+            // Duplicated or non-increasing ids would make undo delete another step's snapshot.
+            val ids = steps.map { it.id }
+            if (ids != ids.sorted() || ids.toSet().size != ids.size) throw IllegalStateException("Invalid history index")
             position = obj["position"]!!.jsonPrimitive.int.coerceIn(0, steps.size)
-            nextId = obj["nextId"]!!.jsonPrimitive.long
+            nextId = maxOf(obj["nextId"]?.jsonPrimitive?.long ?: 1L, (steps.maxOfOrNull { it.id } ?: 0L) + 1)
         }.onFailure {
             steps.clear()
             position = 0
         }
+        savedPosition = position
     }
 
     companion object {
         const val MAX_STEPS = 100
-        const val MIN_STEPS = 50
-        const val MAX_BYTES = 400L * 1024 * 1024
+        const val MAX_BYTES = 150L * 1024 * 1024
         private const val INDEX = "index.json"
     }
 }

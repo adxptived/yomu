@@ -19,8 +19,10 @@ enum class AnnotationFormat(val extension: String, val mime: String, val binary:
     HTML("html", "text/html"),
     TXT("txt", "text/plain"),
     READWISE_CSV("csv", "text/csv"),
+
     /** Highlights as Anki cards: a text file for Anki's "Import File". */
     ANKI_TSV("txt", "text/plain"),
+
     /** Highlights as a ready Anki deck (.apkg). */
     ANKI_APKG("apkg", "application/octet-stream", binary = true),
 }
@@ -207,8 +209,10 @@ object AnnotationExporter {
 enum class WordFormat(val extension: String, val mime: String, val binary: Boolean = false) {
     CSV("csv", "text/csv"),
     ANKI_TSV("txt", "text/plain"),
+
     /** A ready Anki deck (.apkg) for Anki, AnkiDroid and AnkiMobile. */
     ANKI_APKG("apkg", "application/octet-stream", binary = true),
+
     /** Quizlet / Memrise / Knowt "Import": term, tab, definition. */
     QUIZLET("txt", "text/plain"),
     JSON("json", "application/json"),

@@ -144,7 +144,8 @@ internal class FolderSyncCoordinator(
                     keep = true; changed++
                 } finally {
                     if (!keep) {
-                        val referenced = withContext(NonCancellable) { try { db.books().byUri(uri) != null } catch (_: Exception) { true } }
+                        val referenced =
+                            withContext(NonCancellable) { try { db.books().byUri(uri) != null } catch (_: Exception) { true } }
                         if (!referenced) stage.deleteRecursively()
                     }
                 }
@@ -166,7 +167,8 @@ internal class FolderSyncCoordinator(
                 }
             } finally {
                 if (!keep) {
-                    val referenced = withContext(NonCancellable) { try { db.books().byUri(uri) != null } catch (_: Exception) { true } }
+                    val referenced =
+                        withContext(NonCancellable) { try { db.books().byUri(uri) != null } catch (_: Exception) { true } }
                     if (!referenced) stage.deleteRecursively()
                 }
             }
@@ -229,7 +231,8 @@ internal class FolderSyncCoordinator(
             val report = FolderRevisionCommit.applyLenient(db, target, bookId, base, destination, uri, targetBase ?: base, book.isLinked)
             return report
         } finally {
-            val referenced = withContext(NonCancellable) { try { db.books().byUri(uri) != null } catch (_: Exception) { true } }
+            val referenced =
+                withContext(NonCancellable) { try { db.books().byUri(uri) != null } catch (_: Exception) { true } }
             if (!referenced) stage.deleteRecursively()
         }
     }

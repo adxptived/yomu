@@ -11,23 +11,25 @@ import app.yomu.core.network.DataSaver
 import app.yomu.core.network.NetworkClients
 import app.yomu.core.network.NetworkMonitor
 import app.yomu.core.network.TrafficMeter
+import app.yomu.data.book.pdf.PdfAnnotationStore
 import app.yomu.data.di.dataModule
 import app.yomu.data.work.Notifications
 import app.yomu.data.work.WorkScheduler
 import app.yomu.feature.annotations.annotationsModule
+import app.yomu.feature.audio.audioModule
 import app.yomu.feature.catalog.catalogModule
 import app.yomu.feature.dictionary.dictionaryModule
 import app.yomu.feature.downloads.downloadsModule
 import app.yomu.feature.editor.editorModule
 import app.yomu.feature.library.libraryModule
 import app.yomu.feature.reader.readerModule
-import app.yomu.feature.audio.audioModule
 import app.yomu.feature.settings.settingsModule
 import app.yomu.feature.translator.translatorModule
 import app.yomu.source.HttpStatusException
 import app.yomu.source.SourceException
 import app.yomu.source.SourceNetwork
 import app.yomu.source.WebViewRequiredException
+import app.yomu.widget.ContinueWidgets
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -50,8 +52,6 @@ import org.koin.android.ext.android.get
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
 import timber.log.Timber
-import app.yomu.widget.ContinueWidgets
-import app.yomu.data.book.pdf.PdfAnnotationStore
 
 /** Koin modules of the whole app (also used by the DI verification test). */
 val yomuModules = listOf(
@@ -102,6 +102,8 @@ class YomuApp : Application(), SingletonImageLoader.Factory {
         appScope.launch { runCatching { settings.migrate() }.onFailure { Timber.w(it, "Settings migration failed") } }
         // A process killed during a dictionary import leaves it half-written: nothing can be importing at start.
         appScope.launch { runCatching { get<app.yomu.data.dictionary.DictionaryRepository>().removeUnfinished() } }
+        // A download that was running when the process died has no process behind it: put it back in the queue.
+        appScope.launch { runCatching { get<app.yomu.data.download.DownloadRepository>().resumePending() }.onFailure { Timber.w(it, "Restoring the download queue failed") } }
         // The network and image layers read the traffic limits without suspending.
         appScope.launch {
             combine(settings.dataSaver.flow, settings.coversOnMobile.flow) { saver, covers -> saver to covers }

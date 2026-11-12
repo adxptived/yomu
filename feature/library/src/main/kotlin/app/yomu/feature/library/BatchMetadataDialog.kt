@@ -50,7 +50,8 @@ internal fun BatchMetadataDialog(books: List<Book>, onDismiss: () -> Unit, onApp
     val seriesValues = remember(books) { books.map { it.series } }
     val languageValues = remember(books) { books.map { it.language } }
     val publisherValues = remember(books) { books.map { it.publisher } }
-    val tagCounts = remember(books) { books.flatMap { it.tags }.groupingBy { it }.eachCount().toList().sortedByDescending { it.second } }
+    val tagCounts =
+        remember(books) { books.flatMap { it.tags }.groupingBy { it }.eachCount().toList().sortedByDescending { it.second } }
 
     var authors by rememberSaveable { mutableStateOf(BatchMetadata.common(authorValues).orEmpty()) }
     var authorsClear by rememberSaveable { mutableStateOf(false) }

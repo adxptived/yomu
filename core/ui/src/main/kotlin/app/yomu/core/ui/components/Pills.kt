@@ -9,10 +9,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -21,19 +20,19 @@ import androidx.compose.foundation.selection.triStateToggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.material3.TriStateCheckbox
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,11 +46,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.AnnotatedString
@@ -92,7 +91,7 @@ fun PillTabRow(
             val spoken = tab.count?.let { "${tab.label} ($it)" } ?: tab.label
             Row(
                 Modifier
-                    .heightIn(min = 40.dp)
+                    .heightIn(min = Dimens.touch)
                     .clip(CircleShape)
                     .background(bg)
                     .combinedClickable(onClick = { onSelect(tab.key) }, onLongClick = longPress)
@@ -188,7 +187,7 @@ fun RemovableChip(label: String, onRemove: () -> Unit, removeLabel: String = str
         shape = CircleShape,
         color = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        modifier = Modifier.heightIn(min = 32.dp).semantics { contentDescription = "$label, $removeLabel" },
+        modifier = Modifier.heightIn(min = Dimens.touch).semantics { contentDescription = "$label, $removeLabel" },
     ) {
         Row(Modifier.padding(start = Dimens.m, end = Dimens.s), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Dimens.xs)) {
             Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)

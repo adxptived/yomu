@@ -61,9 +61,8 @@ internal object SharedBookRevision {
         )
         val relatedLinks = links.filter { it.owner.bookHash == id }.sortedBy { it.key() }
         val fileText = if (file != null) json.encodeToString(BookFileEntry.serializer(), file)
-            else json.encodeToString(FolderEntry.serializer(), folder!!)
+        else json.encodeToString(FolderEntry.serializer(), folder!!)
         val linkText = json.encodeToString(TrackLinksFile.serializer(), TrackLinksFile(links = relatedLinks))
         BookDeletionGuard.SharedRevision(hash(fileText), hash(json.encodeToString(Metadata.serializer(), metadata)), hash(linkText))
-    } catch (e: IOException) { throw e }
-      catch (e: Exception) { throw IOException("Cannot determine a safe shared book revision", e) }
+    } catch (e: IOException) { throw e } catch (e: Exception) { throw IOException("Cannot determine a safe shared book revision", e) }
 }

@@ -18,11 +18,11 @@ import app.yomu.data.book.ZipContainer
 import app.yomu.data.library.BookFiles
 import app.yomu.data.library.ImportOutcome
 import app.yomu.data.library.ImportService
+import app.yomu.data.ocr.OcrService
 import app.yomu.data.repository.BookRepositoryImpl
 import app.yomu.data.translation.BookTranslationWorker
 import app.yomu.data.translation.BookTranslator
 import app.yomu.data.translation.TranslationService
-import app.yomu.data.ocr.OcrService
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookFormat
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +47,9 @@ import kotlinx.serialization.json.put
 import java.io.File
 
 enum class EditorKind { TEXT, MANGA }
+
+/** Largest side of an image decoded for an editing operation: a full 50 MP page does not fit in a phone's heap. */
+private const val MAX_WORK_SIDE = 4096
 
 enum class ExportType(val ext: String, val mime: String) {
     EPUB("epub", "application/epub+zip"),
@@ -159,8 +162,11 @@ class EditorViewModel(
             }
         }
         val draft = withContext(Dispatchers.IO) { readDraft() }
-        if (draft != null && draft.second && workDir.isDirectory) {
-            _phase.value = EditorPhase.DraftFound(draft.first)
+        val workExists = withContext(Dispatchers.IO) { workDir.isDirectory }
+        // An unreadable draft flag must not turn unsaved work into garbage: a working copy without a valid flag
+        // is offered as a draft, and the user decides.
+        if (workExists && (draft == null || draft.second)) {
+            _phase.value = EditorPhase.DraftFound(draft?.first ?: draftFile.lastModified())
         } else {
             open(fresh = true)
         }
@@ -183,7 +189,11 @@ class EditorViewModel(
                 }
                 history = History(workDir, historyDir)
                 if (kind == EditorKind.TEXT) epubWs = EpubWorkspace(workDir) else mangaWs = MangaWorkspace(workDir)
-                if (!fresh) _status.update { it.copy(dirty = readDraft()?.second ?: true) }
+                if (!fresh) {
+                    val dirty = readDraft()?.second ?: true
+                    if (!dirty) history?.markSaved()
+                    _status.update { it.copy(dirty = dirty) }
+                }
             }
         }.onSuccess {
             refresh()
@@ -238,8 +248,12 @@ class EditorViewModel(
     }
 
     private fun setDirty(dirty: Boolean) {
-        runCatchingCancellable { writeDraft(dirty) }
+        // The in-memory flag is authoritative for this session: a failed write must never make the editor forget
+        // that the working copy holds unsaved changes.
         _status.update { it.copy(dirty = dirty) }
+        runCatchingCancellable { writeDraft(dirty) }.onFailure {
+            _events.trySend(EditorEvent.Error(it))
+        }
     }
 
     /** Leaves the editor. [keepDraft] keeps unsaved changes for later. */
@@ -307,7 +321,7 @@ class EditorViewModel(
     fun undo() = viewModelScope.launch(ScreenErrors) {
         mutex.withLock {
             val step = withContext(Dispatchers.IO) { history?.undo() } ?: return@withLock
-            setDirty(true)
+            setDirty(history?.isAtSavePoint != true)
             refresh()
             message(R.string.editor_undone, step.label)
         }
@@ -316,7 +330,7 @@ class EditorViewModel(
     fun redo() = viewModelScope.launch(ScreenErrors) {
         mutex.withLock {
             val step = withContext(Dispatchers.IO) { history?.redo() } ?: return@withLock
-            setDirty(true)
+            setDirty(history?.isAtSavePoint != true)
             refresh()
             message(R.string.editor_redone, step.label)
         }
@@ -369,7 +383,10 @@ class EditorViewModel(
 
     /** Text of a file of the book; null (after an error message) when it cannot be read. */
     suspend fun readSource(path: String): String? = withContext(Dispatchers.IO) { runCatchingCancellable { ws.readText(path) } }
-        .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; _events.send(EditorEvent.Error(it)) }
+        .onFailure {
+            if (it is kotlinx.coroutines.CancellationException) throw it
+            _events.send(EditorEvent.Error(it))
+        }
         .getOrNull()
 
     suspend fun checkXml(text: String): String? = withContext(Dispatchers.Default) { EpubWorkspace.wellFormedError(text) }
@@ -436,7 +453,7 @@ class EditorViewModel(
     fun validate() = viewModelScope.launch(ScreenErrors) {
         _issues.value = null
         _status.update { it.copy(busy = true) }
-        runCatchingCancellable { withContext(Dispatchers.IO) { ws.validate() } }
+        runCatchingCancellable { withContext(Dispatchers.IO) { if (kind == EditorKind.TEXT) ws.validate() else mws.validate() } }
             .onSuccess { _issues.value = it }
             .onFailure { _events.send(EditorEvent.Error(it)) }
         _status.update { it.copy(busy = false) }
@@ -484,7 +501,7 @@ class EditorViewModel(
         val targets = indices.sorted()
         targets.forEachIndexed { n, i ->
             val page = list[i]
-            val src = ImageOps.decode(mws.file(page))
+            val src = ImageOps.decode(mws.file(page), maxSide = MAX_WORK_SIDE)
             val rotated = ImageOps.rotate(src, page.rotation)
             val out = transform(rotated, i)
             val (fmt, quality) = format(page)
@@ -536,7 +553,7 @@ class EditorViewModel(
 
     fun splitSpread(index: Int) = edit(R.string.editor_step_split_page, { pagesFile }) {
         val page = mws.pages[index]
-        val src = ImageOps.rotate(ImageOps.decode(mws.file(page)), page.rotation)
+        val src = ImageOps.rotate(ImageOps.decode(mws.file(page), maxSide = MAX_WORK_SIDE), page.rotation)
         val (left, right) = ImageOps.split(src)
         val (fmt, q) = keepFormat(page)
         val halves = if (mws.info.manga) listOf(right, left) else listOf(left, right)
@@ -550,8 +567,8 @@ class EditorViewModel(
     fun joinPages(first: Int, second: Int) = edit(R.string.editor_step_join_pages, { pagesFile }) {
         val a = mws.pages[first]
         val b = mws.pages[second]
-        val ba = ImageOps.rotate(ImageOps.decode(mws.file(a)), a.rotation)
-        val bb = ImageOps.rotate(ImageOps.decode(mws.file(b)), b.rotation)
+        val ba = ImageOps.rotate(ImageOps.decode(mws.file(a), maxSide = MAX_WORK_SIDE), a.rotation)
+        val bb = ImageOps.rotate(ImageOps.decode(mws.file(b), maxSide = MAX_WORK_SIDE), b.rotation)
         val joined = if (mws.info.manga) ImageOps.join(bb, ba) else ImageOps.join(ba, bb)
         val (fmt, q) = keepFormat(a)
         val name = mws.newImageName(fmt.ext)
@@ -668,7 +685,10 @@ class EditorViewModel(
             edit(R.string.editor_step_typeset, { pagesFile }, onDone = { _: Unit -> message(R.string.editor_typeset_done, pages.size, count) }) {
                 transformPages(pages.keys, ::keepFormat) { bmp, i -> Typesetter.apply(bmp, pages[i].orEmpty()) }
             }
-        }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; _events.send(EditorEvent.Error(it)) }
+        }.onFailure {
+            if (it is kotlinx.coroutines.CancellationException) throw it
+            _events.send(EditorEvent.Error(it))
+        }
     }
 
     // ---------------------------------------------------------------- output
@@ -704,6 +724,7 @@ class EditorViewModel(
                 appScope.detached {
                     withContext(NonCancellable + Dispatchers.IO) {
                         writeBack(tmp)
+                        history?.markSaved()
                         setDirty(false)
                     }
                 }
@@ -729,27 +750,25 @@ class EditorViewModel(
         val targetFormat = if (kind == EditorKind.TEXT) BookFormat.EPUB else BookFormat.CBZ
         val uri = Uri.parse(book.uri)
         val booksDir = File(context.filesDir, "books").apply { mkdirs() }
-        if (book.format == targetFormat) {
-            if (uri.scheme == "file" || uri.scheme == null) {
-                val dest = File(uri.path!!)
-                val swap = File(dest.parentFile, dest.name + ".new")
-                tmp.copyTo(swap, overwrite = true)
-                if (!swap.renameTo(dest)) {
-                    swap.copyTo(dest, overwrite = true)
-                    swap.delete()
-                }
-                books.contentChanged(bookId, dest)
-            } else {
-                val stream = context.contentResolver.openOutputStream(uri, "wt") ?: throw AppError.NoPermission(book.uri)
-                stream.use { o -> tmp.inputStream().use { it.copyTo(o) } }
-                books.contentChanged(bookId, null)
+        // A SAF document cannot be replaced atomically: openOutputStream("wt") truncates the only copy of the book
+        // before the new bytes are written. Such books are saved into a new private file and the library entry
+        // is repointed instead; the user's document is never touched.
+        val writableInPlace = uri.scheme == "file" || uri.scheme == null
+        if (book.format == targetFormat && writableInPlace) {
+            val dest = File(uri.path!!)
+            val swap = File(dest.parentFile, dest.name + ".new")
+            tmp.copyTo(swap, overwrite = true)
+            if (!swap.renameTo(dest)) {
+                swap.copyTo(dest, overwrite = true)
+                swap.delete()
             }
+            books.contentChanged(bookId, dest)
         } else {
             var dest = File(booksDir, Files.sanitize(book.title) + ".$ext")
             if (dest.exists()) dest = File(booksDir, Files.sanitize(book.title) + " ${System.currentTimeMillis()}.$ext")
             tmp.copyTo(dest)
             books.replaceFile(bookId, dest, targetFormat)
-            if (uri.scheme == "file") File(uri.path!!).takeIf { it.canonicalPath.startsWith(booksDir.canonicalPath) }?.delete()
+            if (writableInPlace) File(uri.path!!).takeIf { it.canonicalPath.startsWith(booksDir.canonicalPath) }?.delete()
         }
         tmp.delete()
         updateLibraryEntry(book)
@@ -872,6 +891,9 @@ class EditorViewModel(
             edit(R.string.editor_step_translate, { texts.keys }, onDone = { _: Unit -> message(R.string.editor_translated_chapters, texts.size) }) {
                 texts.forEach { (path, text) -> ws.writeText(path, text) }
             }
-        }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; _events.send(EditorEvent.Error(it)) }
+        }.onFailure {
+            if (it is kotlinx.coroutines.CancellationException) throw it
+            _events.send(EditorEvent.Error(it))
+        }
     }
 }

@@ -1,5 +1,6 @@
 package app.yomu.feature.library
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -13,33 +14,25 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.lazy.rememberLazyListState
-import app.yomu.core.ui.components.FastScroller
-import app.yomu.core.ui.components.SwipeAction
-import app.yomu.core.ui.components.SwipeActionsBox
-import app.yomu.core.ui.components.asFastScrollTarget
-import app.yomu.core.ui.components.rememberHaptic
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.ViewList
@@ -51,9 +44,10 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GridView
@@ -65,17 +59,17 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Bookmarks
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material3.Switch
-import androidx.compose.ui.draw.scale
-import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Badge
+import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -88,7 +82,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -97,9 +90,12 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -111,6 +107,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -129,10 +127,11 @@ import androidx.paging.compose.itemKey
 import app.yomu.core.ui.components.BookGridItem
 import app.yomu.core.ui.components.BookListItem
 import app.yomu.core.ui.components.CircleIconButton
-import app.yomu.data.download.DownloadSummary
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.CoverImage
 import app.yomu.core.ui.components.EmptyState
+import app.yomu.core.ui.components.FastScroller
+import app.yomu.core.ui.components.HideNavBarWhile
 import app.yomu.core.ui.components.OneTimeHint
 import app.yomu.core.ui.components.PillTab
 import app.yomu.core.ui.components.PillTabRow
@@ -142,28 +141,33 @@ import app.yomu.core.ui.components.SheetAction
 import app.yomu.core.ui.components.SheetTitle
 import app.yomu.core.ui.components.SkeletonGrid
 import app.yomu.core.ui.components.SkeletonList
+import app.yomu.core.ui.components.SwipeAction
+import app.yomu.core.ui.components.SwipeActionsBox
 import app.yomu.core.ui.components.TabActionsSheet
 import app.yomu.core.ui.components.TabOption
 import app.yomu.core.ui.components.TabsPickerSheet
 import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.ToolbarPill
-import app.yomu.core.ui.components.YomuFab
-import app.yomu.core.ui.components.HideNavBarWhile
 import app.yomu.core.ui.components.TopLevelBody
-import app.yomu.core.ui.components.navBarBottomPadding
-import app.yomu.core.ui.components.topLevelContentInsets
+import app.yomu.core.ui.components.YomuFab
 import app.yomu.core.ui.components.YomuSheet
+import app.yomu.core.ui.components.asFastScrollTarget
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.motionItem
+import app.yomu.core.ui.components.navBarBottomPadding
+import app.yomu.core.ui.components.rememberHaptic
 import app.yomu.core.ui.components.sharedCover
 import app.yomu.core.ui.components.tabState
+import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.theme.Dimens
+import app.yomu.data.download.DownloadSummary
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookCollection
 import app.yomu.domain.model.CatalogEntry
 import app.yomu.domain.model.LibraryFilter
 import app.yomu.domain.model.LibrarySort
 import app.yomu.domain.model.ReadingStatus
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 import app.yomu.core.ui.R as CoreR
@@ -216,16 +220,23 @@ fun LibraryScreen(
     val incognito by viewModel.incognito.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val audioSearch by viewModel.audioSearch.collectAsStateWithLifecycle()
-    val downloads by viewModel.downloadSummary.collectAsStateWithLifecycle()
 
     val snackbar = remember { SnackbarHostState() }
     val haptic = rememberHaptic()
     val scope = rememberCoroutineScope()
     var searching by rememberSaveable { mutableStateOf(false) }
-    var showImport by remember { mutableStateOf(false) }
+    val searchFocus = remember { FocusRequester() }
+    // A search field that appears without the keyboard looks like nothing happened.
+    LaunchedEffect(searching) { if (searching) runCatching { searchFocus.requestFocus() } }
+    // Back leaves the search instead of the library, as in the settings search.
+    BackHandler(enabled = searching) {
+        searching = false
+        viewModel.setSearch("")
+    }
+    var showImport by rememberSaveable { mutableStateOf(false) }
     var showAudioLink by rememberSaveable { mutableStateOf(false) }
-    var showFilters by remember { mutableStateOf(false) }
-    var showMenu by remember { mutableStateOf(false) }
+    var showFilters by rememberSaveable { mutableStateOf(false) }
+    var showMenu by rememberSaveable { mutableStateOf(false) }
     var newTab by remember { mutableStateOf(false) }
     var tabActions by remember { mutableStateOf<BookCollection?>(null) }
     var onlineMenu by remember { mutableStateOf<CatalogEntry?>(null) }
@@ -237,9 +248,12 @@ fun LibraryScreen(
     val onlineShownTab = online != null && (onlineCount > 0 || onlineTab)
     val onlineTotal = onlineCount.coerceAtLeast(0)
 
-    val openDocs = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { viewModel.import(it) }
-    val openFolderBook = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(viewModel::importFolderAsBook) }
-    val openScanFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(viewModel::addScanFolder) }
+    val openDocs =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { viewModel.import(it) }
+    val openFolderBook =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(viewModel::importFolderAsBook) }
+    val openScanFolder =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(viewModel::addScanFolder) }
 
     val strImported = stringResource(R.string.library_import_result)
     val strFailed = stringResource(R.string.library_import_failed)
@@ -255,18 +269,24 @@ fun LibraryScreen(
                     }
                     scope.launch { snackbar.showSnackbar(msg, withDismissAction = true) }
                 }
-                is LibraryEvent.Deleted -> scope.launch {
-                    val r = snackbar.showSnackbar(
-                        resources.getQuantityString(R.plurals.library_deleted, e.ids.size, e.ids.size),
-                        actionLabel = strUndo, withDismissAction = true, duration = SnackbarDuration.Long,
-                    )
-                    if (r == SnackbarResult.ActionPerformed) viewModel.undoDelete(e.ids) else viewModel.commitDelete(e.ids)
-                }
+                is LibraryEvent.Deleted -> Unit
                 is LibraryEvent.Message -> scope.launch { snackbar.showSnackbar(resources.getString(e.text)) }
                 is LibraryEvent.OpenBook -> onOpenBook(e.book)
                 is LibraryEvent.ReadChapter -> onReadChapter(e.chapterId)
                 is LibraryEvent.OpenTitle -> onOpenTitle(e.itemId)
             }
+        }
+    }
+    // Deletions are owned by the ViewModel: if the screen was left while the undo prompt was showing, the prompt
+    // comes back instead of the deletion silently completing (or silently waiting forever).
+    LaunchedEffect(viewModel) {
+        viewModel.pendingDeletions.collect { pending ->
+            if (pending.isEmpty()) return@collect
+            val r = snackbar.showSnackbar(
+                resources.getQuantityString(R.plurals.library_deleted, pending.size, pending.size),
+                actionLabel = strUndo, withDismissAction = true, duration = SnackbarDuration.Long,
+            )
+            if (r == SnackbarResult.ActionPerformed) viewModel.undoDelete(pending) else viewModel.commitDelete(pending)
         }
     }
 
@@ -315,6 +335,7 @@ fun LibraryScreen(
                             onQueryChange = viewModel::setSearch,
                             placeholder = stringResource(R.string.library_search_hint),
                             modifier = Modifier.weight(1f),
+                            focusRequester = searchFocus,
                             trailing = {
                                 IconButton(onClick = { searching = false; viewModel.setSearch("") }) {
                                     Icon(Icons.Default.Close, stringResource(CoreR.string.close))
@@ -328,7 +349,7 @@ fun LibraryScreen(
                             onlineTotal.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.library_online_short, it, it) },
                         ).joinToString(" · ").ifEmpty { null },
                         onSearch = { searching = true },
-                        downloads = downloads,
+                        downloads = viewModel.downloadSummary,
                         onDownloads = onOpenDownloads,
                     ) {
                         Box {
@@ -413,6 +434,7 @@ fun LibraryScreen(
                 BottomAppBar {
                     BulkAction(Icons.Default.DoneAll, stringResource(R.string.library_mark_read)) { viewModel.setStatus(selection, ReadingStatus.FINISHED) }
                     BulkAction(Icons.Outlined.AutoStories, stringResource(R.string.library_mark_unread)) { viewModel.setStatus(selection, ReadingStatus.NEW) }
+                    BulkAction(Icons.Default.Star, stringResource(R.string.library_add_favorite)) { viewModel.setFavorite(selection, true) }
                     BulkAction(Icons.Default.Bookmarks, stringResource(R.string.library_to_collection)) { viewModel.pickTabsForBooks(selection) }
                     BulkAction(Icons.AutoMirrored.Filled.Label, stringResource(R.string.library_add_tag)) { tagDialog = selection }
                     BulkAction(Icons.Default.Delete, stringResource(CoreR.string.delete)) { viewModel.requestDelete(selection) }
@@ -429,65 +451,65 @@ fun LibraryScreen(
     ) { padding ->
         TopLevelBody(padding, Modifier.fillMaxSize()) {
             PullToRefreshBox(isRefreshing = refreshing, onRefresh = { if (!selecting) viewModel.refresh() }, modifier = Modifier.fillMaxSize()) {
-            when {
-                inOnline -> online.pane(snackbar, search)
-                (booksLoading && showBooks) || total < 0 || !onlineLoaded -> if (grid) SkeletonGrid() else SkeletonList()
-                fullEmpty -> EmptyState(
-                    title = stringResource(R.string.library_empty_title),
-                    message = stringResource(R.string.library_empty_text),
-                    icon = Icons.Outlined.AutoStories,
-                    actionLabel = stringResource(R.string.library_import),
-                    onAction = { showImport = true },
-                )
-                bookCount == 0 && onlineTiles.isEmpty() && !shelf && !noBooksCard -> when {
-                    filtered -> EmptyState(
-                        title = stringResource(R.string.library_nothing_found),
-                        icon = Icons.Default.Search,
-                        actionLabel = if (activeFilters > 0) stringResource(R.string.library_clear_filters) else null,
-                        onAction = if (activeFilters > 0) viewModel::clearFilters else null,
+                when {
+                    inOnline -> online.pane(snackbar, search)
+                    (booksLoading && showBooks) || total < 0 || !onlineLoaded -> if (grid) SkeletonGrid() else SkeletonList()
+                    fullEmpty -> EmptyState(
+                        title = stringResource(R.string.library_empty_title),
+                        message = stringResource(R.string.library_empty_text),
+                        icon = Icons.Outlined.AutoStories,
+                        actionLabel = stringResource(R.string.library_import),
+                        onAction = { showImport = true },
                     )
-                    else -> EmptyState(
-                        title = stringResource(R.string.library_tab_empty_title),
-                        message = stringResource(R.string.library_tab_empty_text),
-                        icon = Icons.Outlined.Bookmarks,
+                    bookCount == 0 && onlineTiles.isEmpty() && !shelf && !noBooksCard -> when {
+                        filtered -> EmptyState(
+                            title = stringResource(R.string.library_nothing_found),
+                            icon = Icons.Default.Search,
+                            actionLabel = if (activeFilters > 0) stringResource(R.string.library_clear_filters) else null,
+                            onAction = if (activeFilters > 0) viewModel::clearFilters else null,
+                        )
+                        else -> EmptyState(
+                            title = stringResource(R.string.library_tab_empty_title),
+                            message = stringResource(R.string.library_tab_empty_text),
+                            icon = Icons.Outlined.Bookmarks,
+                        )
+                    }
+                    else -> {
+                        val continueRow = showContinue && !inTab && !filtered && !selecting && continueItems.isNotEmpty()
+                        LibraryGrid(
+                            books = items,
+                            showBooks = showBooks,
+                            grid = grid,
+                            columns = columns,
+                            selection = selection,
+                            onlineTiles = onlineTiles,
+                            header = {
+                                if (continueRow) ContinueReading(continueItems, onOpenBook, viewModel::continueOnline)
+                                if (shelf) OnlineShelf(onlineShown, onlineTotal, onOpenTitle, onLongPress = { onlineMenu = it }, onShowAll = { onlineTab = true })
+                                if (noBooksCard) NoBooksCard(onImport = { showImport = true })
+                            },
+                            sectionLabels = onlineTiles.isNotEmpty() && bookCount > 0,
+                            onOpenTitle = onOpenTitle,
+                            onOnlineLongPress = { onlineMenu = it },
+                            onClick = { book -> if (selecting) { haptic.tick(); viewModel.toggleSelect(book.id) } else onOpenBook(book) },
+                            onLongClick = { book -> if (selecting) onOpenDetails(book) else { haptic.perform(); viewModel.toggleSelect(book.id) } },
+                            onDetails = onOpenDetails,
+                            sort = sort,
+                            swipeEnabled = !selecting,
+                            onToggleRead = { book ->
+                                haptic.confirm()
+                                viewModel.setStatus(setOf(book.id), if (book.status == ReadingStatus.FINISHED) ReadingStatus.NEW else ReadingStatus.FINISHED)
+                            },
+                            onRemove = { book -> haptic.confirm(); viewModel.requestDelete(setOf(book.id)) },
+                        )
+                    }
+                }
+                if (bookCount > 0 && !selecting && !inOnline) {
+                    OneTimeHint(
+                        "library_select", stringResource(R.string.hint_library_select),
+                        Modifier.align(Alignment.BottomCenter).padding(bottom = navBarBottomPadding(64.dp)).widthIn(max = 480.dp),
                     )
                 }
-                else -> {
-                    val continueRow = showContinue && !inTab && !filtered && !selecting && continueItems.isNotEmpty()
-                    LibraryGrid(
-                        books = items,
-                        showBooks = showBooks,
-                        grid = grid,
-                        columns = columns,
-                        selection = selection,
-                        onlineTiles = onlineTiles,
-                        header = {
-                            if (continueRow) ContinueReading(continueItems, onOpenBook, viewModel::continueOnline)
-                            if (shelf) OnlineShelf(onlineShown, onlineTotal, onOpenTitle, onLongPress = { onlineMenu = it }, onShowAll = { onlineTab = true })
-                            if (noBooksCard) NoBooksCard(onImport = { showImport = true })
-                        },
-                        sectionLabels = onlineTiles.isNotEmpty() && bookCount > 0,
-                        onOpenTitle = onOpenTitle,
-                        onOnlineLongPress = { onlineMenu = it },
-                        onClick = { book -> if (selecting) { haptic.tick(); viewModel.toggleSelect(book.id) } else onOpenBook(book) },
-                        onLongClick = { book -> if (selecting) onOpenDetails(book) else { haptic.perform(); viewModel.toggleSelect(book.id) } },
-                        onDetails = onOpenDetails,
-                        sort = sort,
-                        swipeEnabled = !selecting,
-                        onToggleRead = { book ->
-                            haptic.confirm()
-                            viewModel.setStatus(setOf(book.id), if (book.status == ReadingStatus.FINISHED) ReadingStatus.NEW else ReadingStatus.FINISHED)
-                        },
-                        onRemove = { book -> haptic.confirm(); viewModel.requestDelete(setOf(book.id)) },
-                    )
-                }
-            }
-            if (bookCount > 0 && !selecting && !inOnline) {
-                OneTimeHint(
-                    "library_select", stringResource(R.string.hint_library_select),
-                    Modifier.align(Alignment.BottomCenter).padding(bottom = navBarBottomPadding(64.dp)).widthIn(max = 480.dp),
-                )
-            }
             }
         }
     }
@@ -603,7 +625,9 @@ fun LibraryScreen(
 
 /** Large title with the counts and round actions (downloads while there are any, search, menu). */
 @Composable
-private fun LibraryHeader(subtitle: String?, onSearch: () -> Unit, downloads: DownloadSummary, onDownloads: () -> Unit, menu: @Composable () -> Unit) {
+private fun LibraryHeader(subtitle: String?, onSearch: () -> Unit, downloads: StateFlow<DownloadSummary>, onDownloads: () -> Unit, menu: @Composable () -> Unit) {
+    // Collected here, not in the screen: the progress changes every second and used to recompose the whole library.
+    val summary by downloads.collectAsStateWithLifecycle()
     Column {
         Row(
             Modifier.fillMaxWidth().statusBarsPadding().padding(start = Dimens.xl, end = Dimens.l, top = Dimens.m, bottom = Dimens.xs),
@@ -615,8 +639,8 @@ private fun LibraryHeader(subtitle: String?, onSearch: () -> Unit, downloads: Do
                     Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            if (downloads.visible) {
-                DownloadsButton(downloads, onDownloads)
+            if (summary.visible) {
+                DownloadsButton(summary, onDownloads)
                 Spacer(Modifier.width(Dimens.s))
             }
             CircleIconButton(Icons.Default.Search, stringResource(CoreR.string.search), onClick = onSearch)
@@ -624,8 +648,8 @@ private fun LibraryHeader(subtitle: String?, onSearch: () -> Unit, downloads: Do
             menu()
         }
         // A thin strip stays visible under the title while data is flowing, also when the button is out of sight.
-        if (downloads.active) {
-            val fraction = downloads.fraction?.let { animatedFraction(it) }
+        if (summary.active) {
+            val fraction = summary.fraction?.let { animatedFraction(it) }
             if (fraction != null) {
                 LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth().height(2.dp))
             } else {
@@ -721,6 +745,7 @@ private fun ActiveFilters(filter: LibraryFilter, types: Set<FormatGroup>, viewMo
         verticalAlignment = Alignment.CenterVertically,
     ) {
         FormatGroup.entries.filter { it in types }.forEach { g -> RemovableChip(stringResource(g.label()), onRemove = { viewModel.toggleGroup(g) }) }
+        if (filter.favoritesOnly) RemovableChip(stringResource(R.string.library_favorites_only), onRemove = viewModel::toggleFavorites)
         ReadingStatus.entries.filter { it in filter.statuses }.forEach { s -> RemovableChip(stringResource(s.label()), onRemove = { viewModel.toggleStatus(s) }) }
         filter.tag?.let { RemovableChip("#$it", onRemove = { viewModel.setTag(null) }) }
         filter.language?.let { RemovableChip(it.uppercase(), onRemove = { viewModel.setLanguage(null) }) }
@@ -930,105 +955,107 @@ private fun LibraryGrid(
     if (grid) {
         val gridState = rememberLazyGridState()
         Box(Modifier.fillMaxSize()) {
-        LazyVerticalGrid(
-            state = gridState,
-            columns = if (columns <= 0) GridCells.Adaptive(Dimens.gridMin) else GridCells.Fixed(columns),
-            contentPadding = PaddingValues(start = Dimens.s, end = Dimens.s, bottom = navBarBottomPadding(96.dp)),
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            item(key = "header", span = { GridItemSpan(maxLineSpan) }, contentType = "header") { Column { header() } }
-            if (onlineTiles.isNotEmpty()) {
-                if (sectionLabels) {
-                    item(key = "online-label", span = { GridItemSpan(maxLineSpan) }) {
-                        SectionLabel(stringResource(R.string.library_section_online), onlineTiles.size, Icons.Outlined.Public)
+            LazyVerticalGrid(
+                state = gridState,
+                columns = if (columns <= 0) GridCells.Adaptive(Dimens.gridMin) else GridCells.Fixed(columns),
+                contentPadding = PaddingValues(start = Dimens.s, end = Dimens.s, bottom = navBarBottomPadding(96.dp)),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                item(key = "header", span = { GridItemSpan(maxLineSpan) }, contentType = "header") { Column { header() } }
+                if (onlineTiles.isNotEmpty()) {
+                    if (sectionLabels) {
+                        item(key = "online-label", span = { GridItemSpan(maxLineSpan) }) {
+                            SectionLabel(stringResource(R.string.library_section_online), onlineTiles.size, Icons.Outlined.Public)
+                        }
+                    }
+                    items(onlineTiles.size, key = { "o${onlineTiles[it].id}" }, contentType = { "online" }) { i ->
+                        OnlineTile(onlineTiles[i], motionItem(), onOpenTitle, onOnlineLongPress)
                     }
                 }
-                items(onlineTiles.size, key = { "o${onlineTiles[it].id}" }, contentType = { "online" }) { i ->
-                    OnlineTile(onlineTiles[i], motionItem(), onOpenTitle, onOnlineLongPress)
+                if (sectionLabels && bookCount > 0) {
+                    item(key = "books-label", span = { GridItemSpan(maxLineSpan) }) {
+                        SectionLabel(stringResource(R.string.library_section_books), null, Icons.Outlined.AutoStories)
+                    }
+                }
+                items(bookCount, key = books.itemKey { it.id }, contentType = { "book" }) { index ->
+                    // itemCount can drop to zero between building this range and composing a row (refresh/filter
+                    // change); LazyPagingItems[index] throws in that case, while peek() returns null.
+                    val book = books.peek(index) ?: return@items
+                    BookGridItem(
+                        title = book.title,
+                        subtitle = book.authorsText,
+                        cover = book.cover(),
+                        progress = book.progress,
+                        badge = book.format.name.takeIf { it != "EPUB" },
+                        selected = book.id in selection,
+                        finished = book.status == ReadingStatus.FINISHED,
+                        coverModifier = Modifier.sharedCover("book-${book.id}"),
+                        onClick = { onClick(book) },
+                        onLongClick = { onLongClick(book) },
+                        modifier = motionItem(),
+                    )
                 }
             }
-            if (sectionLabels && bookCount > 0) {
-                item(key = "books-label", span = { GridItemSpan(maxLineSpan) }) {
-                    SectionLabel(stringResource(R.string.library_section_books), null, Icons.Outlined.AutoStories)
-                }
-            }
-            items(bookCount, key = books.itemKey { it.id }, contentType = { "book" }) { index ->
-                val book = books[index] ?: return@items
-                BookGridItem(
-                    title = book.title,
-                    subtitle = book.authorsText,
-                    cover = book.cover(),
-                    progress = book.progress,
-                    badge = book.format.name.takeIf { it != "EPUB" },
-                    selected = book.id in selection,
-                    finished = book.status == ReadingStatus.FINISHED,
-                    coverModifier = Modifier.sharedCover("book-${book.id}"),
-                    onClick = { onClick(book) },
-                    onLongClick = { onLongClick(book) },
-                    modifier = motionItem(),
-                )
-            }
-        }
-        FastScroller(gridState.asFastScrollTarget(), scrollDescription, Modifier.align(Alignment.CenterEnd).padding(bottom = navBarBottomPadding(96.dp)), label)
+            FastScroller(gridState.asFastScrollTarget(), scrollDescription, Modifier.align(Alignment.CenterEnd).padding(bottom = navBarBottomPadding(96.dp)), label)
         }
     } else {
         val listState = rememberLazyListState()
         Box(Modifier.fillMaxSize()) {
-        LazyColumn(state = listState, contentPadding = PaddingValues(bottom = navBarBottomPadding(96.dp)), modifier = Modifier.fillMaxSize()) {
-            item(key = "header", contentType = "header") { Column { header() } }
-            if (onlineTiles.isNotEmpty()) {
-                if (sectionLabels) {
-                    item(key = "online-label") { SectionLabel(stringResource(R.string.library_section_online), onlineTiles.size, Icons.Outlined.Public) }
+            LazyColumn(state = listState, contentPadding = PaddingValues(bottom = navBarBottomPadding(96.dp)), modifier = Modifier.fillMaxSize()) {
+                item(key = "header", contentType = "header") { Column { header() } }
+                if (onlineTiles.isNotEmpty()) {
+                    if (sectionLabels) {
+                        item(key = "online-label") { SectionLabel(stringResource(R.string.library_section_online), onlineTiles.size, Icons.Outlined.Public) }
+                    }
+                    items(onlineTiles, key = { "o${it.id}" }, contentType = { "online" }) { e ->
+                        BookListItem(
+                            title = e.title,
+                            subtitle = e.author,
+                            cover = e.coverUrl,
+                            progress = e.readFraction().takeIf { e.lastReadAt > 0 } ?: 0f,
+                            meta = if (e.unread > 0) pluralStringResource(R.plurals.library_unread_chapters, e.unread, e.unread) else null,
+                            onClick = { onOpenTitle(e.id) },
+                            onLongClick = { onOnlineLongPress(e) },
+                            modifier = motionItem(),
+                            trailing = { Icon(Icons.Outlined.Public, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = Dimens.s)) },
+                        )
+                    }
                 }
-                items(onlineTiles, key = { "o${it.id}" }, contentType = { "online" }) { e ->
-                    BookListItem(
-                        title = e.title,
-                        subtitle = e.author,
-                        cover = e.coverUrl,
-                        progress = e.readFraction().takeIf { e.lastReadAt > 0 } ?: 0f,
-                        meta = if (e.unread > 0) pluralStringResource(R.plurals.library_unread_chapters, e.unread, e.unread) else null,
-                        onClick = { onOpenTitle(e.id) },
-                        onLongClick = { onOnlineLongPress(e) },
+                if (sectionLabels && bookCount > 0) {
+                    item(key = "books-label") { SectionLabel(stringResource(R.string.library_section_books), null, Icons.Outlined.AutoStories) }
+                }
+                items(bookCount, key = books.itemKey { it.id }, contentType = { "book" }) { index ->
+                    val book = books.peek(index) ?: return@items
+                    val finished = book.status == ReadingStatus.FINISHED
+                    SwipeActionsBox(
                         modifier = motionItem(),
-                        trailing = { Icon(Icons.Outlined.Public, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = Dimens.s)) },
-                    )
+                        enabled = swipeEnabled,
+                        start = SwipeAction.neutral(
+                            if (finished) Icons.Outlined.AutoStories else Icons.Default.DoneAll,
+                            stringResource(if (finished) R.string.library_mark_unread else R.string.library_mark_read),
+                        ) { onToggleRead(book) },
+                        end = SwipeAction.destructive(stringResource(R.string.library_remove_book)) { onRemove(book) },
+                    ) {
+                        BookListItem(
+                            title = book.title,
+                            subtitle = book.authorsText,
+                            cover = book.cover(),
+                            progress = book.progress,
+                            meta = listOfNotNull(book.format.name, book.series, book.language?.uppercase()).joinToString(" · "),
+                            selected = book.id in selection,
+                            coverModifier = Modifier.sharedCover("book-${book.id}"),
+                            onClick = { onClick(book) },
+                            onLongClick = { onLongClick(book) },
+                            trailing = {
+                                IconButton(onClick = { onDetails(book) }) {
+                                    Icon(if (book.id in selection) Icons.Default.Check else Icons.Outlined.Info, stringResource(R.string.library_details))
+                                }
+                            },
+                        )
+                    }
                 }
             }
-            if (sectionLabels && bookCount > 0) {
-                item(key = "books-label") { SectionLabel(stringResource(R.string.library_section_books), null, Icons.Outlined.AutoStories) }
-            }
-            items(bookCount, key = books.itemKey { it.id }, contentType = { "book" }) { index ->
-                val book = books[index] ?: return@items
-                val finished = book.status == ReadingStatus.FINISHED
-                SwipeActionsBox(
-                    modifier = motionItem(),
-                    enabled = swipeEnabled,
-                    start = SwipeAction.neutral(
-                        if (finished) Icons.Outlined.AutoStories else Icons.Default.DoneAll,
-                        stringResource(if (finished) R.string.library_mark_unread else R.string.library_mark_read),
-                    ) { onToggleRead(book) },
-                    end = SwipeAction.destructive(stringResource(R.string.library_remove_book)) { onRemove(book) },
-                ) {
-                BookListItem(
-                    title = book.title,
-                    subtitle = book.authorsText,
-                    cover = book.cover(),
-                    progress = book.progress,
-                    meta = listOfNotNull(book.format.name, book.series, book.language?.uppercase()).joinToString(" · "),
-                    selected = book.id in selection,
-                    coverModifier = Modifier.sharedCover("book-${book.id}"),
-                    onClick = { onClick(book) },
-                    onLongClick = { onLongClick(book) },
-                    trailing = {
-                        IconButton(onClick = { onDetails(book) }) {
-                            Icon(if (book.id in selection) Icons.Default.Check else Icons.Outlined.Info, stringResource(R.string.library_details))
-                        }
-                    },
-                )
-                }
-            }
-        }
-        FastScroller(listState.asFastScrollTarget(), scrollDescription, Modifier.align(Alignment.CenterEnd).padding(bottom = navBarBottomPadding(96.dp)), label)
+            FastScroller(listState.asFastScrollTarget(), scrollDescription, Modifier.align(Alignment.CenterEnd).padding(bottom = navBarBottomPadding(96.dp)), label)
         }
     }
 }
@@ -1056,6 +1083,9 @@ private fun FiltersSheet(viewModel: LibraryViewModel, onDismiss: () -> Unit) {
             }
             FilterSection(stringResource(R.string.library_status)) {
                 ReadingStatus.entries.forEach { s -> Choice(stringResource(s.label()), s in filter.statuses) { viewModel.toggleStatus(s) } }
+            }
+            FilterSection(stringResource(R.string.library_favorites)) {
+                Choice(stringResource(R.string.library_favorites_only), filter.favoritesOnly) { viewModel.toggleFavorites() }
             }
             if (tags.isNotEmpty()) {
                 FilterSection(stringResource(R.string.library_tags)) {
@@ -1098,7 +1128,7 @@ private fun FiltersSheet(viewModel: LibraryViewModel, onDismiss: () -> Unit) {
             }
             if (grid) {
                 FilterSection(stringResource(R.string.library_columns)) {
-                    (0..5).forEach { n ->
+                    repeat(6) { n ->
                         val value = if (n == 0) 0 else n + 1
                         Choice(if (n == 0) stringResource(R.string.library_columns_auto) else "$value", columns == value) { viewModel.setColumns(value) }
                     }

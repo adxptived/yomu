@@ -16,6 +16,9 @@ enum class PageTurnAnimation { SLIDE, FADE, NONE }
 
 enum class TextAlignment { START, JUSTIFY, CENTER }
 
+/** When [TextReaderSettings.autoNight] switches to [TextReaderSettings.nightTheme]. */
+enum class AutoNightMode { SYSTEM, SCHEDULE }
+
 @Serializable
 data class TextReaderSettings(
     val fontFamily: String = "serif",
@@ -32,6 +35,8 @@ data class TextReaderSettings(
     val customBackground: Long = 0xFFFFF8E7,
     val customText: Long = 0xFF222222,
     val paged: Boolean = true,
+    /** Two columns when the screen is wider than it is tall. */
+    val dualPageLandscape: Boolean = true,
     val verticalText: Boolean = false,
     val rtl: Boolean = false,
     val publisherStyles: Boolean = false,
@@ -44,6 +49,10 @@ data class TextReaderSettings(
     /** Uses [nightTheme] instead of [theme] while the app is in dark mode. */
     val autoNight: Boolean = false,
     val nightTheme: ReaderTheme = ReaderTheme.DARK,
+    val autoNightMode: AutoNightMode = AutoNightMode.SYSTEM,
+    /** Local hours of the schedule; [nightFromHour] is inclusive, [nightToHour] exclusive. */
+    val nightFromHour: Int = 21,
+    val nightToHour: Int = 7,
 ) {
     val background: Long get() = if (theme == ReaderTheme.CUSTOM) customBackground else theme.bg
     val foreground: Long get() = if (theme == ReaderTheme.CUSTOM) customText else theme.fg
@@ -70,6 +79,8 @@ data class MangaSettings(
     val contrast: Float = 1f,
     val grayscale: Boolean = false,
     val invert: Boolean = false,
+    /** A new page opens at the zoom level of the previous one; the zoom-lock button toggles it while reading. */
+    val zoomLock: Boolean = false,
     val preload: Int = 3,
     val showPageNumber: Boolean = true,
     val background: MangaBackground = MangaBackground.BLACK,
@@ -107,6 +118,10 @@ data class PdfSettings(
     val autoCrop: Boolean = false,
     val manualCrop: CropMargins = CropMargins(),
     val reflow: Boolean = false,
+    /** Display-only image adjustments for scans: contrast around 1, optional grayscale. */
+    val contrast: Float = 1f,
+    val grayscale: Boolean = false,
+    val zoomLock: Boolean = false,
 )
 
 enum class ScreenTimeout(val minutes: Int) { SYSTEM(0), MIN_2(2), MIN_5(5), MIN_10(10), MIN_30(30), ALWAYS(-1) }
@@ -134,6 +149,9 @@ data class CommonReaderSettings(
     val footerChapter: Boolean = true,
     /** Vertical drag on the left screen edge changes brightness, on the right edge the warm filter. */
     val edgeGestures: Boolean = true,
+    /** Which of the two edge swipes are active; both can be switched off independently. */
+    val edgeBrightness: Boolean = true,
+    val edgeWarm: Boolean = true,
     val textTapZones: TapZoneLayout = TapZoneLayout.LEFT_RIGHT,
 )
 
@@ -152,7 +170,15 @@ data class BookReaderSettings(
 /** Actions of the selection toolbar. Order and visibility are configurable. */
 enum class SelectionAction {
     HIGHLIGHT, UNDERLINE, STRIKE, NOTE, QUOTE, MEANING, TRANSLATE, SAVE_WORD, COPY, SHARE, SHARE_IMAGE,
-    SEARCH_BOOK, SEARCH_WEB, SPEAK, SELECT_SENTENCE, SELECT_PARAGRAPH, BOOKMARK, CUSTOM,
+    SEARCH_BOOK, SEARCH_WEB, SPEAK, SELECT_SENTENCE, SELECT_PARAGRAPH, BOOKMARK, DICTIONARY, CUSTOM,
+}
+
+/** External dictionary apps that can receive a selected word; [packageNames] are tried in order. */
+enum class DictionaryApp(val packageNames: List<String>) {
+    SYSTEM(emptyList()),
+    LINGVO(listOf("com.abbyy.mobile.lingvo.market")),
+    COLORDICT(listOf("com.socialnmobile.colordict", "com.socialnmobile.colordict.free")),
+    GOLDENDICT(listOf("org.goldendict.android", "org.goldendict.android.free")),
 }
 
 @Serializable

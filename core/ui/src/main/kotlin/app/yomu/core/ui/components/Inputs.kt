@@ -1,13 +1,10 @@
 package app.yomu.core.ui.components
 
-import androidx.compose.foundation.clickable
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,8 +13,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -50,6 +51,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -57,6 +59,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import app.yomu.core.ui.R
@@ -192,8 +195,10 @@ fun <T> ChoiceDialog(title: String, options: List<Pair<T, String>>, selected: T?
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
-                options.forEach { (value, label) ->
+            // Long lists (translation languages, TTS voices, chapters) must be scrollable: with a plain Column the
+            // items below the dialog edge were unreachable.
+            LazyColumn(Modifier.heightIn(max = 400.dp)) {
+                items(options) { (value, label) ->
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = Dimens.touch)
                             .selectable(selected = value == selected, role = Role.RadioButton, onClick = { onSelect(value); onDismiss() }),
@@ -289,17 +294,22 @@ fun PreferenceSlider(
     icon: ImageVector? = null,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s)) {
+        // The thumb follows the finger in local state; the setting is written once, when the finger lifts. Writing on
+        // every frame used to hit DataStore and re-layout the reader for each movement.
+        var local by remember(value) { androidx.compose.runtime.mutableFloatStateOf(value) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Dimens.l)) {
             if (icon != null) PrefIcon(icon)
             Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Text(valueLabel(value), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(valueLabel(local), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         }
         val haptic = rememberHaptic()
         Slider(
-            value = value,
-            onValueChange = { v -> if (steps > 0 && v != value) haptic.tick(); onValueChange(v) },
+            value = local,
+            onValueChange = { v -> local = v; if (steps > 0 && v != value) haptic.tick() },
+            onValueChangeFinished = { onValueChange(local) },
             valueRange = range,
             steps = steps,
+            modifier = Modifier.semantics { stateDescription = valueLabel(local) },
         )
     }
 }
