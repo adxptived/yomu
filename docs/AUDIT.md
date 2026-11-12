@@ -52,7 +52,7 @@
 ### Осталось (сознательно не сделано в этом проходе)
 
 - Сквозное шифрование файла синка и подписанные контрольные суммы релиза (нужен формат ключей и генерация в CI; сейчас обязательна проверка SHA-256 по HTTPS).
-- OAuth-токены трекеров теперь шифруются ключом Android Keystore (`TrackerSecrets`), но ключи LLM/WebDAV/GitHub PAT всё ещё лежат в приватных `SharedPreferences`/DataStore без шифрования.
+- PIN hash, ключи DeepL/LibreTranslate/LLM, пароль WebDAV и GitHub PAT теперь шифруются AES-GCM ключом Android Keystore (`SecretCipher`, миграция настроек 2); plaintext-значения старых версий читаются и перешифровываются. Незашифрованным остаётся только сам файл синка.
 - `koinApplication { checkModules() }` не внедрён: проверка пытается создать `ViewModel`-фабрики с `SavedStateHandle` и падает; нужен отдельный список проверяемых модулей.
 - OSV-сканер не подключён (CodeQL и dependency-review добавлены в `.github/workflows/security.yml`), воспроизводимая фиксация `quickjs`, разбиение `ReaderViewModel`/`LibraryScreen`, полный переход `feature/*` на `domain`, `SavedStateHandle` для поиска/фильтров, локализация оставшихся литералов и plurals.
 - Часть пунктов из разделов 3–5 — архитектурные и продуктовые улучшения, а не исправления багов.
@@ -330,8 +330,8 @@
 - FileProvider отдаёт весь `files/` и `cache/` (`res/xml/file_paths.xml:2-6`) — нужно сузить до `cache/updates`, `cache/share`, `files/books`.
 - Виджет «Продолжить чтение» показывает названия и прогресс при включённом локе/инкогнито (`widget/ContinueReadingWidget.kt:139-152`).
 - Инкогнито протекает: история словаря (`data/.../dictionary/DictionaryRepository.kt:169`), онлайн-перевод каждого тапа (`feature/dictionary/.../WordLookup.kt:100`), выставление `FINISHED` (`ReaderViewModel.kt:902-908`).
-- OAuth-токены и client secret трекеров шифруются AES-GCM ключом Android Keystore (`TrackerSecrets`); LLM/WebDAV/GitHub PAT ещё требуют такого же переноса.
-- В production-коде остался отладочный `println("DIAG …")` — `data/.../backup/BookDeletionSync.kt:117`.
+- OAuth-токены и client secret трекеров, PIN-хэш, ключи DeepL/LibreTranslate/LLM, пароль WebDAV и GitHub PAT шифруются AES-GCM ключом Android Keystore (`SecretCipher`); файл синка пока не шифруется.
+- Отладочные `println("DIAG …")` остались только в тестах (`BookDeletionSyncTest`), в production-коде их нет.
 
 ### 2.8 Сборка и CI
 
@@ -418,7 +418,7 @@
 
 ### Безопасность и приватность
 
-- Keystore для LLM/WebDAV/GitHub PAT (токены трекеров уже шифруются), шифрование файла синка, подписанные контрольные суммы.
+- Keystore для секретов настроек и трекеров — сделано; осталось сквозное шифрование файла синка и подписанные контрольные суммы.
 - Исключить `datastore/` из облачного бэкапа; опциональный экспорт секретов — только по явному согласию.
 - Сквозное шифрование файла синка (сервер сейчас видит содержимое) — главный барьер доверия к WebDAV/GitHub.
 - Подписанные контрольные суммы релиза (minisign/GPG с ключом в приложении), обязательная проверка хэша.
