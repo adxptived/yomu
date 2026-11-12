@@ -100,7 +100,8 @@ androidComponents {
 tasks.configureEach {
     if (name == "assembleRelease" || name == "bundleRelease") {
         doFirst {
-            check(releaseKeystore != null) {
+            // Read the environment in the task: capturing the script's `releaseKeystore` breaks the configuration cache.
+            check(System.getenv("YOMU_KEYSTORE_PATH") != null) {
                 "YOMU_KEYSTORE_PATH is not set: refusing to build a release. Use assembleFast for a test build."
             }
         }
