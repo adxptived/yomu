@@ -40,6 +40,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_2_0">
+        <item>Reader parity and stability: PDF controls and tap zones, TTS recovery, smoother page turns, and no crash when a list becomes empty.</item>
+        <item>Tokens, API keys and the PIN hash are now encrypted with the Android Keystore.</item>
+        <item>Safer backups and editor saves, plus a sync that no longer holds a database transaction during the network request.</item>
+        <item>Downloads can be cancelled with Undo, and the library updates without redrawing the whole screen.</item>
+    </string-array>
     <string-array name="whats_new_2_1_1">
         <item>Continue reading opens the next chapter, and YouTube titles offer online listening again.</item>
         <item>The audiobook player has chapter navigation, bookmarks, configurable skip intervals and an improved sleep timer.</item>

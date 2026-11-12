@@ -53,6 +53,8 @@ jobs:
     name: Dependency graph
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    # The repository may have the GitHub dependency graph turned off; the snapshot then cannot be submitted.
+    continue-on-error: true
     permissions:
       contents: write
     steps:

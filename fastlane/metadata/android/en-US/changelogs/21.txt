@@ -1,0 +1,1 @@
+Reader parity, hardened credentials and a large stability/security audit: safer backups and editor saves, encrypted tokens and API keys, resilient sync, PDF/TTS and library fixes, plus crash fixes when a list becomes empty.

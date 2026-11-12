@@ -968,8 +968,9 @@ private fun LibraryGrid(
                             SectionLabel(stringResource(R.string.library_section_online), onlineTiles.size, Icons.Outlined.Public)
                         }
                     }
-                    items(onlineTiles.size, key = { "o${onlineTiles[it].id}" }, contentType = { "online" }) { i ->
-                        OnlineTile(onlineTiles[i], motionItem(), onOpenTitle, onOnlineLongPress)
+                    items(onlineTiles.size, key = { "o${onlineTiles.getOrNull(it)?.id ?: it}" }, contentType = { "online" }) { i ->
+                        val item = onlineTiles.getOrNull(i) ?: return@items
+                        OnlineTile(item, motionItem(), onOpenTitle, onOnlineLongPress)
                     }
                 }
                 if (sectionLabels && bookCount > 0) {

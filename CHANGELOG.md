@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — audit fixes
+## 2.2.0 — reader parity and audit fixes
 
 - **Data safety**: the editor never truncates a SAF document in place; backup restore rolls files back with the transaction, keeps the device's newer rows and no longer aborts on one page-revision difference; a cancelled download cannot come back as `DONE`; pending book deletions belong to the ViewModel and are cancelled when the screen goes away; a draft whose `dirty` flag cannot be written is still offered; the editor history is capped from the first step and reserves its ids atomically.
 - **Security**: extension trust uses the current APK signers; OAuth redirects carry and verify a one-time `state` (Shikimori also uses PKCE S256); cleartext is off except localhost/.local; datastore secrets are excluded from Android backups; tracker tokens, client secrets, the PIN hash, translation/LLM keys, the WebDAV password and the GitHub token are encrypted with Android Keystore keys (old plaintext values are re-encrypted on upgrade); PIN hashing uses 600 000 PBKDF2 iterations with a versioned format and throttled retries; releases require a real keystore; APK updates require `SHA256SUMS.txt`; the widget, FileProvider, MediaSession and incognito mode expose less.
