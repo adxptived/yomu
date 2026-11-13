@@ -59,6 +59,7 @@ A new parser, converter or editor operation comes with a test. A bug fix comes, 
 2. Before sending: `./gradlew assembleDebug test lint` without errors.
 3. In the description — what and why changed and how it was verified (device/emulator, Android version); screenshots for UI changes.
 4. Commits — a short imperative headline (`reader: fix TTS highlight on chapter change`).
+5. **No co-authors.** Do not add `Co-authored-by` trailers or any other co-author lines to commits in this repository.
 
 ## Translations
 
