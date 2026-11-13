@@ -138,5 +138,6 @@ internal fun SliderSetting(
     steps: Int = 0,
     label: (Float) -> String,
     icon: ImageVector? = null,
+    summary: String? = null,
     onCommit: (Float) -> Unit,
-) = SettingsAnchor(title) { SliderSettingRow(title, value, range, steps, label, icon, onCommit) }
+) = SettingsAnchor(title) { SliderSettingRow(title, value, range, steps, label, icon, summary, onCommit) }

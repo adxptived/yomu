@@ -113,6 +113,8 @@ data class SyncBase(
     val titleTabs: Map<String, List<String>> = emptyMap(),
     /** Book hash → names of its tabs. */
     val bookTabs: Map<String, List<String>> = emptyMap(),
+    /** Book hash → status it had after the last sync; lets a status changed on one device win without timestamps. */
+    val bookStatus: Map<String, String> = emptyMap(),
     /** Last acknowledged shared revisions of locally present annotations. */
     val annotationRevisions: Map<String, String> = emptyMap(),
     /** Local-only state such as favorites and linked private notes; never published. */

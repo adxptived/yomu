@@ -131,6 +131,29 @@ class SyncMergerTest {
     }
 
     @Test
+    fun everyReadingStatusTravelsWithoutANewPosition() = runBlocking {
+        val id = a.addBook("statuses")
+        b.addBook("statuses")
+        a.sync()
+        b.sync()
+        fun status(device: Device) = runBlocking { device.db.books().all().single { it.fileHash == "statuses" }.status }
+        for (next in listOf("ON_HOLD", "DROPPED", "PLAN_TO_READ", "FINISHED", "READING")) {
+            a.db.books().setStatus(listOf(id), next)
+            a.sync()
+            b.sync()
+            assertEquals("from A: $next", next, status(b))
+            a.sync()
+            assertEquals("back to A: $next", next, status(a))
+        }
+        // The other direction too.
+        val other = b.db.books().all().single { it.fileHash == "statuses" }.id
+        b.db.books().setStatus(listOf(other), "ON_HOLD")
+        b.sync()
+        a.sync()
+        assertEquals("ON_HOLD", status(a))
+    }
+
+    @Test
     fun duplicateBookIdentityStopsMetadataMerge() = runBlocking {
         val id = a.addBook("same")
         val original = a.db.books().get(id)!!

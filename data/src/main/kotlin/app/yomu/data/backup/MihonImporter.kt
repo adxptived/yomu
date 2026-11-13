@@ -169,6 +169,7 @@ class MihonImporter(
             val type = when (contentOf(m.source)) {
                 SourceContent.NOVEL -> "NOVEL"
                 SourceContent.BOOK -> "BOOK"
+                SourceContent.AUDIO -> "AUDIO"
                 else -> "MANGA"
             }
             val genres = m.genre.map { it.replace(",", " ").trim() }.filter { it.isNotEmpty() }.distinct().joinToString(",")

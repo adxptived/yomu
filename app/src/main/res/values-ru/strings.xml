@@ -123,6 +123,7 @@
     <string name="profile_title">Профиль</string>
     <string name="profile_tab_overview">Обзор</string>
     <string name="profile_tab_stats">Статистика</string>
+    <string name="profile_stats_summary">Прочитано: %1$s · страниц: %2$s · серия: %3$s дн.</string>
     <string name="profile_tab_history">История</string>
     <string name="profile_default_name">Читатель</string>
     <string name="profile_set_name">Нажмите, чтобы задать имя и аватар</string>
@@ -130,6 +131,7 @@
     <string name="profile_name">Имя</string>
     <string name="profile_avatar">Аватар</string>
     <string name="profile_since">Читает в Yomu с %1$s</string>
+    <string name="profile_header_streak">Серия: %1$d дн.</string>
     <string name="profile_no_reading">Откройте книгу — здесь появятся время, серии и достижения.</string>
     <string name="profile_total_time">Всего за чтением</string>
     <string name="profile_open_stats">Статистика</string>
@@ -159,6 +161,7 @@
     <string name="profile_recent">Недавно читали</string>
     <string name="profile_all_history">Вся история</string>
     <string name="profile_share_section">Поделиться и перенести</string>
+    <string name="profile_share_summary">Карточка статистики, CSV истории, резервная копия</string>
     <string name="profile_share_hint">Профиль хранится на этом устройстве — аккаунт и сервер не нужны. Поделитесь им картинкой или текстом либо перенесите всё на другой телефон резервной копией.</string>
     <string name="profile_share_card">Карточка статистики</string>
     <string name="profile_share_card_sum">Картинка со временем чтения, серией и книгами</string>

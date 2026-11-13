@@ -105,6 +105,14 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
         )
     }
 
+    /** Name of the signed-in Google account (best effort; null when signed out or the answer has no name). */
+    suspend fun accountName(): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val response = post("account/account_menu", WEB, buildJsonObject {})
+            findAll(response, "accountName").firstNotNullOfOrNull { text(it) }
+        }.onFailure { Timber.d(it, "YouTube account menu") }.getOrNull()
+    }
+
     /** Videos (long ones first in relevance, as YouTube ranks them) and playlists for [query]. */
     suspend fun search(query: String): List<YouTubeResult> = withContext(Dispatchers.IO) {
         val locale = Locale.getDefault()
@@ -199,7 +207,7 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
         streams.entries.removeIf { expiresAt(it.value.url) <= now }
         var lastError: YouTubeException? = null
         var networkError: IOException? = null
-        for (c in CLIENTS) {
+        for (c in clients()) {
             val response = try {
                 postPlayer(c, videoId)
             } catch (e: IOException) {
@@ -218,7 +226,12 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
                 )
                 continue
             }
-            val headers = mapOf("User-Agent" to c.userAgent)
+            // A Referer and Origin make the media server treat the request as coming from a player page.
+            val headers = mapOf(
+                "User-Agent" to c.userAgent,
+                "Referer" to "https://www.youtube.com/",
+                "Origin" to "https://www.youtube.com",
+            )
             for (candidate in candidates(response, headers).filter { !progressive || !it.isHls }) {
                 if (reachable(candidate)) return@withContext candidate.also { streams[key] = it }
             }
@@ -229,9 +242,15 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
         throw lastError ?: networkError ?: YouTubeException(YouTubeException.Reason.BLOCKED)
     }
 
+    /**
+     * The regular clients, plus the web player when a Google session is present: it is the most likely one to accept
+     * the session's SAPISIDHASH (and the visitor id) when the JS-less clients hit a bot check.
+     */
+    private fun clients(): List<Client> = if (YouTubeAuth.isSignedIn()) CLIENTS + WEB else CLIENTS
+
     private fun player(videoId: String): Pair<Client, JsonObject> {
         var last: Throwable? = null
-        for (c in CLIENTS) {
+        for (c in clients()) {
             val r = runCatching { postPlayer(c, videoId) }.onFailure { last = it }.getOrNull() ?: continue
             if (r.obj("videoDetails") != null) return c to r
         }
@@ -260,18 +279,28 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
             }
             body.forEach { (k, v) -> put(k, v) }
         }
-        val request = Request.Builder()
+        val builder = Request.Builder()
             .url("https://www.youtube.com/youtubei/v1/$endpoint?prettyPrint=false")
             .header("User-Agent", c.userAgent)
             .header("X-YouTube-Client-Name", c.id.toString())
             .header("X-YouTube-Client-Version", c.version)
             .header("Origin", "https://www.youtube.com")
             .post(Json.encodeToString(JsonObject.serializer(), payload).toRequestBody(JSON))
-            .build()
-        return client().newCall(request).execute().use { r ->
+        // A Google session from the in-app WebView (Settings → YouTube): the cookies come from the shared cookie
+        // jar, the signature from here. Without a session the calls stay anonymous, as before.
+        YouTubeAuth.headers().forEach { (k, v) -> builder.header(k, v) }
+        return client().newCall(builder.build()).execute().use { r ->
             if (!r.isSuccessful) throw IOException("YouTube $endpoint: HTTP ${r.code}")
-            json.parseToJsonElement(r.body.string())
+            val element = json.parseToJsonElement(r.body.string())
+            rememberVisitor(element)
+            element
         }
+    }
+
+    /** YouTube's visitor id identifies the device between calls; sending it back keeps the bot check away. */
+    private fun rememberVisitor(root: JsonElement) {
+        val context = (root as? JsonObject)?.get("responseContext") as? JsonObject ?: return
+        YouTubeAuth.rememberVisitor(context.str("visitorData"))
     }
 
     private fun reachable(s: YouTubeStream): Boolean = runCatching {

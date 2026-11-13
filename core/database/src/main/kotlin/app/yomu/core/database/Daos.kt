@@ -513,8 +513,14 @@ interface SourceDao {
     @Query("UPDATE sources SET pinned = :pinned WHERE id = :id")
     suspend fun setPinned(id: Long, pinned: Boolean)
 
+    @Query("UPDATE sources SET pinned = :pinned WHERE id IN (:ids)")
+    suspend fun setPinnedAll(ids: List<Long>, pinned: Boolean)
+
     @Query("UPDATE sources SET enabled = :enabled WHERE id = :id")
     suspend fun setEnabled(id: Long, enabled: Boolean)
+
+    @Query("UPDATE sources SET enabled = :enabled WHERE id IN (:ids)")
+    suspend fun setEnabledAll(ids: List<Long>, enabled: Boolean)
 
     @Query("UPDATE sources SET lastUsedAt = :at WHERE id = :id")
     suspend fun touch(id: Long, at: Long)

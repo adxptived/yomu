@@ -1,6 +1,6 @@
 package app.yomu.domain.model
 
-enum class ContentType { MANGA, NOVEL, BOOK }
+enum class ContentType { MANGA, NOVEL, BOOK, AUDIO }
 
 data class CatalogEntry(
     val id: Long = 0,

@@ -59,4 +59,22 @@
     <string name="mr_volume_keys">Turn pages with volume keys</string>
     <string name="mr_invert_volume">Volume up turns forward</string>
     <string name="mr_off">Off</string>
+
+    <!-- Group headers of the settings and the explanations under them -->
+    <string name="mr_group_mode_summary">Direction and page order</string>
+    <string name="mr_group_scale_summary">How a page fills the screen</string>
+    <string name="mr_group_background_summary">Colour around the pages</string>
+    <string name="mr_group_pages_summary">Landscape, animation, loading</string>
+    <string name="mr_group_image_summary">Brightness, contrast, colour</string>
+    <string name="mr_group_zones_summary">Where taps go, volume keys and what they do</string>
+    <string name="mr_dual_sum">Two pages side by side on a wide screen</string>
+    <string name="mr_crop_sum">Trim the white edges of the scans</string>
+    <string name="mr_page_number_sum">Show the page number over the page</string>
+    <string name="mr_preload_sum">Pages loaded before you reach them</string>
+    <string name="mr_brightness_sum">Lighten or darken the pages</string>
+    <string name="mr_contrast_sum">Stronger or softer lines</string>
+    <string name="mr_gray_sum">Remove the colours</string>
+    <string name="mr_invert_sum">White lines on a black page</string>
+    <string name="mr_volume_keys_sum">Volume buttons turn pages</string>
+    <string name="mr_volume_invert_sum">Volume up turns forward</string>
 </resources>

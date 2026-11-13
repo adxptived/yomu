@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -185,6 +186,29 @@ class CatalogScreensTest {
         compose.onAllNodesWithText("Filter")[0].performClick()
         compose.mainClock.advanceTimeBy(1_000)
         shotScreen("36_catalog_library_filters")
+    }
+
+    /** The pencil of the source list: select many sources and apply one action to all of them. */
+    @Test
+    fun sourceBulkEditor() {
+        seed()
+        compose.setContent {
+            YomuTheme {
+                CatalogScreen(
+                    viewModel = koinViewModel<CatalogHomeViewModel>(), onOpenSource = {}, onOpenTitle = {}, onReadChapter = {},
+                    onGlobalSearch = {}, onOpenExtensions = {}, onOpenDownloads = {},
+                )
+            }
+        }
+        awaitText("MangaDex")
+        compose.onNode(hasContentDescription("Edit sources") and hasClickAction()).performClick()
+        awaitText("Select all")
+        compose.onAllNodesWithText("Select all")[0].performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        shot("37_catalog_sources_bulk")
+        compose.onAllNodesWithText("Actions")[0].performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        shotScreen("38_catalog_bulk_actions")
     }
 
     private companion object {

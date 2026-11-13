@@ -321,6 +321,9 @@ class ReaderViewModel(
     /** The position waiting for [scheduleSave]'s debounce; written right away when the reader is left. */
     @Volatile private var pendingLocator: Locator? = null
     private val openBookMutex = Mutex()
+
+    /** One OCR at a time: two large pages decoded together would peak far beyond what one page needs. */
+    private val ocrMutex = Mutex()
     private val chapterOpenMutex = Mutex()
     private var chapterOpenJob: Job? = null
     private var folderReadSession: BookRepositoryImpl.FolderReadSession? = null
@@ -450,7 +453,8 @@ class ReaderViewModel(
             } else {
                 args.locatorJson?.let { runCatching { SettingsJson.decodeFromString(Locator.serializer(), it) }.getOrNull() } ?: books.getProgress(id)
             }
-            if (b.status == ReadingStatus.NEW) books.setStatus(listOf(id), ReadingStatus.READING)
+            // Incognito: opening a book must not change its status (the same rule as for progress and sessions).
+            if (b.status == ReadingStatus.NEW && !settings.incognito.get()) books.setStatus(listOf(id), ReadingStatus.READING)
             when (b.engine) {
                 // Navigation opens audiobooks in the player; the reader never gets one.
                 EngineType.AUDIO -> throw AppError.UnsupportedFormat(b.format.name)
@@ -570,9 +574,9 @@ class ReaderViewModel(
         val number: Int = slots.indexOfFirst { slot -> slot.any { it.id == chapterId } } + 1
         val total: Int = slots.size
         chapterOf = if (number > 0) context.getString(R.string.reader_chapter_of, number, total) else null
-        _imageCanvas.value = entry.type != ContentType.NOVEL && entry.type != ContentType.BOOK
+        _imageCanvas.value = entry.type != ContentType.NOVEL && entry.type != ContentType.BOOK && entry.type != ContentType.AUDIO
         bookOverride.value = catalog.readerSettings(entry.id)?.let { runCatching { SettingsJson.decodeFromString(BookReaderSettings.serializer(), it) }.getOrNull() } ?: BookReaderSettings()
-        if (entry.type == ContentType.NOVEL || entry.type == ContentType.BOOK) {
+        if (entry.type == ContentType.NOVEL || entry.type == ContentType.BOOK || entry.type == ContentType.AUDIO) {
             val html = catalog.novelContent(chapterId)
             val doc = SingleHtmlDocument(ch.name, html)
             val c = newTextController(doc)
@@ -620,7 +624,8 @@ class ReaderViewModel(
         chapterOpenJob = viewModelScope.launch(ScreenErrors) {
             chapterOpenMutex.withLock {
                 flushStats()
-                if (finished) catalog.saveProgress(_chapterId.value, 0, finished = true)
+                // Incognito: chapters read online are not marked read.
+                if (finished && !settings.incognito.get()) catalog.saveProgress(_chapterId.value, 0, finished = true)
                 _content.value = UiState.Loading
                 runCatching { openOnline(targetId) }.onFailure { _content.value = UiState.Error(AppError.from(it)) }
             }
@@ -798,7 +803,10 @@ class ReaderViewModel(
         )
         if (isOnline) {
             val id = _chapterId.value
-            viewModelScope.launch(ScreenErrors) { catalog.saveProgress(id, page, finished = page >= count - 1) }
+            // Incognito: an online chapter is not marked read either.
+            viewModelScope.launch(ScreenErrors) {
+                if (!settings.incognito.get()) catalog.saveProgress(id, page, finished = page >= count - 1)
+            }
         } else {
             scheduleSave(Locator(chapter = page, progression = 0f, totalProgression = total))
         }
@@ -836,6 +844,23 @@ class ReaderViewModel(
     }
 
     private suspend fun pageFile(page: Int): java.io.File? = (current() as? ReaderContent.Manga)?.controller?.let { c -> withContext(Dispatchers.IO) { c.file(page) } }
+
+    /**
+     * Decodes a page for OCR within a pixel budget: a 3000×30000 webtoon strip would need ~343 MiB as an ARGB bitmap
+     * before OCR allocates its own buffers. Downsampling keeps the page readable and the peak predictable.
+     */
+    private fun decodeForOcr(file: java.io.File): android.graphics.Bitmap? {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
+        var sample = 1
+        var pixels = bounds.outWidth.toLong() * bounds.outHeight.toLong()
+        while (pixels > MAX_OCR_PIXELS && sample < 32) {
+            sample *= 2
+            pixels = (bounds.outWidth.toLong() / sample) * (bounds.outHeight.toLong() / sample)
+        }
+        val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+        return android.graphics.BitmapFactory.decodeFile(file.absolutePath, options)
+    }
 
     /** Image type of a page file (pages are cached without a file extension). */
     private fun imageType(file: java.io.File): Pair<String, String> {
@@ -910,21 +935,29 @@ class ReaderViewModel(
     /** Recognises the text of the page and puts it on the clipboard. */
     private fun copyPageText(page: Int) = viewModelScope.launch(ScreenErrors) {
         ocrRunning.value = true
-        runCatching {
-            val file = pageFile(page) ?: return@runCatching
-            val bmp = withContext(Dispatchers.IO) { android.graphics.BitmapFactory.decodeFile(file.absolutePath) } ?: error("Cannot decode page")
-            val blocks = ocr.recognize(bmp, settings.ocrLanguage.get(), cacheKey = "${args.bookId}_${_chapterId.value}_$page")
-            bmp.recycle()
-            val text = blocks.joinToString("\n\n") { it.text.trim() }.trim()
-            if (text.isEmpty()) {
-                events.send(ReaderEvent.Message(R.string.reader_ocr_nothing))
-            } else {
-                val cm = context.getSystemService(android.content.ClipboardManager::class.java)
-                cm.setPrimaryClip(android.content.ClipData.newPlainText("yomu", text))
-                events.send(ReaderEvent.Message(R.string.reader_page_text_copied))
-            }
-        }.onFailure { events.send(ReaderEvent.Error(it)) }
-        ocrRunning.value = false
+        try {
+            runCatching {
+                val file = pageFile(page) ?: return@runCatching
+                val text = ocrMutex.withLock {
+                    val bmp = withContext(Dispatchers.IO) { decodeForOcr(file) } ?: error("Cannot decode page")
+                    try {
+                        ocr.recognize(bmp, settings.ocrLanguage.get(), cacheKey = "${args.bookId}_${_chapterId.value}_$page")
+                            .joinToString("\n\n") { it.text.trim() }.trim()
+                    } finally {
+                        bmp.recycle()
+                    }
+                }
+                if (text.isEmpty()) {
+                    events.send(ReaderEvent.Message(R.string.reader_ocr_nothing))
+                } else {
+                    val cm = context.getSystemService(android.content.ClipboardManager::class.java)
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("yomu", text))
+                    events.send(ReaderEvent.Message(R.string.reader_page_text_copied))
+                }
+            }.onFailure { events.send(ReaderEvent.Error(it)) }
+        } finally {
+            ocrRunning.value = false
+        }
     }
 
     /** A bookmark at the page (books) or on the chapter (online titles). */
@@ -1705,7 +1738,8 @@ class ReaderViewModel(
         }
     }
 
-    fun ttsVoices() = tts.voices()
+    /** Voices of the current language; starts the engine, so the picker works before the first playback. */
+    suspend fun ttsVoices() = tts.prepareVoices()
 
     // ================================================================== auto scroll
     fun toggleAutoScroll() = if (autoScroll.value) stopAutoScroll() else startAutoScroll()
@@ -1794,11 +1828,13 @@ class ReaderViewModel(
         ocrRunning.value = true
         return try {
             runCatching {
-                val bmp = pdf.render(page, 1600, annotations = false)
-                try {
-                    ocr.recognize(bmp, settings.ocrLanguage.get(), cacheKey = "pdf_${args.bookId}_$page").joinToString("\n") { it.text }.trim()
-                } finally {
-                    bmp.recycle()
+                ocrMutex.withLock {
+                    val bmp = pdf.render(page, 1600, annotations = false)
+                    try {
+                        ocr.recognize(bmp, settings.ocrLanguage.get(), cacheKey = "pdf_${args.bookId}_$page").joinToString("\n") { it.text }.trim()
+                    } finally {
+                        bmp.recycle()
+                    }
                 }
             }.getOrDefault("")
         } finally {
@@ -1815,26 +1851,35 @@ class ReaderViewModel(
         }
         viewModelScope.launch(ScreenErrors) {
             ocrRunning.value = true
-            runCatching {
-                val file = c.file(page)
-                val bmp = withContext(Dispatchers.IO) { android.graphics.BitmapFactory.decodeFile(file.absolutePath) } ?: error("Cannot decode page")
-                val w = bmp.width.toFloat()
-                val h = bmp.height.toFloat()
-                val lang = settings.ocrLanguage.get()
-                val blocks = ocr.recognize(bmp, lang, cacheKey = "${args.bookId}_${_chapterId.value}_$page")
-                bmp.recycle()
-                if (blocks.isEmpty()) {
-                    events.send(ReaderEvent.Message(R.string.reader_ocr_nothing))
-                    return@runCatching
-                }
-                val translated = blocks.map { b ->
-                    val t = runCatching { translation.translate(b.text, lang, null).translated }.getOrDefault(b.text)
-                    OverlayBlock(b.left / w, b.top / h, b.right / w, b.bottom / h, b.text, t)
-                }
-                c.overlays[page] = translated
-                c.overlayVisible = true
-            }.onFailure { events.send(ReaderEvent.Error(it)) }
-            ocrRunning.value = false
+            try {
+                runCatching {
+                    val file = c.file(page)
+                    val (blocks, w, h) = ocrMutex.withLock {
+                        val bmp = withContext(Dispatchers.IO) { decodeForOcr(file) } ?: error("Cannot decode page")
+                        try {
+                            val width = bmp.width.toFloat()
+                            val height = bmp.height.toFloat()
+                            val lang = settings.ocrLanguage.get()
+                            Triple(ocr.recognize(bmp, lang, cacheKey = "${args.bookId}_${_chapterId.value}_$page"), width, height)
+                        } finally {
+                            bmp.recycle()
+                        }
+                    }
+                    if (blocks.isEmpty()) {
+                        events.send(ReaderEvent.Message(R.string.reader_ocr_nothing))
+                        return@runCatching
+                    }
+                    val lang = settings.ocrLanguage.get()
+                    val translated = blocks.map { b ->
+                        val t = runCatching { translation.translate(b.text, lang, null).translated }.getOrDefault(b.text)
+                        OverlayBlock(b.left / w, b.top / h, b.right / w, b.bottom / h, b.text, t)
+                    }
+                    c.overlays[page] = translated
+                    c.overlayVisible = true
+                }.onFailure { events.send(ReaderEvent.Error(it)) }
+            } finally {
+                ocrRunning.value = false
+            }
         }
     }
 
@@ -1891,6 +1936,9 @@ class ReaderViewModel(
 /** A pause longer than this without page turns ends the counted reading time. */
 private const val IDLE_MS = 5 * 60_000L
 private const val MAX_PRESETS = 12
+
+/** Largest page bitmap decoded for OCR (~32 MiB as ARGB); bigger pages are downsampled first. */
+private const val MAX_OCR_PIXELS = 8_000_000L
 
 /** Reading time credited after the last activity when a session is closed for being idle. */
 private const val IDLE_TAIL_MS = 60_000L

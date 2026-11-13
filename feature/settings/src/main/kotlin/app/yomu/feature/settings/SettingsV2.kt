@@ -37,6 +37,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +49,9 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.common.Share
 import app.yomu.core.ui.components.ConfirmDialog
@@ -54,6 +59,8 @@ import app.yomu.core.ui.components.PreferenceHeader
 import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.theme.Dimens
+import app.yomu.data.audio.YouTubeAuth
+import app.yomu.data.audio.YouTubeClient
 import app.yomu.data.backup.GitHubSyncBackend
 import app.yomu.data.backup.SyncManager
 import app.yomu.domain.model.QuickActions
@@ -61,6 +68,7 @@ import app.yomu.domain.model.QuickMenuStyle
 import app.yomu.domain.tracking.TrackService
 import app.yomu.feature.annotations.icon
 import app.yomu.feature.annotations.label
+import org.koin.compose.koinInject
 import java.text.DateFormat
 import java.util.Date
 import app.yomu.core.ui.R as CoreR
@@ -182,6 +190,67 @@ internal fun ColumnScope.SyncSection(vm: SettingsViewModel, onOpenProblems: () -
     }
 
     Hint(stringResource(R.string.set_sync_all_devices))
+}
+
+// endregion
+
+// region YouTube
+
+@Composable
+internal fun ColumnScope.YouTubeSection(links: SettingsLinks) {
+    var signedIn by remember { mutableStateOf(YouTubeAuth.isSignedIn()) }
+    var confirmSignOut by remember { mutableStateOf(false) }
+    val youtube: YouTubeClient = koinInject()
+    var accountName by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(signedIn) {
+        accountName = if (signedIn) runCatching { youtube.accountName() }.getOrNull() else null
+    }
+    // Coming back from the sign-in WebView: read the cookies again, without leaving the screen.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) signedIn = YouTubeAuth.isSignedIn()
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+
+    Hint(stringResource(R.string.set_youtube_hint))
+    PreferenceItem(
+        stringResource(R.string.set_youtube_account),
+        when {
+            signedIn && !accountName.isNullOrBlank() -> stringResource(R.string.set_youtube_signed_in_as, accountName.orEmpty())
+            signedIn -> stringResource(R.string.set_youtube_signed_in)
+            else -> stringResource(R.string.set_youtube_signed_out)
+        },
+        icon = Icons.Outlined.Person,
+    )
+    if (signedIn) {
+        PreferenceItem(
+            stringResource(R.string.set_youtube_sign_out),
+            stringResource(R.string.set_youtube_sign_out_sum),
+            icon = Icons.AutoMirrored.Outlined.Logout,
+            onClick = { confirmSignOut = true },
+        )
+    } else {
+        PreferenceItem(
+            stringResource(R.string.set_youtube_sign_in),
+            stringResource(R.string.set_youtube_sign_in_sum),
+            icon = Icons.AutoMirrored.Outlined.Login,
+            onClick = links.onOpenYouTubeLogin,
+        )
+    }
+    Hint(stringResource(R.string.set_youtube_cookie_hint))
+
+    if (confirmSignOut) {
+        ConfirmDialog(
+            stringResource(R.string.set_youtube_sign_out),
+            stringResource(R.string.set_youtube_sign_out_confirm),
+            stringResource(R.string.set_youtube_sign_out),
+            onConfirm = { YouTubeAuth.signOut(); signedIn = false },
+            onDismiss = { confirmSignOut = false },
+        )
+    }
 }
 
 // endregion

@@ -104,6 +104,7 @@ internal fun contentLabel(context: Context, c: SourceContent): String = context.
         SourceContent.MANGA -> R.string.content_manga
         SourceContent.NOVEL -> R.string.content_novel
         SourceContent.BOOK -> R.string.content_book
+        SourceContent.AUDIO -> R.string.content_audiobooks
     },
 )
 
@@ -112,6 +113,7 @@ internal fun contentLabel(context: Context, c: ContentType): String = context.ge
         ContentType.MANGA -> R.string.content_manga
         ContentType.NOVEL -> R.string.content_novel
         ContentType.BOOK -> R.string.content_book
+        ContentType.AUDIO -> R.string.content_audiobooks
     },
 )
 

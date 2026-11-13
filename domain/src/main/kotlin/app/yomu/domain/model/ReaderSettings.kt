@@ -46,6 +46,11 @@ data class TextReaderSettings(
     val letterSpacing: Float = 0f,
     val wordSpacing: Float = 0f,
     val pageAnimation: PageTurnAnimation = PageTurnAnimation.SLIDE,
+    /**
+     * "Previous chapter"/"Next chapter" pills at the ends of a chapter in continuous scrolling. Off by default:
+     * documents read like a PDF get an uninterrupted text, and the bottom bar still moves between chapters.
+     */
+    val chapterButtons: Boolean = false,
     /** Uses [nightTheme] instead of [theme] while the app is in dark mode. */
     val autoNight: Boolean = false,
     val nightTheme: ReaderTheme = ReaderTheme.DARK,

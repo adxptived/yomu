@@ -136,7 +136,7 @@ fun SourceBrowseScreen(
     val variants by viewModel.variants.collectAsStateWithLifecycle()
     val results by viewModel.results.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    var listMode by rememberSaveable { mutableStateOf(viewModel.content == SourceContent.BOOK || viewModel.isNavigation) }
+    var listMode by rememberSaveable { mutableStateOf(viewModel.content == SourceContent.BOOK || viewModel.content == SourceContent.AUDIO || viewModel.isNavigation) }
     val tabs = viewModel.tabs
     val pager = rememberPagerState(initialPage = tabs.indexOf(viewModel.initialTab).coerceAtLeast(0)) { tabs.size }
     val scope = rememberCoroutineScope()
@@ -336,7 +336,10 @@ private fun BrowseList(
             if (listMode) {
                 LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = Dimens.xl)) {
                     items(count = items.itemCount, key = items.itemKey { it.url }) { i ->
-                        val item = items.peek(i) ?: return@items
+                        // items[i] (not peek) reports the access to Paging so the next page is requested; the index is
+                        // checked against the live count because the list can shrink between building and drawing.
+                        val item = if (i in 0 until items.itemCount) items[i] else null
+                        if (item == null) return@items
                         if (item.isNavigation) {
                             ListItem(
                                 headlineContent = { Text(item.title) },
@@ -372,7 +375,10 @@ private fun BrowseList(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     items(count = items.itemCount, key = items.itemKey { it.url }) { i ->
-                        val item = items.peek(i) ?: return@items
+                        // items[i] (not peek) reports the access to Paging so the next page is requested; the index is
+                        // checked against the live count because the list can shrink between building and drawing.
+                        val item = if (i in 0 until items.itemCount) items[i] else null
+                        if (item == null) return@items
                         BookGridItem(
                             title = item.title,
                             subtitle = item.author,

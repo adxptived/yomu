@@ -27,6 +27,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
+import app.yomu.core.datastore.AppSettings
 import app.yomu.core.network.NetworkClients
 import app.yomu.data.audio.AudiobookStore
 import app.yomu.data.audio.YouTubeClient
@@ -72,7 +73,12 @@ class AudioPlaybackService : MediaSessionService() {
     private val store: AudiobookStore by inject()
     private val stats: StatsRepository by inject()
     private val network: NetworkClients by inject()
+    private val appSettings: AppSettings by inject()
     private val sessionActivity: AudioSessionActivity by inject()
+
+    // Incognito keeps listening out of progress, status and statistics, like reading a text book. Kept current by a
+    // collector and read explicitly on every load, where a suspend read is possible.
+    @Volatile private var incognito = false
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var player: ExoPlayer
@@ -142,6 +148,7 @@ class AudioPlaybackService : MediaSessionService() {
             .setCallback(callback)
             .setMediaButtonPreferences(skipButtons())
             .build()
+        scope.launch { appSettings.incognito.flow.collect { incognito = it } }
     }
 
     // Rewind/forward instead of previous/next in the notification: chapters of an audiobook are long.
@@ -206,6 +213,7 @@ class AudioPlaybackService : MediaSessionService() {
         retryJob?.cancel()
         generation++
         loadJob = scope.launch {
+            incognito = withContext(Dispatchers.IO) { appSettings.incognito.get() }
             publish(error = null, loading = bookId)
             runCatching {
                 val b = withContext(Dispatchers.IO) { books.getBook(bookId) } ?: error("Book $bookId not found")
@@ -245,7 +253,7 @@ class AudioPlaybackService : MediaSessionService() {
                 player.skipSilenceEnabled = skipSilence
                 player.prepare()
                 player.playWhenReady = play
-                if (b.status == ReadingStatus.NEW) withContext(Dispatchers.IO) { books.setStatus(listOf(b.id), ReadingStatus.READING) }
+                if (b.status == ReadingStatus.NEW && !incognito) withContext(Dispatchers.IO) { books.setStatus(listOf(b.id), ReadingStatus.READING) }
                 sessionActivity.intent(this@AudioPlaybackService, b.id)?.let { session?.setSessionActivity(it) }
                 startError?.let { e -> publish(error = e.message ?: "YouTube"); return@launch }
             }.onFailure {
@@ -427,6 +435,8 @@ class AudioPlaybackService : MediaSessionService() {
             }
             if (state == Player.STATE_ENDED) {
                 val b = book ?: return
+                // Incognito: the end of the book is not recorded.
+                if (incognito) return
                 scope.launch(Dispatchers.IO) {
                     books.saveProgress(b.id, AudioPositions.locator(tracks.lastIndex.coerceAtLeast(0), 0, 0, 1f, tracks.lastOrNull()?.title))
                     books.setStatus(listOf(b.id), ReadingStatus.FINISHED)
@@ -468,6 +478,8 @@ class AudioPlaybackService : MediaSessionService() {
 
     private fun savePosition(blocking: Boolean) {
         val b = book ?: return
+        // Incognito: the listening position is kept only for this session (the player still remembers it in memory).
+        if (incognito) return
         if (player.mediaItemCount == 0) return
         val index = player.currentMediaItemIndex.coerceIn(tracks.indices.takeIf { !it.isEmpty() } ?: return)
         val position = player.currentPosition.coerceAtLeast(0)
@@ -489,6 +501,8 @@ class AudioPlaybackService : MediaSessionService() {
         val b = book
         listeningSince = 0
         if (since == 0L || b == null) return
+        // Incognito: no reading history or statistics, like the text reader.
+        if (incognito) return
         val duration = System.currentTimeMillis() - since
         if (duration < MIN_SESSION_MS) return
         CoroutineScope(Dispatchers.IO).launch { runCatching { stats.recordSession(b.id, since, duration, 0, 0) } }

@@ -14,6 +14,8 @@
     <string name="audio_sleep_minutes">%1$d мин</string>
     <string name="audio_sleep_left">Осталось %1$d мин</string>
     <string name="audio_play_error">Не удаётся воспроизвести: %1$s</string>
+    <string name="audio_sign_in_hint">YouTube требует входа. Войдите в «Настройки → YouTube» и попробуйте снова.</string>
+    <string name="audio_sign_in">Войти</string>
     <string name="audio_origin_catalog">Каталог</string>
     <string name="audio_origin_podcast">Подкаст</string>
     <string name="audio_origin_link">Ссылка</string>

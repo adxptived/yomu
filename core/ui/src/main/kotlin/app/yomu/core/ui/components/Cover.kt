@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -112,19 +113,35 @@ fun BookGridItem(
     coverModifier: Modifier = Modifier,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
+    /** Tapping the title opens the details; the cover still opens the book. */
+    onInfoClick: (() -> Unit)? = null,
+    /** TalkBack labels of the two actions ("Read", "Details"). */
+    readLabel: String? = null,
+    infoLabel: String? = null,
 ) {
     val border = if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small) else Modifier
+    val split = onInfoClick != null
     Column(
         modifier
             .clip(MaterialTheme.shapes.small)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .semantics(mergeDescendants = true) {
-                contentDescription = listOfNotNull(title, subtitle?.takeIf { it.isNotBlank() }, badge).joinToString(", ")
-                this.selected = selected
-            }
+            .then(
+                if (split) Modifier else Modifier
+                    .combinedClickable(onClickLabel = readLabel, role = Role.Button, onClick = onClick, onLongClick = onLongClick)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = listOfNotNull(title, subtitle?.takeIf { it.isNotBlank() }, badge).joinToString(", ")
+                        this.selected = selected
+                    },
+            )
             .padding(Dimens.xs),
     ) {
-        Box {
+        Box(
+            Modifier.fillMaxWidth().then(
+                if (split) Modifier.combinedClickable(onClickLabel = readLabel, role = Role.Button, onClick = onClick, onLongClick = onLongClick).semantics {
+                    contentDescription = listOfNotNull(title, subtitle?.takeIf { it.isNotBlank() }).joinToString(", ")
+                    this.selected = selected
+                } else Modifier,
+            ),
+        ) {
             CoverImage(cover, title, coverModifier.fillMaxWidth().then(border))
             if (badge != null) {
                 Surface(
@@ -154,9 +171,19 @@ fun BookGridItem(
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp).height(4.dp),
             )
         }
-        Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
-        if (!subtitle.isNullOrBlank()) {
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(
+            Modifier.fillMaxWidth().padding(top = 6.dp).then(
+                if (onInfoClick != null) {
+                    Modifier.combinedClickable(onClickLabel = infoLabel, role = Role.Button, onClick = onInfoClick, onLongClick = onLongClick).semantics(mergeDescendants = true) {}
+                } else {
+                    Modifier
+                },
+            ),
+        ) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (!subtitle.isNullOrBlank()) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
@@ -176,24 +203,50 @@ fun BookListItem(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
+    /** Tapping the title opens the details; the cover still opens the book. */
+    onInfoClick: (() -> Unit)? = null,
+    /** TalkBack labels of the two actions ("Read", "Details"). */
+    readLabel: String? = null,
+    infoLabel: String? = null,
 ) {
     val bg = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+    val split = onInfoClick != null
     Row(
         modifier
             .fillMaxWidth()
             .background(bg)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .then(
+                if (split) Modifier else Modifier
+                    .combinedClickable(onClickLabel = readLabel, role = Role.Button, onClick = onClick, onLongClick = onLongClick)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = listOfNotNull(title, subtitle?.takeIf { it.isNotBlank() }, meta?.takeIf { it.isNotBlank() }).joinToString(", ")
+                        this.selected = selected
+                    },
+            )
             .heightIn(min = Dimens.touch)
-            .padding(horizontal = Dimens.l, vertical = Dimens.s)
-            .semantics(mergeDescendants = true) {
-                contentDescription = listOfNotNull(title, subtitle?.takeIf { it.isNotBlank() }, meta?.takeIf { it.isNotBlank() }).joinToString(", ")
-                this.selected = selected
-            },
+            .padding(horizontal = Dimens.l, vertical = Dimens.s),
         horizontalArrangement = Arrangement.spacedBy(Dimens.m),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CoverImage(cover, title, coverModifier.width(56.dp))
-        Column(Modifier.weight(1f)) {
+        CoverImage(
+            cover,
+            title,
+            coverModifier.width(56.dp).then(
+                if (split) Modifier.combinedClickable(onClickLabel = readLabel, role = Role.Button, onClick = onClick, onLongClick = onLongClick).semantics {
+                    contentDescription = title
+                    this.selected = selected
+                } else Modifier,
+            ),
+        )
+        Column(
+            Modifier.weight(1f).then(
+                if (onInfoClick != null) {
+                    Modifier.combinedClickable(onClickLabel = infoLabel, role = Role.Button, onClick = onInfoClick, onLongClick = onLongClick).semantics(mergeDescendants = true) {}
+                } else {
+                    Modifier
+                },
+            ),
+        ) {
             Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (!subtitle.isNullOrBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             if (!meta.isNullOrBlank()) Text(meta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)

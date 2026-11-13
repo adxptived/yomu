@@ -64,9 +64,12 @@ import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Bookmarks
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BottomAppBar
@@ -240,6 +243,8 @@ fun LibraryScreen(
     var newTab by remember { mutableStateOf(false) }
     var tabActions by remember { mutableStateOf<BookCollection?>(null) }
     var onlineMenu by remember { mutableStateOf<CatalogEntry?>(null) }
+    var contextBook by remember { mutableStateOf<Book?>(null) }
+    var statusBook by remember { mutableStateOf<Book?>(null) }
     var tagDialog by remember { mutableStateOf<Set<Long>?>(null) }
     var deleteFilesDialog by remember { mutableStateOf<Set<Long>?>(null) }
     // The "Online" tab: every title added with the heart in the catalog.
@@ -492,7 +497,8 @@ fun LibraryScreen(
                             onOpenTitle = onOpenTitle,
                             onOnlineLongPress = { onlineMenu = it },
                             onClick = { book -> if (selecting) { haptic.tick(); viewModel.toggleSelect(book.id) } else onOpenBook(book) },
-                            onLongClick = { book -> if (selecting) onOpenDetails(book) else { haptic.perform(); viewModel.toggleSelect(book.id) } },
+                            onLongClick = { book -> if (selecting) onOpenDetails(book) else { haptic.perform(); contextBook = book } },
+                            onInfoClick = { book -> if (selecting) { haptic.tick(); viewModel.toggleSelect(book.id) } else onOpenDetails(book) },
                             onDetails = onOpenDetails,
                             sort = sort,
                             swipeEnabled = !selecting,
@@ -597,6 +603,42 @@ fun LibraryScreen(
             SheetAction(Icons.Default.Bookmarks, stringResource(R.string.library_tabs_action)) { viewModel.pickTabsForOnline(e.id, e.title); onlineMenu = null }
             SheetAction(Icons.Default.Delete, stringResource(R.string.library_remove_online), destructive = true) {
                 viewModel.removeOnline(e.id); onlineMenu = null
+            }
+        }
+    }
+    contextBook?.let { book ->
+        YomuSheet(onDismiss = { contextBook = null }) {
+            SheetTitle(book.title)
+            SheetAction(Icons.Filled.PlayArrow, stringResource(R.string.library_read_book)) {
+                contextBook = null
+                onOpenBook(book)
+            }
+            SheetAction(Icons.Outlined.Info, stringResource(R.string.library_details)) {
+                contextBook = null
+                onOpenDetails(book)
+            }
+            SheetAction(Icons.Outlined.CheckCircle, stringResource(R.string.library_status_action, stringResource(book.status.label()))) {
+                contextBook = null
+                statusBook = book
+            }
+            SheetAction(Icons.Outlined.Checklist, stringResource(R.string.library_select_action)) {
+                contextBook = null
+                haptic.perform()
+                viewModel.toggleSelect(book.id)
+            }
+        }
+    }
+    statusBook?.let { book ->
+        YomuSheet(onDismiss = { statusBook = null }) {
+            SheetTitle(stringResource(R.string.library_status))
+            ReadingStatus.entries.forEach { s ->
+                SheetAction(
+                    if (book.status == s) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                    stringResource(s.label()),
+                ) {
+                    viewModel.setStatus(setOf(book.id), s)
+                    statusBook = null
+                }
             }
         }
     }
@@ -941,6 +983,7 @@ private fun LibraryGrid(
     onOnlineLongPress: (CatalogEntry) -> Unit,
     onClick: (Book) -> Unit,
     onLongClick: (Book) -> Unit,
+    onInfoClick: (Book) -> Unit,
     onDetails: (Book) -> Unit,
     sort: LibrarySort,
     swipeEnabled: Boolean,
@@ -979,9 +1022,11 @@ private fun LibraryGrid(
                     }
                 }
                 items(bookCount, key = books.itemKey { it.id }, contentType = { "book" }) { index ->
-                    // itemCount can drop to zero between building this range and composing a row (refresh/filter
-                    // change); LazyPagingItems[index] throws in that case, while peek() returns null.
-                    val book = books.peek(index) ?: return@items
+                    // The index is checked against the live count (it can drop to zero between building this range and
+                    // composing a row after a refresh or filter change), then items[index] is used: unlike peek() it
+                    // reports the access to Paging, which is what asks for the next page.
+                    val book = if (index in 0 until books.itemCount) books[index] else null
+                    if (book == null) return@items
                     BookGridItem(
                         title = book.title,
                         subtitle = book.authorsText,
@@ -993,6 +1038,9 @@ private fun LibraryGrid(
                         coverModifier = Modifier.sharedCover("book-${book.id}"),
                         onClick = { onClick(book) },
                         onLongClick = { onLongClick(book) },
+                        onInfoClick = { onInfoClick(book) },
+                        readLabel = stringResource(R.string.library_read_book),
+                        infoLabel = stringResource(R.string.library_details),
                         modifier = motionItem(),
                     )
                 }
@@ -1026,7 +1074,10 @@ private fun LibraryGrid(
                     item(key = "books-label") { SectionLabel(stringResource(R.string.library_section_books), null, Icons.Outlined.AutoStories) }
                 }
                 items(bookCount, key = books.itemKey { it.id }, contentType = { "book" }) { index ->
-                    val book = books.peek(index) ?: return@items
+                    // items[index] (not peek) reports the access to Paging so the next page is requested; the index is
+                    // checked against the live count because the list can shrink between building this range and drawing.
+                    val book = if (index in 0 until books.itemCount) books[index] else null
+                    if (book == null) return@items
                     val finished = book.status == ReadingStatus.FINISHED
                     SwipeActionsBox(
                         modifier = motionItem(),
@@ -1047,6 +1098,9 @@ private fun LibraryGrid(
                             coverModifier = Modifier.sharedCover("book-${book.id}"),
                             onClick = { onClick(book) },
                             onLongClick = { onLongClick(book) },
+                            onInfoClick = { onInfoClick(book) },
+                            readLabel = stringResource(R.string.library_read_book),
+                            infoLabel = stringResource(R.string.library_details),
                             trailing = {
                                 IconButton(onClick = { onDetails(book) }) {
                                     Icon(if (book.id in selection) Icons.Default.Check else Icons.Outlined.Info, stringResource(R.string.library_details))

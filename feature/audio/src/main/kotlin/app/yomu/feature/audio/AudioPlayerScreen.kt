@@ -64,6 +64,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -84,6 +85,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
@@ -96,6 +98,7 @@ import app.yomu.core.ui.components.coverTint
 import app.yomu.core.ui.components.rememberCoverColor
 import app.yomu.data.audio.AudioDownloadProgress
 import app.yomu.data.audio.AudioDownloadState
+import app.yomu.data.audio.YouTubeAuth
 import app.yomu.domain.model.AudioNavEntry
 import app.yomu.domain.model.AudioOrigin
 import app.yomu.domain.model.AudioPositions
@@ -111,7 +114,7 @@ private const val MAX_SLEEP_MIN = 24 * 60
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit) {
+fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYouTubeSignIn: (() -> Unit)? = null) {
     val book by viewModel.book.collectAsStateWithLifecycle()
     val player by viewModel.player.collectAsStateWithLifecycle()
     val chapters by viewModel.chapters.collectAsStateWithLifecycle()
@@ -127,6 +130,17 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit) {
     // Paused, the position only moves on seeks, which are player events: no need to poll.
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(playing, lifecycle) { if (playing) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.tickWhilePlaying() } }
+    // Back from the YouTube sign-in page: a video that only needed an account starts again on its own.
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val error = viewModel.player.value?.error
+                if (error != null && needsSignIn(error) && YouTubeAuth.isSignedIn()) viewModel.retryPlayback()
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
 
     val cover = book?.coverPath?.let(::File)
     val tint = rememberCoverColor(cover)
@@ -172,7 +186,7 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit) {
                     TitleBlock(book?.title.orEmpty(), book?.authorsText.orEmpty(), originLabel(origin), chapters, chapterIndex, s?.trackTitle.orEmpty()) { sheet = "chapters" }
                 }
                 val controls: @Composable () -> Unit = {
-                    Controls(viewModel, s, settings, chapters, chapterIndex, onSheet = { sheet = it })
+                    Controls(viewModel, s, settings, chapters, chapterIndex, onSheet = { sheet = it }, onYouTubeSignIn = onYouTubeSignIn)
                 }
                 if (wide) {
                     Row(Modifier.fillMaxSize().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(32.dp)) {
@@ -372,6 +386,7 @@ private fun Controls(
     chapters: List<AudioNavEntry>,
     chapterIndex: Int,
     onSheet: (String) -> Unit,
+    onYouTubeSignIn: (() -> Unit)?,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         val span = PlayerMath.span(chapters, chapterIndex, s?.durationMs ?: 0)
@@ -393,6 +408,17 @@ private fun Controls(
                 stringResource(R.string.audio_play_error, it), color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 4.dp),
             )
+            if (needsSignIn(it)) {
+                Text(
+                    stringResource(R.string.audio_sign_in_hint), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center,
+                )
+                if (onYouTubeSignIn != null) {
+                    TextButton(onClick = onYouTubeSignIn, modifier = Modifier.padding(bottom = 4.dp)) {
+                        Text(stringResource(R.string.audio_sign_in))
+                    }
+                }
+            }
         }
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
@@ -602,6 +628,9 @@ private fun sleepLabel(s: PlayerSnapshot?): String = when {
     }
     else -> stringResource(R.string.audio_sleep)
 }
+
+private fun needsSignIn(message: String): Boolean =
+    message.contains("sign in", ignoreCase = true) || message.contains("login", ignoreCase = true)
 
 private fun speedLabel(speed: Float): String {
     val rounded = Math.round(speed * 100) / 100f

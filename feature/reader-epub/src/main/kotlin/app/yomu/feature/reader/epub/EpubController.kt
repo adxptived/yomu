@@ -12,6 +12,7 @@ import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.getValue
@@ -150,6 +151,11 @@ class EpubController(
             domStorageEnabled = true
             allowFileAccess = false
             allowContentAccess = false
+            allowFileAccessFromFileURLs = false
+            allowUniversalAccessFromFileURLs = false
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            javaScriptCanOpenWindowsAutomatically = false
+            setGeolocationEnabled(false)
             setSupportZoom(false)
             builtInZoomControls = false
             displayZoomControls = false
@@ -198,6 +204,7 @@ class EpubController(
         put("lang", document.language ?: "")
         put("reduceMotion", reduceMotion)
         put("pageAnimation", settings.pageAnimation.name)
+        put("chapterButtons", settings.chapterButtons)
         put("hasPrev", chapter > 0)
         put("hasNext", chapter < document.chapterCount - 1)
         put("prevLabel", prevLabel)
@@ -368,7 +375,7 @@ class EpubController(
     private fun render(raw: String, path: String): String {
         val doc: Document = Jsoup.parse(raw, "https://$HOST/$path")
         doc.outputSettings().prettyPrint(false).syntax(Document.OutputSettings.Syntax.html)
-        doc.select("script").remove()
+        sanitizeChapter(doc)
         val html = doc.selectFirst("html")
         if (html != null && html.attr("lang").isBlank() && html.attr("xml:lang").isBlank()) document.language?.let { html.attr("lang", it) }
         val head = doc.head()
@@ -378,10 +385,16 @@ class EpubController(
         if (fixed) html?.attr("data-yomu-fixed", "true")
         head.select("meta[name]").filter { it.attr("name").equals("viewport", true) }.forEach { it.remove() }
         if (fixed) head.appendElement("meta").attr("name", "yomu-fixed-viewport").attr("content", viewport)
+        // Only the reader's own script (with this document's nonce), its styles and the book's own resources may load;
+        // everything else in the document is blocked by the policy as well as by serve().
+        val nonce = java.util.UUID.randomUUID().toString().replace("-", "")
+        head.prependElement("meta")
+            .attr("http-equiv", "Content-Security-Policy")
+            .attr("content", CSP.replace(NONCE, nonce))
         head.prependElement("meta").attr("name", "viewport").attr("content", "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no")
         head.appendElement("link").attr("rel", "stylesheet").attr("href", "/__yomu/reader.css")
         head.appendElement("style").attr("id", "yomu-user").appendChild(org.jsoup.nodes.DataNode(css()))
-        head.appendElement("script").appendChild(org.jsoup.nodes.DataNode("window.__yomuConfig=${config(pendingTarget, index)};"))
+        head.appendElement("script").attr("nonce", nonce).appendChild(org.jsoup.nodes.DataNode("window.__yomuConfig=${config(pendingTarget, index)};"))
         head.appendElement("script").attr("src", "/__yomu/reader.js")
         return "<!DOCTYPE html>" + doc.outerHtml()
     }
@@ -406,7 +419,9 @@ class EpubController(
 
     private fun serve(request: WebResourceRequest): WebResourceResponse? {
         val url = request.url
-        if (url.host != HOST) return null
+        // A book may only reach its own packaged resources. External images, trackers and scripts of the document are
+        // answered here instead of being handed to the network.
+        if (url.host != HOST) return blocked(url.scheme)
         val path = URLDecoder.decode(url.encodedPath.orEmpty().removePrefix("/"), "UTF-8")
         return try {
             when {
@@ -433,6 +448,14 @@ class EpubController(
     }
 
     private fun notFound() = WebResourceResponse("text/plain", "UTF-8", 404, "Not found", emptyMap(), ByteArrayInputStream(ByteArray(0)))
+
+    /** Answers http(s) requests that leave the book with an empty 403 instead of letting the WebView fetch them. */
+    private fun blocked(scheme: String?): WebResourceResponse? =
+        if (scheme == "http" || scheme == "https") {
+            WebResourceResponse("text/plain", "UTF-8", 403, "Blocked", emptyMap(), ByteArrayInputStream(ByteArray(0)))
+        } else {
+            null
+        }
 
     private inner class Client : WebViewClient() {
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? = serve(request)
@@ -541,6 +564,36 @@ class EpubController(
 
     companion object {
         const val HOST = "book.yomu"
+        private const val NONCE = "__yomu_nonce__"
+
+        /** Content policy of a rendered chapter: own packaged resources only, plus this document's config script. */
+        private const val CSP = "default-src 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; " +
+            "font-src 'self' data:; media-src 'self'; script-src 'self' 'nonce-$NONCE'; frame-src 'none'; " +
+            "object-src 'none'; base-uri 'none'; form-action 'none'"
+    }
+}
+
+/**
+ * Removes everything in a chapter that can run code or reach the network on its own: scripts, nested documents,
+ * plugins, forms, inline event handlers and `javascript:` addresses. The book's own text, images and links stay.
+ * Removing `<script>` alone is not enough: `<img onerror=…>` and `<iframe>` run code too.
+ */
+internal fun sanitizeChapter(doc: Document) {
+    doc.select(
+        "script, iframe, frame, frameset, object, embed, applet, base, form, " +
+            "link[rel=import], link[rel=preload], link[rel=prefetch], link[rel=dns-prefetch], link[rel=manifest], " +
+            "meta[http-equiv=refresh]",
+    ).remove()
+    for (el in doc.allElements) {
+        for (name in el.attributes().asList().map { it.key }) {
+            val key = name.lowercase()
+            val value = el.attr(name).trim().lowercase()
+            if (key.startsWith("on") || key == "srcdoc" || key == "formaction" ||
+                value.startsWith("javascript:") || value.startsWith("vbscript:") || value.startsWith("data:text/html")
+            ) {
+                el.removeAttr(name)
+            }
+        }
     }
 }
 

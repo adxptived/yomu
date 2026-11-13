@@ -26,6 +26,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
@@ -149,6 +151,7 @@ private fun BookDetailsContent(
     var translateDialog by rememberSaveable { mutableStateOf(false) }
     var showTracking by rememberSaveable { mutableStateOf(false) }
     var descriptionExpanded by rememberSaveable { mutableStateOf(false) }
+    var statusMenu by remember { mutableStateOf(false) }
     val pickCover =
         rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { it?.let(viewModel::setCover) }
 
@@ -285,13 +288,25 @@ private fun BookDetailsContent(
                         Text("  ${(current.progress * 100).toInt()}%", style = MaterialTheme.typography.labelLarge)
                     }
                 }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
-                    ReadingStatus.entries.forEach { s ->
-                        FilterChip(
-                            selected = current.status == s,
-                            onClick = { viewModel.setStatus(s) },
-                            label = { Text(stringResource(s.label())) },
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
+                    Text(stringResource(R.string.library_status), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    Box {
+                        AssistChip(
+                            onClick = { statusMenu = true },
+                            label = { Text(stringResource(current.status.label())) },
+                            trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null) },
                         )
+                        DropdownMenu(expanded = statusMenu, onDismissRequest = { statusMenu = false }) {
+                            ReadingStatus.entries.forEach { s ->
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(s.label())) },
+                                    leadingIcon = {
+                                        if (current.status == s) Icon(Icons.Filled.Check, null) else Spacer(Modifier.width(24.dp))
+                                    },
+                                    onClick = { statusMenu = false; viewModel.setStatus(s) },
+                                )
+                            }
+                        }
                     }
                 }
                 TrackingButton(tracks.size) { showTracking = true }

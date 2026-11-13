@@ -58,4 +58,22 @@
     <string name="mr_volume_keys">Листать кнопками громкости</string>
     <string name="mr_invert_volume">Громкость вверх — вперёд</string>
     <string name="mr_off">Выкл.</string>
+
+    <!-- Group headers of the settings and the explanations under them -->
+    <string name="mr_group_mode_summary">Направление и порядок страниц</string>
+    <string name="mr_group_scale_summary">Как страница заполняет экран</string>
+    <string name="mr_group_background_summary">Цвет вокруг страниц</string>
+    <string name="mr_group_pages_summary">Альбомный режим, анимация, загрузка</string>
+    <string name="mr_group_image_summary">Яркость, контраст, цвет</string>
+    <string name="mr_group_zones_summary">Куда ведут касания, кнопки громкости и что они делают</string>
+    <string name="mr_dual_sum">Две страницы рядом на широком экране</string>
+    <string name="mr_crop_sum">Обрезать белые края сканов</string>
+    <string name="mr_page_number_sum">Показывать номер страницы поверх страницы</string>
+    <string name="mr_preload_sum">Страницы, загруженные заранее</string>
+    <string name="mr_brightness_sum">Сделать страницы светлее или темнее</string>
+    <string name="mr_contrast_sum">Линии чётче или мягче</string>
+    <string name="mr_gray_sum">Убрать цвета</string>
+    <string name="mr_invert_sum">Белые линии на чёрном фоне</string>
+    <string name="mr_volume_keys_sum">Кнопки громкости листают страницы</string>
+    <string name="mr_volume_invert_sum">Громкость вверх — вперёд</string>
 </resources>

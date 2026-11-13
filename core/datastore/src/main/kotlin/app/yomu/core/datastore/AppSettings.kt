@@ -135,11 +135,21 @@ class AppSettings(context: Context) {
         json("selection_actions", defaultSelectionActions(), ListSerializer(SelectionActionConfig.serializer()))
     val customActions = json("custom_actions", emptyList(), ListSerializer(CustomAction.serializer()))
     val wordTap = enum("word_tap", WordTapGesture.DOUBLE_TAP)
+
+    /** Open a Word document in the printed-page layout instead of the reflowable reader. */
+    val docxPageLayout = bool("docx_page_layout", false)
     val webSearch = enum("web_search", WebSearchEngine.GOOGLE)
     val customSearchUrl = string("custom_search_url", "")
     /** App that receives a selected word from the "dictionary" action; SYSTEM opens the system text-processing chooser. */
     val dictionaryApp = enum("dictionary_app", DictionaryApp.SYSTEM)
     val showReadingStats = bool("reading_stats", true)
+
+    // Profile blocks (Settings → Profile)
+    val profileShowStats = bool("profile_show_stats", true)
+    val profileShowMilestones = bool("profile_show_milestones", true)
+    val profileShowTop = bool("profile_show_top", true)
+    val profileShowRecent = bool("profile_show_recent", true)
+    val profileShowShare = bool("profile_show_share", true)
     val readerHintsShown = bool("reader_hints", false)
 
     // Translation

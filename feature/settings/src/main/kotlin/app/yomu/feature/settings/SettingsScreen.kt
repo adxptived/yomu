@@ -45,8 +45,10 @@ import androidx.compose.material.icons.outlined.LocalLibrary
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.SearchOff
+import androidx.compose.material.icons.outlined.SmartDisplay
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.TouchApp
@@ -103,12 +105,14 @@ enum class SettingsSection(val title: Int, val summary: Int, val icon: ImageVect
     APPEARANCE(R.string.set_appearance, R.string.set_appearance_sum, Icons.Outlined.Palette, listOf(R.string.set_theme, R.string.set_dynamic_color, R.string.set_amoled, R.string.set_accent, R.string.set_accent_custom, R.string.set_app_icon, R.string.set_language, R.string.set_haptics, R.string.set_reduce_motion)),
     NAVIGATION(R.string.set_navigation, R.string.set_navigation_sum, Icons.Outlined.CallToAction, listOf(R.string.set_nav_labels, R.string.set_nav_tabs, R.string.set_nav_reset)),
     LIBRARY(R.string.set_library, R.string.set_library_sum, Icons.Outlined.LocalLibrary, listOf(R.string.set_grid, R.string.set_columns, R.string.set_show_continue, R.string.set_hide_covers, R.string.set_import_mode, R.string.set_folders, R.string.set_auto_scan, R.string.set_scan_now, R.string.set_ask_delete)),
-    READER(R.string.set_reader, R.string.set_reader_sum, Icons.AutoMirrored.Outlined.MenuBook, listOf(R.string.set_fullscreen, R.string.set_cutout, R.string.set_tap_turn, R.string.set_volume_keys, R.string.set_screen_timeout, R.string.set_orientation, R.string.set_font_size, R.string.set_line_height, R.string.set_margins, R.string.set_paged, R.string.set_hyphenation, R.string.set_publisher_styles, R.string.set_reader_theme, R.string.set_word_tap, R.string.set_web_search, R.string.set_tts_speed, R.string.set_reading_stats)),
+    PROFILE(R.string.set_profile, R.string.set_profile_sum, Icons.Outlined.Person, listOf(R.string.set_profile_stats, R.string.set_profile_milestones, R.string.set_profile_top, R.string.set_profile_recent, R.string.set_profile_share)),
+    READER(R.string.set_reader, R.string.set_reader_sum, Icons.AutoMirrored.Outlined.MenuBook, listOf(R.string.set_fullscreen, R.string.set_cutout, R.string.set_tap_turn, R.string.set_volume_keys, R.string.set_screen_timeout, R.string.set_orientation, R.string.set_font_size, R.string.set_line_height, R.string.set_margins, R.string.set_paged, R.string.set_chapter_buttons, R.string.set_docx_pages, R.string.set_hyphenation, R.string.set_publisher_styles, R.string.set_reader_theme, R.string.set_word_tap, R.string.set_web_search, R.string.set_tts_speed, R.string.set_reading_stats)),
     MANGA(R.string.set_manga, R.string.set_manga_sum, Icons.Outlined.Collections, listOf(R.string.set_direction, R.string.set_scale, R.string.set_dual_page, R.string.set_crop_borders, R.string.set_tap_zones, R.string.set_preload, R.string.set_page_number, R.string.set_grayscale, R.string.set_pdf_mode, R.string.set_pdf_night, R.string.set_pdf_write_annotations, R.string.set_ocr_language)),
     SELECTION(R.string.set_selection, R.string.set_selection_sum, Icons.Outlined.TextFields, listOf(R.string.set_selection_actions, R.string.set_custom_actions)),
     QUICK_ACTIONS(R.string.set_quick, R.string.set_quick_sum, Icons.Outlined.TouchApp, listOf(R.string.set_page_menu_style, R.string.set_selection_menu_style, R.string.set_page_actions)),
     TRANSLATION(R.string.set_translation, R.string.set_translation_sum, Icons.Outlined.Translate, listOf(R.string.set_translation_mode, R.string.set_engine, R.string.set_target_lang, R.string.set_source_lang, R.string.set_deepl_key, R.string.set_libre_url, R.string.set_llm_url, R.string.set_llm_model, R.string.set_llm_prompt, R.string.set_language_packs, R.string.set_online_dictionary, R.string.set_dictionaries, R.string.set_daily_goal, R.string.set_reminder, R.string.set_review_modes)),
     CATALOG(R.string.set_catalog, R.string.set_catalog_sum, Icons.Outlined.Public, listOf(R.string.set_update_interval, R.string.set_update_wifi, R.string.set_show_nsfw, R.string.set_incognito, R.string.set_extensions, R.string.set_hidden_sources, R.string.set_revoke_trust)),
+    YOUTUBE(R.string.set_youtube, R.string.set_youtube_sum, Icons.Outlined.SmartDisplay, listOf(R.string.set_youtube_account, R.string.set_youtube_sign_in, R.string.set_youtube_sign_out)),
     TRACKING(R.string.set_tracking, R.string.set_tracking_sum, Icons.Outlined.TrackChanges, listOf(R.string.set_track_auto, R.string.set_track_push, R.string.set_track_keys)),
     DOWNLOADS(R.string.set_downloads, R.string.set_downloads_sum, Icons.Outlined.Download, listOf(R.string.set_download_wifi, R.string.set_parallel, R.string.set_page_threads, R.string.set_auto_download_new, R.string.set_download_ahead, R.string.set_download_retries, R.string.set_auto_delete, R.string.set_pack_cbz, R.string.set_storage, R.string.set_clear_cache)),
     NETWORK(R.string.set_network, R.string.set_network_sum, Icons.Outlined.DataUsage, listOf(R.string.set_download_wifi, R.string.set_net_update_wifi, R.string.set_models_wifi, R.string.set_data_saver, R.string.set_covers_mobile, R.string.set_warn_mobile, R.string.set_traffic, R.string.set_traffic_reset)),
@@ -131,6 +135,8 @@ data class SettingsLinks(
     val onOpenExtensions: () -> Unit = {},
     val onOpenDownloads: () -> Unit = {},
     val onOpenStats: () -> Unit = {},
+    /** Opens Google's sign-in page in the in-app browser; its cookies are the YouTube session. */
+    val onOpenYouTubeLogin: () -> Unit = {},
 )
 
 @Composable
@@ -311,8 +317,8 @@ private fun SettingsRoot(
 
 /** Sections of the settings root, one rounded card per group. */
 private val ROOT_GROUPS = listOf(
-    listOf(SettingsSection.APPEARANCE, SettingsSection.NAVIGATION, SettingsSection.LIBRARY, SettingsSection.READER, SettingsSection.MANGA, SettingsSection.SELECTION, SettingsSection.QUICK_ACTIONS, SettingsSection.FONTS),
-    listOf(SettingsSection.TRANSLATION, SettingsSection.CATALOG, SettingsSection.TRACKING, SettingsSection.DOWNLOADS, SettingsSection.NETWORK),
+    listOf(SettingsSection.APPEARANCE, SettingsSection.NAVIGATION, SettingsSection.LIBRARY, SettingsSection.PROFILE, SettingsSection.READER, SettingsSection.MANGA, SettingsSection.SELECTION, SettingsSection.QUICK_ACTIONS, SettingsSection.FONTS),
+    listOf(SettingsSection.TRANSLATION, SettingsSection.CATALOG, SettingsSection.YOUTUBE, SettingsSection.TRACKING, SettingsSection.DOWNLOADS, SettingsSection.NETWORK),
     listOf(SettingsSection.BACKUP, SettingsSection.SYNC, SettingsSection.NOTIFICATIONS, SettingsSection.SECURITY, SettingsSection.ADVANCED, SettingsSection.ABOUT),
 )
 
@@ -358,6 +364,7 @@ private fun SectionContent(s: SettingsSection, vm: SettingsViewModel, links: Set
             when (s) {
                 SettingsSection.APPEARANCE -> AppearanceSection(vm)
                 SettingsSection.LIBRARY -> LibrarySection(vm)
+                SettingsSection.PROFILE -> ProfileSection(vm)
                 SettingsSection.READER -> ReaderSection(vm, links)
                 SettingsSection.MANGA -> MangaSection(vm)
                 SettingsSection.TRANSLATION -> TranslationSection(vm, links)
@@ -368,6 +375,7 @@ private fun SectionContent(s: SettingsSection, vm: SettingsViewModel, links: Set
                 SettingsSection.BACKUP -> BackupSection(vm, onOpenSync = { onOpen(SettingsSection.SYNC) })
                 SettingsSection.SYNC -> SyncSection(vm, onOpenProblems = { onOpen(SettingsSection.SYNC_PROBLEMS) })
                 SettingsSection.NOTIFICATIONS -> NotificationsSection(vm)
+                SettingsSection.YOUTUBE -> YouTubeSection(links)
                 SettingsSection.TRACKING -> TrackingSection(vm)
                 SettingsSection.SECURITY -> SecuritySection(vm)
                 SettingsSection.ADVANCED -> AdvancedSection(vm, onOpenLogs = { onOpen(SettingsSection.LOGS) })

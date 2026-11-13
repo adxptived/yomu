@@ -100,7 +100,7 @@
     <string name="set_reader_gestures">Слова и поиск</string>
     <string name="set_word_tap">Поиск слова по</string>
     <string name="set_single_tap">Одиночному касанию</string>
-    <string name="set_double_tap">Двойному касанию</string>
+    <string name="set_double_tap">Двойному касанию по центру</string>
     <string name="set_web_search">Веб-поиск</string>
     <string name="set_dictionary_app">Внешний словарь</string>
     <string name="set_dictionary_system">Спрашивать каждый раз</string>
@@ -109,6 +109,40 @@
     <string name="set_tts">Чтение вслух</string>
     <string name="set_tts_speed">Скорость речи</string>
     <string name="set_tts_pitch">Высота голоса</string>
+
+    <string name="set_fullscreen_sum">Скрыть системные панели</string>
+    <string name="set_cutout_sum">Использовать область вокруг выреза камеры</string>
+    <string name="set_tap_turn_sum">Нажимать на края страницы, чтобы листать</string>
+    <string name="set_screen_timeout_sum">Не давать экрану гаснуть во время чтения</string>
+    <string name="set_orientation_sum">Как поворачивается экран в читалке</string>
+    <string name="set_autohide_sum">Сколько меню остаётся после нажатия</string>
+    <string name="set_font_size_sum">Размер текста книги</string>
+    <string name="set_line_height_sum">Расстояние между строками</string>
+    <string name="set_margins_sum">Пустое место слева и справа от текста</string>
+    <string name="set_reader_theme_sum">Цвет бумаги и текста</string>
+    <string name="set_chapter_buttons">Кнопки глав</string>
+    <string name="set_chapter_buttons_sum">«Предыдущая глава» и «Следующая глава» при непрерывной прокрутке. Выключено — сплошной текст, как в PDF</string>
+    <string name="set_docx_pages">Word-документы как печатные страницы</string>
+    <string name="set_docx_pages_sum">Открывать DOCX в разметке страниц с полями, таблицами и картинками вместо перекомпонованного текста</string>
+    <string name="set_hyphenation_sum">Переносить длинные слова на новую строку</string>
+    <string name="set_highlight_words_sum">Подчёркивать слова, сохранённые в словаре</string>
+    <string name="set_word_tap_sum">При поиске открывается карточка словаря для слова</string>
+    <string name="set_tts_speed_sum">Как быстро читает голос</string>
+    <string name="set_tts_pitch_sum">Выше или ниже голос</string>
+
+    <string name="set_profile">Профиль</string>
+    <string name="set_profile_sum">Какие блоки показывать в обзоре</string>
+    <string name="set_profile_blocks">Блоки обзора</string>
+    <string name="set_profile_stats">Статистика</string>
+    <string name="set_profile_stats_sum">Прочитанные книги, страницы, серии и другие цифры</string>
+    <string name="set_profile_milestones">Достижения</string>
+    <string name="set_profile_milestones_sum">Уровни по времени, сериям, книгам, страницам и словам</string>
+    <string name="set_profile_top">Самое читаемое</string>
+    <string name="set_profile_top_sum">Произведения, которые вы читали больше всего</string>
+    <string name="set_profile_recent">Недавно читали</string>
+    <string name="set_profile_recent_sum">Последние книги и главы</string>
+    <string name="set_profile_share">Поделиться и перенести</string>
+    <string name="set_profile_share_sum">Карточка статистики, CSV истории и резервная копия</string>
 
     <string name="set_manga">Манга и PDF</string>
     <string name="set_manga_sum">Направление, масштаб, зоны касаний, OCR</string>
@@ -506,6 +540,21 @@
     <string name="set_sync_problem_migrate_folder">Перевести на стабильный идентификатор</string>
     <string name="set_sync_problem_publish_folder">Опубликовать мою версию</string>
     <string name="set_sync_problem_accept_folder">Принять другую версию</string>
+
+    <!-- YouTube sign-in (audiobooks and the YouTube catalog source) -->
+    <string name="set_youtube">YouTube</string>
+    <string name="set_youtube_sum">Аккаунт для аудиокниг и потока</string>
+    <string name="set_youtube_hint">Для части видео YouTube требует вход («Sign in to confirm you’re not a bot»). Войдите здесь один раз — плеер и загрузки используют ту же сессию.</string>
+    <string name="set_youtube_account">Аккаунт</string>
+    <string name="set_youtube_signed_in">Вы вошли — YouTube принимает сессию</string>
+    <string name="set_youtube_signed_in_as">Вход выполнен: %1$s</string>
+    <string name="set_youtube_signed_out">Вход не выполнен</string>
+    <string name="set_youtube_sign_in">Войти в YouTube</string>
+    <string name="set_youtube_sign_in_sum">Открывает страницу входа Google во встроенном браузере</string>
+    <string name="set_youtube_sign_out">Выйти</string>
+    <string name="set_youtube_sign_out_sum">Удаляет сессию YouTube из браузера; у других сайтов cookies остаются</string>
+    <string name="set_youtube_sign_out_confirm">Выйти из YouTube? Видео, которым нужен аккаунт, перестанут играть до нового входа.</string>
+    <string name="set_youtube_cookie_hint">После входа вернитесь сюда кнопкой ✓. Браузер и плеер используют одни и те же cookies, второй вход не нужен.</string>
 
     <!-- 2.0: tracking -->
     <string name="set_tracking">Трекинг</string>

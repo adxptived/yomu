@@ -122,6 +122,7 @@
     <string name="profile_title">Profile</string>
     <string name="profile_tab_overview">Overview</string>
     <string name="profile_tab_stats">Statistics</string>
+    <string name="profile_stats_summary">Finished: %1$s · pages: %2$s · streak: %3$s</string>
     <string name="profile_tab_history">History</string>
     <string name="profile_default_name">Reader</string>
     <string name="profile_set_name">Tap to set your name and avatar</string>
@@ -129,6 +130,7 @@
     <string name="profile_name">Name</string>
     <string name="profile_avatar">Avatar</string>
     <string name="profile_since">Reading with Yomu since %1$s</string>
+    <string name="profile_header_streak">%1$d-day streak</string>
     <string name="profile_no_reading">Open a book: your time, streaks and milestones will appear here.</string>
     <string name="profile_total_time">Total reading time</string>
     <string name="profile_open_stats">Statistics</string>
@@ -158,6 +160,7 @@
     <string name="profile_recent">Recently read</string>
     <string name="profile_all_history">All history</string>
     <string name="profile_share_section">Share and transfer</string>
+    <string name="profile_share_summary">Statistics card, history CSV, backup</string>
     <string name="profile_share_hint">Your profile lives on this device: no account or server is needed. Share it as a picture or text, or move everything to another phone with a backup.</string>
     <string name="profile_share_card">Statistics card</string>
     <string name="profile_share_card_sum">A picture with your reading time, streak and books</string>

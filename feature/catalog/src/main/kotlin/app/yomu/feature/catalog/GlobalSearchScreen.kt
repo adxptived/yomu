@@ -92,6 +92,7 @@ fun GlobalSearchScreen(
                         ChipItem(stringResource(R.string.content_manga), content == SourceContent.MANGA, { viewModel.setContent(SourceContent.MANGA) }),
                         ChipItem(stringResource(R.string.content_novel), content == SourceContent.NOVEL, { viewModel.setContent(SourceContent.NOVEL) }),
                         ChipItem(stringResource(R.string.content_book), content == SourceContent.BOOK, { viewModel.setContent(SourceContent.BOOK) }),
+                        ChipItem(stringResource(R.string.content_audiobooks), content == SourceContent.AUDIO, { viewModel.setContent(SourceContent.AUDIO) }),
                         ChipItem(stringResource(R.string.global_search_only_results), onlyWithResults, { viewModel.setOnlyWithResults(!onlyWithResults) }, Icons.Filled.FilterList),
                     ),
                     modifier = Modifier.padding(vertical = Dimens.xs),

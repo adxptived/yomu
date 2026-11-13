@@ -532,14 +532,25 @@ internal fun ColumnScope.LibrarySection(vm: SettingsViewModel) {
 }
 
 @Composable
+internal fun ColumnScope.ProfileSection(vm: SettingsViewModel) {
+    val s = vm.settings
+    PreferenceHeader(stringResource(R.string.set_profile_blocks))
+    SwitchPref(vm, s.profileShowStats, R.string.set_profile_stats, R.string.set_profile_stats_sum)
+    SwitchPref(vm, s.profileShowMilestones, R.string.set_profile_milestones, R.string.set_profile_milestones_sum)
+    SwitchPref(vm, s.profileShowTop, R.string.set_profile_top, R.string.set_profile_top_sum)
+    SwitchPref(vm, s.profileShowRecent, R.string.set_profile_recent, R.string.set_profile_recent_sum)
+    SwitchPref(vm, s.profileShowShare, R.string.set_profile_share, R.string.set_profile_share_sum)
+}
+
+@Composable
 internal fun ColumnScope.ReaderSection(vm: SettingsViewModel, links: SettingsLinks) {
     val s = vm.settings
     val c by s.commonReader.state()
     val t by s.textSettings.state()
     PreferenceHeader(stringResource(R.string.set_reader_general))
-    PreferenceSwitch(stringResource(R.string.set_fullscreen), c.fullscreen, { v -> vm.update(s.commonReader) { it.copy(fullscreen = v) } }, icon = settingIcon(R.string.set_fullscreen))
-    PreferenceSwitch(stringResource(R.string.set_cutout), c.drawUnderCutout, { v -> vm.update(s.commonReader) { it.copy(drawUnderCutout = v) } }, icon = settingIcon(R.string.set_cutout))
-    PreferenceSwitch(stringResource(R.string.set_tap_turn), c.tapToTurn, { v -> vm.update(s.commonReader) { it.copy(tapToTurn = v) } }, icon = settingIcon(R.string.set_tap_turn))
+    PreferenceSwitch(stringResource(R.string.set_fullscreen), c.fullscreen, { v -> vm.update(s.commonReader) { it.copy(fullscreen = v) } }, stringResource(R.string.set_fullscreen_sum), icon = settingIcon(R.string.set_fullscreen))
+    PreferenceSwitch(stringResource(R.string.set_cutout), c.drawUnderCutout, { v -> vm.update(s.commonReader) { it.copy(drawUnderCutout = v) } }, stringResource(R.string.set_cutout_sum), icon = settingIcon(R.string.set_cutout))
+    PreferenceSwitch(stringResource(R.string.set_tap_turn), c.tapToTurn, { v -> vm.update(s.commonReader) { it.copy(tapToTurn = v) } }, stringResource(R.string.set_tap_turn_sum), icon = settingIcon(R.string.set_tap_turn))
     PreferenceSwitch(stringResource(R.string.set_volume_keys), c.volumeKeys, { v -> vm.update(s.commonReader) { it.copy(volumeKeys = v) } }, stringResource(R.string.set_volume_keys_sum), icon = settingIcon(R.string.set_volume_keys))
     PreferenceChoice(
         stringResource(R.string.set_screen_timeout),
@@ -547,6 +558,7 @@ internal fun ColumnScope.ReaderSection(vm: SettingsViewModel, links: SettingsLin
         c.screenTimeout,
         { v -> vm.update(s.commonReader) { it.copy(screenTimeout = v) } },
         icon = settingIcon(R.string.set_screen_timeout),
+        summary = stringResource(R.string.set_screen_timeout_sum),
     )
     PreferenceChoice(
         stringResource(R.string.set_orientation),
@@ -559,22 +571,36 @@ internal fun ColumnScope.ReaderSection(vm: SettingsViewModel, links: SettingsLin
         c.orientation,
         { v -> vm.update(s.commonReader) { it.copy(orientation = v) } },
         icon = settingIcon(R.string.set_orientation),
+        summary = stringResource(R.string.set_orientation_sum),
     )
     val never = stringResource(R.string.set_never)
-    SliderSetting(stringResource(R.string.set_autohide), c.autoHideMenuSeconds.toFloat(), 0f..10f, steps = 9, label = { if (it < 1f) never else "${it.toInt()} s" }, icon = settingIcon(R.string.set_autohide)) { v ->
+    SliderSetting(
+        stringResource(R.string.set_autohide), c.autoHideMenuSeconds.toFloat(), 0f..10f, steps = 9,
+        label = { if (it < 1f) never else "${it.toInt()} s" }, icon = settingIcon(R.string.set_autohide),
+        summary = stringResource(R.string.set_autohide_sum),
+    ) { v ->
         vm.update(s.commonReader) { it.copy(autoHideMenuSeconds = v.toInt()) }
     }
     SwitchPref(vm, s.showReadingStats, R.string.set_reading_stats, R.string.set_reading_stats_sum)
     PreferenceItem(stringResource(R.string.set_open_stats), onClick = links.onOpenStats, icon = settingIcon(R.string.set_open_stats))
 
     PreferenceHeader(stringResource(R.string.set_reader_text))
-    SliderSetting(stringResource(R.string.set_font_size), t.fontSizePercent.toFloat(), 50f..250f, steps = 39, label = { "${it.toInt()}%" }, icon = settingIcon(R.string.set_font_size)) { v ->
+    SliderSetting(
+        stringResource(R.string.set_font_size), t.fontSizePercent.toFloat(), 50f..250f, steps = 39,
+        label = { "${it.toInt()}%" }, icon = settingIcon(R.string.set_font_size), summary = stringResource(R.string.set_font_size_sum),
+    ) { v ->
         vm.update(s.textSettings) { it.copy(fontSizePercent = v.toInt()) }
     }
-    SliderSetting(stringResource(R.string.set_line_height), t.lineHeight, 1f..2.5f, steps = 14, label = { String.format(Locale.US, "%.1f", it) }, icon = settingIcon(R.string.set_line_height)) { v ->
+    SliderSetting(
+        stringResource(R.string.set_line_height), t.lineHeight, 1f..2.5f, steps = 14,
+        label = { String.format(Locale.US, "%.1f", it) }, icon = settingIcon(R.string.set_line_height), summary = stringResource(R.string.set_line_height_sum),
+    ) { v ->
         vm.update(s.textSettings) { it.copy(lineHeight = v) }
     }
-    SliderSetting(stringResource(R.string.set_margins), t.marginHorizontal.toFloat(), 0f..64f, steps = 15, label = { "${it.toInt()} dp" }, icon = settingIcon(R.string.set_margins)) { v ->
+    SliderSetting(
+        stringResource(R.string.set_margins), t.marginHorizontal.toFloat(), 0f..80f, steps = 15,
+        label = { "${it.toInt()} dp" }, icon = settingIcon(R.string.set_margins), summary = stringResource(R.string.set_margins_sum),
+    ) { v ->
         vm.update(s.textSettings) { it.copy(marginHorizontal = v.toInt()) }
     }
     PreferenceChoice(
@@ -583,11 +609,14 @@ internal fun ColumnScope.ReaderSection(vm: SettingsViewModel, links: SettingsLin
         t.theme,
         { v -> vm.update(s.textSettings) { it.copy(theme = v) } },
         icon = settingIcon(R.string.set_reader_theme),
+        summary = stringResource(R.string.set_reader_theme_sum),
     )
     PreferenceSwitch(stringResource(R.string.set_paged), t.paged, { v -> vm.update(s.textSettings) { it.copy(paged = v) } }, stringResource(R.string.set_paged_sum), icon = settingIcon(R.string.set_paged))
-    PreferenceSwitch(stringResource(R.string.set_hyphenation), t.hyphenation, { v -> vm.update(s.textSettings) { it.copy(hyphenation = v) } }, icon = settingIcon(R.string.set_hyphenation))
+    PreferenceSwitch(stringResource(R.string.set_chapter_buttons), t.chapterButtons, { v -> vm.update(s.textSettings) { it.copy(chapterButtons = v) } }, stringResource(R.string.set_chapter_buttons_sum), icon = settingIcon(R.string.set_chapter_buttons))
+    SwitchPref(vm, s.docxPageLayout, R.string.set_docx_pages, R.string.set_docx_pages_sum)
+    PreferenceSwitch(stringResource(R.string.set_hyphenation), t.hyphenation, { v -> vm.update(s.textSettings) { it.copy(hyphenation = v) } }, stringResource(R.string.set_hyphenation_sum), icon = settingIcon(R.string.set_hyphenation))
     PreferenceSwitch(stringResource(R.string.set_publisher_styles), t.publisherStyles, { v -> vm.update(s.textSettings) { it.copy(publisherStyles = v) } }, stringResource(R.string.set_publisher_styles_sum), icon = settingIcon(R.string.set_publisher_styles))
-    PreferenceSwitch(stringResource(R.string.set_highlight_words), t.highlightSavedWords, { v -> vm.update(s.textSettings) { it.copy(highlightSavedWords = v) } }, icon = settingIcon(R.string.set_highlight_words))
+    PreferenceSwitch(stringResource(R.string.set_highlight_words), t.highlightSavedWords, { v -> vm.update(s.textSettings) { it.copy(highlightSavedWords = v) } }, stringResource(R.string.set_highlight_words_sum), icon = settingIcon(R.string.set_highlight_words))
 
     PreferenceHeader(stringResource(R.string.set_reader_gestures))
     ChoicePref(vm, s.wordTap, R.string.set_word_tap, listOf(
@@ -616,10 +645,18 @@ internal fun ColumnScope.ReaderSection(vm: SettingsViewModel, links: SettingsLin
     )
 
     PreferenceHeader(stringResource(R.string.set_tts))
-    SliderSetting(stringResource(R.string.set_tts_speed), c.ttsSpeed, 0.5f..2.5f, steps = 19, label = { String.format(Locale.getDefault(), "%.1f×", it) }, icon = settingIcon(R.string.set_tts_speed)) { v ->
+    SliderSetting(
+        stringResource(R.string.set_tts_speed), c.ttsSpeed, 0.5f..2.5f, steps = 19,
+        label = { String.format(Locale.getDefault(), "%.1f×", it) }, icon = settingIcon(R.string.set_tts_speed),
+        summary = stringResource(R.string.set_tts_speed_sum),
+    ) { v ->
         vm.update(s.commonReader) { it.copy(ttsSpeed = v) }
     }
-    SliderSetting(stringResource(R.string.set_tts_pitch), c.ttsPitch, 0.5f..2f, steps = 14, label = { String.format(Locale.US, "%.1f", it) }, icon = settingIcon(R.string.set_tts_pitch)) { v ->
+    SliderSetting(
+        stringResource(R.string.set_tts_pitch), c.ttsPitch, 0.5f..2f, steps = 14,
+        label = { String.format(Locale.US, "%.1f", it) }, icon = settingIcon(R.string.set_tts_pitch),
+        summary = stringResource(R.string.set_tts_pitch_sum),
+    ) { v ->
         vm.update(s.commonReader) { it.copy(ttsPitch = v) }
     }
 }

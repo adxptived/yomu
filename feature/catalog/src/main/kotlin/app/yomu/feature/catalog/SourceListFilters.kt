@@ -59,7 +59,7 @@ import app.yomu.source.SourceContent
  * choices live in two sheets. Everything is kept in the settings, so the list looks the same after a restart.
  */
 
-private fun Set<String>.toggled(value: String): Set<String> = if (value in this) this - value else this + value
+internal fun Set<String>.toggled(value: String): Set<String> = if (value in this) this - value else this + value
 
 @Composable
 private fun kindLabel(kind: SourceInfo.Kind): String = stringResource(
@@ -188,6 +188,7 @@ internal fun SourceFilterSheet(
     sort: SourceSortMode,
     onSort: (SourceSortMode) -> Unit,
     onUpdate: ((SourceListFilter) -> SourceListFilter) -> Unit,
+    onUnhideAll: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -247,6 +248,11 @@ internal fun SourceFilterSheet(
             CheckRow(stringResource(R.string.source_filter_hide_disabled), filter.hideDisabled) { v -> onUpdate { it.copy(hideDisabled = v) } }
             CheckRow(stringResource(R.string.source_filter_hide_unstable), filter.hideUnstable) { v -> onUpdate { it.copy(hideUnstable = v) } }
             CheckRow(stringResource(R.string.source_filter_show_hidden), filter.showHidden) { v -> onUpdate { it.copy(showHidden = v) } }
+            if (onUnhideAll != null) {
+                TextButton(onClick = onUnhideAll, modifier = Modifier.padding(horizontal = Dimens.xl, vertical = Dimens.s)) {
+                    Text(stringResource(R.string.source_unhide_all))
+                }
+            }
         }
     }
 }

@@ -5,7 +5,8 @@ import kotlinx.serialization.Serializable
 /** Version of the extension contract. Extensions declare it in their manifest (yomu.extension.api). */
 const val EXTENSION_API_VERSION = 1
 
-enum class SourceContent { MANGA, NOVEL, BOOK }
+/** What a source lists: comics, prose novels, books, or audiobooks/audio streams. */
+enum class SourceContent { MANGA, NOVEL, BOOK, AUDIO }
 
 object Status {
     const val UNKNOWN = 0

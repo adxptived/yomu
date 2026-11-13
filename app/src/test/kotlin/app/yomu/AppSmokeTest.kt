@@ -204,7 +204,8 @@ class AppSmokeTest {
         awaitText("Smoke Test Book")
         settle()
         shot("07_library_book")
-        compose.onAllNodesWithText("Smoke Test Book")[0].performClick()
+        // Tapping the title opens the details; the cover opens the reader.
+        compose.onAllNodes(hasContentDescription("Smoke Test Book", substring = true))[0].performClick()
         compose.mainClock.advanceTimeBy(2_000)
         shot("08_reader")
 
@@ -341,15 +342,15 @@ class AppSmokeTest {
         compose.mainClock.advanceTimeBy(1_000)
         shot("20_catalog_sources")
 
+        // The "Add OPDS catalog" row sits after every source; scroll the lazy list to it before it is composed.
+        compose.onNode(hasScrollAction() and hasAnyDescendant(hasText("MangaDex"))).performScrollToNode(hasText("Add OPDS catalog"))
         // The "Add OPDS catalog" dialog starts empty (no prefilled "https://").
         shotTextDialog("25_add_opds") {
             compose.onNode(hasText("Add OPDS catalog") and hasAnyAncestor(hasScrollAction())).performSemanticsAction(SemanticsActions.OnClick)
         }
 
-        // The row sits after every built-in source: scroll the lazy list to it (off-screen rows are not composed),
-        // and with the novel sources it can sit below the navigation bar, where a tap would land on the bar.
-        compose.onNode(hasScrollAction() and hasAnyDescendant(hasText("Add OPDS catalog"))).performScrollToNode(hasText("Extensions"))
-        compose.onNode(hasText("Extensions") and hasAnyAncestor(hasScrollAction())).performSemanticsAction(SemanticsActions.OnClick)
+        // Extensions moved from the end of the source list to an icon of the top bar.
+        compose.onNode(hasContentDescription("Extensions")).performClick()
         awaitText("Installed")
         compose.mainClock.advanceTimeBy(2_000)
 
@@ -405,7 +406,7 @@ class AppSmokeTest {
         assertTrue("import failed: $outcome", outcome is ImportOutcome.Added)
         clickTab("Library")
         awaitText("Smoke Manga")
-        compose.onAllNodesWithText("Smoke Manga")[0].performClick()
+        compose.onAllNodes(hasContentDescription("Smoke Manga", substring = true))[0].performClick()
         // The page number shows once the pages are in; the tap zones ("Back / Menu / Forward") are not shown.
         awaitText("1 / 4")
         compose.mainClock.advanceTimeBy(1_000)

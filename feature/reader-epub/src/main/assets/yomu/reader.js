@@ -136,7 +136,7 @@
     navButtons();
   }
   function navButtons() {
-    if (cfg.paged || cfg.vertical) { ['yomu-prev', 'yomu-next'].forEach(function (id) { var e = document.getElementById(id); if (e) e.remove(); }); return; }
+    if (cfg.paged || cfg.vertical || cfg.chapterButtons === false) { ['yomu-prev', 'yomu-next'].forEach(function (id) { var e = document.getElementById(id); if (e) e.remove(); }); return; }
     if (cfg.hasPrev && !document.getElementById('yomu-prev')) {
       var p = document.createElement('div'); p.id = 'yomu-prev'; p.className = 'yomu-nav'; p.setAttribute(SKIP, '1'); p.textContent = cfg.prevLabel || '‹';
       p.addEventListener('click', function (e) { e.stopPropagation(); B.onEdge('prev'); });
@@ -435,6 +435,8 @@
 
   // ---------------------------------------------------------------- touch, taps, links
   var touch = null, tapTimer = null, lastTapAt = 0;
+  // Forgets the first tap of a possible double tap: a page turn or another action happened instead.
+  function dropPendingTap() { if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; } lastTapAt = 0; }
   function onTouchStart(e) { if (e.touches.length !== 1) { touch = null; return; } var t = e.touches[0]; touch = { x: t.clientX, y: t.clientY, at: Date.now() }; }
   function onTouchEnd(e) {
     if (!touch) return;
@@ -443,6 +445,7 @@
     var sel = window.getSelection();
     if (sel && !sel.isCollapsed) return;
     if (cfg.paged && !cfg.vertical && Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.3 && dt < 800) {
+      dropPendingTap();
       var forward = dx < 0;
       if (cfg.rtl) forward = !forward;
       if (forward) next(); else prev();
@@ -480,9 +483,10 @@
   }
   function onClick(e) {
     var sel = window.getSelection();
-    if (sel && !sel.isCollapsed) { clearSelection(); B.onSelectionCleared(); e.preventDefault(); return; }
+    if (sel && !sel.isCollapsed) { dropPendingTap(); clearSelection(); B.onSelectionCleared(); e.preventDefault(); return; }
     var a = e.target.closest ? e.target.closest('a[href]') : null;
     if (a) {
+      dropPendingTap();
       e.preventDefault();
       var note = footnoteFor(a);
       if (note) { B.onFootnote(note); return; }
@@ -490,33 +494,35 @@
       return;
     }
     var img = e.target.closest ? e.target.closest('img,image') : null;
-    if (img && !cfg.paged && !cfg.fixed) { B.onImage(img.currentSrc || img.src || img.getAttribute('xlink:href') || img.getAttribute('href') || ''); return; }
+    if (img && !cfg.paged && !cfg.fixed) { dropPendingTap(); B.onImage(img.currentSrc || img.src || img.getAttribute('xlink:href') || img.getAttribute('href') || ''); return; }
     var x = e.clientX, y = e.clientY;
     var h = hitHighlight(x, y);
-    if (h) { B.onHighlightTap(json({ id: h.id, left: x, top: y, right: x, bottom: y })); return; }
-    if (img && !cfg.fixed) { B.onImage(img.currentSrc || img.src || img.getAttribute('xlink:href') || img.getAttribute('href') || ''); return; }
+    if (h) { dropPendingTap(); B.onHighlightTap(json({ id: h.id, left: x, top: y, right: x, bottom: y })); return; }
+    if (img && !cfg.fixed) { dropPendingTap(); B.onImage(img.currentSrc || img.src || img.getAttribute('xlink:href') || img.getAttribute('href') || ''); return; }
     var now = Date.now();
     if (cfg.wordTap === 'DOUBLE_TAP') {
+      // Only a real double tap on a word in the middle of the page opens the dictionary card. A single tap on the sides
+      // still turns the page at once; a tap in the middle (where the menu lives) waits a moment for the second one.
+      var zoneX = x / pageW;
+      var word = (zoneX > 0.2 && zoneX < 0.8) ? wordAt(x, y) : null;
+      if (!word) { dropPendingTap(); B.onTap(x / pageW, y / pageH); return; }
       if (now - lastTapAt < 300 && tapTimer) {
-        // A second tap is a page turn, not a dictionary lookup: the lookup is what a single tap on a word waits for.
         clearTimeout(tapTimer); tapTimer = null; lastTapAt = 0;
-        B.onTap(x / pageW, y / pageH);
+        B.onWord(json(word));
         return;
       }
-      var word = wordAt(x, y);
-      if (!word) { B.onTap(x / pageW, y / pageH); return; }
       lastTapAt = now;
       tapTimer = setTimeout(function () {
         tapTimer = null; lastTapAt = 0;
-        var found = wordAt(x, y);
-        if (found) B.onWord(json(found)); else B.onTap(x / pageW, y / pageH);
+        B.onTap(x / pageW, y / pageH);
       }, 280);
       return;
     }
     if (cfg.wordTap === 'SINGLE_TAP') {
       var zoneX = x / pageW;
-      if (zoneX > 0.2 && zoneX < 0.8) { var w2 = wordAt(x, y); if (w2) { B.onWord(json(w2)); return; } }
+      if (zoneX > 0.2 && zoneX < 0.8) { var w2 = wordAt(x, y); if (w2) { dropPendingTap(); B.onWord(json(w2)); return; } }
     }
+    dropPendingTap();
     B.onTap(x / pageW, y / pageH);
   }
 

@@ -24,6 +24,7 @@ import app.yomu.data.catalog.GlobalSearchResult
 import app.yomu.data.catalog.HistoryEntry
 import app.yomu.data.download.DownloadRepository
 import app.yomu.data.library.ImportOutcome
+import app.yomu.data.source.ExtensionManager
 import app.yomu.data.source.SourceHealth
 import app.yomu.data.source.SourceInfo
 import app.yomu.data.source.SourceManager
@@ -127,6 +128,7 @@ class CatalogHomeViewModel(
     private val catalog: CatalogRepository,
     private val settings: AppSettings,
     private val downloads: DownloadRepository,
+    extensions: ExtensionManager,
 ) : ViewModel() {
     private val _events = Channel<CatalogEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
@@ -203,6 +205,8 @@ class CatalogHomeViewModel(
     val history: StateFlow<List<HistoryEntry>> = catalog.observeHistory().state(this, emptyList())
     val newCount: StateFlow<Int> = catalog.observeNewCount().state(this, 0)
     val incognito: StateFlow<Boolean> = settings.incognito.stateIn(viewModelScope)
+    /** Number of installed extensions with a newer version, shown on the Extensions button. */
+    val extensionUpdates: StateFlow<Int> = extensions.updates.map { it.size }.state(this, 0)
     val localConfigured: Boolean get() = sources.local.isConfigured
 
     fun toggleLanguage(lang: String) = viewModelScope.launch(ScreenErrors) {
@@ -235,7 +239,13 @@ class CatalogHomeViewModel(
     fun setPinned(id: Long, pinned: Boolean) = viewModelScope.launch(ScreenErrors) { sources.setPinned(id, pinned) }
     fun setEnabled(id: Long, enabled: Boolean) = viewModelScope.launch(ScreenErrors) { sources.setEnabled(id, enabled) }
     fun setHidden(id: Long, hidden: Boolean) = viewModelScope.launch(ScreenErrors) { sources.setHidden(id, hidden) }
+
+    /** Bulk editor: the same change for every selected source. */
+    fun setPinned(ids: Collection<Long>, pinned: Boolean) = viewModelScope.launch(ScreenErrors) { sources.setPinned(ids, pinned) }
+    fun setEnabled(ids: Collection<Long>, enabled: Boolean) = viewModelScope.launch(ScreenErrors) { sources.setEnabled(ids, enabled) }
+    fun setHidden(ids: Collection<Long>, hidden: Boolean) = viewModelScope.launch(ScreenErrors) { sources.setHidden(ids, hidden) }
     fun setExtensionHidden(pkg: String, hidden: Boolean) = viewModelScope.launch(ScreenErrors) { sources.setExtensionHidden(pkg, hidden) }
+    fun unhideAllSources() = viewModelScope.launch(ScreenErrors) { sources.unhideAll() }
     fun setIncognito(value: Boolean) = viewModelScope.launch(ScreenErrors) { settings.incognito.set(value) }
 
     fun addOpds(name: String, url: String, user: String?, password: String?) = viewModelScope.launch(ScreenErrors) {
@@ -998,7 +1008,7 @@ class TitleViewModel(
     init {
         viewModelScope.launch(ScreenErrors) {
             val e = catalog.entry(entryId) ?: return@launch
-            if (e.type == ContentType.BOOK) loadLinks() else if (catalog.chapters(entryId).isEmpty()) refresh() else refreshDetailsQuietly()
+            if (e.type == ContentType.BOOK || e.type == ContentType.AUDIO) loadLinks() else if (catalog.chapters(entryId).isEmpty()) refresh() else refreshDetailsQuietly()
             catalog.clearNew(entryId)
         }
     }
@@ -1013,7 +1023,7 @@ class TitleViewModel(
         runCatchingApp { catalog.refresh(entryId) }
             .onSuccess { n -> if (n > 0) _events.send(CatalogEvent.Message(R.string.title_new_chapters, n.toString())) }
             .onFailure { loadError.value = it }
-        if (entry.value?.type == ContentType.BOOK) loadLinks()
+        if (entry.value?.type == ContentType.BOOK || entry.value?.type == ContentType.AUDIO) loadLinks()
         refreshing.value = false
     }
 

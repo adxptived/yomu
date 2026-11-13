@@ -78,6 +78,8 @@
     <string name="tts_pitch">Pitch</string>
     <string name="tts_voice">Voice</string>
     <string name="tts_voice_default">System default</string>
+    <string name="tts_voices_loading">Loading voices…</string>
+    <string name="tts_voices_none">No voices are available for this language. Install a text-to-speech voice in the device settings.</string>
     <string name="tts_sleep">Sleep timer</string>
     <string name="tts_sleep_off">Off</string>
     <string name="tts_sleep_min">%1$d min</string>
@@ -93,6 +95,7 @@
     <string name="theme_custom">Custom</string>
 
     <!-- Reader settings sheet -->
+    <string name="rs_search_settings">Search in settings</string>
     <string name="rs_tab_text">Text</string>
     <string name="rs_tab_display">Display</string>
     <string name="rs_tab_controls">Controls</string>
@@ -147,7 +150,7 @@
     <string name="rs_word_tap">Quick word lookup</string>
     <string name="rs_word_off">Off</string>
     <string name="rs_word_single">Single tap</string>
-    <string name="rs_word_double">Double tap</string>
+    <string name="rs_word_double">Double tap in the middle</string>
     <string name="rs_autoscroll_speed">Auto-scroll speed</string>
     <string name="rs_tap_zones">Tap zones</string>
     <string name="rs_zone_l">L-shape</string>
@@ -206,6 +209,71 @@
     <string name="reader_zoom_lock_off">Zoom is not locked: tap to open the next pages at this scale</string>
     <string name="rs_pdf_reflow">Reflow text</string>
     <string name="rs_pdf_reflow_summary">Shows the text layer with your font settings</string>
+
+    <!-- Groups of the reader settings sheet and the explanations under each option -->
+    <string name="rs_group_font">Font</string>
+    <string name="rs_group_font_summary">Typeface, size and weight</string>
+    <string name="rs_group_spacing">Spacing and alignment</string>
+    <string name="rs_group_spacing_summary">Lines, letters, paragraphs, indents</string>
+    <string name="rs_group_margins">Margins</string>
+    <string name="rs_group_margins_summary">Empty space around the text</string>
+    <string name="rs_group_style">Book style</string>
+    <string name="rs_group_style_summary">Hyphenation, publisher layout, vertical and right-to-left text, saved words</string>
+    <string name="rs_group_navigation">Page turning</string>
+    <string name="rs_group_navigation_summary">Paged or continuous, animation, chapter buttons</string>
+    <string name="rs_group_theme">Theme</string>
+    <string name="rs_group_theme_summary">Paper and text colours</string>
+    <string name="rs_group_night">Night theme</string>
+    <string name="rs_group_night_summary">Dark colours in the evening</string>
+    <string name="rs_group_screen">Screen</string>
+    <string name="rs_group_screen_summary">Brightness, warm light, full screen</string>
+    <string name="rs_group_status">Status line</string>
+    <string name="rs_group_status_summary">Page, chapter and clock at the bottom</string>
+    <string name="rs_group_taps">Taps and zones</string>
+    <string name="rs_group_taps_summary">Where to tap to turn pages</string>
+    <string name="rs_group_edges">Edge swipes</string>
+    <string name="rs_group_edges_summary">Brightness and warm light along the screen edges</string>
+    <string name="rs_group_keys">Hardware keys</string>
+    <string name="rs_group_keys_summary">Volume buttons turn pages</string>
+    <string name="rs_group_word">Word lookup</string>
+    <string name="rs_group_word_summary">A double tap in the middle opens the dictionary; a single tap turns the page</string>
+    <string name="rs_group_word_summary_single">A single tap on a word opens the dictionary</string>
+    <string name="rs_group_word_summary_off">Word lookup is off</string>
+    <string name="rs_group_scroll">Auto-scroll</string>
+    <string name="rs_group_scroll_summary">Speed of the automatic scrolling</string>
+    <string name="rs_font_size_summary">Size of the book text; A− and A+ above change it too</string>
+    <string name="rs_weight_summary">Thickness of the letters</string>
+    <string name="rs_line_height_summary">Distance between lines</string>
+    <string name="rs_letter_spacing_summary">Extra space between letters</string>
+    <string name="rs_word_spacing_summary">Extra space between words</string>
+    <string name="rs_paragraph_summary">Empty space between paragraphs</string>
+    <string name="rs_indent_summary">How far the first line of a paragraph is indented</string>
+    <string name="rs_margin_h_summary">Empty space on the left and on the right of the text</string>
+    <string name="rs_margin_v_summary">Empty space above and below the text</string>
+    <string name="rs_align_summary">How lines line up at the edges</string>
+    <string name="rs_hyphenation_summary">Split long words at the end of a line</string>
+    <string name="rs_rtl_summary">For Arabic, Hebrew and other right-to-left books</string>
+    <string name="rs_saved_words_summary">Underline words you saved in the dictionary</string>
+    <string name="rs_chapter_buttons">Chapter buttons at the end</string>
+    <string name="rs_chapter_buttons_summary">“Previous chapter” and “Next chapter” in continuous scrolling. Off gives an uninterrupted text, like a PDF</string>
+    <string name="rs_brightness_summary">Dim the screen while reading</string>
+    <string name="rs_warm_summary">Yellow light for reading in the dark</string>
+    <string name="rs_fullscreen_summary">Hide the system bars</string>
+    <string name="rs_cutout_summary">Use the area around the camera cutout</string>
+    <string name="rs_autohide_summary">How long the menu stays after a tap</string>
+    <string name="rs_footer_clock_summary">Time and battery in the status line</string>
+    <string name="rs_footer_chapter_summary">Chapter title in the status line</string>
+    <string name="rs_tap_turn_summary">Tap the sides of the page to turn it</string>
+    <string name="rs_volume_keys_summary">Volume up and down turn pages</string>
+    <string name="rs_autoscroll_speed_summary">How fast the text moves by itself</string>
+    <string name="rs_pdf_group_layout">Layout</string>
+    <string name="rs_pdf_group_layout_summary">Pages, scrolling or reflowed text</string>
+    <string name="rs_pdf_group_crop">Crop</string>
+    <string name="rs_pdf_group_crop_summary">Remove empty page margins</string>
+    <string name="rs_pdf_group_image">Image</string>
+    <string name="rs_pdf_group_image_summary">Contrast, grayscale, zoom</string>
+    <string name="rs_pdf_contrast_summary">Higher values make a faint scan darker</string>
+    <string name="rs_pdf_grayscale_summary">Drop the colours of the scan</string>
 
     <!-- Reading statistics -->
     <string name="stats_title">Reading statistics</string>

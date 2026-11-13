@@ -102,6 +102,13 @@ class AudioPlayerViewModel(
 
     fun playPause() = audio.togglePlay()
 
+    /** A fresh stream after a sign-in: the old one was refused and cached. */
+    fun retryPlayback() = viewModelScope.launch {
+        _loadError.value = null
+        audio.stop()
+        audio.open(bookId, play = true)
+    }
+
     fun seekTo(positionMs: Long) { audio.player()?.seekTo(positionMs) }
 
     fun back() { seekBy(-audioSettings.value.skipBackSec * 1000L) }

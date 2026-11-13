@@ -58,6 +58,7 @@ import app.yomu.MainEvent
 import app.yomu.MainViewModel
 import app.yomu.R
 import app.yomu.core.common.ErrorLog
+import app.yomu.core.datastore.AppSettings
 import app.yomu.core.ui.components.FloatingNavBarDefaults
 import app.yomu.core.ui.components.IncognitoBanner
 import app.yomu.core.ui.components.LocalNavAnimatedScope
@@ -67,7 +68,9 @@ import app.yomu.core.ui.components.LocalSharedTransitionScope
 import app.yomu.core.ui.components.NavTab
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.item
+import app.yomu.data.audio.YouTubeAuth
 import app.yomu.data.repository.toJson
+import app.yomu.domain.model.BookFormat
 import app.yomu.domain.repository.BookRepository
 import app.yomu.feature.annotations.AnnotationsScreen
 import app.yomu.feature.audio.AudioController
@@ -271,6 +274,7 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
             onOpenExtensions = { nav.navigate(ExtensionsRoute()) },
             onOpenDownloads = { nav.navigate(DownloadsRoute) },
             onOpenStats = { nav.navigate(StatsRoute) },
+            onOpenYouTubeLogin = { nav.navigate(WebViewRoute(YouTubeAuth.SIGN_IN_URL)) },
         )
         screen<HomeRoute> {
             val wide = LocalConfiguration.current.screenWidthDp >= TWO_PANE_MIN_WIDTH_DP
@@ -305,6 +309,8 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                             onGlobalSearch = { nav.navigate(GlobalSearchRoute()) },
                             onOpenExtensions = { nav.navigate(ExtensionsRoute()) },
                             onOpenDownloads = { nav.navigate(DownloadsRoute) },
+                            onOpenWebView = { nav.navigate(WebViewRoute(it)) },
+                            onOpenSourceSettings = { nav.navigate(SourceSettingsRoute(it)) },
                         )
                         TopLevel.DICTIONARY -> DictionaryScreen(
                             viewModel = koinViewModel(),
@@ -355,10 +361,26 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
             val isAudio by produceState<Boolean?>(if (r.bookId < 0) false else null, r.bookId) {
                 if (r.bookId >= 0) value = runCatching { books.getBook(r.bookId)?.format?.isAudio == true }.getOrDefault(false)
             }
-            when (isAudio) {
-                null -> Unit
-                true -> AudioPlayerScreen(koinViewModel { parametersOf(r.bookId) }, back)
-                false -> ReaderScreen(
+            // A Word document can open directly in the printed-page layout (Settings → Reader).
+            val appSettings: AppSettings = koinInject()
+            val docxPages by produceState<Boolean?>(if (r.bookId < 0) false else null, r.bookId) {
+                if (r.bookId >= 0) {
+                    val format = runCatching { books.getBook(r.bookId)?.format }.getOrNull()
+                    // A locator or chapter means "open exactly here" (an annotation, Continue): the page layout
+                    // cannot honour it, so the text reader opens instead.
+                    val exactPosition = r.locator != null || r.chapterId >= 0 || r.positionReference != null
+                    value = format == BookFormat.DOCX && !exactPosition && runCatching { appSettings.docxPageLayout.get() }.getOrDefault(false)
+                }
+            }
+            when {
+                isAudio == null || docxPages == null -> Unit
+                isAudio == true -> AudioPlayerScreen(
+                    koinViewModel { parametersOf(r.bookId) },
+                    back,
+                    onYouTubeSignIn = { nav.navigate(WebViewRoute(YouTubeAuth.SIGN_IN_URL)) },
+                )
+                docxPages == true -> DocxLayoutScreen(koinViewModel { parametersOf(r.bookId) }, back)
+                else -> ReaderScreen(
                     viewModel = koinViewModel { parametersOf(ReaderArgs(bookId = r.bookId, locatorJson = r.locator, chapterId = r.chapterId, positionReference = r.positionReference)) },
                     onBack = back,
                     onOpenAnnotations = { nav.navigate(AnnotationsRoute(it)) },

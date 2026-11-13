@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.net.Uri
 import app.yomu.core.database.BookEntity
+import app.yomu.core.database.BookmarkEntity
 import app.yomu.core.database.ReadingProgressEntity
 import app.yomu.core.database.YomuDatabase
 import app.yomu.core.datastore.AppSettings
@@ -52,23 +53,45 @@ class SafeBackupRestoreTest {
         } finally { a.close(); b.close(); root.deleteRecursively() }
     }
 
-    @Test fun databaseIdConflictDoesNotReplaceExistingBookOrProgress() = runBlocking {
+    @Test fun databaseIdConflictIsRefusedInsteadOfMixingBooks() = runBlocking {
         val root = File(app.cacheDir, "backup-safe-${UUID.randomUUID()}"); val source = context(File(root, "a")); val dest = context(File(root, "b"))
         val a = YomuDatabase.build(source, true); val b = YomuDatabase.build(dest, true)
         try {
             val saved = File(source.filesDir, "books/from-backup.txt").apply { parentFile.mkdirs(); writeText("backup content") }
-            book(a, saved, "backup")
+            val backupId = book(a, saved, "backup")
+            a.annotations().insertBookmark(BookmarkEntity(0, backupId, "{}", "from the backup", 0f, 1))
             val archive = ByteArrayOutputStream().also { BackupManager(source, a, AppSettings(source)).create(it, true) }.toByteArray()
             val existing = File(dest.filesDir, "books/existing.txt").apply { parentFile.mkdirs(); writeText("local content") }
             val localId = book(b, existing, "existing")
             b.progress().upsert(ReadingProgressEntity(localId, "{}", .5f, 2))
-            val result = BackupManager(dest, b, AppSettings(dest)).restore(archive.inputStream())
-            // A row whose primary key already exists is kept (this device wins) and reported as skipped, instead of
-            // aborting the whole restore.
-            assertTrue(result.skipped >= 1)
+            val failure = runCatching { BackupManager(dest, b, AppSettings(dest)).restore(archive.inputStream()) }.exceptionOrNull()
+            // Same id, other book: keeping the local row and inserting the archive's bookmark would attach it to a
+            // foreign book, so the whole restore is refused before anything is written.
+            assertTrue("restore must be refused: $failure", failure is IOException)
+            assertTrue(failure!!.message.orEmpty().contains("different library"))
             assertEquals("existing", b.books().all().single().title)
             assertEquals("local content", existing.readText())
             assertEquals(.5f, b.progress().get(localId)!!.progress, .001f)
+            assertTrue(b.annotations().allBookmarks().isEmpty())
+            assertFalse(File(dest.filesDir, "books/from-backup.txt").exists())
+        } finally { a.close(); b.close(); root.deleteRecursively() }
+    }
+
+    @Test fun sameBookIdentityKeepsLocalRowAndRestoresItsAnnotations() = runBlocking {
+        val root = File(app.cacheDir, "backup-safe-${UUID.randomUUID()}"); val source = context(File(root, "a")); val dest = context(File(root, "b"))
+        val a = YomuDatabase.build(source, true); val b = YomuDatabase.build(dest, true)
+        try {
+            val saved = File(source.filesDir, "books/from-backup.txt").apply { parentFile.mkdirs(); writeText("backup content") }
+            val backupId = book(a, saved, "same")
+            a.annotations().insertBookmark(BookmarkEntity(0, backupId, "{}", "backup bookmark", 0f, 1))
+            val archive = ByteArrayOutputStream().also { BackupManager(source, a, AppSettings(source)).create(it, true) }.toByteArray()
+            val existing = File(dest.filesDir, "books/existing.txt").apply { parentFile.mkdirs(); writeText("local content") }
+            book(b, existing, "same")
+            val result = BackupManager(dest, b, AppSettings(dest)).restore(archive.inputStream())
+            // The same book (same file hash) at the same id: the local row wins, its missing bookmark is restored.
+            assertEquals("same", b.books().all().single().title)
+            assertEquals(listOf("backup bookmark"), b.annotations().allBookmarks().map { it.title })
+            assertTrue(result.skipped >= 1)
         } finally { a.close(); b.close(); root.deleteRecursively() }
     }
 

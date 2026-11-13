@@ -11,6 +11,7 @@ import app.yomu.core.network.DataSaver
 import app.yomu.core.network.NetworkClients
 import app.yomu.core.network.NetworkMonitor
 import app.yomu.core.network.TrafficMeter
+import app.yomu.data.audio.YouTubeAuth
 import app.yomu.data.book.pdf.PdfAnnotationStore
 import app.yomu.data.di.dataModule
 import app.yomu.data.work.Notifications
@@ -80,6 +81,7 @@ class YomuApp : Application(), SingletonImageLoader.Factory {
             modules(yomuModules)
         }
 
+        YouTubeAuth.init(this)
         val monitor = get<NetworkMonitor>()
         TrafficMeter.init(this) { monitor.isMetered }
         val clients = get<NetworkClients>()

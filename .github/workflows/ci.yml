@@ -33,8 +33,28 @@ jobs:
       - name: Debug APK
         run: ./gradlew assembleDebug
 
-      - name: Unit and Robolectric tests
+      - name: Unit and Robolectric tests (records review screenshots)
         run: ./gradlew testDebugUnitTest :domain:test :sources:opds:test :sources:mangadex:test :sources:novels:test -Proborazzi.test.record=true
+
+      - name: Snapshot tests
+        # A PNG comparison against the approved images, not another recording: the artifacts of the step above are for
+        # review only. See docs/VISUAL_TESTS.md.
+        if: ${{ matrix.java == 21 && hashFiles('app/src/test/screenshots/**/*.png') != '' }}
+        run: |
+          rm -rf app/build/outputs/roborazzi
+          mkdir -p app/build/outputs/roborazzi
+          cp -R app/src/test/screenshots/. app/build/outputs/roborazzi/
+          ./gradlew :app:testDebugUnitTest -Proborazzi.test.verify=true
+
+      - name: Upload screenshot diffs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-diffs-java${{ matrix.java }}
+          path: |
+            app/build/outputs/roborazzi/
+            app/build/reports/tests/
+          if-no-files-found: ignore
 
       - name: Android lint
         if: matrix.java == 21

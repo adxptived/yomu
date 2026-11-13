@@ -22,7 +22,7 @@ class LibriVoxSource(private val api: String = "https://librivox.org") : HttpSou
     override val name = "LibriVox"
     override val lang = "all"
     override val baseUrl = api
-    override val content = SourceContent.BOOK
+    override val content = SourceContent.AUDIO
     override val supportsLatest = true
 
     private fun feed(params: String, page: Int) =
@@ -89,7 +89,7 @@ class LibriVoxSource(private val api: String = "https://librivox.org") : HttpSou
                 genres = (o["genres"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.str("name") },
                 status = Status.COMPLETED,
                 thumbnailUrl = o.str("coverart_thumbnail") ?: o.str("coverart_jpg"),
-                type = SourceContent.BOOK,
+                type = SourceContent.AUDIO,
                 language = o.str("language"),
                 links = links,
                 initialized = true,

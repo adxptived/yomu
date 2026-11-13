@@ -12,6 +12,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
@@ -692,6 +694,8 @@ fun ReaderScreen(
                     position = position,
                     marks = remember(bookmarks) { bookmarks.map { it.locator.totalProgression } },
                     isText = data is ReaderContent.Text,
+                    isDocx = viewModel.book?.format == BookFormat.DOCX && onOpenPageLayout != null,
+                    onPageLayout = onOpenPageLayout?.let { open -> { open(viewModel.bookId) } },
                     reversed = data is ReaderContent.Manga && mangaSettings.direction == MangaDirection.RTL,
                     canPrev = position.chapter > 0 || hasPrev,
                     canNext = position.chapter < position.chapterCount - 1 || hasNext,
@@ -894,6 +898,9 @@ private fun ReaderBottomBar(
     position: ReaderPosition,
     marks: List<Float>,
     isText: Boolean,
+    /** A Word document: the printed-page layout is one tap away. */
+    isDocx: Boolean,
+    onPageLayout: (() -> Unit)?,
     /** Right-to-left manga: the slider starts on the right, like the pages. */
     reversed: Boolean,
     canPrev: Boolean,
@@ -973,10 +980,14 @@ private fun ReaderBottomBar(
                 }
             }
             Spacer(Modifier.height(4.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            Row(
+                if (isDocx) Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Dimens.s) else Modifier.fillMaxWidth(),
+                horizontalArrangement = if (isDocx) Arrangement.spacedBy(Dimens.s) else Arrangement.SpaceEvenly,
+            ) {
                 ChromeButton(Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.reader_toc), onToc)
                 ChromeButton(Icons.Default.Search, stringResource(CoreR.string.search), onSearch)
                 ChromeButton(Icons.Default.TextFields, stringResource(R.string.reader_settings), onSettings)
+                if (isDocx && onPageLayout != null) ChromeButton(Icons.Outlined.Description, stringResource(R.string.reader_page_layout), onPageLayout)
                 ChromeButton(Icons.Default.BrightnessMedium, stringResource(R.string.reader_quick_display), onQuick)
                 if (ttsAvailable) ChromeButton(Icons.Default.Headphones, stringResource(R.string.reader_tts), onTts)
                 ChromeButton(if (autoScroll) Icons.Default.Pause else Icons.Default.SlowMotionVideo, stringResource(R.string.reader_autoscroll), onAutoScroll)

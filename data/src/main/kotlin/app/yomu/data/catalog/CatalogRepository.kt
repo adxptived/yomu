@@ -146,6 +146,7 @@ class CatalogRepository(
             SourceContent.MANGA -> ContentType.MANGA
             SourceContent.NOVEL -> ContentType.NOVEL
             SourceContent.BOOK -> ContentType.BOOK
+            SourceContent.AUDIO -> ContentType.AUDIO
         }
         return if (existing == null) {
             val id = dao.insert(
@@ -181,7 +182,7 @@ class CatalogRepository(
     fun toSItem(e: CatalogItemEntity) = SItem(
         url = e.url, title = e.title, author = e.author, artist = e.artist, description = e.description,
         genres = e.genres.split(',').filter { it.isNotBlank() }, status = e.status, thumbnailUrl = e.coverUrl,
-        type = when (e.type) { "NOVEL" -> SourceContent.NOVEL; "BOOK" -> SourceContent.BOOK; else -> SourceContent.MANGA },
+        type = when (e.type) { "NOVEL" -> SourceContent.NOVEL; "BOOK" -> SourceContent.BOOK; "AUDIO" -> SourceContent.AUDIO; else -> SourceContent.MANGA },
         initialized = e.initialized,
         memo = e.memo,
     )
@@ -207,7 +208,7 @@ class CatalogRepository(
         // One call: extensions (and MangaDex-like APIs) return details and chapters together.
         val (details, chapters) = sourceCall(e.sourceId, timeoutMs) { src.getDetailsAndChapters(toSItem(e)) }
         upsert(e.sourceId, details.copy(initialized = true))
-        if (details.type == SourceContent.BOOK) return@withContext emptyList()
+        if (details.type == SourceContent.BOOK || details.type == SourceContent.AUDIO) return@withContext emptyList()
         syncChapters(entryId, chapters, markNew = e.favorite)
     }
 
@@ -293,7 +294,7 @@ class CatalogRepository(
      * (with a short pause) so that a big library does not hit a single site with dozens of parallel requests.
      */
     suspend fun checkUpdates(onProgress: (Int, Int) -> Unit = { _, _ -> }): UpdateCheckResult = withContext(Dispatchers.IO) {
-        val favorites = dao.favorites().filter { it.type != ContentType.BOOK.name && sources.get(it.sourceId) != null }
+        val favorites = dao.favorites().filter { it.type != ContentType.BOOK.name && it.type != ContentType.AUDIO.name && sources.get(it.sourceId) != null }
         val updated = mutableListOf<TitleUpdate>()
         val failed = mutableListOf<Pair<String, Throwable>>()
         val parallelSources = Semaphore(4)

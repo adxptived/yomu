@@ -25,7 +25,7 @@ interface CatalogSource : Source {
     /** Details and chapters together; sources that get both from one request override this. */
     suspend fun getDetailsAndChapters(item: SItem): Pair<SItem, List<SChapter>> {
         val details = getDetails(item)
-        return details to if (details.type == SourceContent.BOOK) emptyList() else getChapters(details)
+        return details to if (details.type == SourceContent.BOOK || details.type == SourceContent.AUDIO) emptyList() else getChapters(details)
     }
 
     /** Manga: list of page images of a chapter. */

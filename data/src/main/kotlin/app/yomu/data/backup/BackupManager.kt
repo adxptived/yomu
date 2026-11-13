@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.room.withTransaction
+import androidx.sqlite.db.SupportSQLiteDatabase
 import app.yomu.core.database.YomuDatabase
 import app.yomu.core.datastore.AppSettings
 import kotlinx.coroutines.Dispatchers
@@ -75,9 +76,11 @@ class BackupManager(private val context: Context, private val db: YomuDatabase, 
             zip.write(root.toString().toByteArray())
             zip.closeEntry()
             if (includeFiles) {
-                listOf("books", "synced-books", "covers", "downloads/books", "fonts").forEach { sub ->
+                // audiobooks holds online-book manifests (.yaudio) and their downloaded tracks; without it a restored
+                // book has a row but no manifest to open.
+                listOf("books", "synced-books", "covers", "downloads/books", "fonts", "audiobooks").forEach { sub ->
                     val dir = File(context.filesDir, sub)
-                    dir.walkTopDown().filter { it.isFile && !it.name.endsWith(".part") }.forEach { f ->
+                    dir.walkTopDown().filter { it.isFile && !it.name.endsWith(".part") && !it.name.endsWith(".part.meta") }.forEach { f ->
                         zip.putNextEntry(ZipEntry("files/" + f.relativeTo(context.filesDir).invariantSeparatorsPath))
                         f.inputStream().use { it.copyTo(zip) }
                         zip.closeEntry()
@@ -133,7 +136,9 @@ class BackupManager(private val context: Context, private val db: YomuDatabase, 
                         e.name.startsWith("files/") && !e.isDirectory -> {
                             val rel = e.name.removePrefix("files/")
                             val segments = rel.split('/')
-                            val allowed = listOf("books/", "synced-books/", "covers/", "downloads/books/", "fonts/")
+                            val allowed = listOf(
+                                "books/", "synced-books/", "covers/", "downloads/books/", "fonts/", "audiobooks/",
+                            )
                             if (allowed.none { rel.startsWith(it) } || segments.any { it.isEmpty() || it == "." || it == ".." || '\\' in it || it.any { c -> c.code < 32 } })
                                 throw java.io.IOException("Unsafe file path in backup")
                             if (rel in stagedFiles) throw java.io.IOException("Duplicate file path in backup: $rel")
@@ -151,6 +156,18 @@ class BackupManager(private val context: Context, private val db: YomuDatabase, 
             val oldFiles = r["filesDir"]?.jsonPrimitive?.content
             val newFiles = context.filesDir.absolutePath
             val tables = r["tables"]?.jsonObject ?: JsonObject(emptyMap())
+            // Audiobook manifests keep absolute paths to their downloaded tracks; rows are rewritten on insert, the
+            // manifest files themselves must be rewritten too, or the restored book points at the old installation.
+            if (oldFiles != null && oldFiles != newFiles) {
+                stagedFiles.forEach { (rel, staged) ->
+                    if (rel.startsWith("audiobooks/") && rel.substringBefore('?').endsWith(".${app.yomu.domain.model.AudiobookManifest.EXTENSION}", ignoreCase = true)) {
+                        runCatching {
+                            val text = staged.readText()
+                            if (oldFiles in text) staged.writeText(text.replace(oldFiles, newFiles))
+                        }
+                    }
+                }
+            }
             // A revision qualifies local reading positions, but per-target merge bases must be reset.
             // Old backups contain no such revision; mark stable folders as unknown and fail closed.
             val restoredFolderIds = (tables["books"] as? JsonArray).orEmpty().mapNotNull { element ->
@@ -188,6 +205,10 @@ class BackupManager(private val context: Context, private val db: YomuDatabase, 
             val published = mutableListOf<File>()
             sqlDb.beginTransaction()
             try {
+                // A numeric primary key means nothing across two independent libraries: books.id = 1 is a different
+                // book on another device. Keeping the local parent row and inserting the archive's child rows would
+                // attach bookmarks/notes/progress to a foreign book. Refuse the archive before anything is written.
+                refuseIdentityConflicts(sqlDb, tables, oldFiles, newFiles)
                 // A matching book row does not imply that its current locators still use the
                 // backup's page revision. Never replace an existing local baseline silently.
                 for (id in restoredFolderIds) {
@@ -340,6 +361,96 @@ class BackupManager(private val context: Context, private val db: YomuDatabase, 
         } finally { staging.deleteRecursively() }
     }
 
+    /**
+     * Refuses a backup whose rows collide with local rows they cannot be proven to describe. Numeric primary keys are
+     * meaningless across independent libraries (books.id = 1 is a different book on another device), so keeping the
+     * local parent while inserting the archive's children would attach bookmarks, notes and progress to a foreign book.
+     * Runs before anything is inserted, so a refusal leaves the database and the files untouched.
+     */
+    private fun refuseIdentityConflicts(sqlDb: SupportSQLiteDatabase, tables: JsonObject, oldFiles: String?, newFiles: String) {
+        fun field(obj: JsonObject, key: String): String? =
+            (obj[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
+
+        fun identity(table: String, obj: JsonObject): String? = when (table) {
+            "books" -> field(obj, "fileHash")?.takeIf { it.isNotBlank() }?.let { "h:$it" }
+                ?: "u:" + field(obj, "uri").orEmpty()
+            // Backups made before tabs got a kind have no value there; the entity's default is BOOK.
+            "collections" -> (field(obj, "kind")?.takeIf { it.isNotBlank() } ?: "BOOK") + "\u0000" + field(obj, "name").orEmpty()
+            else -> IDENTITY[table]?.joinToString("\u0000") { field(obj, it).orEmpty() }
+        }
+
+        fun localIdentities(table: String): Map<Long, String> {
+            val columns = IDENTITY[table] ?: return emptyMap()
+            val fields = if (table == "books") listOf("fileHash", "uri") else columns
+            val out = HashMap<Long, String>()
+            sqlDb.query("SELECT id, ${fields.joinToString(", ") { "`$it`" }} FROM `$table`").use { c ->
+                while (c.moveToNext()) {
+                    out[c.getLong(0)] = if (table == "books") {
+                        val hash = c.getString(1)
+                        if (!hash.isNullOrBlank()) "h:$hash" else "u:" + c.getString(2).orEmpty()
+                    } else {
+                        fields.indices.joinToString("\u0000") { c.getString(it + 1).orEmpty() }
+                    }
+                }
+            }
+            return out
+        }
+
+        val archive = HashMap<String, Map<Long, JsonObject>>()
+        for (table in IDENTITY.keys) {
+            val rows = tables[table] as? JsonArray ?: continue
+            val byId = HashMap<Long, JsonObject>()
+            for (el in rows) {
+                val obj = el as? JsonObject ?: continue
+                val id = (obj["id"] as? JsonPrimitive)?.longOrNull ?: continue
+                byId[id] = obj
+            }
+            archive[table] = byId
+        }
+        val localCache = HashMap<String, Map<Long, String>>()
+        fun localOf(table: String): Map<Long, String> = localCache.getOrPut(table) { localIdentities(table) }
+
+        for ((table, byId) in archive) {
+            val local = localOf(table)
+            for ((id, obj) in byId) {
+                val current = local[id] ?: continue
+                // The archive keeps the paths of the old installation; compare them as they will be restored.
+                val incoming = identity(table, obj)?.let { if (table == "books" && oldFiles != null) it.replace(oldFiles, newFiles) else it } ?: continue
+                if (incoming != current) throw java.io.IOException(
+                    "This backup belongs to a different library: $table id $id is a different record here. Restore it into an empty library.",
+                )
+            }
+        }
+
+        // A child row of the archive may not point at a local parent that the archive does not itself describe.
+        val localIds = HashMap<String, Set<Long>>()
+        fun localIdsOf(table: String): Set<Long> = localIds.getOrPut(table) {
+            val hasId = sqlDb.query("PRAGMA table_info(`$table`)").use { c ->
+                var found = false
+                while (c.moveToNext()) if (c.getString(c.getColumnIndexOrThrow("name")) == "id") found = true
+                found
+            }
+            if (!hasId) emptySet() else HashSet<Long>().also { ids ->
+                sqlDb.query("SELECT id FROM `$table`").use { c -> while (c.moveToNext()) ids += c.getLong(0) }
+            }
+        }
+        for ((table, refs) in REFERENCES) {
+            val rows = tables[table] as? JsonArray ?: continue
+            for (el in rows) {
+                val obj = el as? JsonObject ?: continue
+                // A row whose primary key already exists locally is kept as it is; its references are not applied.
+                val id = (obj["id"] as? JsonPrimitive)?.longOrNull
+                if (id != null && id in localIdsOf(table)) continue
+                for ((column, parent) in refs) {
+                    val parentId = (obj[column] as? JsonPrimitive)?.longOrNull ?: continue
+                    if (parentId !in localOf(parent)) continue
+                    if (archive[parent]?.containsKey(parentId) != true)
+                        throw java.io.IOException("Backup row $table references a $parent the archive does not describe; refusing to mix libraries")
+                }
+            }
+        }
+    }
+
     private fun sameFile(a: File, b: File): Boolean {
         if (a.length() != b.length()) return false
         return a.inputStream().use { left -> b.inputStream().use { right ->
@@ -394,6 +505,41 @@ class BackupManager(private val context: Context, private val db: YomuDatabase, 
     companion object {
         const val FORMAT = "yomu-backup"
         const val VERSION = 1
+
+        /** Columns that identify a row across independently created libraries; null = the table has no stable key. */
+        private val IDENTITY = mapOf(
+            "books" to listOf("fileHash", "uri"),
+            "authors" to listOf("name"),
+            "series" to listOf("name"),
+            "tags" to listOf("name"),
+            "collections" to listOf("kind", "name"),
+            "catalog_items" to listOf("sourceId", "url"),
+            "words" to listOf("normalized", "lang"),
+            "chapters" to listOf("itemId", "url"),
+            "bookmarks" to listOf("bookId", "createdAt"),
+            "highlights" to listOf("bookId", "chapter", "createdAt", "text"),
+            "notes" to listOf("bookId", "createdAt"),
+        )
+
+        /** Columns that hold a primary key of another table. */
+        private val REFERENCES = mapOf(
+            "books" to mapOf("seriesId" to "series"),
+            "book_authors" to mapOf("bookId" to "books", "authorId" to "authors"),
+            "book_collections" to mapOf("bookId" to "books", "collectionId" to "collections"),
+            "book_tags" to mapOf("bookId" to "books", "tagId" to "tags"),
+            "catalog_collections" to mapOf("itemId" to "catalog_items", "collectionId" to "collections"),
+            "reading_progress" to mapOf("bookId" to "books"),
+            "chapter_progress" to mapOf("bookId" to "books"),
+            "bookmarks" to mapOf("bookId" to "books"),
+            "highlights" to mapOf("bookId" to "books"),
+            "notes" to mapOf("bookId" to "books", "highlightId" to "highlights"),
+            "words" to mapOf("bookId" to "books"),
+            "reading_sessions" to mapOf("bookId" to "books", "catalogItemId" to "catalog_items"),
+            "chapters" to mapOf("itemId" to "catalog_items"),
+            "tracks" to mapOf("itemId" to "catalog_items", "bookId" to "books"),
+            "downloads" to mapOf("chapterId" to "chapters", "itemId" to "catalog_items", "sourceId" to "sources"),
+        )
+
         val TABLES = listOf(
             "books", "authors", "book_authors", "series", "collections", "book_collections", "tags", "book_tags",
             "reading_progress", "chapter_progress", "bookmarks", "highlights", "notes", "words", "sources", "catalog_items", "chapters",

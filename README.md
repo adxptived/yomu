@@ -90,7 +90,7 @@ Requires JDK 17 or 21 and an Android SDK (platform 36, build-tools 36). Set `sdk
 
 Tracker OAuth keys are optional: pass `-PYOMU_ANILIST_CLIENT_ID=…` etc. at build time (see [docs/TRACKING.md](docs/TRACKING.md)); without them users enter their own keys in Settings → Tracking.
 
-Release signing: without environment variables a release is signed with the local debug key; published APKs are signed by CI with the repository's secret keystore (`YOMU_KEYSTORE_BASE64`, `YOMU_KEYSTORE_PASSWORD`, `YOMU_KEY_ALIAS`, `YOMU_KEY_PASSWORD`). Tagging `vX.Y.Z` builds and publishes a release automatically; every green commit to `main` gets a `nightly` pre-release. See [docs/RELEASING.md](docs/RELEASING.md).
+Release signing: `assembleRelease` now refuses to build without the `YOMU_KEYSTORE_BASE64`, `YOMU_KEYSTORE_PASSWORD`, `YOMU_KEY_ALIAS` and `YOMU_KEY_PASSWORD` variables (the debug key is public and must not sign a published APK); for a local release-like check use `./gradlew assembleFast`. Published APKs are signed by CI with the repository's secret keystore. Tagging `vX.Y.Z` builds and publishes a release automatically; every green commit to `main` gets a `nightly` pre-release. See [docs/RELEASING.md](docs/RELEASING.md).
 
 The build expects up to 4 GB of memory (`-Xmx2400m`, 2 workers).
 

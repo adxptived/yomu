@@ -262,7 +262,7 @@ private fun TitleContent(
     val numberWidth = rememberNumberWidth(stats.total)
 
     val e = entry
-    val isBook = e?.type == ContentType.BOOK
+    val isBook = e?.type == ContentType.BOOK || e?.type == ContentType.AUDIO
     val selecting = selection.isNotEmpty()
     var wasSelecting by rememberSaveable { mutableStateOf(selecting) }
     LaunchedEffect(selecting) {
@@ -1048,4 +1048,5 @@ private fun typeIcon(type: ContentType): ImageVector = when (type) {
     ContentType.MANGA -> Icons.Outlined.AutoStories
     ContentType.NOVEL -> Icons.AutoMirrored.Outlined.Article
     ContentType.BOOK -> Icons.AutoMirrored.Outlined.MenuBook
+    ContentType.AUDIO -> Icons.Outlined.Headphones
 }

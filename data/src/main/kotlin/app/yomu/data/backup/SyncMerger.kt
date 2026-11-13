@@ -196,6 +196,7 @@ internal class SyncMerger(private val db: YomuDatabase) {
         val outBooks = LinkedHashMap<String, SyncBook>()
         val finalBookTabs = HashMap<String, Set<String>>()
         val wantedBookTabs = HashMap<Long, Set<String>>()
+        val finalBookStatus = HashMap<String, String>()
         for (bk in books) {
             val hash = bk.fileHash!!
             val rb = remoteBooks[hash]
@@ -204,16 +205,29 @@ internal class SyncMerger(private val db: YomuDatabase) {
             var value = bk.progress
             var at = lp?.updatedAt ?: 0L
             var status = bk.status
+            if (o.progress) {
+                // Statuses merge on their own, not only through a newer position: every value (ON_HOLD, DROPPED,
+                // PLAN_TO_READ…) travels, and a manual change without reading is not lost. The last sync is the base.
+                val baseStatus = b?.bookStatus?.get(hash)
+                val remoteStatus = rb?.status
+                status = when {
+                    remoteStatus == null || remoteStatus == bk.status -> bk.status
+                    baseStatus == bk.status -> remoteStatus
+                    baseStatus == remoteStatus -> bk.status
+                    // Both devices changed it since the last sync: the library in front of the user wins.
+                    else -> bk.status
+                }
+            }
             if (o.progress && rb?.locator != null && rb.updatedAt > at) {
                 db.progress().upsert(ReadingProgressEntity(bk.id, rb.locator, rb.progress, rb.updatedAt))
                 db.books().updateProgress(bk.id, rb.progress, rb.updatedAt)
-                if (rb.status == "FINISHED" && bk.status != "FINISHED") {
-                    db.books().setStatus(listOf(bk.id), rb.status)
-                    status = rb.status
-                }
                 locator = rb.locator
                 value = rb.progress
                 at = rb.updatedAt
+                changed++
+            }
+            if (status != bk.status) {
+                db.books().setStatus(listOf(bk.id), status)
                 changed++
             }
             val localTabs = bookTabs[bk.id].orEmpty()
@@ -244,11 +258,18 @@ internal class SyncMerger(private val db: YomuDatabase) {
             } else {
                 rb?.chapterProgress?.forEach { mergedChapters[it.chapter] = it }
             }
-            outBooks[hash] = if (o.progress) SyncBook(hash, bk.title, locator, value, at, status, merged.sorted(), mergedChapters.values.toList())
-            // Position sync off: the shared position stays what the other devices wrote; tabs still merge.
-            else SyncBook(hash, bk.title, rb?.locator, rb?.progress ?: 0f, rb?.updatedAt ?: 0L, rb?.status ?: bk.status, merged.sorted(), mergedChapters.values.toList())
+            // Position sync off: the shared status and position stay what the other devices wrote; tabs still merge.
+            val publishedStatus = if (o.progress) status else rb?.status ?: bk.status
+            finalBookStatus[hash] = publishedStatus
+            outBooks[hash] = if (o.progress) SyncBook(hash, bk.title, locator, value, at, publishedStatus, merged.sorted(), mergedChapters.values.toList())
+            else SyncBook(hash, bk.title, rb?.locator, rb?.progress ?: 0f, rb?.updatedAt ?: 0L, publishedStatus, merged.sorted(), mergedChapters.values.toList())
         }
-        r.books.forEach { rb -> if (rb.hash !in outBooks) outBooks[rb.hash] = rb }
+        r.books.forEach { rb ->
+            if (rb.hash !in outBooks) {
+                outBooks[rb.hash] = rb
+                finalBookStatus[rb.hash] = rb.status
+            }
+        }
 
         // 3. Highlights (notes of a highlight travel with it).
         val remoteHl = r.highlights.associateBy { SyncKeys.highlight(it.hash, it.createdAt, it.text) }
@@ -510,6 +531,7 @@ internal class SyncMerger(private val db: YomuDatabase) {
             marked = baseMarked,
             titleTabs = baseTitleTabs,
             bookTabs = finalBookTabs.mapValues { it.value.sorted() },
+            bookStatus = finalBookStatus,
             annotationRevisions = buildMap {
                 outHl.forEach { (key, value) -> if (key in live) put(key, AnnotationRevisions.highlight(value)) }
                 outNotes.forEach { (key, value) -> if (key in live) put(key, AnnotationRevisions.note(value)) }

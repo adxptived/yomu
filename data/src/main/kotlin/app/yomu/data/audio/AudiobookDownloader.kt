@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import app.yomu.data.R
 import app.yomu.data.download.FailureKind
+import app.yomu.data.download.RangeResume
 import app.yomu.data.download.RetryPolicy
 import app.yomu.data.source.SourceCalls
 import app.yomu.data.work.Notifications
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.koin.core.component.KoinComponent
@@ -68,6 +70,8 @@ class AudiobookDownloader(
     private val store: AudiobookStore,
     private val client: () -> OkHttpClient,
 ) {
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false; explicitNulls = false }
+
     /** Null when [book] is not an online audiobook (its files are already on the device). */
     fun state(book: Book): AudioDownloadState? {
         val m = runCatching { store.manifest(book) }.getOrNull() ?: return null
@@ -112,35 +116,77 @@ class AudiobookDownloader(
         }
         val base = "%04d".format(index + 1)
         val part = File(dir, "$base.part")
-        var length = knownLength
-        var mime = type
+        val meta = File(dir, "$base.part.meta")
+        val itag = itagOf(url)
+        var state = readPartial(meta)
+        // Another representation of the same video (a different itag or container) is a different file: the bytes
+        // already on disk cannot be continued with it.
+        if (part.exists() && (state.itag != itag || (type != null && state.mime != null && state.mime != type))) {
+            part.delete()
+            meta.delete()
+            state = Partial()
+        }
+        var length = state.length ?: knownLength
+        var mime = type ?: state.mime
         // YouTube slows down long single requests: it is fetched in 10 MB ranges, like its own players do.
         val chunk = if (youtubeId != null) YOUTUBE_CHUNK else Long.MAX_VALUE
         RandomAccessFile(part, "rw").use { out ->
             var pos = out.length()
+            var restarts = 0
+            // Continuing without a validator cannot prove that the remote file is still the one on disk.
+            if (pos > 0 && state.validator == null) {
+                out.setLength(0)
+                pos = 0
+            }
             while (length.let { it == null || pos < it }) {
                 coroutineContext.ensureActive()
-                // A failed request (network switch, VPN, 5xx) is retried from the bytes already on disk.
-                SourceCalls.retrying(REQUEST_ATTEMPTS, baseDelayMs = RETRY_BASE_MS) {
+                // A failed request (network switch, VPN, 5xx) is retried from the bytes already on disk. A response
+                // that cannot be continued (another range, another file, 416) restarts the file instead.
+                val restart = SourceCalls.retrying(REQUEST_ATTEMPTS, baseDelayMs = RETRY_BASE_MS) {
                     pos = out.length()
                     val end = if (chunk == Long.MAX_VALUE) "" else ((length?.let { minOf(it, pos + chunk) } ?: (pos + chunk)) - 1).toString()
                     val request = Request.Builder().url(url).apply {
                         headers.forEach { (k, v) -> header(k, v) }
                         if (pos > 0 || end.isNotEmpty()) header("Range", "bytes=$pos-$end")
+                        if (pos > 0) state.validator?.let { header("If-Range", it) }
                     }.build()
                     client().newCall(request).execute().use { r ->
-                        if (r.code == 416 && length == null) {
-                            length = pos
-                            return@use
+                        if (r.code == 416) {
+                            // Everything is already here, or the partial file belongs to another version of the file.
+                            if (length != null && pos == length) return@use false
+                            out.setLength(0)
+                            state = Partial()
+                            meta.delete()
+                            length = knownLength
+                            return@use true
                         }
                         if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
-                        if (r.code == 200 && pos > 0) {
-                            // The server ignored the range: start over.
+                        if (r.code == 206) {
+                            val start = contentRangeStart(r.header("Content-Range"))
+                            val total = totalOf(r)
+                            if (pos == 0L || start == null || start != pos || (total != null && length != null && total != length)) {
+                                // The server did not continue at our position, or the file changed since the first bytes.
+                                out.setLength(0)
+                                state = Partial()
+                                meta.delete()
+                                length = knownLength
+                                return@use true
+                            }
+                        } else if (pos > 0) {
+                            // The range was ignored (or If-Range matched another file): the body is the whole file.
                             out.setLength(0)
                             pos = 0
                         }
                         mime = mime ?: r.body.contentType()?.let { "${it.type}/${it.subtype}" }
                         length = length ?: totalOf(r) ?: if (r.code == 200) r.body.contentLength().takeIf { it >= 0 } else null
+                        // Saved before the body is written: a crash leaves a file that can still be checked.
+                        state = Partial(
+                            validator = RangeResume.ifRange(r.header("ETag"), r.header("Last-Modified")) ?: state.validator,
+                            length = length,
+                            itag = itag,
+                            mime = mime,
+                        )
+                        runCatching { meta.writeText(json.encodeToString(Partial.serializer(), state)) }
                         out.seek(pos)
                         val buffer = ByteArray(64 * 1024)
                         r.body.byteStream().use { input ->
@@ -160,14 +206,36 @@ class AudiobookDownloader(
                         }
                         // Without a known length, one whole response is the file.
                         if (length == null) length = pos
+                        false
                     }
                 }
+                if (restart) {
+                    if (++restarts > MAX_RESTARTS) throw IOException("The server keeps answering from another position")
+                    pos = 0
+                    continue
+                }
             }
+            // A server that sent more bytes than the file has (an overlapping range) must not leave a longer file.
+            length?.let { if (out.length() > it) out.setLength(it) }
         }
         val file = File(dir, "$base.${extension(mime, track.uri)}")
         if (!part.renameTo(file)) throw IOException("Cannot save ${file.name}")
+        meta.delete()
         return file
     }
+
+    /** Resume state of a partial track: enough to prove that the remote bytes still match the local ones. */
+    @kotlinx.serialization.Serializable
+    private data class Partial(
+        val validator: String? = null,
+        val length: Long? = null,
+        val itag: String? = null,
+        val mime: String? = null,
+    )
+
+    private fun readPartial(file: File): Partial = runCatching {
+        if (file.isFile) json.decodeFromString(Partial.serializer(), file.readText()) else Partial()
+    }.getOrDefault(Partial())
 
     private data class Source(val url: String, val headers: Map<String, String>, val mimeType: String?, val length: Long?)
 
@@ -222,6 +290,10 @@ class AudiobookDownloader(
     companion object {
         private const val YOUTUBE_CHUNK = 10L * 1024 * 1024
         private const val REPORT_MS = 500L
+
+        /** How many times a restart from byte 0 is accepted before the download is reported as broken. */
+        private const val MAX_RESTARTS = 4
+
         private const val TAG = "audiobook_download"
         private const val BOOK_TAG = "audiobook_book:"
         private const val REQUEST_ATTEMPTS = 4
@@ -237,6 +309,14 @@ class AudiobookDownloader(
 
         /** The total size from `Content-Range: bytes 0-99/1234`. */
         internal fun totalOf(r: okhttp3.Response): Long? = r.header("Content-Range")?.substringAfterLast('/')?.toLongOrNull()
+
+        /** The first byte position from `Content-Range: bytes 100-199/1234`. */
+        internal fun contentRangeStart(value: String?): Long? =
+            value?.trim()?.removePrefix("bytes")?.trim()?.substringBefore('-')?.trim()?.toLongOrNull()
+
+        /** YouTube's representation id (`itag`) from a stream address. */
+        internal fun itagOf(url: String): String? =
+            url.substringAfter('?', "").substringBefore('#').split('&').firstOrNull { it.startsWith("itag=") }?.substringAfter('=')
 
         internal fun extension(mime: String?, uri: String): String {
             val fromUri = uri.substringBefore('?').substringAfterLast('/').substringAfterLast('.', "").lowercase()

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,8 +38,10 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.outlined.WorkspacePremium
@@ -83,7 +86,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.R
 import app.yomu.core.common.ErrorLog
 import app.yomu.core.common.Share
+import app.yomu.core.datastore.AppSettings
 import app.yomu.core.ui.components.BookListItem
+import app.yomu.core.ui.components.CollapsibleSection
 import app.yomu.core.ui.components.TopLevelBody
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.navBarBottomPadding
@@ -101,6 +106,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import java.io.File
 import java.text.NumberFormat
@@ -252,18 +258,14 @@ fun ProfileScreen(
     }
 }
 
-/** A tappable row that opens a related page: icon, title, one line of explanation and a chevron. */
+/** A compact tile of the overview: icon, title and one line of explanation; two fit in a row. */
 @Composable
-private fun EntryRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
-    ElevatedCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(Dimens.l), verticalAlignment = Alignment.CenterVertically) {
+private fun RowScope.EntryTile(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    ElevatedCard(onClick = onClick, modifier = modifier) {
+        Column(Modifier.padding(Dimens.l), verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
             Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(Dimens.m))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -291,6 +293,12 @@ private fun ProfileOverview(
     val recent =
         remember(days, query) { if (query.isBlank()) days.orEmpty().asSequence().flatMap { it.items }.take(3).toList() else emptyList() }
     var busy by remember { mutableStateOf(false) }
+    val settings: AppSettings = koinInject()
+    val showStats by settings.profileShowStats.flow.collectAsStateWithLifecycle(initialValue = true)
+    val showMilestones by settings.profileShowMilestones.flow.collectAsStateWithLifecycle(initialValue = true)
+    val showTop by settings.profileShowTop.flow.collectAsStateWithLifecycle(initialValue = true)
+    val showRecent by settings.profileShowRecent.flow.collectAsStateWithLifecycle(initialValue = true)
+    val showShare by settings.profileShowShare.flow.collectAsStateWithLifecycle(initialValue = true)
     val colors = MaterialTheme.colorScheme
     val palette = ProfileCard.Palette(colors.primary.toArgb(), colors.tertiary.toArgb(), colors.onPrimary.toArgb())
 
@@ -337,29 +345,75 @@ private fun ProfileOverview(
             }
             return@LazyColumn
         }
+        // The two pages people open most often sit right under the header, not at the end of a long scroll.
+        item(key = "entries") {
+            Row(horizontalArrangement = Arrangement.spacedBy(Dimens.m)) {
+                EntryTile(
+                    Icons.Outlined.Sync,
+                    stringResource(R.string.profile_tab_tracking),
+                    stringResource(R.string.profile_tracking_entry),
+                    onOpenTracking,
+                    Modifier.weight(1f),
+                )
+                if (onOpenDownloads != null) {
+                    EntryTile(
+                        Icons.Outlined.Download,
+                        stringResource(R.string.profile_tab_downloads),
+                        stringResource(R.string.profile_downloads_entry),
+                        onOpenDownloads,
+                        Modifier.weight(1f),
+                    )
+                }
+            }
+        }
         item(key = "time") { TimeCard(state, onOpenStats) }
-        item(key = "numbers") { NumbersGrid(state) }
-        item(key = "milestones") { MilestonesCard(state.milestones) }
-        if (state.topTitles.isNotEmpty()) item(key = "top") { TopTitlesCard(state.topTitles, onOpenStats) }
-        if (recent.isNotEmpty()) item(key = "recent") { RecentCard(recent, onOpen = ::openRecent, onOpenHistory = onOpenHistory) }
-        item(key = "tracking") {
-            EntryRow(Icons.Outlined.Sync, stringResource(R.string.profile_tab_tracking), stringResource(R.string.profile_tracking_entry), onOpenTracking)
+        // The numbers and milestones are a reference, not the headline: folded away until asked for.
+        val hasStats = showStats || showMilestones || (showTop && state.topTitles.isNotEmpty())
+        if (hasStats) {
+            item(key = "stats") {
+                CollapsibleSection(
+                    title = stringResource(R.string.profile_tab_stats),
+                    summary = stringResource(R.string.profile_stats_summary, number(state.finishedBooks), number(state.pages), number(state.streakDays)),
+                    icon = Icons.Outlined.Insights,
+                    horizontalPadding = 0.dp,
+                ) {
+                    Column(Modifier.padding(horizontal = Dimens.s)) {
+                        if (showStats) NumbersGrid(state)
+                        if (showMilestones) {
+                            if (showStats) Spacer(Modifier.height(Dimens.m))
+                            MilestonesCard(state.milestones)
+                        }
+                        if (showTop && state.topTitles.isNotEmpty()) {
+                            if (showStats || showMilestones) Spacer(Modifier.height(Dimens.m))
+                            TopTitlesCard(state.topTitles, onOpenStats)
+                        }
+                    }
+                }
+            }
         }
-        if (onOpenDownloads != null) item(key = "downloads") {
-            EntryRow(Icons.Outlined.Download, stringResource(R.string.profile_tab_downloads), stringResource(R.string.profile_downloads_entry), onOpenDownloads)
-        }
-        item(key = "share") {
-            ShareSection(
-                busy = busy,
-                onShareCard = {
-                    val content = cardContent(context, state)
-                    shareFile("image/png") { dir -> withContext(Dispatchers.Default) { ProfileCard.render(File(dir, "yomu_profile.png"), content, palette) } }
-                },
-                onShareText = { Share.shareText(context, shareText(context, state)) },
-                onShareHistory = { shareFile("text/csv") { dir -> viewModel.exportHistoryCsv(dir) } },
-                onShareBackup = { shareFile("application/octet-stream") { dir -> viewModel.createBackup(dir) } },
-                onOpenBackup = onOpenBackup,
-            )
+        if (showRecent && recent.isNotEmpty()) item(key = "recent") { RecentCard(recent, onOpen = ::openRecent, onOpenHistory = onOpenHistory) }
+        if (showShare) {
+            item(key = "share") {
+                CollapsibleSection(
+                    title = stringResource(R.string.profile_share_section),
+                    summary = stringResource(R.string.profile_share_summary),
+                    icon = Icons.Outlined.Share,
+                    horizontalPadding = 0.dp,
+                ) {
+                    ShareSection(
+                        busy = busy,
+                        showHeader = false,
+                        onShareCard = {
+                            val content = cardContent(context, state)
+                            shareFile("image/png") { dir -> withContext(Dispatchers.Default) { ProfileCard.render(File(dir, "yomu_profile.png"), content, palette) } }
+                        },
+                        onShareText = { Share.shareText(context, shareText(context, state)) },
+                        onShareHistory = { shareFile("text/csv") { dir -> viewModel.exportHistoryCsv(dir) } },
+                        onShareBackup = { shareFile("application/octet-stream") { dir -> viewModel.createBackup(dir) } },
+                        onOpenBackup = onOpenBackup,
+                    )
+                }
+            }
         }
     }
 }
@@ -388,6 +442,26 @@ private fun ProfileHeader(state: ProfileUi?, onEdit: () -> Unit) {
             }
             if (state?.name.isNullOrBlank() && state != null) {
                 Text(stringResource(R.string.profile_set_name), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            }
+            if (state != null && (state.streakDays > 0 || state.todayMs > 0)) {
+                val goal = state.goalMinutes.coerceAtLeast(1)
+                val today = (state.todayMs / 60_000).toInt()
+                Row(
+                    Modifier.padding(top = Dimens.xxs),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Dimens.xs),
+                ) {
+                    Icon(Icons.Outlined.LocalFireDepartment, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                    Text(stringResource(R.string.profile_header_streak, state.streakDays), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("·", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        stringResource(R.string.profile_today, today, goal),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
@@ -616,19 +690,22 @@ private fun ShareSection(
     onShareHistory: () -> Unit,
     onShareBackup: () -> Unit,
     onOpenBackup: () -> Unit,
+    showHeader: Boolean = true,
 ) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(vertical = Dimens.m)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.l), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.profile_share_section), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            if (showHeader) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.l), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.profile_share_section), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                }
+                Text(
+                    stringResource(R.string.profile_share_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+                )
             }
-            Text(
-                stringResource(R.string.profile_share_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
-            )
             ShareRow(Icons.Outlined.Image, R.string.profile_share_card, R.string.profile_share_card_sum, enabled = !busy, onClick = onShareCard)
             ShareRow(Icons.AutoMirrored.Outlined.ShortText, R.string.profile_share_text, R.string.profile_share_text_sum, enabled = true, onClick = onShareText)
             ShareRow(Icons.Outlined.Description, R.string.profile_share_history, R.string.profile_share_history_sum, enabled = !busy, onClick = onShareHistory)

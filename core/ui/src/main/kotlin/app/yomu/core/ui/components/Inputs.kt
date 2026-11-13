@@ -190,22 +190,32 @@ fun TextInputDialog(
 }
 
 @Composable
-fun <T> ChoiceDialog(title: String, options: List<Pair<T, String>>, selected: T?, onSelect: (T) -> Unit, onDismiss: () -> Unit) {
+fun <T> ChoiceDialog(title: String, options: List<Pair<T, String>>, selected: T?, onSelect: (T) -> Unit, onDismiss: () -> Unit, message: String? = null) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            // Long lists (translation languages, TTS voices, chapters) must be scrollable: with a plain Column the
-            // items below the dialog edge were unreachable.
-            LazyColumn(Modifier.heightIn(max = 400.dp)) {
-                items(options) { (value, label) ->
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = Dimens.touch)
-                            .selectable(selected = value == selected, role = Role.RadioButton, onClick = { onSelect(value); onDismiss() }),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(selected = value == selected, onClick = null)
-                        Text(label, modifier = Modifier.padding(start = Dimens.m))
+            Column {
+                if (message != null) {
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = Dimens.s),
+                    )
+                }
+                // Long lists (translation languages, TTS voices, chapters) must be scrollable: with a plain Column the
+                // items below the dialog edge were unreachable.
+                LazyColumn(Modifier.heightIn(max = 400.dp)) {
+                    items(options) { (value, label) ->
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = Dimens.touch)
+                                .selectable(selected = value == selected, role = Role.RadioButton, onClick = { onSelect(value); onDismiss() }),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = value == selected, onClick = null)
+                            Text(label, modifier = Modifier.padding(start = Dimens.m))
+                        }
                     }
                 }
             }
@@ -292,6 +302,7 @@ fun PreferenceSlider(
     valueLabel: (Float) -> String,
     steps: Int = 0,
     icon: ImageVector? = null,
+    summary: String? = null,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s)) {
         // The thumb follows the finger in local state; the setting is written once, when the finger lifts. Writing on
@@ -301,6 +312,9 @@ fun PreferenceSlider(
             if (icon != null) PrefIcon(icon)
             Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             Text(valueLabel(local), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
+        if (!summary.isNullOrBlank()) {
+            Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         val haptic = rememberHaptic()
         Slider(
@@ -317,6 +331,15 @@ fun PreferenceSlider(
 @Composable
 fun <T> PreferenceChoice(title: String, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit, icon: ImageVector? = null, summary: String? = null) {
     var open by remember { mutableStateOf(false) }
-    PreferenceItem(title, summary ?: options.firstOrNull { it.first == selected }?.second, icon, onClick = { open = true })
-    if (open) ChoiceDialog(title, options, selected, onSelect) { open = false }
+    val current = options.firstOrNull { it.first == selected }?.second
+    // A description replaces the value under the title, so the value moves to the end of the row.
+    val trailing = if (summary != null && current != null) {
+        @Composable {
+            Text(current, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        }
+    } else {
+        null
+    }
+    PreferenceItem(title, summary ?: current, icon, onClick = { open = true }, trailing = trailing)
+    if (open) ChoiceDialog(title, options, selected, onSelect, onDismiss = { open = false })
 }

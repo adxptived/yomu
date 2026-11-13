@@ -21,7 +21,7 @@ class YouTubeSource(private val youtube: YouTubeClient) : CatalogSource {
     override val id: Long = SourceIds.generate("YouTube", "all")
     override val name = "YouTube"
     override val lang = "all"
-    override val content = SourceContent.BOOK
+    override val content = SourceContent.AUDIO
     override val supportsLatest = false
 
     private val russian get() = Locale.getDefault().language == "ru"
@@ -73,7 +73,7 @@ class YouTubeSource(private val youtube: YouTubeClient) : CatalogSource {
         },
         status = Status.COMPLETED,
         thumbnailUrl = r.thumbnailUrl,
-        type = SourceContent.BOOK,
+        type = SourceContent.AUDIO,
         links = listOf(SBookLink(r.url, MIME_AUDIO_STREAM)),
         initialized = true,
     )

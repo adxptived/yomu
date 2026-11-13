@@ -14,6 +14,8 @@
     <string name="audio_sleep_minutes">%1$d min</string>
     <string name="audio_sleep_left">%1$d min left</string>
     <string name="audio_play_error">Cannot play: %1$s</string>
+    <string name="audio_sign_in_hint">YouTube wants a signed-in device. Sign in under Settings → YouTube, then try again.</string>
+    <string name="audio_sign_in">Sign in</string>
     <string name="audio_origin_catalog">Catalog</string>
     <string name="audio_origin_podcast">Podcast</string>
     <string name="audio_origin_link">Link</string>

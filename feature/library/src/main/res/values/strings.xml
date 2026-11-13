@@ -49,6 +49,9 @@
     <string name="library_empty_text">Import books and comics from the device or find free books in the catalog.</string>
     <string name="library_nothing_found">Nothing found</string>
     <string name="library_details">Details</string>
+    <string name="library_read_book">Read</string>
+    <string name="library_select_action">Select</string>
+    <string name="library_status_action">Status: %1$s</string>
     <string name="format_books">Books</string>
     <string name="format_pdf">PDF</string>
     <string name="format_comics">Comics</string>
@@ -189,7 +192,7 @@
     <string name="library_batch_saved">Metadata updated</string>
     <string name="library_no_scan_folders">No scan folders yet: add one from the import menu</string>
     <string name="library_up_to_date">Library is up to date</string>
-    <string name="hint_library_select">Long-press a book to select several at once. Pull down to rescan your folders.</string>
+    <string name="hint_library_select">Tap a cover to read, a title for details. Long-press a book for actions and multi-select; pull down to rescan your folders.</string>
     <string name="library_remove_book">Remove from library</string>
     <string name="library_fast_scroll">Fast scroll</string>
     <plurals name="library_audio_videos">

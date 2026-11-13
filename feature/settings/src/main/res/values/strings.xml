@@ -98,7 +98,7 @@
     <string name="set_reader_gestures">Words and search</string>
     <string name="set_word_tap">Look up a word by</string>
     <string name="set_single_tap">Single tap</string>
-    <string name="set_double_tap">Double tap</string>
+    <string name="set_double_tap">Double tap in the middle</string>
     <string name="set_web_search">Web search</string>
     <string name="set_dictionary_app">External dictionary</string>
     <string name="set_dictionary_system">Ask each time</string>
@@ -107,6 +107,40 @@
     <string name="set_tts">Read aloud</string>
     <string name="set_tts_speed">Speech rate</string>
     <string name="set_tts_pitch">Pitch</string>
+
+    <string name="set_fullscreen_sum">Hide the system bars</string>
+    <string name="set_cutout_sum">Use the area around the camera cutout</string>
+    <string name="set_tap_turn_sum">Tap the sides of the page to turn it</string>
+    <string name="set_screen_timeout_sum">Keep the screen awake while you read</string>
+    <string name="set_orientation_sum">How the screen rotates in the reader</string>
+    <string name="set_autohide_sum">How long the menu stays after a tap</string>
+    <string name="set_font_size_sum">Size of the book text</string>
+    <string name="set_line_height_sum">Distance between lines</string>
+    <string name="set_margins_sum">Empty space on the left and on the right of the text</string>
+    <string name="set_reader_theme_sum">Paper and text colours</string>
+    <string name="set_chapter_buttons">Chapter buttons</string>
+    <string name="set_chapter_buttons_sum">“Previous chapter” and “Next chapter” in continuous scrolling. Off gives an uninterrupted text, like a PDF</string>
+    <string name="set_docx_pages">Word documents as printed pages</string>
+    <string name="set_docx_pages_sum">Open a DOCX in the page layout with margins, tables and images instead of reflowed text</string>
+    <string name="set_hyphenation_sum">Split long words at the end of a line</string>
+    <string name="set_highlight_words_sum">Underline words you saved in the dictionary</string>
+    <string name="set_word_tap_sum">A lookup opens a dictionary card for the word</string>
+    <string name="set_tts_speed_sum">How fast the voice reads</string>
+    <string name="set_tts_pitch_sum">Higher or lower voice</string>
+
+    <string name="set_profile">Profile</string>
+    <string name="set_profile_sum">Which blocks the overview shows</string>
+    <string name="set_profile_blocks">Overview blocks</string>
+    <string name="set_profile_stats">Statistics</string>
+    <string name="set_profile_stats_sum">Books finished, pages, streaks and other numbers</string>
+    <string name="set_profile_milestones">Milestones</string>
+    <string name="set_profile_milestones_sum">Reading time, streaks, books, pages and words levels</string>
+    <string name="set_profile_top">Most read</string>
+    <string name="set_profile_top_sum">The titles you read the most</string>
+    <string name="set_profile_recent">Recently read</string>
+    <string name="set_profile_recent_sum">The last few books and chapters</string>
+    <string name="set_profile_share">Share and transfer</string>
+    <string name="set_profile_share_sum">Statistics card, history CSV and a backup</string>
 
     <string name="set_manga">Manga and PDF</string>
     <string name="set_manga_sum">Direction, scaling, tap zones, OCR</string>
@@ -502,6 +536,21 @@
     <string name="set_sync_problem_migrate_folder">Migrate to a stable identity</string>
     <string name="set_sync_problem_publish_folder">Publish my version</string>
     <string name="set_sync_problem_accept_folder">Accept the other version</string>
+
+    <!-- YouTube sign-in (audiobooks and the YouTube catalog source) -->
+    <string name="set_youtube">YouTube</string>
+    <string name="set_youtube_sum">Account for audiobooks and streams</string>
+    <string name="set_youtube_hint">For some videos YouTube requires a signed-in device (“Sign in to confirm you’re not a bot”). Sign in here once: the player and downloads use the same session.</string>
+    <string name="set_youtube_account">Account</string>
+    <string name="set_youtube_signed_in">Signed in — YouTube accepts the session</string>
+    <string name="set_youtube_signed_in_as">Signed in as %1$s</string>
+    <string name="set_youtube_signed_out">Not signed in</string>
+    <string name="set_youtube_sign_in">Sign in to YouTube</string>
+    <string name="set_youtube_sign_in_sum">Opens Google’s sign-in page in the app’s browser</string>
+    <string name="set_youtube_sign_out">Sign out</string>
+    <string name="set_youtube_sign_out_sum">Removes the YouTube session from the browser; other sites keep their cookies</string>
+    <string name="set_youtube_sign_out_confirm">Sign out of YouTube? Videos that need an account stop playing until you sign in again.</string>
+    <string name="set_youtube_cookie_hint">After signing in, return here with ✓. The browser and the player share the same cookies, so you don’t sign in twice.</string>
 
     <!-- 2.0: tracking -->
     <string name="set_tracking">Tracking</string>

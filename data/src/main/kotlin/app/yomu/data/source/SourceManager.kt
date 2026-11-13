@@ -10,6 +10,7 @@ import app.yomu.data.audio.YouTubeSource
 import app.yomu.data.source.tachiyomi.TachiyomiSource
 import app.yomu.source.CatalogSource
 import app.yomu.source.ConfigurableSource
+import app.yomu.source.HttpSource
 import app.yomu.source.Source
 import app.yomu.source.SourceContent
 import app.yomu.sources.local.LocalSource
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -63,7 +65,11 @@ data class SourceInfo(
     val logo: String? = null,
     /** Hidden by the user, alone or with its whole extension: not listed in the catalog nor asked by global search. */
     val hidden: Boolean = false,
+    /** Home page of the source, when it has one (for "Open in browser"). */
+    val webUrl: String? = null,
 ) {
+    /** Serves audiobooks (YouTube videos and LibriVox recordings): shown as "Audiobooks" in the source list. */
+    val audio: Boolean get() = content == SourceContent.AUDIO
     enum class Kind { BUILT_IN, OPDS, LOCAL, EXTENSION }
 
     companion object {
@@ -148,6 +154,7 @@ class SourceManager(
                     icon = ext?.icon,
                     logo = if (ext == null) logoOf(s) else null,
                     hidden = s.id.toString() in hiddenSources || (ext != null && ext.pkg in hiddenExtensions),
+                    webUrl = (s.homeUrl ?: (s as? HttpSource)?.baseUrl)?.takeIf { it.isNotBlank() },
                 )
             }.onFailure { Timber.w(it, "Source info ${s.id}") }.getOrNull()
         }
@@ -255,6 +262,35 @@ class SourceManager(
 
     suspend fun setHidden(id: Long, hidden: Boolean) {
         settings.hiddenSources.update { if (hidden) it + id.toString() else it - id.toString() }
+    }
+
+    /** Bulk editor of the source list: pins, enables or hides many sources at once. */
+    suspend fun setPinned(ids: Collection<Long>, pinned: Boolean) {
+        if (ids.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            ensureRows(ids)
+            db.sources().setPinnedAll(ids.toList(), pinned)
+        }
+    }
+
+    suspend fun setEnabled(ids: Collection<Long>, enabled: Boolean) {
+        if (ids.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            ensureRows(ids)
+            db.sources().setEnabledAll(ids.toList(), enabled)
+        }
+    }
+
+    suspend fun setHidden(ids: Collection<Long>, hidden: Boolean) {
+        if (ids.isEmpty()) return
+        val keys = ids.map { it.toString() }.toSet()
+        settings.hiddenSources.update { if (hidden) it + keys else it - keys }
+    }
+
+    /** Rows for sources that were never pinned or disabled (built-ins have no row until the first change). */
+    private suspend fun ensureRows(ids: Collection<Long>) {
+        val existing = db.sources().all().mapTo(HashSet()) { it.id }
+        ids.filterNot { it in existing }.forEach { ensureRow(it) }
     }
 
     suspend fun setExtensionHidden(pkg: String, hidden: Boolean) {

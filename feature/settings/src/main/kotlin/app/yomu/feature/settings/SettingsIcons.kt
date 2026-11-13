@@ -153,6 +153,7 @@ internal fun settingIcon(title: Int): ImageVector? = when (title) {
     R.string.set_line_height -> Icons.Outlined.FormatLineSpacing
     R.string.set_margins -> Icons.Outlined.Margin
     R.string.set_paged -> Icons.Outlined.AutoStories
+    R.string.set_chapter_buttons -> Icons.AutoMirrored.Outlined.MenuBook
     R.string.set_hyphenation -> Icons.AutoMirrored.Outlined.WrapText
     R.string.set_publisher_styles -> Icons.Outlined.Style
     R.string.set_highlight_words -> Icons.Outlined.Highlight

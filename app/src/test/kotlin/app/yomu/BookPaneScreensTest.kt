@@ -62,9 +62,9 @@ class BookPaneScreensTest {
         return ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
     }
 
-    /** Skips onboarding (when this process has not passed it yet), imports a book with a cover and opens its details. */
+    /** Skips onboarding (when this process has not passed it yet) and imports a book with a cover. */
     @OptIn(ExperimentalTestApi::class)
-    private fun openDetails() {
+    private fun importBook(title: String, fileName: String) {
         compose.waitUntil(20_000) {
             listOf("Welcome to Yomu", "Library").any { compose.onAllNodes(hasText(it, substring = true)).fetchSemanticsNodes().isNotEmpty() }
         }
@@ -73,19 +73,24 @@ class BookPaneScreensTest {
             awaitText("Where are your books?")
             compose.onAllNodesWithText("Skip")[0].performClick()
         }
-        val epub = File(compose.activity.cacheDir, "tide.epub")
-        EpubBuilder(EpubMeta(title = "The Tide Archive", authors = listOf("Mara Ellison"), language = "en")).apply {
+        val epub = File(compose.activity.cacheDir, fileName)
+        EpubBuilder(EpubMeta(title = title, authors = listOf("Mara Ellison"), language = "en")).apply {
             coverHref = addResource("cover.png", "image/png", cover())
             addChapter("Chapter 1", "<p>The sea kept its own records.</p>")
             addChapter("Chapter 2", "<p>Low tide.</p>")
         }.writeTo(epub)
-        val outcome = runBlocking { GlobalContext.get().get<ImportService>().importLocalFile(epub, "tide.epub") }
+        val outcome = runBlocking { GlobalContext.get().get<ImportService>().importLocalFile(epub, fileName) }
         assertTrue("import failed: $outcome", outcome is ImportOutcome.Added)
-        awaitText("The Tide Archive")
+        awaitText(title)
         compose.mainClock.advanceTimeBy(1_000)
+    }
+
+    /** A long press opens the book's actions; Details opens the page. */
+    private fun openDetails() {
+        importBook("The Tide Archive", "tide.epub")
         compose.onAllNodesWithText("The Tide Archive")[0].performTouchInput { longClick() }
         compose.waitForIdle()
-        compose.onAllNodes(hasContentDescription("Details"))[0].performClick()
+        compose.onAllNodesWithText("Details")[0].performClick()
         awaitText("Mara Ellison")
     }
 
@@ -101,5 +106,17 @@ class BookPaneScreensTest {
     fun phoneDetailsTintedByCover() {
         openDetails()
         shot("311_details_cover_tint")
+    }
+
+    /** The title of a library tile opens the details; the cover is the way into the book. */
+    @Test
+    @Config(qualifiers = "w411dp-h891dp-xxhdpi")
+    fun titleOpensDetails() {
+        importBook("The Title Target", "title-target.epub")
+        // The title also appears in the "Continue reading" card above the grid; the grid tile is the last one.
+        val titles = compose.onAllNodesWithText("The Title Target")
+        titles[titles.fetchSemanticsNodes().lastIndex].performClick()
+        awaitText("Mara Ellison")
+        shot("312_details_from_title")
     }
 }

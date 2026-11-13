@@ -1,18 +1,26 @@
 package app.yomu.feature.library
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,6 +41,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.dp
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.domain.model.BatchMetadata
 import app.yomu.domain.model.BatchOrder
@@ -65,6 +74,7 @@ internal fun BatchMetadataDialog(books: List<Book>, onDismiss: () -> Unit, onApp
     var numberFrom by rememberSaveable { mutableStateOf("1") }
     var bySelection by rememberSaveable { mutableStateOf(false) }
     var status by rememberSaveable { mutableStateOf<ReadingStatus?>(null) }
+    var statusOpen by remember { mutableStateOf(false) }
     var addTags by rememberSaveable { mutableStateOf("") }
     var removeTags by rememberSaveable { mutableStateOf(emptySet<String>()) }
 
@@ -118,11 +128,28 @@ internal fun BatchMetadataDialog(books: List<Book>, onDismiss: () -> Unit, onApp
                         modifier = Modifier.weight(1.6f),
                     )
                 }
-                Text(stringResource(R.string.library_batch_status), style = MaterialTheme.typography.titleSmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
-                    FilterChip(selected = status == null, onClick = { status = null }, label = { Text(stringResource(R.string.library_batch_keep)) })
-                    ReadingStatus.entries.forEach { st ->
-                        FilterChip(selected = status == st, onClick = { status = st }, label = { Text(stringResource(st.label())) })
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
+                    Text(stringResource(R.string.library_batch_status), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    Box {
+                        AssistChip(
+                            onClick = { statusOpen = true },
+                            label = { Text(stringResource(status?.label() ?: R.string.library_batch_keep)) },
+                            trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null) },
+                        )
+                        DropdownMenu(expanded = statusOpen, onDismissRequest = { statusOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.library_batch_keep)) },
+                                leadingIcon = { if (status == null) Icon(Icons.Filled.Check, null) else Spacer(Modifier.width(24.dp)) },
+                                onClick = { statusOpen = false; status = null },
+                            )
+                            ReadingStatus.entries.forEach { st ->
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(st.label())) },
+                                    leadingIcon = { if (status == st) Icon(Icons.Filled.Check, null) else Spacer(Modifier.width(24.dp)) },
+                                    onClick = { statusOpen = false; status = st },
+                                )
+                            }
+                        }
                     }
                 }
                 Text(stringResource(R.string.library_batch_tags), style = MaterialTheme.typography.titleSmall)

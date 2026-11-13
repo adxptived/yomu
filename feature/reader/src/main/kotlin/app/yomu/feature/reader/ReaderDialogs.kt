@@ -231,7 +231,13 @@ internal fun TtsSheet(vm: ReaderViewModel, common: CommonReaderSettings, onDismi
         Spacer(Modifier.height(24.dp))
     }
     if (voicesOpen) {
-        val voices = remember { vm.ttsVoices() }
+        // The engine starts here: before the first playback it has not listed its voices yet.
+        var voices by remember { mutableStateOf<List<Voice>>(emptyList()) }
+        var loading by remember { mutableStateOf(true) }
+        LaunchedEffect(Unit) {
+            voices = vm.ttsVoices()
+            loading = false
+        }
         val options: List<Pair<String?, String>> = listOf<Pair<String?, String>>(null to stringResource(R.string.tts_voice_default)) +
             voices.map { it.name to voiceLabel(it) }
         ChoiceDialog(
@@ -240,6 +246,11 @@ internal fun TtsSheet(vm: ReaderViewModel, common: CommonReaderSettings, onDismi
             selected = common.ttsVoice,
             onSelect = { v -> vm.updateCommon { it.copy(ttsVoice = v) }; voicesOpen = false },
             onDismiss = { voicesOpen = false },
+            message = when {
+                loading -> stringResource(R.string.tts_voices_loading)
+                voices.isEmpty() -> stringResource(R.string.tts_voices_none)
+                else -> null
+            },
         )
     }
 }

@@ -3,6 +3,7 @@ package app.yomu.feature.catalog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -23,13 +25,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
@@ -37,19 +43,24 @@ import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RssFeed
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CollectionsBookmark
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.NewReleases
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -74,6 +85,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -83,6 +95,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -129,6 +144,7 @@ import app.yomu.domain.catalog.SourceListFilter
 import app.yomu.domain.catalog.SourceSortMode
 import app.yomu.domain.model.BookCollection
 import app.yomu.domain.model.CatalogEntry
+import app.yomu.source.SourceContent
 import app.yomu.core.ui.R as CoreR
 
 private enum class HomeTab { SOURCES, LIBRARY, UPDATES, HISTORY }
@@ -144,6 +160,8 @@ fun CatalogScreen(
     onGlobalSearch: () -> Unit,
     onOpenExtensions: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenWebView: (String) -> Unit = {},
+    onOpenSourceSettings: (Long) -> Unit = {},
 ) {
     val ready by viewModel.ready.collectAsStateWithLifecycle()
     val sources by viewModel.sourceList.collectAsStateWithLifecycle()
@@ -163,12 +181,16 @@ fun CatalogScreen(
     val updates by viewModel.updates.collectAsStateWithLifecycle()
     val history by viewModel.history.collectAsStateWithLifecycle()
     val newCount by viewModel.newCount.collectAsStateWithLifecycle()
+    val extensionUpdates by viewModel.extensionUpdates.collectAsStateWithLifecycle()
     val incognito by viewModel.incognito.collectAsStateWithLifecycle()
 
     val snackbar = remember { SnackbarHostState() }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var showMenu by remember { mutableStateOf(false) }
     var showAddOpds by remember { mutableStateOf(false) }
+    // Pencil of the Sources tab: pick many sources and pin, enable or hide them at once.
+    var editingSources by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(tab) { if (HomeTab.entries[tab] != HomeTab.SOURCES) editingSources = false }
     val pickFolder =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(viewModel::configureLocal) }
 
@@ -180,6 +202,25 @@ fun CatalogScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.catalog_title)) },
                 actions = {
+                    BadgedBox(
+                        badge = {
+                            if (extensionUpdates > 0) {
+                                Badge(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) {
+                                    Text(extensionUpdates.coerceAtMost(99).toString())
+                                }
+                            }
+                        },
+                    ) {
+                        IconButton(onClick = onOpenExtensions) { Icon(Icons.Filled.Extension, stringResource(R.string.ext_title)) }
+                    }
+                    if (HomeTab.entries[tab] == HomeTab.SOURCES) {
+                        IconButton(onClick = { editingSources = !editingSources }) {
+                            Icon(
+                                if (editingSources) Icons.Filled.Check else Icons.Outlined.Edit,
+                                stringResource(if (editingSources) R.string.source_bulk_done else R.string.source_bulk_edit),
+                            )
+                        }
+                    }
                     IconButton(onClick = onGlobalSearch) { Icon(Icons.Filled.Search, stringResource(R.string.global_search)) }
                     IconButton(onClick = { viewModel.setIncognito(!incognito) }) {
                         Icon(
@@ -190,11 +231,6 @@ fun CatalogScreen(
                     Box {
                         IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, stringResource(CoreR.string.more)) }
                         DropdownMenu(showMenu, onDismissRequest = { showMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.ext_title)) },
-                                leadingIcon = { Icon(Icons.Filled.Extension, null) },
-                                onClick = { showMenu = false; onOpenExtensions() },
-                            )
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.catalog_downloads)) },
                                 leadingIcon = { Icon(Icons.Filled.Download, null) },
@@ -268,6 +304,9 @@ fun CatalogScreen(
                     onAddOpds = { showAddOpds = true },
                     onPickFolder = { pickFolder.launch(null) },
                     onOpenExtensions = onOpenExtensions,
+                    onOpenWebView = onOpenWebView,
+                    onOpenSourceSettings = onOpenSourceSettings,
+                    editing = editingSources,
                 )
                 HomeTab.LIBRARY -> LibraryTab(favorites, libraryTotal, libraryDisplay, tabs, tabMembers, viewModel, onOpenTitle, onBrowse = { tab = 0 })
                 HomeTab.UPDATES -> FeedTab(
@@ -339,11 +378,18 @@ private fun SourcesTab(
     onAddOpds: () -> Unit,
     onPickFolder: () -> Unit,
     onOpenExtensions: () -> Unit,
+    onOpenWebView: (String) -> Unit,
+    onOpenSourceSettings: (Long) -> Unit,
+    editing: Boolean,
 ) {
     var menuFor by remember { mutableStateOf<SourceInfo?>(null) }
     var removeFor by remember { mutableStateOf<SourceInfo?>(null) }
     var showFilters by remember { mutableStateOf(false) }
     var showLanguages by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var showBulk by remember { mutableStateOf(false) }
+    LaunchedEffect(editing) { if (!editing) { selected = emptySet(); showBulk = false } }
+    fun toggle(id: Long) { selected = if (id in selected) selected - id else selected + id }
     if (!ready && sources.isEmpty() && query.isEmpty()) {
         SkeletonList(Modifier.fillMaxSize())
         return
@@ -402,13 +448,20 @@ private fun SourcesTab(
                 )
             }
         }
+        if (editing && sources.isNotEmpty()) {
+            item(key = "bulk-bar") { SourceBulkBar(selected.size, onSelectAll = { selected = sources.map { it.id }.toSet() }, onClear = { selected = emptySet() }, onActions = { showBulk = true }, modifier = Modifier.animateItem()) }
+        }
         val row: @Composable LazyItemScope.(SourceInfo) -> Unit = { s ->
             SourceRow(
                 s = s,
                 health = health[s.id],
-                onOpen = { onOpenSource(s) },
+                editing = editing,
+                selected = s.id in selected,
+                onOpen = { if (editing) toggle(s.id) else onOpenSource(s) },
                 onMenu = { menuFor = s },
                 onPin = { viewModel.setPinned(s.id, !s.pinned) },
+                onFilterContent = { c -> viewModel.updateSourceFilter { it.copy(content = it.content.toggled(c.name)) } },
+                onFilterKind = { k -> viewModel.updateSourceFilter { it.copy(kinds = it.kinds.toggled(k.name)) } },
                 modifier = Modifier.animateItem(),
             )
         }
@@ -426,14 +479,6 @@ private fun SourcesTab(
                 modifier = Modifier.clickable(onClick = onAddOpds),
             )
         }
-        item(key = "extensions") {
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.ext_title)) },
-                supportingContent = { Text(stringResource(R.string.ext_hint)) },
-                leadingContent = { Icon(Icons.Filled.Extension, null) },
-                modifier = Modifier.clickable(onClick = onOpenExtensions),
-            )
-        }
     }
 
     if (showFilters) {
@@ -442,6 +487,10 @@ private fun SourcesTab(
             sort = sort,
             onSort = { viewModel.setSourceSort(it) },
             onUpdate = { viewModel.updateSourceFilter(it) },
+            onUnhideAll = {
+                viewModel.unhideAllSources()
+                showFilters = false
+            },
             onDismiss = { showFilters = false },
         )
     }
@@ -459,6 +508,18 @@ private fun SourcesTab(
     menuFor?.let { s ->
         YomuSheet(onDismiss = { menuFor = null }) {
             SheetTitle(s.name)
+            s.webUrl?.let { url ->
+                SheetAction(Icons.Filled.OpenInBrowser, stringResource(R.string.source_open_browser)) {
+                    menuFor = null
+                    onOpenWebView(url)
+                }
+            }
+            if (s.hasSettings) {
+                SheetAction(Icons.Outlined.Tune, stringResource(R.string.source_settings)) {
+                    menuFor = null
+                    onOpenSourceSettings(s.id)
+                }
+            }
             SheetAction(if (s.pinned) Icons.Outlined.PushPin else Icons.Filled.PushPin, stringResource(if (s.pinned) R.string.source_unpin else R.string.source_pin)) {
                 viewModel.setPinned(s.id, !s.pinned); menuFor = null
             }
@@ -491,22 +552,74 @@ private fun SourcesTab(
             onDismiss = { removeFor = null },
         )
     }
+    if (showBulk) {
+        YomuSheet(onDismiss = { showBulk = false }) {
+            SheetTitle(stringResource(R.string.source_bulk_title, selected.size))
+            fun applyToSelection(block: (Set<Long>) -> Unit) { block(selected); selected = emptySet(); showBulk = false }
+            SheetAction(Icons.Filled.PushPin, stringResource(R.string.source_bulk_pin)) {
+                applyToSelection { viewModel.setPinned(it, true) }
+            }
+            SheetAction(Icons.Outlined.PushPin, stringResource(R.string.source_bulk_unpin)) {
+                applyToSelection { viewModel.setPinned(it, false) }
+            }
+            SheetAction(Icons.Outlined.CheckCircle, stringResource(R.string.source_bulk_enable)) {
+                applyToSelection { viewModel.setEnabled(it, true) }
+            }
+            SheetAction(Icons.Outlined.Block, stringResource(R.string.source_bulk_disable)) {
+                applyToSelection { viewModel.setEnabled(it, false) }
+            }
+            SheetAction(Icons.Outlined.VisibilityOff, stringResource(R.string.source_bulk_hide)) {
+                applyToSelection { viewModel.setHidden(it, true) }
+            }
+            SheetAction(Icons.Outlined.Visibility, stringResource(R.string.source_bulk_show)) {
+                applyToSelection { viewModel.setHidden(it, false) }
+            }
+            val extensionsToHide = sources
+                .filter { it.id in selected && it.extensionPkg != null }
+                .mapNotNull { s -> s.extensionPkg?.let { it to (s.extensionName ?: it) } }
+                .distinctBy { it.first }
+            extensionsToHide.forEach { (pkg, name) ->
+                SheetAction(Icons.Outlined.VisibilityOff, stringResource(R.string.source_hide_extension, name)) {
+                    viewModel.setExtensionHidden(pkg, true)
+                    selected = emptySet()
+                    showBulk = false
+                }
+            }
+        }
+    }
+}
+
+/** "Select all / Actions" row of the source bulk editor. */
+@Composable
+private fun SourceBulkBar(selected: Int, onSelectAll: () -> Unit, onClear: () -> Unit, onActions: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Dimens.xs),
+    ) {
+        Text(stringResource(R.string.source_bulk_selected, selected), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        TextButton(onClick = onSelectAll) { Text(stringResource(R.string.source_bulk_select_all)) }
+        TextButton(onClick = onClear) { Text(stringResource(R.string.source_bulk_clear)) }
+        TextButton(onClick = onActions, enabled = selected > 0) { Text(stringResource(R.string.source_bulk_actions)) }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SourceRow(s: SourceInfo, health: SourceHealth?, onOpen: () -> Unit, onMenu: () -> Unit, onPin: () -> Unit, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val kind = when (s.kind) {
-        SourceInfo.Kind.OPDS -> "OPDS"
-        SourceInfo.Kind.LOCAL -> stringResource(R.string.source_kind_local)
-        SourceInfo.Kind.BUILT_IN, SourceInfo.Kind.EXTENSION -> null
-    }
+private fun SourceRow(
+    s: SourceInfo,
+    health: SourceHealth?,
+    editing: Boolean,
+    selected: Boolean,
+    onOpen: () -> Unit,
+    onMenu: () -> Unit,
+    onPin: () -> Unit,
+    onFilterContent: (SourceContent) -> Unit,
+    onFilterKind: (SourceInfo.Kind) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val details = listOfNotNull(
         s.lang.takeIf { it.isNotBlank() && s.kind != SourceInfo.Kind.LOCAL }?.let { langLabel(it, single = true) },
-        contentLabel(context, s.content),
-        kind,
-        if (s.isNsfw) stringResource(R.string.ext_nsfw) else null,
         if (!s.enabled) stringResource(R.string.source_disabled) else null,
         if (s.hidden) stringResource(R.string.source_hidden) else null,
     )
@@ -519,35 +632,96 @@ private fun SourceRow(s: SourceInfo, health: SourceHealth?, onOpen: () -> Unit, 
     ListItem(
         headlineContent = { Text(s.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
-            Text(
-                buildAnnotatedString {
-                    append(details.joinToString(" · "))
-                    if (warning != null) {
-                        if (details.isNotEmpty()) append(" · ")
-                        withStyle(SpanStyle(color = errorColor)) { append(warning) }
+            Column(verticalArrangement = Arrangement.spacedBy(Dimens.xxs)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Dimens.xs), verticalAlignment = Alignment.CenterVertically) {
+                    SourceContentBadge(s) { onFilterContent(s.content) }
+                    SourceKindBadge(s.kind) { onFilterKind(s.kind) }
+                    if (s.isNsfw) {
+                        SourceBadge(stringResource(R.string.ext_nsfw), MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
                     }
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+                }
+                if (details.isNotEmpty() || warning != null) {
+                    Text(
+                        buildAnnotatedString {
+                            append(details.joinToString(" · "))
+                            if (warning != null) {
+                                if (details.isNotEmpty()) append(" · ")
+                                withStyle(SpanStyle(color = errorColor)) { append(warning) }
+                            }
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         },
         leadingContent = { SourceIcon(s) },
         trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onPin) {
-                    Icon(
-                        if (s.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
-                        stringResource(if (s.pinned) R.string.source_unpin else R.string.source_pin),
-                        tint = if (s.pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+            if (editing) {
+                Checkbox(checked = selected, onCheckedChange = null)
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onPin) {
+                        Icon(
+                            if (s.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                            stringResource(if (s.pinned) R.string.source_unpin else R.string.source_pin),
+                            tint = if (s.pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(onClick = onMenu) { Icon(Icons.Filled.MoreVert, stringResource(CoreR.string.more)) }
                 }
-                IconButton(onClick = onMenu) { Icon(Icons.Filled.MoreVert, stringResource(CoreR.string.more)) }
             }
         },
         modifier = modifier
+            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f) else Color.Transparent)
             .alpha(if (s.enabled && !s.hidden) 1f else 0.55f)
-            .combinedClickable(onClick = onOpen, onLongClick = onMenu),
+            .combinedClickable(onClick = onOpen, onLongClick = if (editing) onOpen else onMenu),
     )
+}
+
+/** "Manga" / "Novels" / "Books" / "Audiobooks" in a colour of its own: the kind of a source is seen at once. */
+@Composable
+private fun SourceContentBadge(s: SourceInfo, onClick: (() -> Unit)? = null) {
+    val (label, icon) = when {
+        s.audio -> stringResource(R.string.content_audiobooks) to Icons.Filled.Headphones
+        s.content == SourceContent.MANGA -> contentLabel(LocalContext.current, s.content) to Icons.Outlined.AutoStories
+        s.content == SourceContent.NOVEL -> contentLabel(LocalContext.current, s.content) to Icons.AutoMirrored.Outlined.Article
+        else -> contentLabel(LocalContext.current, s.content) to Icons.AutoMirrored.Outlined.MenuBook
+    }
+    val (container, content) = when {
+        s.audio -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+        s.content == SourceContent.MANGA -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
+        s.content == SourceContent.NOVEL -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+    }
+    SourceBadge(label, container, content, icon, onClick)
+}
+
+@Composable
+private fun SourceKindBadge(kind: SourceInfo.Kind, onClick: (() -> Unit)? = null) {
+    val label = when (kind) {
+        SourceInfo.Kind.BUILT_IN -> stringResource(R.string.source_kind_builtin)
+        SourceInfo.Kind.EXTENSION -> stringResource(R.string.source_kind_extension)
+        SourceInfo.Kind.OPDS -> "OPDS"
+        SourceInfo.Kind.LOCAL -> stringResource(R.string.source_kind_local)
+    }
+    SourceBadge(label, MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.colorScheme.onSurfaceVariant, onClick = onClick)
+}
+
+@Composable
+private fun SourceBadge(text: String, container: Color, content: Color, icon: ImageVector? = null, onClick: (() -> Unit)? = null) {
+    Row(
+        Modifier.clip(RoundedCornerShape(50)).background(container)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        if (icon != null) Icon(icon, null, Modifier.size(12.dp), tint = content)
+        Text(text, style = MaterialTheme.typography.labelSmall, color = content, maxLines = 1)
+    }
 }
 
 @Composable

@@ -49,6 +49,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -99,8 +100,10 @@ import app.yomu.domain.model.CustomAction
 import app.yomu.domain.model.SelectionAction
 import app.yomu.feature.annotations.icon
 import app.yomu.feature.annotations.label
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -123,6 +126,7 @@ internal fun SliderSettingRow(
     steps: Int = 0,
     label: (Float) -> String,
     icon: ImageVector? = null,
+    summary: String? = null,
     onCommit: (Float) -> Unit,
 ) {
     var local by remember(value) { mutableFloatStateOf(value) }
@@ -138,6 +142,9 @@ internal fun SliderSettingRow(
                 Text(label(local), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             }
             Slider(value = local, onValueChange = { local = it }, valueRange = range, steps = steps, onValueChangeFinished = { onCommit(local) })
+            if (!summary.isNullOrBlank()) {
+                Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -447,19 +454,23 @@ internal fun ColumnScope.SecuritySection(vm: SettingsViewModel) {
     SwitchPref(vm, s.secureScreen, R.string.set_secure_screen, R.string.set_secure_screen_sum)
     if (setPin) {
         PinSetupDialog(onDismiss = { setPin = false }) { p ->
-            vm.set(s.pinHash, PinHasher.hash(p)) { s.appLock.set(true) }
+            // 600 000 PBKDF2 rounds take hundreds of milliseconds: computing them in the click handler froze the UI.
+            val hash = withContext(Dispatchers.Default) { PinHasher.hash(p) }
+            vm.set(s.pinHash, hash) { s.appLock.set(true) }
             setPin = false
         }
     }
 }
 
 @Composable
-private fun PinSetupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+private fun PinSetupDialog(onDismiss: () -> Unit, onConfirm: suspend (String) -> Unit) {
     var first by remember { mutableStateOf("") }
     var second by remember { mutableStateOf("") }
+    var saving by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val valid = first.length >= 6 && first == second
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!saving) onDismiss() },
         title = { Text(stringResource(R.string.set_pin_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.s)) {
@@ -468,11 +479,26 @@ private fun PinSetupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
                 OutlinedTextField(second, { v -> second = v.filter { it.isDigit() }.take(12) }, label = { Text(stringResource(R.string.set_pin_repeat)) }, singleLine = true,
                     isError = second.isNotEmpty() && second != first.take(second.length),
                     visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), modifier = Modifier.fillMaxWidth())
+                if (saving) LinearProgressIndicator(Modifier.fillMaxWidth())
                 Text(stringResource(R.string.set_pin_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
-        confirmButton = { TextButton(enabled = valid, onClick = { onConfirm(first) }) { Text(stringResource(CoreR.string.save)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(CoreR.string.cancel)) } },
+        confirmButton = {
+            TextButton(
+                enabled = valid && !saving,
+                onClick = {
+                    saving = true
+                    scope.launch {
+                        try {
+                            onConfirm(first)
+                        } finally {
+                            saving = false
+                        }
+                    }
+                },
+            ) { Text(stringResource(CoreR.string.save)) }
+        },
+        dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text(stringResource(CoreR.string.cancel)) } },
     )
 }
 
@@ -511,7 +537,9 @@ fun AppLockScreen(settings: AppSettings, onUnlocked: () -> Unit) {
         if (checking) return
         checking = true
         try {
-            if (PinHasher.verify(value, settings.pinHash.get())) {
+            val stored = settings.pinHash.get()
+            // 600 000 PBKDF2 rounds are hundreds of milliseconds on a slow device: never on the main thread.
+            if (withContext(Dispatchers.Default) { PinHasher.verify(value, stored) }) {
                 onUnlocked()
             } else {
                 error = true
@@ -541,12 +569,14 @@ fun AppLockScreen(settings: AppSettings, onUnlocked: () -> Unit) {
                     Box(Modifier.size(14.dp).background(if (i < pin.length) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape))
                 }
             }
+            // The check runs off the main thread; this line tells the user that the PIN is being checked.
+            if (checking) LinearProgressIndicator(Modifier.fillMaxWidth(0.4f).padding(bottom = Dimens.m))
             val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "bio", "0", "del")
             keys.chunked(3).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(Dimens.l), modifier = Modifier.padding(vertical = Dimens.xs)) {
                     row.forEach { k ->
                         Box(
-                            Modifier.size(72.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape).clickable(enabled = k != "bio" || (bio && canBio)) {
+                            Modifier.size(72.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape).clickable(enabled = !checking && (k != "bio" || (bio && canBio))) {
                                 error = false
                                 when (k) {
                                     "del" -> pin = pin.dropLast(1)
@@ -570,7 +600,7 @@ fun AppLockScreen(settings: AppSettings, onUnlocked: () -> Unit) {
                     }
                 }
             }
-            TextButton(onClick = { submit() }, enabled = pin.length >= 4, modifier = Modifier.padding(top = Dimens.l)) { Text(stringResource(CoreR.string.ok)) }
+            TextButton(onClick = { submit() }, enabled = pin.length >= 4 && !checking, modifier = Modifier.padding(top = Dimens.l)) { Text(stringResource(CoreR.string.ok)) }
         }
     }
 }
