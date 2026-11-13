@@ -58,7 +58,8 @@ internal fun BookFontDialog(current: String, vm: ReaderViewModel, onDismiss: () 
     val fontsDir = remember { File(context.filesDir, "fonts").apply { mkdirs() } }
     var custom by remember { mutableStateOf(fontsDir.listFiles()?.map { it.name }?.sorted().orEmpty()) }
     var query by remember { mutableStateOf("") }
-    var message by remember { mutableStateOf<String?>(null) }
+    // A message as a string resource (and an optional format argument), resolved by Compose at render time.
+    var message by remember { mutableStateOf<Pair<Int, String?>?>(null) }
     val sample = stringResource(R.string.rs_font_sample)
     val importFont = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -72,10 +73,10 @@ internal fun BookFontDialog(current: String, vm: ReaderViewModel, onDismiss: () 
         if (ok) {
             custom = fontsDir.listFiles()?.map { it.name }?.sorted().orEmpty()
             vm.updateText { it.copy(fontFamily = name) }
-            message = context.getString(R.string.rs_font_imported, name)
+            message = R.string.rs_font_imported to name
         } else {
             target.delete()
-            message = context.getString(R.string.rs_font_import_failed)
+            message = R.string.rs_font_import_failed to null
         }
     }
     val all = ReaderCss.BUILT_IN_FONTS + custom
@@ -87,8 +88,9 @@ internal fun BookFontDialog(current: String, vm: ReaderViewModel, onDismiss: () 
         text = {
             Column {
                 SearchField(query = query, onQueryChange = { query = it }, placeholder = stringResource(R.string.rs_font_search))
-                message?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Dimens.s))
+                message?.let { (res, arg) ->
+                    val text = if (arg != null) stringResource(res, arg) else stringResource(res)
+                    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Dimens.s))
                 }
                 LazyColumn(Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 360.dp).padding(top = Dimens.s)) {
                     items(shown) { name ->
@@ -110,7 +112,7 @@ internal fun BookFontDialog(current: String, vm: ReaderViewModel, onDismiss: () 
                                 IconButton(onClick = {
                                     vm.deleteFont(name)
                                     custom = custom - name
-                                    message = context.getString(R.string.rs_font_deleted)
+                                    message = R.string.rs_font_deleted to null
                                 }) { Icon(Icons.Default.Delete, deleteLabel, tint = MaterialTheme.colorScheme.error) }
                             }
                         }
