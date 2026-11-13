@@ -231,7 +231,7 @@ class ReaderViewModel(
     fun setLandscape(value: Boolean) { landscape.value = value }
 
     private fun textColumns(s: TextReaderSettings, wide: Boolean): Int =
-        if (s.dualPageLandscape && wide && s.paged && !s.verticalText) 2 else 1
+        if (s.dualPageLandscape && wide && s.paged && !s.verticalText && !s.longStrip) 2 else 1
 
     /** Re-emits once a minute so a night schedule switches without reopening the reader. */
     private val minuteTick = MutableStateFlow(0L)
@@ -1568,22 +1568,6 @@ class ReaderViewModel(
         _canUndo.value = undo.isNotEmpty()
     }
 
-    /**
-     * Returns the settings of the open book to [text], [manga], [pdf] and [common], as they were when the settings sheet
-     * opened ("Cancel"). The undo journal stays, so the change can still be taken back after closing.
-     */
-    fun revertSettings(
-        text: TextReaderSettings? = null,
-        manga: MangaSettings? = null,
-        pdf: PdfSettings? = null,
-        common: CommonReaderSettings? = null,
-    ) = viewModelScope.launch(ScreenErrors) {
-        text?.let { writeText(it) }
-        manga?.let { writeManga(it) }
-        pdf?.let { writePdf(it) }
-        common?.let { settings.commonReader.set(it) }
-    }
-
     /** Removes an imported font; the current font and saved presets that use it fall back to the serif face. */
     fun deleteFont(name: String) = viewModelScope.launch(ScreenErrors) {
         val dir = File(context.filesDir, "fonts")
@@ -1881,7 +1865,7 @@ class ReaderViewModel(
             while (isActive) {
                 val speed = common.value.autoScrollSpeed.coerceIn(1, 100)
                 when (val c = current()) {
-                    is ReaderContent.Text -> if (textSettings.value.paged && !textSettings.value.verticalText) {
+                    is ReaderContent.Text -> if (textSettings.value.paged && !textSettings.value.verticalText && !textSettings.value.longStrip) {
                         delay(pageInterval(speed))
                         c.controller.next()
                     } else {

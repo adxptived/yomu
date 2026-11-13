@@ -45,6 +45,8 @@
     <string name="set_grid">Сетка обложек</string>
     <string name="set_columns">Столбцов в сетке</string>
     <string name="set_show_continue">Показывать «Продолжить чтение»</string>
+    <string name="set_catalog_shelf">Ряд «Из каталога»</string>
+    <string name="set_catalog_shelf_sum">Онлайн-тайтлы под книгами; ряд можно скрыть или переместить из него самого</string>
     <string name="set_hide_covers">Скрывать обложки</string>
     <string name="set_hide_covers_sum">Вместо обложек показывать цветную заглушку с названием — в библиотеке, каталоге, истории и виджете</string>
     <string name="set_import_mode">При импорте файлов</string>

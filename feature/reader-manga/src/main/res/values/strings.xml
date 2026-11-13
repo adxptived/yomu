@@ -34,8 +34,8 @@
     <string name="mr_animation_sum">Off: taps and keys turn pages instantly</string>
     <string name="mr_crop">Crop white borders</string>
     <string name="mr_page_number">Page number</string>
-    <string name="mr_zoom_lock">Lock zoom</string>
-    <string name="mr_zoom_lock_summary">Open the next pages at the current zoom</string>
+    <string name="mr_zoom_lock">Lock view</string>
+    <string name="mr_zoom_lock_summary">Keep this zoom and stop page turns; only scrolling moves the page</string>
     <string name="mr_preload">Pages loaded ahead</string>
     <string name="mr_webtoon_padding">Side margins</string>
     <string name="mr_webtoon_gaps">Gaps between pages</string>

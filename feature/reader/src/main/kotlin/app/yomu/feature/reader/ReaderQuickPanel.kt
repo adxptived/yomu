@@ -134,11 +134,16 @@ private fun TextQuick(s: TextReaderSettings, vm: ReaderViewModel) {
         modifier = Modifier.padding(start = Dimens.l, top = Dimens.s),
     )
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs)) {
-        val options = listOf(true to R.string.rs_mode_paged, false to R.string.rs_mode_scroll)
-        options.forEachIndexed { i, (paged, label) ->
+        val mode = when {
+            s.longStrip -> 2
+            s.paged -> 0
+            else -> 1
+        }
+        val options = listOf(R.string.rs_mode_paged, R.string.rs_mode_scroll, R.string.rs_mode_strip)
+        options.forEachIndexed { i, label ->
             SegmentedButton(
-                selected = s.paged == paged,
-                onClick = { vm.updateText { it.copy(paged = paged) } },
+                selected = mode == i,
+                onClick = { vm.updateText { it.copy(paged = i != 1, longStrip = i == 2) } },
                 shape = SegmentedButtonDefaults.itemShape(i, options.size),
             ) { Text(stringResource(label)) }
         }

@@ -104,11 +104,14 @@ private fun ScrollView(controller: PdfController, listener: PdfListener) {
     LaunchedEffect(state) {
         snapshotFlow { state.firstVisibleItemIndex }.distinctUntilChanged().collect { controller.page = it; listener.onPageChanged(it) }
     }
-    BoxWithConstraints(Modifier.fillMaxSize().pinchToZoom { factor -> zoom = (zoom * factor).coerceIn(1f, 4f) }) {
+    BoxWithConstraints(Modifier.fillMaxSize().pinchToZoom { factor ->
+        // Locked, the scroll view keeps the scale the user chose: only vertical scrolling remains.
+        if (!controller.settings.zoomLock) zoom = (zoom * factor).coerceIn(1f, 4f)
+    }) {
         val width = maxWidth * zoom
         LazyColumn(
             state = state,
-            modifier = Modifier.fillMaxHeight().horizontalScroll(hScroll, enabled = zoom > 1.01f).width(width),
+            modifier = Modifier.fillMaxHeight().horizontalScroll(hScroll, enabled = zoom > 1.01f && !controller.settings.zoomLock).width(width),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             items(controller.pageCount, key = { it }) { index ->
@@ -130,7 +133,8 @@ private fun PagedView(controller: PdfController, listener: PdfListener, dual: Bo
             listener.onPageChanged(page)
         }
     }
-    HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { p ->
+    // A locked page keeps its position: swiping must not turn the page while the zoom stays as the user set it.
+    HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !controller.settings.zoomLock) { p ->
         val zoomState = rememberZoomableState(zoomSpec = ZoomSpec(maximum = ZoomLimit(factor = 5f)))
         if (controller.settings.zoomLock) {
             // The page under the finger records its zoom; every page that comes into view opens at that level.

@@ -37,6 +37,8 @@ data class BookEntity(
     val readerSettingsJson: String?,
     val scanFolder: String? = null,
     val favorite: Boolean = false,
+    /** The reader's own score, 0 (not rated) to 5. */
+    val rating: Int = 0,
 )
 
 /** Reading position inside one chapter of a text book; restored when the reader comes back to that chapter. */

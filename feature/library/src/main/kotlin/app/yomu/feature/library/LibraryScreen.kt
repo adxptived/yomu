@@ -61,15 +61,17 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarOutline
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -214,6 +216,8 @@ fun LibraryScreen(
     val grid by viewModel.grid.collectAsStateWithLifecycle()
     val columns by viewModel.columns.collectAsStateWithLifecycle()
     val showContinue by viewModel.showContinue.collectAsStateWithLifecycle()
+    val shelfHidden by viewModel.shelfHidden.collectAsStateWithLifecycle()
+    val shelfBelow by viewModel.shelfBelow.collectAsStateWithLifecycle()
     val selection by viewModel.selection.collectAsStateWithLifecycle()
     val progress by viewModel.importProgress.collectAsStateWithLifecycle()
     val total by viewModel.total.collectAsStateWithLifecycle()
@@ -246,6 +250,10 @@ fun LibraryScreen(
     var tabActions by remember { mutableStateOf<BookCollection?>(null) }
     var onlineMenu by remember { mutableStateOf<CatalogEntry?>(null) }
     var contextBook by remember { mutableStateOf<Book?>(null) }
+    var bulkSelect by remember { mutableStateOf(false) }
+    var ratingRequest by remember { mutableStateOf<Set<Long>?>(null) }
+    var ratingTitle by remember { mutableStateOf("") }
+    var ratingCurrent by remember { mutableStateOf(0) }
     var statusBook by remember { mutableStateOf<Book?>(null) }
     var bulkStatus by remember { mutableStateOf(false) }
     var bulkMenu by remember { mutableStateOf(false) }
@@ -299,7 +307,9 @@ fun LibraryScreen(
         }
     }
 
-    val selecting = selection.isNotEmpty()
+    val selecting = bulkSelect || selection.isNotEmpty()
+    val exitSelection: () -> Unit = { bulkSelect = false; viewModel.clearSelection() }
+    BackHandler(enabled = selecting) { exitSelection() }
     val filtered = search.isNotBlank() || activeFilters > 0
     val booksLoading = items.loadState.refresh is LoadState.Loading && items.itemCount == 0
     val noBooksAtAll = total == 0
@@ -307,7 +317,10 @@ fun LibraryScreen(
     // What the grid shows: online titles as tiles (in a user tab, or in "All" while searching or filtering) and books.
     val inTab = filter.collectionId != null
     val onlineTiles = if (inOnline || selecting) emptyList() else if (inTab || filtered) onlineShown else emptyList()
-    val shelf = !inOnline && !inTab && !filtered && !selecting && onlineShown.isNotEmpty()
+    // "From the catalog": shown above the books, moved under them, or hidden from its own menu.
+    val shelfShown = !inOnline && !inTab && !filtered && !selecting && onlineShown.isNotEmpty() && !shelfHidden
+    val shelf = shelfShown && !shelfBelow
+    val shelfBottom = shelfShown && shelfBelow
     val bookCount = if (showBooks) items.itemCount else 0
     // "All" without books: a compact card offers the import instead of the full-screen empty state.
     val noBooksCard = !inOnline && !inTab && !filtered && noBooksAtAll && onlineCount > 0
@@ -324,15 +337,14 @@ fun LibraryScreen(
                     selecting -> TopAppBar(
                         title = { Text(pluralStringResource(R.plurals.library_selected, selection.size, selection.size)) },
                         navigationIcon = {
-                            IconButton(onClick = viewModel::clearSelection) { Icon(Icons.Default.Close, stringResource(CoreR.string.close)) }
+                            IconButton(onClick = exitSelection) { Icon(Icons.Default.Close, stringResource(CoreR.string.close)) }
                         },
                         actions = {
-                            // One selected book: shortcut to its details (the only way to reach them from the grid besides a second long press).
-                            val single = selection.singleOrNull()?.let { id -> items.itemSnapshotList.items.firstOrNull { it.id == id } }
-                            if (single != null) {
-                                IconButton(onClick = { viewModel.clearSelection(); onOpenDetails(single) }) {
-                                    Icon(Icons.Outlined.Info, stringResource(R.string.library_details))
-                                }
+                            IconButton(onClick = { ratingCurrent = 0; ratingTitle = ""; ratingRequest = selection }) {
+                                Icon(Icons.Default.Star, stringResource(R.string.library_action_rate))
+                            }
+                            IconButton(onClick = { haptic.confirm(); viewModel.requestDelete(selection) }) {
+                                Icon(Icons.Default.Delete, stringResource(R.string.library_remove_book))
                             }
                             IconButton(onClick = { viewModel.openBatchEdit(selection) }) { Icon(Icons.Default.Edit, stringResource(R.string.library_edit_metadata)) }
                             IconButton(onClick = { haptic.tick(); viewModel.selectAll() }) { Icon(Icons.Default.SelectAll, stringResource(CoreR.string.select_all)) }
@@ -358,6 +370,7 @@ fun LibraryScreen(
                             onlineTotal.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.library_online_short, it, it) },
                         ).joinToString(" · ").ifEmpty { null },
                         onSearch = { searching = true },
+                        onSelect = { haptic.tick(); bulkSelect = true },
                         downloads = viewModel.downloadSummary,
                         onDownloads = onOpenDownloads,
                     ) {
@@ -403,7 +416,7 @@ fun LibraryScreen(
                     onSelect = { key ->
                         when (key) {
                             TAB_ALL -> { onlineTab = false; viewModel.setCollection(null) }
-                            TAB_ONLINE -> { viewModel.clearSelection(); onlineTab = true }
+                            TAB_ONLINE -> { bulkSelect = false; viewModel.clearSelection(); onlineTab = true }
                             else -> { onlineTab = false; viewModel.setCollection(key.toLong()) }
                         }
                     },
@@ -466,6 +479,11 @@ fun LibraryScreen(
                                 onClick = { bulkMenu = false; viewModel.openBatchEdit(selection) },
                             )
                             DropdownMenuItem(
+                                text = { Text(stringResource(R.string.library_action_rate)) },
+                                leadingIcon = { Icon(Icons.Default.Star, null) },
+                                onClick = { bulkMenu = false; ratingCurrent = 0; ratingTitle = ""; ratingRequest = selection },
+                            )
+                            DropdownMenuItem(
                                 text = { Text(stringResource(R.string.library_remove_book)) },
                                 leadingIcon = { Icon(Icons.Default.Delete, null) },
                                 onClick = { bulkMenu = false; viewModel.requestDelete(selection) },
@@ -520,11 +538,29 @@ fun LibraryScreen(
                             grid = grid,
                             columns = columns,
                             selection = selection,
+                            selectionMode = selecting,
                             onlineTiles = onlineTiles,
                             header = {
                                 if (continueRow) ContinueReading(continueItems, onOpenBook, viewModel::continueOnline)
-                                if (shelf) OnlineShelf(onlineShown, onlineTotal, onOpenTitle, onLongPress = { onlineMenu = it }, onShowAll = { onlineTab = true })
+                                if (shelf) {
+                                    OnlineShelf(
+                                        onlineShown, onlineTotal, onOpenTitle, onLongPress = { onlineMenu = it }, onShowAll = { onlineTab = true },
+                                        below = false,
+                                        onHide = { viewModel.setShelfHidden(true); viewModel.message(R.string.library_shelf_hidden) },
+                                        onMove = { viewModel.setShelfBelow(true) },
+                                    )
+                                }
                                 if (noBooksCard) NoBooksCard(onImport = { showImport = true })
+                            },
+                            footer = {
+                                if (shelfBottom) {
+                                    OnlineShelf(
+                                        onlineShown, onlineTotal, onOpenTitle, onLongPress = { onlineMenu = it }, onShowAll = { onlineTab = true },
+                                        below = true,
+                                        onHide = { viewModel.setShelfHidden(true); viewModel.message(R.string.library_shelf_hidden) },
+                                        onMove = { viewModel.setShelfBelow(false) },
+                                    )
+                                }
                             },
                             sectionLabels = onlineTiles.isNotEmpty() && bookCount > 0,
                             onOpenTitle = onOpenTitle,
@@ -640,26 +676,42 @@ fun LibraryScreen(
         }
     }
     contextBook?.let { book ->
-        YomuSheet(onDismiss = { contextBook = null }) {
-            SheetTitle(book.title)
-            SheetAction(Icons.Filled.PlayArrow, stringResource(R.string.library_read_book)) {
-                contextBook = null
-                onOpenBook(book)
-            }
-            SheetAction(Icons.Outlined.Info, stringResource(R.string.library_details)) {
-                contextBook = null
-                onOpenDetails(book)
-            }
-            SheetAction(Icons.Outlined.CheckCircle, stringResource(R.string.library_status_action, stringResource(book.status.label()))) {
-                contextBook = null
-                statusBook = book
-            }
-            SheetAction(Icons.Outlined.Checklist, stringResource(R.string.library_select_action)) {
-                contextBook = null
-                haptic.perform()
-                viewModel.toggleSelect(book.id)
-            }
-        }
+        // The long-press wheel: one gesture, every action of a book around the finger's natural resting place.
+        RadialMenu(
+            title = book.title,
+            actions = listOf(
+                RadialAction(Icons.Default.PlayArrow, stringResource(R.string.library_read_book)) { onOpenBook(book) },
+                RadialAction(Icons.Outlined.Info, stringResource(R.string.library_details)) { onOpenDetails(book) },
+                RadialAction(Icons.Default.Star, stringResource(R.string.library_action_rate)) {
+                    ratingTitle = book.title
+                    ratingCurrent = book.rating
+                    ratingRequest = setOf(book.id)
+                },
+                RadialAction(
+                    if (book.favorite) Icons.Default.Star else Icons.Default.StarOutline,
+                    stringResource(if (book.favorite) R.string.details_unfavorite else R.string.details_favorite),
+                ) { viewModel.setFavorite(setOf(book.id), !book.favorite) },
+                RadialAction(Icons.Outlined.CheckCircle, stringResource(R.string.library_status)) { statusBook = book },
+                RadialAction(Icons.Outlined.Checklist, stringResource(R.string.library_select_mode)) {
+                    haptic.perform()
+                    bulkSelect = true
+                    viewModel.toggleSelect(book.id)
+                },
+                RadialAction(Icons.Default.Delete, stringResource(R.string.library_remove_book), destructive = true) {
+                    haptic.confirm()
+                    viewModel.requestDelete(setOf(book.id))
+                },
+            ),
+            onDismiss = { contextBook = null },
+        )
+    }
+    ratingRequest?.let { ids ->
+        RatingDialog(
+            title = ratingTitle.ifBlank { pluralStringResource(R.plurals.library_selected, ids.size, ids.size) },
+            current = ratingCurrent,
+            onRate = { viewModel.setRating(ids, it); ratingRequest = null },
+            onDismiss = { ratingRequest = null },
+        )
     }
     statusBook?.let { book ->
         YomuSheet(onDismiss = { statusBook = null }) {
@@ -711,7 +763,14 @@ fun LibraryScreen(
 
 /** Large title with the counts and round actions (downloads while there are any, search, menu). */
 @Composable
-private fun LibraryHeader(subtitle: String?, onSearch: () -> Unit, downloads: StateFlow<DownloadSummary>, onDownloads: () -> Unit, menu: @Composable () -> Unit) {
+private fun LibraryHeader(
+    subtitle: String?,
+    onSearch: () -> Unit,
+    onSelect: () -> Unit,
+    downloads: StateFlow<DownloadSummary>,
+    onDownloads: () -> Unit,
+    menu: @Composable () -> Unit,
+) {
     // Collected here, not in the screen: the progress changes every second and used to recompose the whole library.
     val summary by downloads.collectAsStateWithLifecycle()
     Column {
@@ -729,6 +788,8 @@ private fun LibraryHeader(subtitle: String?, onSearch: () -> Unit, downloads: St
                 DownloadsButton(summary, onDownloads)
                 Spacer(Modifier.width(Dimens.s))
             }
+            CircleIconButton(Icons.Outlined.Checklist, stringResource(R.string.library_select_mode), onClick = onSelect)
+            Spacer(Modifier.width(Dimens.s))
             CircleIconButton(Icons.Default.Search, stringResource(CoreR.string.search), onClick = onSearch)
             Spacer(Modifier.width(Dimens.s))
             menu()
@@ -920,14 +981,43 @@ private fun ContinueReading(items: List<ContinueItem>, onOpenBook: (Book) -> Uni
     }
 }
 
-/** A row of the online titles in "All" ("From the catalog · 12 · All →"). */
+/** A row of the online titles in "All" ("From the catalog · 12 · All →"), hideable and movable from its own menu. */
 @Composable
-private fun OnlineShelf(entries: List<CatalogEntry>, count: Int, onOpen: (Long) -> Unit, onLongPress: (CatalogEntry) -> Unit, onShowAll: () -> Unit) {
+private fun OnlineShelf(
+    entries: List<CatalogEntry>,
+    count: Int,
+    onOpen: (Long) -> Unit,
+    onLongPress: (CatalogEntry) -> Unit,
+    onShowAll: () -> Unit,
+    below: Boolean,
+    onHide: () -> Unit,
+    onMove: () -> Unit,
+) {
+    var menu by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(bottom = Dimens.s)) {
         SectionLabel(stringResource(R.string.library_section_online), count, Icons.Outlined.Public) {
-            TextButton(onClick = onShowAll) {
-                Text(stringResource(R.string.library_all))
-                Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.padding(start = Dimens.xs).size(18.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onShowAll) {
+                    Text(stringResource(R.string.library_all))
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.padding(start = Dimens.xs).size(18.dp))
+                }
+                Box {
+                    IconButton(onClick = { menu = true }) {
+                        Icon(Icons.Default.MoreVert, stringResource(CoreR.string.more), Modifier.size(20.dp))
+                    }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(if (below) R.string.library_shelf_above else R.string.library_shelf_below)) },
+                            leadingIcon = { Icon(Icons.Default.SwapVert, null) },
+                            onClick = { menu = false; onMove() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.library_shelf_hide)) },
+                            leadingIcon = { Icon(Icons.Outlined.VisibilityOff, null) },
+                            onClick = { menu = false; onHide() },
+                        )
+                    }
+                }
             }
         }
         LazyRow(contentPadding = PaddingValues(horizontal = Dimens.s), horizontalArrangement = Arrangement.spacedBy(Dimens.xs)) {
@@ -1028,8 +1118,10 @@ private fun LibraryGrid(
     grid: Boolean,
     columns: Int,
     selection: Set<Long>,
+    selectionMode: Boolean,
     onlineTiles: List<CatalogEntry>,
     header: @Composable () -> Unit,
+    footer: @Composable () -> Unit = {},
     sectionLabels: Boolean,
     onOpenTitle: (Long) -> Unit,
     onOnlineLongPress: (CatalogEntry) -> Unit,
@@ -1086,6 +1178,7 @@ private fun LibraryGrid(
                         progress = book.progress,
                         badge = book.format.name.takeIf { it != "EPUB" },
                         selected = book.id in selection,
+                        selectionMode = selectionMode,
                         finished = book.status == ReadingStatus.FINISHED,
                         coverModifier = Modifier.sharedCover("book-${book.id}"),
                         onClick = { onClick(book) },
@@ -1096,6 +1189,7 @@ private fun LibraryGrid(
                         modifier = motionItem(),
                     )
                 }
+                item(key = "footer", span = { GridItemSpan(maxLineSpan) }, contentType = "footer") { Column { footer() } }
             }
             FastScroller(gridState.asFastScrollTarget(), scrollDescription, Modifier.align(Alignment.CenterEnd).padding(bottom = navBarBottomPadding(96.dp)), label)
         }
@@ -1147,6 +1241,7 @@ private fun LibraryGrid(
                             progress = book.progress,
                             meta = listOfNotNull(book.format.name, book.series, book.language?.uppercase()).joinToString(" · "),
                             selected = book.id in selection,
+                            selectionMode = selectionMode,
                             coverModifier = Modifier.sharedCover("book-${book.id}"),
                             onClick = { onClick(book) },
                             onLongClick = { onLongClick(book) },
@@ -1161,6 +1256,7 @@ private fun LibraryGrid(
                         )
                     }
                 }
+                item(key = "footer", contentType = "footer") { Column { footer() } }
             }
             FastScroller(listState.asFastScrollTarget(), scrollDescription, Modifier.align(Alignment.CenterEnd).padding(bottom = navBarBottomPadding(96.dp)), label)
         }

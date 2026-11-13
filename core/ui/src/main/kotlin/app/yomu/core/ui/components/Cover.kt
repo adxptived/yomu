@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -109,6 +110,8 @@ fun BookGridItem(
     modifier: Modifier = Modifier,
     badge: String? = null,
     selected: Boolean = false,
+    /** Choosing several books: every cover shows a checkbox, ticked for the selected ones. */
+    selectionMode: Boolean = false,
     finished: Boolean = false,
     coverModifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -152,12 +155,14 @@ fun BookGridItem(
                     Text(badge, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp))
                 }
             }
-            if (finished || selected) {
+            if (selectionMode || finished) {
+                val checked = if (selectionMode) selected else finished
                 Icon(
-                    Icons.Default.CheckCircle,
+                    if (checked) Icons.Default.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(50)).size(22.dp),
+                    tint = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
+                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(50)).size(22.dp),
                 )
             }
         }
@@ -199,6 +204,8 @@ fun BookListItem(
     modifier: Modifier = Modifier,
     meta: String? = null,
     selected: Boolean = false,
+    /** Choosing several books: every row shows a checkbox, ticked for the selected ones. */
+    selectionMode: Boolean = false,
     coverModifier: Modifier = Modifier,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
@@ -228,6 +235,14 @@ fun BookListItem(
         horizontalArrangement = Arrangement.spacedBy(Dimens.m),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (selectionMode) {
+            Icon(
+                if (selected) Icons.Default.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                contentDescription = null,
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+        }
         CoverImage(
             cover,
             title,

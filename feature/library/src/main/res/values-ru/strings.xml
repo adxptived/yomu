@@ -162,6 +162,15 @@
     <string name="library_tab_empty_text">Выделите книги долгим нажатием и нажмите «Во вкладки». Онлайн-тайтл: долгое нажатие → «Вкладки…».</string>
     <string name="library_section_online">Из каталога</string>
     <string name="library_section_books">Книги</string>
+    <string name="library_select_mode">Выбрать книги</string>
+    <string name="library_action_rate">Оценить</string>
+    <string name="library_rating_text">Ваша оценка книги</string>
+    <string name="library_rate_n">Оценка %1$d из 5</string>
+    <string name="library_rating_clear">Сбросить оценку</string>
+    <string name="library_shelf_hide">Скрыть этот ряд</string>
+    <string name="library_shelf_below">Переместить под книги</string>
+    <string name="library_shelf_above">Переместить над книгами</string>
+    <string name="library_shelf_hidden">Ряд «Из каталога» скрыт. Вернуть его можно в «Настройки → Библиотека».</string>
     <string name="library_tabs_title">Вкладки</string>
     <string name="library_tabs_action">Вкладки…</string>
     <string name="library_open_title">Открыть</string>

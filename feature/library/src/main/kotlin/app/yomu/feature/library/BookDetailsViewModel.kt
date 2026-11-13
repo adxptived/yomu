@@ -103,6 +103,7 @@ class BookDetailsViewModel(
     fun save(updated: Book) = viewModelScope.launch(ScreenErrors) { books.update(updated) }
     fun setStatus(status: ReadingStatus) = viewModelScope.launch(ScreenErrors) { books.setStatus(listOf(bookId), status) }
     fun setFavorite(value: Boolean) = viewModelScope.launch(ScreenErrors) { books.setFavorite(listOf(bookId), value) }
+    fun setRating(value: Int) = viewModelScope.launch(ScreenErrors) { books.setRating(listOf(bookId), value) }
     fun setManga(value: Boolean) = viewModelScope.launch(ScreenErrors) { books.setManga(bookId, value) }
     fun setTags(tags: List<String>) = viewModelScope.launch(ScreenErrors) { books.setTags(bookId, tags) }
 

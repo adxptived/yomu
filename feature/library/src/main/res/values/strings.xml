@@ -150,6 +150,15 @@
     <string name="library_tab_empty_text">Long-press books to select them and tap “To tabs”. For an online title, long-press it and choose “Tabs…”.</string>
     <string name="library_section_online">From the catalog</string>
     <string name="library_section_books">Books</string>
+    <string name="library_select_mode">Select books</string>
+    <string name="library_action_rate">Rate</string>
+    <string name="library_rating_text">Your score for this book</string>
+    <string name="library_rate_n">Rate %1$d of 5</string>
+    <string name="library_rating_clear">Clear the score</string>
+    <string name="library_shelf_hide">Hide this row</string>
+    <string name="library_shelf_below">Move under the books</string>
+    <string name="library_shelf_above">Move above the books</string>
+    <string name="library_shelf_hidden">The catalog row is hidden. Bring it back in Settings → Library.</string>
     <string name="library_tabs_title">Tabs</string>
     <string name="library_tabs_action">Tabs…</string>
     <string name="library_open_title">Open</string>

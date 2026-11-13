@@ -43,6 +43,8 @@
     <string name="set_grid">Grid view</string>
     <string name="set_columns">Grid columns</string>
     <string name="set_show_continue">Show “Continue reading”</string>
+    <string name="set_catalog_shelf">“From the catalog” row</string>
+    <string name="set_catalog_shelf_sum">Online titles under the books; can be hidden or moved from the row itself</string>
     <string name="set_hide_covers">Hide covers</string>
     <string name="set_hide_covers_sum">Show a coloured placeholder with the title instead of covers in the library, catalog, history and widget</string>
     <string name="set_import_mode">When importing files</string>

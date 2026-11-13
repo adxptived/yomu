@@ -19,11 +19,16 @@ No accounts, no ads, no telemetry. Your library stays on your device.
 ### Reading
 
 - All the formats you are likely to have: EPUB, PDF, FB2, MOBI/AZW3, DOCX, TXT, HTML, CBZ/CBR/CB7 comics and plain image folders.
-- A comfortable library: covers, metadata, custom shelves, tags, filters, sorting, "Continue reading" and bulk actions. Point the app at a folder and it keeps itself up to date.
-- Text reading done properly: your own fonts, sizes and margins, light/dark/sepia/AMOLED themes, pages or continuous scroll, read-aloud with highlighting and a sleep timer, in-book search and table of contents.
+- A comfortable library: covers, metadata, custom shelves, tags, filters, sorting, "Continue reading" and bulk actions. Tick books with checkboxes, rate them with five stars, long-press one for a circular action wheel, and hide or move the "From the catalog" row. Point the app at a folder and it keeps itself up to date.
+- Text reading done properly: your own fonts, sizes and margins, light/dark/sepia/AMOLED themes, pages, chapter scroll or a **long strip** that flows into the next chapter, read-aloud with highlighting and a sleep timer, in-book search and table of contents.
 - Manga and comics: right-to-left, vertical and webtoon modes, dual pages, zoom, image filters. PDFs: night mode, margin crop, passwords, and highlights that are saved into the PDF file itself so other apps see them too.
+- Audiobooks and podcasts: a full-screen player built around the cover, chapters, bookmarks with notes, a sleep timer, speed and skip settings, offline downloads from the catalog, YouTube, RSS or a single audio link.
 - DOCX gets a bonus **page layout** mode that shows the document as it will be printed: A4 pages, headers and footers, footnotes and tables.
 - A profile with your reading time, streaks, achievements and detailed statistics — by day, hour and weekday.
+
+| Selecting books | Long-press wheel | About and version |
+|---|---|---|
+| ![](docs/screenshots/library-selection.png) | ![](docs/screenshots/library-wheel.png) | ![](docs/screenshots/about.png) |
 
 ### Dictionaries and translation
 

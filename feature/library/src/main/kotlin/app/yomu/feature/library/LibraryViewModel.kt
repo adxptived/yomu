@@ -170,6 +170,16 @@ class LibraryViewModel(
     val grid = settings.libraryGrid.stateIn(viewModelScope)
     val columns = settings.gridColumns.stateIn(viewModelScope)
     val showContinue = settings.showContinueReading.stateIn(viewModelScope)
+
+    /** The "From the catalog" row: hidden by the user, and whether it sits under the books. */
+    val shelfHidden = settings.libraryShelfHidden.stateIn(viewModelScope)
+    val shelfBelow = settings.libraryShelfBelow.stateIn(viewModelScope)
+
+    fun setShelfHidden(value: Boolean) = viewModelScope.launch(ScreenErrors) { settings.libraryShelfHidden.set(value) }
+    fun setShelfBelow(value: Boolean) = viewModelScope.launch(ScreenErrors) { settings.libraryShelfBelow.set(value) }
+
+    /** A one-line confirmation, e.g. after hiding the catalog row. */
+    fun message(text: Int) { _events.trySend(LibraryEvent.Message(text)) }
     val incognito = settings.incognito.stateIn(viewModelScope)
 
     fun setIncognito(on: Boolean) = viewModelScope.launch(ScreenErrors) { settings.incognito.set(on) }
@@ -379,6 +389,9 @@ class LibraryViewModel(
     fun setStatus(ids: Set<Long>, status: ReadingStatus) = viewModelScope.launch(ScreenErrors) { books.setStatus(ids, status); clearSelection() }
 
     fun setFavorite(ids: Set<Long>, favorite: Boolean) = viewModelScope.launch(ScreenErrors) { books.setFavorite(ids, favorite); clearSelection() }
+
+    /** The reader's own score, 0 (not rated) to 5. */
+    fun setRating(ids: Set<Long>, rating: Int) = viewModelScope.launch(ScreenErrors) { books.setRating(ids, rating); clearSelection() }
 
     fun addToCollection(ids: Set<Long>, collectionId: Long) = viewModelScope.launch(ScreenErrors) { books.addToCollection(ids, collectionId); clearSelection() }
 

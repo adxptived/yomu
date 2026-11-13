@@ -3,6 +3,7 @@ package app.yomu.core.ui.components
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -139,6 +140,12 @@ private fun RadialMenu(anchor: Offset, items: List<QuickMenuItem>, progress: Flo
             Surface(onClick = onDismiss, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHighest, shadowElevation = 6.dp, modifier = Modifier.size(44.dp).alpha(progress)) {
                 Box(contentAlignment = Alignment.Center) { Icon(Icons.Filled.Close, androidx.compose.ui.res.stringResource(R.string.close)) }
             }
+            // One wheel rather than a scatter of buttons: a soft disc under the ring.
+            Box(
+                Modifier.size((radiusDp + button / 2 + 14.dp) * 2).alpha(progress)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.55f), CircleShape)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), CircleShape),
+            )
             items.forEach { item ->
                 Column(Modifier.widthIn(max = labelWidth).alpha(progress).scale(0.6f + 0.4f * progress), horizontalAlignment = Alignment.CenterHorizontally) {
                     Surface(
@@ -179,7 +186,8 @@ private fun RadialMenu(anchor: Offset, items: List<QuickMenuItem>, progress: Flo
         val loose = Constraints(maxWidth = constraints.maxWidth, maxHeight = constraints.maxHeight)
         val placeables = measurables.map { it.measure(loose) }
         val center = placeables.first()
-        val itemPlaceables = placeables.subList(1, 1 + n)
+        val disc = placeables[1]
+        val itemPlaceables = placeables.subList(2, 2 + n)
         val titlePlaceable = if (title != null) placeables.last() else null
         val radius = with(density) { radiusDp.toPx() } * (0.7f + 0.3f * progress)
         val buttonPx = with(density) { button.toPx() }
@@ -189,6 +197,7 @@ private fun RadialMenu(anchor: Offset, items: List<QuickMenuItem>, progress: Flo
         val cy = anchor.y.coerceIn(reach.coerceAtMost(constraints.maxHeight / 2f), (constraints.maxHeight - reach).coerceAtLeast(constraints.maxHeight / 2f))
         layout(constraints.maxWidth, constraints.maxHeight) {
             center.place((cx - center.width / 2f).roundToInt(), (cy - center.height / 2f).roundToInt())
+            disc.place((cx - disc.width / 2f).roundToInt(), (cy - disc.height / 2f).roundToInt())
             itemPlaceables.forEachIndexed { i, p ->
                 val angle = -PI / 2 + 2 * PI * i / n
                 val x = cx + radius * cos(angle).toFloat()

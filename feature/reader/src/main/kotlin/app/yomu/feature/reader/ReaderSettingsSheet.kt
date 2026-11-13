@@ -108,10 +108,8 @@ import app.yomu.core.ui.R as CoreR
 
 /**
  * The full reading settings: preview, search across every tab, and groups that keep the frequent choices small and
- * push exact numbers into "Exact values". Changes are applied live, as a preview on the page behind the sheet.
- *
- * Closing with "Done" keeps them. Back, a tap outside or "Revert changes" returns the settings that were in use when the
- * sheet opened — an unfinished experiment is not saved by accident.
+ * push exact numbers into "Exact values". Every change is applied and saved as it is made — closing the sheet, by Back
+ * or a tap outside, keeps it, and "Undo the last change" takes back a wrong tap.
  */
 @Composable
 fun ReaderSettingsSheet(
@@ -131,26 +129,12 @@ fun ReaderSettingsSheet(
     var query by rememberSaveable { mutableStateOf("") }
     val presets by viewModel.presets.collectAsStateWithLifecycle()
     val canUndo by viewModel.canUndo.collectAsStateWithLifecycle()
-    // The settings as they were when the sheet opened: "Revert changes" and Back go back here.
-    val openText = remember { text }
-    val openManga = remember { manga }
-    val openPdf = remember { pdf }
-    val openCommon = remember { common }
-    fun revertAndClose() {
-        viewModel.revertSettings(
-            text = openText.takeIf { content is ReaderContent.Text },
-            manga = openManga.takeIf { content is ReaderContent.Manga },
-            pdf = openPdf.takeIf { content is ReaderContent.Pdf },
-            common = openCommon,
-        )
-        onDismiss()
-    }
     val searching = query.isNotBlank()
     val settingsScroll = rememberScrollState()
     // A tab switch starts at its own top: the previous tab's offset would otherwise hide the first setting.
     LaunchedEffect(tab, searching) { settingsScroll.scrollTo(0) }
-    YomuSheet(onDismiss = { revertAndClose() }) {
-        // A bounded sheet with one weighted scroll region: the title, search, tabs and footer always stay reachable,
+    YomuSheet(onDismiss = onDismiss) {
+        // A bounded sheet with one weighted scroll region: the title, search and tabs always stay reachable,
         // on a short phone and at a large system font, instead of pushing the list off the screen.
         Column(Modifier.fillMaxWidth().heightIn(max = 760.dp).fillMaxHeight(0.94f)) {
             Row(Modifier.fillMaxWidth().padding(start = Dimens.l, end = 4.dp, top = Dimens.s), verticalAlignment = Alignment.CenterVertically) {
@@ -227,11 +211,6 @@ fun ReaderSettingsSheet(
                     }
                 }
                 Spacer(Modifier.height(Dimens.l))
-            }
-            Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { revertAndClose() }) { Text(stringResource(R.string.rs_revert)) }
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.rs_done)) }
             }
         }
     }
@@ -501,21 +480,33 @@ private fun TextSettings(s: TextReaderSettings, vm: ReaderViewModel, query: Stri
             style = MaterialTheme.typography.titleSmall,
             modifier = Modifier.padding(start = Dimens.l, top = Dimens.s),
         )
+        val mode = when {
+            s.longStrip -> 2
+            s.paged -> 0
+            else -> 1
+        }
         OptionTiles(
             listOf(
-                TileOption(true, stringResource(R.string.rs_mode_paged)),
-                TileOption(false, stringResource(R.string.rs_mode_scroll)),
+                TileOption(0, stringResource(R.string.rs_mode_paged)),
+                TileOption(1, stringResource(R.string.rs_mode_scroll)),
+                TileOption(2, stringResource(R.string.rs_mode_strip)),
             ),
-            s.paged,
-            { paged -> vm.updateText { it.copy(paged = paged) } },
+            mode,
+            { v -> vm.updateText { it.copy(paged = v != 1, longStrip = v == 2) } },
         )
         Text(
-            stringResource(if (s.paged) R.string.rs_mode_paged_sum else R.string.rs_mode_scroll_sum),
+            stringResource(
+                when (mode) {
+                    0 -> R.string.rs_mode_paged_sum
+                    1 -> R.string.rs_mode_scroll_sum
+                    else -> R.string.rs_mode_strip_sum
+                },
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
         )
-        if (s.paged && !s.verticalText) {
+        if (s.paged && !s.longStrip && !s.verticalText) {
             PreferenceSwitch(
                 stringResource(R.string.rs_dual_landscape), s.dualPageLandscape,
                 { v -> vm.updateText { it.copy(dualPageLandscape = v) } },
@@ -870,7 +861,15 @@ private fun DisplaySettings(c: CommonReaderSettings, vm: ReaderViewModel, showFo
         icon = Icons.Default.BrightnessMedium,
         initiallyExpanded = true,
     ) {
-        PreferenceSwitch(stringResource(R.string.rs_system_brightness), c.brightness < 0f, { v -> vm.updateCommon { it.copy(brightness = if (v) -1f else 0.5f) } }, icon = Icons.Default.BrightnessMedium)
+        // Off by default: the reader leaves the screen brightness alone, so a device's adaptive brightness keeps
+        // working as usual. Switched on, the slider below takes over for reading.
+        PreferenceSwitch(
+            stringResource(R.string.rs_brightness_control),
+            c.brightness >= 0f,
+            { on -> vm.updateCommon { it.copy(brightness = if (on) 0.5f else -1f) } },
+            summary = stringResource(R.string.rs_brightness_control_summary),
+            icon = Icons.Default.BrightnessMedium,
+        )
         if (c.brightness >= 0f) {
             PreferenceSlider(
                 stringResource(R.string.rs_brightness), c.brightness, 0.01f..1f,

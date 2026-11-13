@@ -193,7 +193,8 @@ class EpubController(
     private fun config(target: EpubTarget?, index: Int = chapter): String = buildJsonObject {
         val fixed = document.isFixedLayout(index)
         put("fixed", fixed)
-        put("paged", fixed || (settings.paged && !settings.verticalText))
+        put("paged", fixed || (settings.paged && !settings.verticalText && !settings.longStrip))
+        put("strip", !fixed && settings.longStrip)
         put("vertical", !fixed && settings.verticalText)
         put("rtl", settings.rtl || document.rtl)
         put("columns", columns)
@@ -235,7 +236,7 @@ class EpubController(
     }
 
     fun updateSettings(value: TextReaderSettings, relayout: Boolean = true) {
-        val structural = value.paged != settings.paged || value.verticalText != settings.verticalText
+        val structural = value.paged != settings.paged || value.verticalText != settings.verticalText || value.longStrip != settings.longStrip
         settings = value
         webView?.setBackgroundColor(value.background.toInt())
         if (!relayout) return

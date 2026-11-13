@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -310,6 +311,19 @@ private fun BookDetailsContent(
                     }
                 }
                 TrackingButton(tracks.size) { showTracking = true }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.library_action_rate), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    for (star in 1..5) {
+                        IconButton(onClick = { viewModel.setRating(if (current.rating == star) 0 else star) }, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                if (star <= current.rating) Icons.Filled.Star else Icons.Filled.StarOutline,
+                                stringResource(R.string.library_rate_n, star),
+                                Modifier.size(24.dp),
+                                tint = if (star <= current.rating) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
                 if (extras.readingMs > 0) {
                     Text(stringResource(R.string.details_reading_time, formatDuration(extras.readingMs)), style = MaterialTheme.typography.bodyMedium)
                 }

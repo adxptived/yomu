@@ -22,6 +22,9 @@ interface BookRepository {
     suspend fun update(book: Book)
     suspend fun setStatus(ids: Collection<Long>, status: ReadingStatus)
     suspend fun setFavorite(ids: Collection<Long>, favorite: Boolean)
+
+    /** The reader's own score, 0 (not rated) to 5. */
+    suspend fun setRating(ids: Collection<Long>, rating: Int)
     suspend fun delete(ids: Collection<Long>, deleteFiles: Boolean)
     suspend fun saveProgress(bookId: Long, locator: Locator)
     suspend fun getProgress(bookId: Long): Locator?

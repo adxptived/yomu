@@ -261,9 +261,12 @@ internal fun UpdateCard(version: String, onClick: () -> Unit) {
     }
 }
 
-/** The app icon, name, version and author in a card at the top of "About". */
+/**
+ * The app icon, name, version and author in a card: at the top of "About" and, with [onClick], as its entry on the
+ * settings root.
+ */
 @Composable
-private fun AboutHeader(version: String, code: Long) {
+internal fun AboutHeader(version: String, code: Long, onClick: (() -> Unit)? = null) {
     val context = LocalContext.current
     val launcher = LocalLauncherIcons.current
     val picked = launcher?.let { l ->
@@ -274,11 +277,8 @@ private fun AboutHeader(version: String, code: Long) {
         if (launcher != null) null
         else runCatching { context.packageManager.getApplicationIcon(context.packageName).toBitmap(192, 192).asImageBitmap() }.getOrNull()
     }
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s),
-    ) {
+    val modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s)
+    val content: @Composable () -> Unit = {
         Row(Modifier.padding(Dimens.l), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Dimens.l)) {
             if (picked != null) {
                 LauncherIconImage(picked, Modifier.size(64.dp), RoundedCornerShape(18.dp))
@@ -295,6 +295,12 @@ private fun AboutHeader(version: String, code: Long) {
                 Text(stringResource(R.string.set_about_tagline), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(stringResource(R.string.set_about_by, ProjectLinks.AUTHOR), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            if (onClick != null) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+    if (onClick != null) {
+        Surface(onClick = onClick, shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer, modifier = modifier) { content() }
+    } else {
+        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer, modifier = modifier) { content() }
     }
 }

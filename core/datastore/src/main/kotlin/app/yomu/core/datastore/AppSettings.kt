@@ -116,6 +116,10 @@ class AppSettings(context: Context) {
     val libraryAscending = bool("library_ascending", false)
     val showContinueReading = bool("show_continue", true)
 
+    /** The "From the catalog" row on the library home: hidden, or moved under the books. */
+    val libraryShelfHidden = bool("library_shelf_hidden", false)
+    val libraryShelfBelow = bool("library_shelf_below", false)
+
     /** Covers are replaced by their generated placeholder everywhere in the app (and the home-screen widget). */
     val hideCovers = bool("hide_covers", false)
 

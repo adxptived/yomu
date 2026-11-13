@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="audio_chapters">Главы</string>
+    <string name="audio_playing_from">Играет из: %1$s</string>
+    <string name="audio_local_files">локальные файлы</string>
+    <string name="audio_more">Другие действия</string>
     <string name="audio_track_of">Трек %1$d из %2$d</string>
     <string name="audio_play">Воспроизвести</string>
     <string name="audio_pause">Пауза</string>

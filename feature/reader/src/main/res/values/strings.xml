@@ -133,7 +133,8 @@
     <string name="rs_publisher_summary">Use fonts and colors from the book itself</string>
     <string name="rs_saved_words">Highlight saved words</string>
     <string name="rs_brightness">Brightness</string>
-    <string name="rs_system_brightness">System brightness</string>
+    <string name="rs_brightness_control">Control brightness</string>
+    <string name="rs_brightness_control_summary">Off keeps the system brightness, which adapts to the light around you</string>
     <string name="rs_warm">Warm light filter</string>
     <string name="rs_timeout">Keep screen on</string>
     <string name="rs_timeout_system">System setting</string>
@@ -194,8 +195,8 @@
     <string name="rs_pdf_crop_bottom">Crop from the bottom, %</string>
     <string name="rs_pdf_contrast">Contrast</string>
     <string name="rs_pdf_grayscale">Grayscale</string>
-    <string name="rs_pdf_zoom_lock">Lock zoom</string>
-    <string name="rs_zoom_lock_summary">Open the next pages at the current zoom</string>
+    <string name="rs_pdf_zoom_lock">Lock view</string>
+    <string name="rs_zoom_lock_summary">Keep this zoom and stop page turns; only scrolling moves the page</string>
     <string name="rs_auto_night_mode">Switch to night</string>
     <string name="rs_auto_night_system">With the app theme</string>
     <string name="rs_auto_night_schedule">On a schedule</string>
@@ -207,8 +208,8 @@
     <string name="reader_pages">Pages</string>
     <string name="reader_time_left_m">≈ %1$d min left</string>
     <string name="reader_time_left_hm">≈ %1$d h %2$d min left</string>
-    <string name="reader_zoom_lock_on">Zoom is locked: the next pages open at this scale</string>
-    <string name="reader_zoom_lock_off">Zoom is not locked: tap to open the next pages at this scale</string>
+    <string name="reader_zoom_lock_on">View is locked: this zoom stays, page turns are off, only scrolling moves</string>
+    <string name="reader_zoom_lock_off">View is not locked: tap to keep this zoom and stop page turns</string>
     <string name="rs_pdf_reflow">Reflow text</string>
     <string name="rs_pdf_reflow_summary">Shows the text layer with your font settings</string>
 
@@ -418,16 +419,15 @@
     <!-- Two levels of reading settings: a compact panel for the frequent changes and a full screen for the rest -->
     <string name="rs_open_all">All reading settings</string>
     <string name="rs_undo_change">Undo last change</string>
-    <string name="rs_done">Done</string>
-    <string name="rs_revert">Revert changes</string>
-    <string name="rs_revert_done">Settings returned to the state before opening</string>
     <string name="rs_preview">Preview</string>
     <string name="rs_preview_text">The evening was quiet, and the pages turned by themselves.\n14 · “A sentence in quotation marks” — and a number.</string>
     <string name="rs_mode">Reading mode</string>
     <string name="rs_mode_paged">Page by page</string>
     <string name="rs_mode_scroll">Scroll chapter</string>
+    <string name="rs_mode_strip">Long strip</string>
     <string name="rs_mode_paged_sum">Turn pages like a paper book; the chapter ends at its last page</string>
     <string name="rs_mode_scroll_sum">One continuous page: move down through the chapter without turning pages</string>
+    <string name="rs_mode_strip_sum">Continuous scrolling that opens the next chapter at the end, so the text never stops</string>
     <string name="rs_mode_section">Page turning</string>
     <string name="rs_font_current">Font: %1$s</string>
     <string name="rs_font_pick_title">Book font</string>

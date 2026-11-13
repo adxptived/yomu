@@ -203,6 +203,7 @@ class BookRepositoryImpl(
                     status = book.status.name,
                     isManga = book.isManga,
                     coverPath = book.coverPath,
+                    rating = book.rating,
                 ),
             )
             linkAuthors(book.id, book.authors)
@@ -243,6 +244,8 @@ class BookRepositoryImpl(
     override suspend fun setStatus(ids: Collection<Long>, status: ReadingStatus) = books.setStatus(ids, status.name)
 
     override suspend fun setFavorite(ids: Collection<Long>, favorite: Boolean) = books.setFavorite(ids, favorite)
+
+    override suspend fun setRating(ids: Collection<Long>, rating: Int) = books.setRating(ids, rating.coerceIn(0, 5))
 
     /**
      * Applies the batch [edit] to the [list] of books (already in the order they are numbered in, see

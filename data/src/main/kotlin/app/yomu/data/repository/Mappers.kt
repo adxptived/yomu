@@ -57,6 +57,7 @@ fun BookEntity.toDomain(tags: List<String> = emptyList()) = Book(
     tags = tags,
     readerSettingsJson = readerSettingsJson,
     favorite = favorite,
+    rating = rating,
 )
 
 fun authorsToText(authors: List<String>): String = authors.joinToString(" & ")

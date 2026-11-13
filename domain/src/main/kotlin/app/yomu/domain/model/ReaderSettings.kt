@@ -35,6 +35,11 @@ data class TextReaderSettings(
     val customBackground: Long = 0xFFFFF8E7,
     val customText: Long = 0xFF222222,
     val paged: Boolean = true,
+    /**
+     * "Long strip": one continuous scroll that opens the next chapter at the end, like a webtoon feed. Overrides
+     * [paged] while it is on.
+     */
+    val longStrip: Boolean = false,
     /** Two columns when the screen is wider than it is tall. */
     val dualPageLandscape: Boolean = true,
     val verticalText: Boolean = false,

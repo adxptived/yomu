@@ -122,10 +122,15 @@ internal fun SwitchPref(
     summary: Int? = null,
     enabled: Boolean = true,
     icon: ImageVector? = settingIcon(title),
+    /** The preference means "off" while the switch reads as "on" (a "hidden" flag shown as "show"). */
+    inverted: Boolean = false,
     after: (suspend () -> Unit)? = null,
 ) {
     val v by pref.state()
-    PreferenceSwitch(stringResource(title), v, { vm.set(pref, it, after) }, summary?.let { stringResource(it) }, icon = icon, enabled = enabled)
+    PreferenceSwitch(
+        stringResource(title), if (inverted) !v else v, { vm.set(pref, if (inverted) !it else it, after) },
+        summary?.let { stringResource(it) }, icon = icon, enabled = enabled,
+    )
 }
 
 @Composable
@@ -508,6 +513,8 @@ internal fun ColumnScope.LibrarySection(vm: SettingsViewModel) {
     val auto = stringResource(R.string.set_auto)
     IntSliderPref(vm, s.gridColumns, R.string.set_columns, 0..6, label = { if (it == 0) auto else it.toString() })
     SwitchPref(vm, s.showContinueReading, R.string.set_show_continue)
+    // The row itself can be hidden or moved from the library; this is the way back.
+    SwitchPref(vm, s.libraryShelfHidden, R.string.set_catalog_shelf, R.string.set_catalog_shelf_sum, inverted = true)
     SwitchPref(vm, s.hideCovers, R.string.set_hide_covers, R.string.set_hide_covers_sum)
     ChoicePref(vm, s.importMode, R.string.set_import_mode, listOf(
         "COPY" to stringResource(R.string.set_import_copy),

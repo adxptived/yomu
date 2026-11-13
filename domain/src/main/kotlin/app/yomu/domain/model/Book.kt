@@ -56,6 +56,8 @@ data class Book(
     val readerSettingsJson: String? = null,
     /** Starred by the user; independent of [status] and of the catalog's online favourites. */
     val favorite: Boolean = false,
+    /** The reader's own score, 0 (not rated) to 5. */
+    val rating: Int = 0,
 ) {
     val engine: EngineType
         get() = when {

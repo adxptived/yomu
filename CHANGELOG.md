@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.4.0 — library, reading flow and the player
+
+> **Install.** Installs over 2.3.0 if signed with the same key. The database moves to schema 11 (a rating column on books, added by a migration); nothing is lost. Verified by compilation, unit, migration and Robolectric tests, lint and detekt — **not on a real device**.
+
+### Library
+
+- **Choosing books is visible:** a Select action sits in the library header, and while choosing, every cover and row shows a checkbox — ticked for the selected ones. Back or Close leaves the mode. The selection bar rates and deletes directly, without opening "More".
+- **Five-star ratings**, stored on the device: in the book details, in the bulk menu and in the long-press wheel. Zero means "not rated"; tapping the same star clears it.
+- **A circular long-press menu:** read, details, rate, favourite, status, select and delete sit on a wheel with a soft disc under it, one tap each — instead of a sheet of rows. The reader's own long-press wheel gets the same disc, so it reads as one control rather than scattered buttons.
+- **The "From the catalog" row is yours:** its menu hides it or moves it under the books; Settings → Library shows it again. Hiding says where to bring it back.
+
+### Reading
+
+- **"Long strip" for books** — a third reading mode beside page-by-page and scroll-chapter: one continuous scroll that opens the next chapter at the end, so the text never stops at a boundary. It is in the reader's View panel, the full reading settings and, for the same reasons, applies to converted DOCX, FB2, TXT, HTML and MOBI books (they are read as text).
+- **Reading settings apply as they change:** "Done" and "Revert changes" are gone — closing the sheet by Back or a tap outside keeps everything, and "Undo the last change" still takes back a wrong tap.
+- **Brightness is opt-in:** by default the reader does not touch the window brightness at all, so a device's adaptive brightness behaves exactly as outside the reader. A clear "Control brightness" switch turns the slider on.
+- **The lock freezes the view:** the zoom stays as set, swipes and tap zones no longer turn pages, pinch and double-tap zoom are off, and only scrolling moves the page. In a webtoon only vertical scrolling remains.
+- **Word documents and the print layout** keep their own screen; the new strip mode is the continuous option of the text reader.
+
+### Audiobook player
+
+- **A player built around the cover:** a large square artwork, a "Playing from" header with the book title, the current chapter as the accent line (tap for the chapter list), the title and author with a bookmark action, a seek bar with elapsed and remaining time, one big white play button between skip-back, previous chapter, next chapter and skip-forward, and a compact row of speed, sleep, bookmarks and chapters. History, skip intervals, skip silence and offline listening live in the overflow menu. Wide screens place the cover beside the controls.
+
+### Settings
+
+- **About is on top:** the settings root starts with an app card — icon, name, version, tagline, author — that opens the About section. About is no longer a row at the bottom, and is still found by the settings search.
+- **Settings → Library** has the switch for the catalog row.
+
+### YouTube
+
+- **A 400 from one client no longer breaks the catalog:** metadata calls (search, playlists, next) try the client list in order, then the web client, and finally repeat the request without the account session. The error text now includes YouTube's own reason.
+
+### Tests
+
+- A new migration test covers 10 → 11 (existing books start unrated); the migration suite expects schema 11. The full unit suite, lint and detekt pass.
+
 ## 2.3.0 — first launch, reader settings and data safety
 
 > **Install.** Installs over 2.2.0 if signed with the same key. The database schema is unchanged; no migration is needed. Verified by compilation, unit and Robolectric tests and screenshot review — **not on a real device**.

@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="audio_chapters">Chapters</string>
+    <string name="audio_playing_from">Playing from %1$s</string>
+    <string name="audio_local_files">local files</string>
+    <string name="audio_more">More actions</string>
     <string name="audio_track_of">Track %1$d of %2$d</string>
     <string name="audio_play">Play</string>
     <string name="audio_pause">Pause</string>

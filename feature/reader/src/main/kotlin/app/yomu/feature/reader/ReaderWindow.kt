@@ -7,6 +7,7 @@ import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -26,10 +27,15 @@ fun ReaderWindowEffects(common: CommonReaderSettings, chromeVisible: Boolean, la
 
     // LaunchedEffect, not DisposableEffect: during an edge swipe the brightness changes every frame, and disposing
     // the previous effect would reset the screen to the system brightness in between (a visible flicker).
+    // With the system brightness (a negative value) the window is left alone, so adaptive brightness keeps working
+    // exactly as outside the reader; it is only restored when the reader changed it itself.
+    val applied = remember { booleanArrayOf(false) }
     LaunchedEffect(common.brightness) {
+        if (common.brightness < 0f && !applied[0]) return@LaunchedEffect
         val lp = window.attributes
         lp.screenBrightness = if (common.brightness < 0f) WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE else common.brightness.coerceIn(0.01f, 1f)
         window.attributes = lp
+        applied[0] = common.brightness >= 0f
     }
 
     DisposableEffect(common.drawUnderCutout) {

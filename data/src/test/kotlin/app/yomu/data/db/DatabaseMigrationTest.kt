@@ -313,8 +313,40 @@ class DatabaseMigrationTest {
         }
     }
 
+    /** The reader's own score: every existing book starts unrated. */
+    @Test
+    fun migrates10To11AddingRating() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val file = context.getDatabasePath("migration-test-10.db").apply { parentFile?.mkdirs(); delete() }
+        createFromSchema(file, 10)
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use { sql ->
+            sql.execSQL(
+                "INSERT INTO books (title, sortTitle, authorsText, format, uri, isLinked, fileSize, status, isManga, addedAt, progress, favorite) " +
+                    "VALUES ('Book', 'Book', '', 'EPUB', 'file:///book.epub', 0, 10, 'READING', 0, 1, 0.5, 0)",
+            )
+        }
+        val room = Room.databaseBuilder(context, YomuDatabase::class.java, file.path).addMigrations(*YomuDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val db = room.openHelper.writableDatabase
+            assertEquals(CURRENT_VERSION, db.version)
+            db.query("SELECT title, rating FROM books").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("Book", c.getString(0))
+                assertEquals(0, c.getInt(1))
+            }
+            db.execSQL("UPDATE books SET rating = 4")
+            db.query("SELECT rating FROM books").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals(4, c.getInt(0))
+            }
+        } finally {
+            room.close()
+            file.delete()
+        }
+    }
+
     private companion object {
-        const val CURRENT_VERSION = 10
+        const val CURRENT_VERSION = 11
     }
 }
 

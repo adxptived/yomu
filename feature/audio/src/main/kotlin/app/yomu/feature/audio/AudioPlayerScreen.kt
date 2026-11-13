@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,21 +21,24 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
@@ -50,11 +52,14 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -63,8 +68,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -78,6 +81,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -138,6 +142,17 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
     val bookmarkAt = if (bookmarkTrack >= 0 && bookmarkPos >= 0) bookmarkTrack to bookmarkPos else null
     val editingBookmark = editingAt?.let { at -> settings.bookmarks.firstOrNull { it.createdAt == at } }
     val playing = player?.isPlaying == true
+    var more by remember { mutableStateOf(false) }
+    // The bookmark anchor is taken when the action is pressed, so typing a note never moves the saved spot.
+    val addBookmark: () -> Unit = {
+        val point = viewModel.bookmarkPoint()
+        editingAt = null
+        if (point != null) {
+            bookmarkTrack = point.first
+            bookmarkPos = point.second
+            dialog = "bookmark"
+        }
+    }
     // Paused, the position only moves on seeks, which are player events: no need to poll.
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(playing, lifecycle) { if (playing) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.tickWhilePlaying() } }
@@ -159,43 +174,64 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
-                TopAppBar(
-                    title = {},
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent, scrolledContainerColor = Color.Transparent),
-                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back)) } },
-                    actions = {
-                        IconButton(
-                            onClick = {
-                                val point = viewModel.bookmarkPoint()
-                                editingAt = null
-                                if (point != null) {
-                                    bookmarkTrack = point.first
-                                    bookmarkPos = point.second
-                                    dialog = "bookmark"
-                                }
-                            },
-                            enabled = player != null,
-                        ) {
-                            Icon(Icons.Default.BookmarkAdd, stringResource(R.string.audio_bookmark_add))
+                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.KeyboardArrowDown, stringResource(CoreR.string.back), Modifier.size(28.dp))
+                    }
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            stringResource(R.string.audio_playing_from, originLabel(origin) ?: stringResource(R.string.audio_local_files)),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            book?.title.orEmpty(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Box {
+                        IconButton(onClick = { more = true }, enabled = player != null) {
+                            Icon(Icons.Default.MoreVert, stringResource(R.string.audio_more))
                         }
-                        IconButton(onClick = { sheet = "history" }, enabled = player != null) {
-                            Icon(Icons.Default.History, stringResource(R.string.audio_history))
-                        }
-                        if (offline != null) {
-                            IconButton(onClick = { sheet = "offline" }) {
-                                val d = download
-                                when {
-                                    d?.running == true -> CircularProgressIndicator(progress = { d.fraction }, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                                    offline?.complete == true -> Icon(Icons.Default.DownloadDone, stringResource(R.string.audio_offline))
-                                    else -> Icon(Icons.Outlined.Download, stringResource(R.string.audio_offline))
-                                }
+                        DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.audio_bookmark_add)) },
+                                leadingIcon = { Icon(Icons.Default.BookmarkAdd, null) },
+                                onClick = { more = false; addBookmark() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.audio_history)) },
+                                leadingIcon = { Icon(Icons.Default.History, null) },
+                                onClick = { more = false; sheet = "history" },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.audio_chapters)) },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.FormatListBulleted, null) },
+                                onClick = { more = false; sheet = "chapters" },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.audio_skip_intervals)) },
+                                leadingIcon = { Icon(Icons.Default.Tune, null) },
+                                onClick = { more = false; sheet = "skip" },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.audio_skip_silence)) },
+                                leadingIcon = { Icon(Icons.Default.GraphicEq, null) },
+                                trailingIcon = { if (player?.skipSilence == true) Icon(Icons.Default.Check, null) },
+                                onClick = { more = false; viewModel.toggleSkipSilence() },
+                            )
+                            if (offline != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.audio_offline)) },
+                                    leadingIcon = { Icon(Icons.Outlined.Download, null) },
+                                    onClick = { more = false; sheet = "offline" },
+                                )
                             }
                         }
-                        IconButton(onClick = { sheet = "chapters" }, enabled = chapters.isNotEmpty()) {
-                            Icon(Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.audio_chapters))
-                        }
-                    },
-                )
+                    }
+                }
             },
         ) { padding ->
             val error = loadError
@@ -214,48 +250,55 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
             BoxWithConstraints(Modifier.padding(padding).fillMaxSize()) {
                 val wide = maxWidth >= 560.dp && maxWidth > maxHeight
                 val chapterIndex = s?.let { AudioPositions.current(chapters, it.track, it.positionMs) } ?: -1
-                val info: @Composable () -> Unit = {
-                    TitleBlock(book?.title.orEmpty(), book?.authorsText.orEmpty(), originLabel(origin), chapters, chapterIndex, s?.trackTitle.orEmpty()) { sheet = "chapters" }
-                }
-                val controls: @Composable () -> Unit = {
-                    Controls(viewModel, s, settings, chapters, chapterIndex, onSheet = { sheet = it }, onYouTubeSignIn = onYouTubeSignIn)
+                val chapterTitle = chapters.getOrNull(chapterIndex)?.title ?: s?.trackTitle.orEmpty()
+                val bookmark = if (s != null) addBookmark else null
+                val history: @Composable (Modifier) -> Unit = { m ->
+                    s?.history?.lastOrNull()?.takeIf { it.isJump }?.let { e ->
+                        Box(m) { HistoryChip(e) { viewModel.jumpTo(e.fromTrack, e.fromMs) } }
+                    }
                 }
                 if (wide) {
-                    Row(Modifier.fillMaxSize().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(32.dp)) {
-                        Box(Modifier.weight(0.42f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                            Cover(cover, book?.title.orEmpty(), Modifier.fillMaxHeight(0.86f))
-                        }
-                        Column(
-                            Modifier.weight(0.58f).fillMaxHeight().verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            info()
-                            s?.history?.lastOrNull()?.takeIf { it.isJump }?.let { e ->
-                                Spacer(Modifier.height(8.dp))
-                                HistoryChip(e) { viewModel.jumpTo(e.fromTrack, e.fromMs) }
-                            }
-                            Spacer(Modifier.height(12.dp))
-                            controls()
-                            Spacer(Modifier.height(16.dp))
+                    val side = minOf(maxWidth * 0.42f, maxHeight * 0.78f)
+                    Row(
+                        Modifier.fillMaxSize().padding(horizontal = 32.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(40.dp),
+                    ) {
+                        PlayerCover(cover, book?.title.orEmpty(), Modifier.size(side))
+                        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                            NowPlaying(
+                                title = book?.title.orEmpty(),
+                                author = book?.authorsText.orEmpty(),
+                                origin = originLabel(origin),
+                                chapterTitle = chapterTitle,
+                                onChapters = { sheet = "chapters" },
+                                onBookmark = bookmark,
+                            )
+                            history(Modifier.fillMaxWidth())
+                            Spacer(Modifier.height(20.dp))
+                            PlayerControls(viewModel, s, settings, chapters, chapterIndex, onSheet = { sheet = it }, onYouTubeSignIn = onYouTubeSignIn)
                         }
                     }
                 } else {
-                    val fullHeight = maxHeight
-                    val coverWidth = minOf(maxWidth * 0.72f, maxHeight * 0.3f).coerceAtLeast(140.dp)
-                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                        Column(
-                            Modifier.heightIn(min = fullHeight).padding(horizontal = 24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.SpaceEvenly,
-                        ) {
-                            Cover(cover, book?.title.orEmpty(), Modifier.width(coverWidth))
-                            info()
-                            s?.history?.lastOrNull()?.takeIf { it.isJump }?.let { e ->
-                                HistoryChip(e) { viewModel.jumpTo(e.fromTrack, e.fromMs) }
-                            }
-                            controls()
+                    val side = minOf(maxWidth * 0.9f, maxHeight * 0.4f).coerceAtLeast(150.dp)
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
+                        Spacer(Modifier.height(8.dp))
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            PlayerCover(cover, book?.title.orEmpty(), Modifier.size(side))
                         }
+                        Spacer(Modifier.height(20.dp))
+                        NowPlaying(
+                            title = book?.title.orEmpty(),
+                            author = book?.authorsText.orEmpty(),
+                            origin = originLabel(origin),
+                            chapterTitle = chapterTitle,
+                            onChapters = { sheet = "chapters" },
+                            onBookmark = bookmark,
+                        )
+                        history(Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(16.dp))
+                        PlayerControls(viewModel, s, settings, chapters, chapterIndex, onSheet = { sheet = it }, onYouTubeSignIn = onYouTubeSignIn)
+                        Spacer(Modifier.height(24.dp))
                     }
                 }
             }
@@ -435,48 +478,54 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
     }
 }
 
+/** Square album-style cover: the artwork is the page, so it gets the room. */
 @Composable
-private fun Cover(model: File?, title: String, modifier: Modifier) {
-    Box(modifier.shadow(20.dp, MaterialTheme.shapes.small)) {
-        CoverImage(model, title, Modifier.fillMaxWidth())
+private fun PlayerCover(model: File?, title: String, modifier: Modifier) {
+    Box(modifier.shadow(24.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp))) {
+        CoverImage(model, title, Modifier.fillMaxSize())
     }
 }
 
+/** What is playing: the current chapter as the "lyric" line, then the title, the author and a bookmark action. */
 @Composable
-private fun TitleBlock(
+private fun NowPlaying(
     title: String,
     author: String,
     origin: String?,
-    chapters: List<AudioNavEntry>,
-    chapterIndex: Int,
-    trackTitle: String,
+    chapterTitle: String,
     onChapters: () -> Unit,
+    onBookmark: (() -> Unit)?,
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
-        )
-        val subtitle = listOfNotNull(author.ifBlank { null }, origin).joinToString(" · ")
-        if (subtitle.isNotEmpty()) {
+    Text(
+        chapterTitle.ifBlank { title },
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onChapters).heightIn(min = 32.dp).padding(vertical = 6.dp),
+    )
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
             Text(
-                subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
+                maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
+            val subtitle = listOfNotNull(author.ifBlank { null }, origin).joinToString(" · ")
+            if (subtitle.isNotEmpty()) {
+                Text(
+                    subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
-        Spacer(Modifier.height(12.dp))
-        val chapterTitle = chapters.getOrNull(chapterIndex)?.title ?: trackTitle
-        Text(
-            chapterTitle, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary,
-            textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.clickable(enabled = chapters.isNotEmpty(), onClick = onChapters).heightIn(min = 32.dp).padding(horizontal = 8.dp),
-        )
+        if (onBookmark != null) {
+            IconButton(onClick = onBookmark) { Icon(Icons.Default.BookmarkAdd, stringResource(R.string.audio_bookmark_add)) }
+        }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Controls(
+private fun PlayerControls(
     viewModel: AudioPlayerViewModel,
     s: PlayerSnapshot?,
     settings: AudioSettings,
@@ -485,19 +534,20 @@ private fun Controls(
     onSheet: (String) -> Unit,
     onYouTubeSignIn: (() -> Unit)?,
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
         val span = PlayerMath.span(chapters, chapterIndex, s?.durationMs ?: 0)
         SeekBar(s, span) { viewModel.seekTo(it) }
         val progress = s?.let(viewModel::bookProgress)
-        val position = listOfNotNull(
+        val left = s?.let(viewModel::timeLeftMs)
+        val line = listOfNotNull(
             if (chapters.size > 1 && chapterIndex >= 0) stringResource(R.string.audio_chapter_of, chapterIndex + 1, chapters.size) else null,
             progress?.let { stringResource(R.string.audio_progress_percent, (it * 100).toInt()) },
+            left?.let { stringResource(R.string.audio_book_left, duration(it)) },
         ).joinToString(" · ")
-        if (position.isNotEmpty()) Text(position, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        s?.let(viewModel::timeLeftMs)?.let { left ->
+        if (line.isNotEmpty()) {
             Text(
-                stringResource(R.string.audio_book_left, duration(left)),
-                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                line, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
             )
         }
         s?.error?.let {
@@ -519,57 +569,60 @@ private fun Controls(
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = viewModel::previous, enabled = s != null, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Default.SkipPrevious, stringResource(R.string.audio_previous), Modifier.size(32.dp))
-            }
             SkipButton(settings.skipBackSec, forward = false, enabled = s != null, onClick = viewModel::back)
-            FilledIconButton(onClick = viewModel::playPause, enabled = s != null, modifier = Modifier.size(80.dp)) {
-                when {
-                    s == null || s.isBuffering && s.playWhenReady -> CircularProgressIndicator(Modifier.size(32.dp), strokeWidth = 3.dp, color = MaterialTheme.colorScheme.onPrimary)
-                    s.playWhenReady -> Icon(Icons.Default.Pause, stringResource(R.string.audio_pause), Modifier.size(42.dp))
-                    else -> Icon(Icons.Default.PlayArrow, stringResource(R.string.audio_play), Modifier.size(42.dp))
-                }
+            IconButton(onClick = viewModel::previous, enabled = s != null, modifier = Modifier.size(52.dp)) {
+                Icon(Icons.Default.SkipPrevious, stringResource(R.string.audio_previous), Modifier.size(36.dp))
+            }
+            PlayButton(s, viewModel::playPause)
+            IconButton(onClick = viewModel::next, enabled = s != null, modifier = Modifier.size(52.dp)) {
+                Icon(Icons.Default.SkipNext, stringResource(R.string.audio_next), Modifier.size(36.dp))
             }
             SkipButton(settings.skipForwardSec, forward = true, enabled = s != null, onClick = viewModel::forward)
-            IconButton(onClick = viewModel::next, enabled = s != null, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Default.SkipNext, stringResource(R.string.audio_next), Modifier.size(32.dp))
-            }
         }
-        Spacer(Modifier.height(16.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), modifier = Modifier.fillMaxWidth()) {
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             AssistChip(
                 onClick = { onSheet("speed") },
                 label = { Text(speedLabel(s?.speed ?: 1f)) },
                 leadingIcon = { Icon(Icons.Default.Speed, null) },
             )
-            FilterChip(
-                selected = s != null && (s.sleepAt > 0 || s.sleepEndOfChapter),
-                onClick = { onSheet("sleep") },
-                label = { Text(sleepLabel(s)) },
-                leadingIcon = { Icon(Icons.Default.Bedtime, null) },
-            )
-            FilterChip(
-                selected = s?.skipSilence == true,
-                onClick = viewModel::toggleSkipSilence,
-                enabled = s != null,
-                label = { Text(stringResource(R.string.audio_skip_silence)) },
-                leadingIcon = { Icon(Icons.Default.GraphicEq, null) },
-            )
-            AssistChip(
-                onClick = { onSheet("bookmarks") },
-                label = {
-                    val count = settings.bookmarks.size
-                    Text(stringResource(R.string.audio_bookmarks) + if (count > 0) " · $count" else "")
-                },
-                leadingIcon = { Icon(Icons.Default.Bookmarks, null) },
-            )
-            AssistChip(
-                onClick = { onSheet("skip") },
-                label = { Text("${settings.skipBackSec} / ${settings.skipForwardSec}") },
-                leadingIcon = { Icon(Icons.Default.Tune, stringResource(R.string.audio_skip_intervals)) },
-            )
+            Spacer(Modifier.weight(1f))
+            val sleepOn = s != null && (s.sleepAt > 0 || s.sleepEndOfChapter)
+            IconButton(onClick = { onSheet("sleep") }) {
+                Icon(
+                    Icons.Default.Bedtime, sleepLabel(s),
+                    tint = if (sleepOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = { onSheet("bookmarks") }) {
+                Icon(Icons.Default.Bookmarks, stringResource(R.string.audio_bookmarks), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = { onSheet("chapters") }, enabled = chapters.isNotEmpty()) {
+                Icon(
+                    Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.audio_chapters),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** The one big white button of the screen, as on a record sleeve. */
+@Composable
+private fun PlayButton(s: PlayerSnapshot?, onClick: () -> Unit) {
+    FilledIconButton(
+        onClick = onClick,
+        enabled = s != null,
+        shape = CircleShape,
+        colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color.White, contentColor = Color.Black),
+        modifier = Modifier.size(72.dp),
+    ) {
+        when {
+            s == null || s.isBuffering && s.playWhenReady -> CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp, color = Color.Black)
+            s.playWhenReady -> Icon(Icons.Default.Pause, stringResource(R.string.audio_pause), Modifier.size(36.dp))
+            else -> Icon(Icons.Default.PlayArrow, stringResource(R.string.audio_play), Modifier.size(40.dp))
         }
     }
 }

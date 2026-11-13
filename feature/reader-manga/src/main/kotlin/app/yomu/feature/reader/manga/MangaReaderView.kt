@@ -255,7 +255,8 @@ private fun Paged(controller: MangaController, listener: MangaListener, layout: 
     }
     val onTap: (Offset, IntSize) -> Unit = { pos, size ->
         val action = TapZones.action(s.tapZones, s.invertTapZones, rtl, pos.x / size.width, pos.y / size.height)
-        when (action) {
+        // A locked page is view-only: taps open the menu instead of leaving it, and the pager below does not swipe.
+        when (if (s.zoomLock) TapAction.MENU else action) {
             TapAction.MENU -> listener.onMenu()
             TapAction.NEXT -> scope.launch { go((pager.currentPage + 1).coerceAtMost(layout.total - 1)) }
             TapAction.PREV -> scope.launch {
@@ -281,10 +282,18 @@ private fun Paged(controller: MangaController, listener: MangaListener, layout: 
             }
         }
     }
+    // A locked page keeps its position: swiping must not turn the page while the zoom stays as the user set it.
+    val swipe = !s.zoomLock
     if (s.direction == MangaDirection.VERTICAL) {
-        VerticalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, key = { it }) { content(it) }
+        VerticalPager(
+            state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1,
+            userScrollEnabled = swipe, key = { it },
+        ) { content(it) }
     } else {
-        HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), reverseLayout = rtl, beyondViewportPageCount = 1, key = { it }) { content(it) }
+        HorizontalPager(
+            state = pager, modifier = Modifier.fillMaxSize(), reverseLayout = rtl, beyondViewportPageCount = 1,
+            userScrollEnabled = swipe, key = { it },
+        ) { content(it) }
     }
 }
 
@@ -506,25 +515,27 @@ private fun Webtoon(controller: MangaController, listener: MangaListener, hasPre
                         if (pressed.isEmpty()) break
                         if (pressed.size >= 2) {
                             val d = (pressed[0].position - pressed[1].position).getDistance()
-                            if (previous > 0f) zoom = (zoom * d / previous).coerceIn(1f, 3f)
+                            // Locked, the strip keeps the scale the user chose: no pinch changes it.
+                            if (!s.zoomLock && previous > 0f) zoom = (zoom * d / previous).coerceIn(1f, 3f)
                             previous = d
                             event.changes.forEach { it.consume() }
                         }
                     }
                 }
             }
-            .pointerInput(s.tapZones, s.invertTapZones, s.webtoonDoubleTapZoom, zoom > 1.01f) {
+            .pointerInput(s.tapZones, s.invertTapZones, s.webtoonDoubleTapZoom, zoom > 1.01f, s.zoomLock) {
                 detectTapGestures(
                     onTap = { pos ->
                         val action = TapZones.action(s.tapZones, s.invertTapZones, false, pos.x / size.width, pos.y / size.height)
-                        when (action) {
+                        // Locked, the strip only scrolls: a tap opens the menu instead of jumping a screen.
+                        when (if (s.zoomLock) TapAction.MENU else action) {
                             TapAction.MENU -> listener.onMenu()
                             TapAction.NEXT -> scope.launch { scrollBy(size.height * 0.8f) }
                             TapAction.PREV -> scope.launch { scrollBy(-size.height * 0.8f) }
                         }
                     },
                     // Without a double-tap handler single taps fire at once; zoomed in, a double tap always zooms back out.
-                    onDoubleTap = if (s.webtoonDoubleTapZoom || zoom > 1.01f) { _ -> zoom = if (zoom > 1.01f) 1f else 2f } else null,
+                    onDoubleTap = if (!s.zoomLock && (s.webtoonDoubleTapZoom || zoom > 1.01f)) { _ -> zoom = if (zoom > 1.01f) 1f else 2f } else null,
                     onLongPress = { pos -> listener.onLongPressAt(controller.page, stripCoords?.takeIf { it.isAttached }?.localToWindow(pos) ?: pos) },
                 )
             },
@@ -532,7 +543,8 @@ private fun Webtoon(controller: MangaController, listener: MangaListener, hasPre
         val sidePadding = maxWidth * (s.webtoonSidePadding.coerceIn(0, 30) / 100f)
         LazyColumn(
             state = state,
-            modifier = Modifier.fillMaxHeight().horizontalScroll(hScroll, enabled = zoom > 1.01f).width(maxWidth * zoom),
+            // Locked, the strip only moves up and down at the scale already chosen: no sideways panning.
+            modifier = Modifier.fillMaxHeight().horizontalScroll(hScroll, enabled = zoom > 1.01f && !s.zoomLock).width(maxWidth * zoom),
             contentPadding = PaddingValues(horizontal = sidePadding * zoom),
             verticalArrangement = Arrangement.spacedBy(if (s.webtoonGaps) 10.dp else 0.dp),
         ) {

@@ -1,0 +1,1 @@
+Checkboxes and a selection action in the library, five-star ratings, a circular long-press menu, a hideable or movable "From the catalog" row, a Long strip reading mode for books, reader settings that apply immediately, an explicit brightness switch, a locked view that keeps the zoom, and a redesigned audiobook player.

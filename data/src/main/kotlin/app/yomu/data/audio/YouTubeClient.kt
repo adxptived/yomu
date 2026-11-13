@@ -21,6 +21,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import okhttp3.CookieJar
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -83,7 +84,7 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
     suspend fun video(videoId: String): AudiobookManifest = withContext(Dispatchers.IO) {
         val player = runCatching { player(videoId).second }.getOrNull()
         // The watch page's data: official chapters, and the title when the player asks for a sign-in.
-        val next = runCatching { post("next", WEB, buildJsonObject { put("videoId", videoId) }) }.onFailure { Timber.d(it, "YouTube next") }.getOrNull()
+        val next = runCatching { postMeta("next", buildJsonObject { put("videoId", videoId) }) }.onFailure { Timber.d(it, "YouTube next") }.getOrNull()
         val nextDetails = next?.let(::parseNextDetails)
         val details = player?.obj("videoDetails")
         val fallback by lazy { oembed(videoId) }
@@ -116,7 +117,7 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
     /** Videos (long ones first in relevance, as YouTube ranks them) and playlists for [query]. */
     suspend fun search(query: String): List<YouTubeResult> = withContext(Dispatchers.IO) {
         val locale = Locale.getDefault()
-        parseSearch(post("search", WEB, buildJsonObject { put("query", query) }, locale))
+        parseSearch(postMeta("search", buildJsonObject { put("query", query) }, locale))
     }
 
     /**
@@ -124,31 +125,30 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
      * through the whole list; the web client's continuations stop after the first page (2026-11).
      */
     suspend fun playlist(playlistId: String, limit: Int = MAX_PLAYLIST, reverse: Boolean = false): AudiobookManifest = withContext(Dispatchers.IO) {
-        var lastError: Throwable? = null
-        for (c in listOf(BROWSE, WEB)) {
-            runCatching { readPlaylist(c, playlistId, limit) }
-                .onSuccess { list ->
-                    if (list.videos.isEmpty()) return@onSuccess
-                    val tracks = if (reverse) list.videos.reversed() else list.videos
-                    return@withContext AudiobookManifest(
-                        title = list.title,
-                        authors = listOfNotNull(list.author),
-                        description = list.description,
-                        coverUrl = tracks.firstNotNullOfOrNull { AudiobookManifest.youtubeId(it.uri) }?.let(::thumbnail),
-                        origin = AudioOrigin.YOUTUBE,
-                        sourceUrl = "https://www.youtube.com/playlist?list=$playlistId",
-                        tracks = tracks,
-                    )
-                }
-                .onFailure { lastError = it }
+        val list = try {
+            readPlaylist(playlistId, limit)
+        } catch (e: YouTubeException) {
+            throw e
+        } catch (e: IOException) {
+            throw YouTubeException(YouTubeException.Reason.NOT_FOUND, e.message)
         }
-        throw lastError as? YouTubeException ?: YouTubeException(YouTubeException.Reason.NOT_FOUND, lastError?.message)
+        if (list.videos.isEmpty()) throw YouTubeException(YouTubeException.Reason.NOT_FOUND)
+        val tracks = if (reverse) list.videos.reversed() else list.videos
+        AudiobookManifest(
+            title = list.title,
+            authors = listOfNotNull(list.author),
+            description = list.description,
+            coverUrl = tracks.firstNotNullOfOrNull { AudiobookManifest.youtubeId(it.uri) }?.let(::thumbnail),
+            origin = AudioOrigin.YOUTUBE,
+            sourceUrl = "https://www.youtube.com/playlist?list=$playlistId",
+            tracks = tracks,
+        )
     }
 
     private class PlaylistPage(val title: String, val author: String?, val description: String?, val videos: List<AudioTrack>)
 
-    private fun readPlaylist(c: Client, playlistId: String, limit: Int): PlaylistPage {
-        val first = post("browse", c, buildJsonObject { put("browseId", "VL$playlistId") })
+    private fun readPlaylist(playlistId: String, limit: Int): PlaylistPage {
+        val first = postMeta("browse", buildJsonObject { put("browseId", "VL$playlistId") })
         val title = playlistTitle(first) ?: throw YouTubeException(YouTubeException.Reason.NOT_FOUND)
         val videos = LinkedHashMap<String, AudioTrack>()
         var page: JsonElement = first
@@ -156,7 +156,7 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
             parsePlaylistVideos(page).forEach { videos.putIfAbsent(AudiobookManifest.youtubeId(it.uri)!!, it) }
             if (videos.size >= limit) break
             val token = continuation(page) ?: break
-            page = post("browse", c, buildJsonObject { put("continuation", token) })
+            page = postMeta("browse", buildJsonObject { put("continuation", token) })
         }
         val description = findAll(first, "playlistMetadataRenderer").firstNotNullOfOrNull { it.str("description") }?.takeIf { it.isNotBlank() }
         return PlaylistPage(title, playlistAuthor(first), description, videos.values.take(limit))
@@ -167,7 +167,7 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
      * like a podcast.
      */
     suspend fun channel(url: String, limit: Int = MAX_PLAYLIST): AudiobookManifest = withContext(Dispatchers.IO) {
-        val resolved = runCatching { post("navigation/resolve_url", WEB, buildJsonObject { put("url", url) }) }.getOrNull()
+        val resolved = runCatching { postMeta("navigation/resolve_url", buildJsonObject { put("url", url) }) }.getOrNull()
         val channelId = resolved?.let { findAll(it, "browseEndpoint").firstNotNullOfOrNull { e -> e.str("browseId") } }
             ?.takeIf { it.startsWith("UC") && it.length > 2 }
             ?: throw YouTubeException(YouTubeException.Reason.NOT_FOUND)
@@ -189,11 +189,14 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
                 put("params", filter.params)
             }
         }
-        val page = post("search", BROWSE, body)
+        val page = postMeta("search", body)
         YouTubeSearchPage(parseSearch(page), continuation(page))
     }
 
     private val streams = ConcurrentHashMap<Pair<String, Boolean>, YouTubeStream>()
+
+    /** The shared client without its cookie jar: the metadata fallback when YouTube refuses the account session. */
+    private val anonymous: OkHttpClient by lazy { client().newBuilder().cookieJar(CookieJar.NO_COOKIES).build() }
 
     /**
      * A stream address of [videoId] (valid for a few hours); [progressive] skips HLS, for downloading a single file.
@@ -266,7 +269,41 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
         },
     ).jsonObject
 
-    private fun post(endpoint: String, c: Client, body: JsonObject, locale: Locale? = null): JsonElement {
+    /**
+     * A metadata call (search, browse, next): every client in turn, first with the account session, then without it.
+     * YouTube often answers one client or one session with 400 (a changed client, an account it will not take for that
+     * client), and losing the catalog to that is not acceptable while another client answers fine.
+     */
+    private fun postMeta(endpoint: String, body: JsonObject, locale: Locale? = null): JsonElement {
+        val jars = if (YouTubeAuth.isSignedIn()) listOf(client(), anonymous) else listOf(client())
+        var last: Throwable? = null
+        for (c in CLIENTS + WEB) {
+            for (http in jars) {
+                try {
+                    return post(endpoint, c, body, locale, http, auth = http !== anonymous)
+                } catch (e: IOException) {
+                    last = e
+                } catch (e: kotlinx.serialization.SerializationException) {
+                    last = e
+                }
+            }
+        }
+        throw last as? IOException ?: IOException("YouTube $endpoint failed", last)
+    }
+
+    /** The server's own sentence from a failed answer ("Precondition check failed"), for the error screen. */
+    private fun serverReason(body: String): String =
+        Regex("\"(?:reason|message|status)\"\\s*:\\s*\"([^\"]{1,160})\"")
+            .find(body)?.groupValues?.getOrNull(1)?.let { ": $it" }.orEmpty()
+
+    private fun post(
+        endpoint: String,
+        c: Client,
+        body: JsonObject,
+        locale: Locale? = null,
+        http: OkHttpClient = client(),
+        auth: Boolean = true,
+    ): JsonElement {
         val payload = buildJsonObject {
             putJsonObject("context") {
                 putJsonObject("client") {
@@ -287,11 +324,12 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
             .header("Origin", "https://www.youtube.com")
             .post(Json.encodeToString(JsonObject.serializer(), payload).toRequestBody(JSON))
         // A Google session from the in-app WebView (Settings → YouTube): the cookies come from the shared cookie
-        // jar, the signature from here. Without a session the calls stay anonymous, as before.
-        YouTubeAuth.headers().forEach { (k, v) -> builder.header(k, v) }
-        return client().newCall(builder.build()).execute().use { r ->
-            if (!r.isSuccessful) throw IOException("YouTube $endpoint: HTTP ${r.code}")
-            val element = json.parseToJsonElement(r.body.string())
+        // jar, the signature from here. Without a session, and for the anonymous fallback, the call stays anonymous.
+        if (auth) YouTubeAuth.headers().forEach { (k, v) -> builder.header(k, v) }
+        return http.newCall(builder.build()).execute().use { r ->
+            val text = r.body.string()
+            if (!r.isSuccessful) throw IOException("YouTube $endpoint: HTTP ${r.code}${serverReason(text)}")
+            val element = json.parseToJsonElement(text)
             rememberVisitor(element)
             element
         }
@@ -340,10 +378,8 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
             mapOf("deviceMake" to "Apple", "deviceModel" to "RealityDevice17,1", "osName" to "visionOS", "osVersion" to "26.5.23O471"),
         )
 
-        /** Playlists and search: classic renderers with working continuations (checked live 2026-11). */
-        private val BROWSE = VISIONOS
-
         // Clients without a JavaScript player, newest working first (yt-dlp, 2026-08: visionos is the JS-less default).
+        // Metadata calls try them in this order and then the web client.
         private val CLIENTS = listOf(
             VISIONOS,
             Client(

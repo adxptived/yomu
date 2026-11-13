@@ -33,8 +33,8 @@
     <string name="mr_animation_sum">Если выключить, тапы и кнопки листают мгновенно</string>
     <string name="mr_crop">Обрезать белые поля</string>
     <string name="mr_page_number">Номер страницы</string>
-    <string name="mr_zoom_lock">Фиксировать масштаб</string>
-    <string name="mr_zoom_lock_summary">Следующие страницы открываются в текущем увеличении</string>
+    <string name="mr_zoom_lock">Зафиксировать просмотр</string>
+    <string name="mr_zoom_lock_summary">Оставить это увеличение и отключить листание: страница только прокручивается</string>
     <string name="mr_preload">Загружать страниц заранее</string>
     <string name="mr_webtoon_padding">Поля по бокам</string>
     <string name="mr_webtoon_gaps">Промежутки между страницами</string>

@@ -266,7 +266,10 @@ private fun SettingsRoot(
     val q = query.trim()
     val results = remember(q, index) { filterSettings(index, q) }
     val root = stringResource(CoreR.string.settings)
+    val context = LocalContext.current
+    val (version, code) = remember { appVersion(context) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
+        item(key = "about") { AboutHeader(version, code) { onOpen(SettingsSection.ABOUT) } }
         item(key = "search") {
             SearchField(
                 query = query,
@@ -315,11 +318,11 @@ private fun SettingsRoot(
     }
 }
 
-/** Sections of the settings root, one rounded card per group. */
+/** Sections of the settings root, one rounded card per group. [SettingsSection.ABOUT] is the header card on top. */
 private val ROOT_GROUPS = listOf(
     listOf(SettingsSection.APPEARANCE, SettingsSection.NAVIGATION, SettingsSection.LIBRARY, SettingsSection.PROFILE, SettingsSection.READER, SettingsSection.MANGA, SettingsSection.SELECTION, SettingsSection.QUICK_ACTIONS, SettingsSection.FONTS),
     listOf(SettingsSection.TRANSLATION, SettingsSection.CATALOG, SettingsSection.YOUTUBE, SettingsSection.TRACKING, SettingsSection.DOWNLOADS, SettingsSection.NETWORK),
-    listOf(SettingsSection.BACKUP, SettingsSection.SYNC, SettingsSection.NOTIFICATIONS, SettingsSection.SECURITY, SettingsSection.ADVANCED, SettingsSection.ABOUT),
+    listOf(SettingsSection.BACKUP, SettingsSection.SYNC, SettingsSection.NOTIFICATIONS, SettingsSection.SECURITY, SettingsSection.ADVANCED),
 )
 
 @Composable

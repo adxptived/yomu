@@ -129,7 +129,8 @@
     <string name="rs_publisher_summary">Использовать шрифты и цвета из самой книги</string>
     <string name="rs_saved_words">Подсвечивать сохранённые слова</string>
     <string name="rs_brightness">Яркость</string>
-    <string name="rs_system_brightness">Системная яркость</string>
+    <string name="rs_brightness_control">Управлять яркостью</string>
+    <string name="rs_brightness_control_summary">Выключено — яркость системная и подстраивается под освещение</string>
     <string name="rs_warm">Тёплый фильтр</string>
     <string name="rs_timeout">Не гасить экран</string>
     <string name="rs_timeout_system">Как в системе</string>
@@ -190,8 +191,8 @@
     <string name="rs_pdf_crop_bottom">Обрезать снизу, %</string>
     <string name="rs_pdf_contrast">Контраст</string>
     <string name="rs_pdf_grayscale">Оттенки серого</string>
-    <string name="rs_pdf_zoom_lock">Фиксировать масштаб</string>
-    <string name="rs_zoom_lock_summary">Следующие страницы открываются в текущем увеличении</string>
+    <string name="rs_pdf_zoom_lock">Зафиксировать просмотр</string>
+    <string name="rs_zoom_lock_summary">Оставить это увеличение и отключить листание: страница только прокручивается</string>
     <string name="rs_auto_night_mode">Ночная тема</string>
     <string name="rs_auto_night_system">Как в приложении</string>
     <string name="rs_auto_night_schedule">По расписанию</string>
@@ -203,8 +204,8 @@
     <string name="reader_pages">Страницы</string>
     <string name="reader_time_left_m">≈ %1$d мин</string>
     <string name="reader_time_left_hm">≈ %1$d ч %2$d мин</string>
-    <string name="reader_zoom_lock_on">Масштаб зафиксирован: следующие страницы откроются так же</string>
-    <string name="reader_zoom_lock_off">Масштаб не зафиксирован: нажмите, чтобы открывать следующие страницы так же</string>
+    <string name="reader_zoom_lock_on">Просмотр зафиксирован: увеличение сохраняется, листание отключено, страница только прокручивается</string>
+    <string name="reader_zoom_lock_off">Просмотр не зафиксирован: нажмите, чтобы сохранить увеличение и отключить листание</string>
     <string name="rs_pdf_reflow">Перекомпоновка текста</string>
     <string name="rs_pdf_reflow_summary">Показывает текстовый слой с вашими настройками шрифта</string>
 
@@ -419,16 +420,15 @@
     <!-- Два уровня настроек чтения: компактная панель для частых изменений и полный экран для остальных -->
     <string name="rs_open_all">Все настройки чтения</string>
     <string name="rs_undo_change">Отменить последнее изменение</string>
-    <string name="rs_done">Готово</string>
-    <string name="rs_revert">Вернуть как было</string>
-    <string name="rs_revert_done">Настройки вернулись к состоянию до открытия</string>
     <string name="rs_preview">Предпросмотр</string>
     <string name="rs_preview_text">Вечер был тихим, и страницы листались сами собой.\n14 · «Строка в кавычках» — и число.</string>
     <string name="rs_mode">Режим чтения</string>
     <string name="rs_mode_paged">Листание</string>
     <string name="rs_mode_scroll">Прокрутка главы</string>
+    <string name="rs_mode_strip">Лента</string>
     <string name="rs_mode_paged_sum">Страницы, как в бумажной книге; глава кончается на последней странице</string>
     <string name="rs_mode_scroll_sum">Одна непрерывная страница: глава прокручивается без перелистывания</string>
+    <string name="rs_mode_strip_sum">Сплошная прокрутка: в конце главы сразу открывается следующая, текст не прерывается</string>
     <string name="rs_mode_section">Листание</string>
     <string name="rs_font_current">Шрифт: %1$s</string>
     <string name="rs_font_pick_title">Шрифт книги</string>

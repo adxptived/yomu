@@ -86,6 +86,9 @@ interface BookDao {
     @Query("UPDATE books SET favorite = :favorite WHERE id IN (:ids)")
     suspend fun setFavorite(ids: Collection<Long>, favorite: Boolean)
 
+    @Query("UPDATE books SET rating = :rating WHERE id IN (:ids)")
+    suspend fun setRating(ids: Collection<Long>, rating: Int)
+
     @Query("UPDATE books SET progress = :progress, lastReadAt = :at, status = CASE WHEN status = 'NEW' THEN 'READING' ELSE status END WHERE id = :id")
     suspend fun updateProgress(id: Long, progress: Float, at: Long)
 

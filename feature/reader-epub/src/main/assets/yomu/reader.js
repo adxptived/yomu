@@ -617,6 +617,19 @@
     state: function () { return json({ page: currentPage(), pages: pageCount(), progression: progression(), offset: firstVisibleOffset(), total: nodes().total }); }
   };
 
+  // Long strip: reaching the bottom of a chapter opens the next one, so the text never stops at a chapter boundary.
+  var stripSent = false;
+  function stripEdge() {
+    if (!cfg.strip || cfg.paged || cfg.fixed || !cfg.hasNext) return;
+    var max = se.scrollHeight - pageH;
+    if (max <= 0) return;
+    if (se.scrollTop >= max - 2) {
+      if (!stripSent) { stripSent = true; B.onEdge('next'); }
+    } else {
+      stripSent = false;
+    }
+  }
+
   function start() {
     applyLayout();
     var go = function () {
@@ -639,7 +652,7 @@
     document.addEventListener('touchstart', onTouchStart, { passive: true });
     document.addEventListener('touchend', onTouchEnd, { passive: true });
     document.addEventListener('click', onClick, true);
-    window.addEventListener('scroll', function () { if (!cfg.paged || cfg.vertical) reportLater(); }, { passive: true });
+    window.addEventListener('scroll', function () { if (!cfg.paged || cfg.vertical) reportLater(); stripEdge(); }, { passive: true });
     window.addEventListener('resize', debounce(function () { var keep = firstVisibleOffset(); applyLayout(); invalidate(); setTimeout(function () { goToOffset(keep, false); }, 50); }, 200));
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
