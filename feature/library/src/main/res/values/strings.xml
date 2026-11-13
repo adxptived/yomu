@@ -28,7 +28,7 @@
     <string name="library_import_failed">Import failed: %s</string>
     <string name="library_mark_read">Mark as read</string>
     <string name="library_mark_unread">Mark as unread</string>
-    <string name="library_to_collection">To tabs</string>
+    <string name="library_to_collection">To shelf</string>
     <string name="library_add_tag">Add tag</string>
     <string name="library_tag">Tag</string>
     <string name="library_tags">Tags</string>

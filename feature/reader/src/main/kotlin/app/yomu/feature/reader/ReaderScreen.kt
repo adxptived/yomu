@@ -58,6 +58,7 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -628,6 +629,13 @@ fun ReaderScreen(
                         onClick = { dismiss(); onOpenPacks() })
                     DropdownMenuItem(text = { Text(stringResource(R.string.reader_stats)) }, leadingIcon = { Icon(Icons.Outlined.BarChart, null) },
                         onClick = { dismiss(); onOpenStats() })
+                    // The gesture scheme can be shown again: a long-press menu must never be the only way to a function.
+                    DropdownMenuItem(text = { Text(stringResource(R.string.reader_how_to_control)) }, leadingIcon = { Icon(Icons.Outlined.TouchApp, null) },
+                        onClick = {
+                            dismiss()
+                            tapZonesDone = false
+                            if (data is ReaderContent.Manga) viewModel.previewTapZones() else viewModel.chromeVisible.value = false
+                        })
                     if (onOpenPageLayout != null && viewModel.bookId > 0 && viewModel.book?.format == BookFormat.DOCX) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.reader_page_layout)) }, leadingIcon = { Icon(Icons.Outlined.Description, null) },
                             onClick = { dismiss(); onOpenPageLayout(viewModel.bookId) })
@@ -674,7 +682,16 @@ fun ReaderScreen(
                 enter = fadeIn(tween(180)) + slideInVertically(tween(180)) { it / 2 },
                 exit = fadeOut(tween(120)),
             ) {
-                ReaderQuickPanel(common, textSettings.takeIf { data is ReaderContent.Text }, viewModel, onClose = { quickPanel = false })
+                ReaderQuickPanel(
+                    content = data,
+                    common = common,
+                    text = textSettings.takeIf { data is ReaderContent.Text },
+                    manga = mangaSettings.takeIf { data is ReaderContent.Manga },
+                    pdf = pdfSettings.takeIf { data is ReaderContent.Pdf },
+                    vm = viewModel,
+                    onOpenAll = { quickPanel = false; sheet = ReaderSheet.SETTINGS },
+                    onClose = { quickPanel = false },
+                )
             }
             val jump = jumpBack
             AnimatedVisibility(
@@ -755,20 +772,32 @@ fun ReaderScreen(
     }
 
     noteFor?.let { sel ->
+        val key = remember(sel) { viewModel.noteDraftKey(sel) }
         NoteDialog(
             initial = remember(sel) { viewModel.noteOfSelection().orEmpty() },
             quote = sel.text,
-            onSave = { viewModel.saveNote(it); noteFor = null },
-            onDelete = sel.highlightId?.let { { viewModel.deleteHighlight(); noteFor = null } },
+            draft = remember(key) { viewModel.noteDraft(key) },
+            onDraft = { viewModel.saveNoteDraft(key, it) },
+            onSave = { viewModel.saveNote(it) },
+            onDelete = sel.highlightId?.let {
+                {
+                    viewModel.discardNoteDraft(key)
+                    viewModel.deleteHighlight()
+                    noteFor = null
+                }
+            },
             onDismiss = { noteFor = null; viewModel.clearSelection() },
         )
     }
 
     if (pageNote) {
+        val key = remember { viewModel.pageNoteDraftKey() }
         NoteDialog(
             initial = "",
             quote = null,
-            onSave = { viewModel.addPageNote(it); pageNote = false },
+            draft = remember(key) { viewModel.pageNoteDraft() },
+            onDraft = { viewModel.savePageNoteDraft(it) },
+            onSave = { viewModel.addPageNote(it) },
             onDelete = null,
             onDismiss = { pageNote = false },
         )
@@ -823,7 +852,11 @@ fun ReaderScreen(
             )
         }
         ReaderSheet.SETTINGS -> data?.let { c ->
-            ReaderSettingsSheet(viewModel, c, textSettings, mangaSettings, pdfSettings, common, perBook, wordTapSetting, onDismiss = { sheet = ReaderSheet.NONE })
+            ReaderSettingsSheet(
+                viewModel, c, textSettings, mangaSettings, pdfSettings, common, perBook, wordTapSetting,
+                onDismiss = { sheet = ReaderSheet.NONE },
+                previewText = readerText,
+            )
         }
         ReaderSheet.TTS -> TtsSheet(viewModel, common, onDismiss = { sheet = ReaderSheet.NONE })
         ReaderSheet.PAGES -> when (val c = data) {

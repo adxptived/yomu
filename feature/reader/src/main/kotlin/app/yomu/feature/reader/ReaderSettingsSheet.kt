@@ -1,7 +1,5 @@
 package app.yomu.feature.reader
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -27,7 +26,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.TextFields
@@ -40,7 +38,6 @@ import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.InputChip
@@ -50,9 +47,11 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -63,24 +62,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.yomu.core.common.Files
 import app.yomu.core.ui.components.CollapsibleSection
 import app.yomu.core.ui.components.OptionTiles
 import app.yomu.core.ui.components.PreferenceChoice
+import app.yomu.core.ui.components.PreferenceItem
 import app.yomu.core.ui.components.PreferenceSlider
-import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.PreferenceSwitch
+import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.TileOption
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.YomuTab
@@ -98,15 +100,19 @@ import app.yomu.domain.model.TextAlignment
 import app.yomu.domain.model.TextPreset
 import app.yomu.domain.model.TextReaderSettings
 import app.yomu.domain.model.WordTapGesture
-import app.yomu.feature.reader.epub.ReaderCss
 import app.yomu.feature.reader.manga.MangaControlSettings
 import app.yomu.feature.reader.manga.MangaPageSettings
 import app.yomu.feature.reader.manga.TapZonesDiagram
 import app.yomu.feature.reader.manga.zoneLabel
-import java.io.File
 import app.yomu.core.ui.R as CoreR
 
-/** Reader settings for the active engine, with a "this book only" switch. */
+/**
+ * The full reading settings: preview, search across every tab, and groups that keep the frequent choices small and
+ * push exact numbers into "Exact values". Changes are applied live, as a preview on the page behind the sheet.
+ *
+ * Closing with "Done" keeps them. Back, a tap outside or "Revert changes" returns the settings that were in use when the
+ * sheet opened — an unfinished experiment is not saved by accident.
+ */
 @Composable
 fun ReaderSettingsSheet(
     viewModel: ReaderViewModel,
@@ -118,66 +124,216 @@ fun ReaderSettingsSheet(
     perBook: Boolean,
     wordTap: WordTapGesture,
     onDismiss: () -> Unit,
+    /** What the page actually shows now (auto-night included), for the sample card. */
+    previewText: TextReaderSettings = text,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
     val presets by viewModel.presets.collectAsStateWithLifecycle()
-    YomuSheet(onDismiss = onDismiss) {
-        if (content is ReaderContent.Text) QuickTextBar(text, viewModel)
-        SearchField(
-            query = query,
-            onQueryChange = { query = it },
-            placeholder = stringResource(R.string.rs_search_settings),
-            modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+    val canUndo by viewModel.canUndo.collectAsStateWithLifecycle()
+    // The settings as they were when the sheet opened: "Revert changes" and Back go back here.
+    val openText = remember { text }
+    val openManga = remember { manga }
+    val openPdf = remember { pdf }
+    val openCommon = remember { common }
+    fun revertAndClose() {
+        viewModel.revertSettings(
+            text = openText.takeIf { content is ReaderContent.Text },
+            manga = openManga.takeIf { content is ReaderContent.Manga },
+            pdf = openPdf.takeIf { content is ReaderContent.Pdf },
+            common = openCommon,
         )
-        PrimaryTabRow(selectedTabIndex = tab) {
-            YomuTab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(if (content is ReaderContent.Text) R.string.rs_tab_text else if (content is ReaderContent.Pdf) R.string.rs_tab_pdf else R.string.rs_tab_manga)) })
-            YomuTab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.rs_tab_display)) })
-            YomuTab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.rs_tab_controls)) })
-        }
-        Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
-            if (viewModel.bookId > 0 || viewModel.isOnline) {
-                PreferenceSwitch(stringResource(R.string.rs_per_book), perBook, viewModel::setPerBook, summary = stringResource(R.string.rs_per_book_summary))
+        onDismiss()
+    }
+    val searching = query.isNotBlank()
+    val settingsScroll = rememberScrollState()
+    // A tab switch starts at its own top: the previous tab's offset would otherwise hide the first setting.
+    LaunchedEffect(tab, searching) { settingsScroll.scrollTo(0) }
+    YomuSheet(onDismiss = { revertAndClose() }) {
+        // A bounded sheet with one weighted scroll region: the title, search, tabs and footer always stay reachable,
+        // on a short phone and at a large system font, instead of pushing the list off the screen.
+        Column(Modifier.fillMaxWidth().heightIn(max = 760.dp).fillMaxHeight(0.94f)) {
+            Row(Modifier.fillMaxWidth().padding(start = Dimens.l, end = 4.dp, top = Dimens.s), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.reader_settings),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                if (canUndo) {
+                    TextButton(onClick = viewModel::undoLastChange) { Text(stringResource(R.string.rs_undo_change)) }
+                }
             }
-            when (tab) {
-                0 -> when (content) {
-                    is ReaderContent.Text -> {
-                        if (query.isBlank()) PresetsRow(text, presets, viewModel)
-                        TextSettings(text, viewModel, query)
+            SearchField(
+                query = query,
+                onQueryChange = { query = it },
+                placeholder = stringResource(R.string.rs_search_settings),
+                modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+            )
+            if (!searching) {
+                PrimaryTabRow(selectedTabIndex = tab) {
+                    YomuTab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(if (content is ReaderContent.Text) R.string.rs_tab_text else if (content is ReaderContent.Pdf) R.string.rs_tab_pdf else R.string.rs_tab_manga)) })
+                    YomuTab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.rs_tab_display)) })
+                    YomuTab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.rs_tab_controls)) })
+                }
+            }
+            Column(Modifier.weight(1f).verticalScroll(settingsScroll)) {
+                if (content is ReaderContent.Text && !searching) {
+                    ReaderPreview(previewText)
+                    PresetsRow(text, presets, viewModel)
+                }
+                if (viewModel.bookId > 0 || viewModel.isOnline) {
+                    PreferenceSwitch(stringResource(R.string.rs_per_book), perBook, viewModel::setPerBook, summary = stringResource(R.string.rs_per_book_summary))
+                }
+                if (searching) {
+                    // A query searches all three tabs: a setting in another tab must not look absent.
+                    if (!hasMatches(query, content)) {
+                        Text(
+                            stringResource(R.string.rs_search_none),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.m),
+                        )
                     }
-                    is ReaderContent.Pdf -> PdfSettingsContent(pdf, viewModel, query)
-                    is ReaderContent.Manga -> MangaSettingsContent(manga, viewModel, query)
+                    when (content) {
+                        is ReaderContent.Text -> {
+                            TextSettings(text, viewModel, query)
+                            ThemeSection(text, viewModel, query)
+                            DisplaySettings(common, viewModel, showFooter = true, query = query)
+                            ControlSettings(content, common, manga, wordTap, viewModel, query)
+                        }
+                        is ReaderContent.Pdf -> {
+                            PdfSettingsContent(pdf, viewModel, query)
+                            DisplaySettings(common, viewModel, showFooter = true, query = query)
+                            ControlSettings(content, common, manga, wordTap, viewModel, query)
+                        }
+                        is ReaderContent.Manga -> {
+                            MangaSettingsContent(manga, viewModel, query)
+                            DisplaySettings(common, viewModel, showFooter = false, query = query)
+                            ControlSettings(content, common, manga, wordTap, viewModel, query)
+                        }
+                    }
+                } else {
+                    when (tab) {
+                        0 -> when (content) {
+                            is ReaderContent.Text -> TextSettings(text, viewModel, query)
+                            is ReaderContent.Pdf -> PdfSettingsContent(pdf, viewModel, query)
+                            is ReaderContent.Manga -> MangaSettingsContent(manga, viewModel, query)
+                        }
+                        1 -> {
+                            if (content is ReaderContent.Text) ThemeSection(text, viewModel, query)
+                            DisplaySettings(common, viewModel, showFooter = content !is ReaderContent.Manga, query = query)
+                        }
+                        else -> ControlSettings(content, common, manga, wordTap, viewModel, query)
+                    }
                 }
-                1 -> {
-                    if (content is ReaderContent.Text) ThemeSection(text, viewModel, query)
-                    DisplaySettings(common, viewModel, showFooter = content !is ReaderContent.Manga, query = query)
-                }
-                else -> ControlSettings(content, common, manga, wordTap, viewModel, query)
+                Spacer(Modifier.height(Dimens.l))
             }
-            Spacer(Modifier.height(Dimens.l))
+            Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { revertAndClose() }) { Text(stringResource(R.string.rs_revert)) }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.rs_done)) }
+            }
         }
     }
 }
 
 /**
- * Text settings in collapsible groups: the font, the distances between letters, lines and paragraphs, the margins,
- * the book's own styling and page turning. Only the two most used groups start open.
+ * A paragraph in the book's own type: the effect of size, spacing, font and colours is judged here, not on a row of
+ * numbers. Shown with the theme colours of the page, so a dark theme previews dark as well.
+ */
+@Composable
+private fun ReaderPreview(s: TextReaderSettings) {
+    Surface(
+        color = Color(s.background),
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs),
+    ) {
+        Column(Modifier.padding(Dimens.m)) {
+            Text(
+                stringResource(R.string.rs_preview),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(s.foreground).copy(alpha = 0.6f),
+            )
+            Text(
+                stringResource(R.string.rs_preview_text),
+                style = androidx.compose.ui.text.TextStyle(
+                    color = Color(s.foreground),
+                    fontFamily = previewFamily(s.fontFamily),
+                    fontSize = (18f * s.fontSizePercent / 100f).sp,
+                    lineHeight = (18f * s.fontSizePercent / 100f * s.lineHeight).sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight(s.fontWeight),
+                    letterSpacing = s.letterSpacing.em,
+                    textAlign = when (s.align) {
+                        TextAlignment.START -> TextAlign.Start
+                        TextAlignment.JUSTIFY -> TextAlign.Justify
+                        TextAlignment.CENTER -> TextAlign.Center
+                    },
+                ),
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = Dimens.xs),
+            )
+        }
+    }
+}
+
+/** Group titles and summaries of each content type, used to tell "nothing found" from a match in a group. */
+private fun groupLabels(content: ReaderContent): List<Pair<Int, Int>> {
+    val shared = listOf(
+        R.string.rs_group_screen to R.string.rs_group_screen_summary,
+        R.string.rs_group_status to R.string.rs_group_status_summary,
+        R.string.rs_group_taps to R.string.rs_group_taps_summary,
+        R.string.rs_group_edges to R.string.rs_group_edges_summary,
+        R.string.rs_group_keys to R.string.rs_group_keys_summary,
+        R.string.rs_group_word to R.string.rs_group_word_summary,
+        R.string.rs_group_scroll to R.string.rs_group_scroll_summary,
+    )
+    return when (content) {
+        is ReaderContent.Text -> listOf(
+            R.string.rs_group_font to R.string.rs_group_font_summary,
+            R.string.rs_group_spacing to R.string.rs_group_spacing_summary,
+            R.string.rs_group_margins to R.string.rs_group_margins_summary,
+            R.string.rs_group_style to R.string.rs_group_style_summary,
+            R.string.rs_group_navigation to R.string.rs_group_navigation_summary,
+            R.string.rs_exact_values to R.string.rs_exact_values_summary,
+            R.string.rs_group_theme to R.string.rs_group_theme_summary,
+            R.string.rs_group_night to R.string.rs_group_night_summary,
+        ) + shared
+        is ReaderContent.Pdf -> listOf(
+            R.string.rs_pdf_group_layout to R.string.rs_pdf_group_layout_summary,
+            R.string.rs_pdf_group_crop to R.string.rs_pdf_group_crop_summary,
+            R.string.rs_pdf_group_image to R.string.rs_pdf_group_image_summary,
+        ) + shared
+        is ReaderContent.Manga -> listOf(
+            app.yomu.feature.reader.manga.R.string.mr_mode to app.yomu.feature.reader.manga.R.string.mr_group_mode_summary,
+            app.yomu.feature.reader.manga.R.string.mr_scale to app.yomu.feature.reader.manga.R.string.mr_group_scale_summary,
+            app.yomu.feature.reader.manga.R.string.mr_background to app.yomu.feature.reader.manga.R.string.mr_group_background_summary,
+            app.yomu.feature.reader.manga.R.string.mr_pages to app.yomu.feature.reader.manga.R.string.mr_group_pages_summary,
+            app.yomu.feature.reader.manga.R.string.mr_image to app.yomu.feature.reader.manga.R.string.mr_group_image_summary,
+            app.yomu.feature.reader.manga.R.string.mr_tap_zones to app.yomu.feature.reader.manga.R.string.mr_group_zones_summary,
+        ) + shared
+    }
+}
+
+@Composable
+private fun hasMatches(query: String, content: ReaderContent): Boolean {
+    val needle = query.trim()
+    if (needle.isEmpty()) return true
+    return groupLabels(content).any { (title, summary) ->
+        stringResource(title).contains(needle, ignoreCase = true) || stringResource(summary).contains(needle, ignoreCase = true)
+    }
+}
+
+/**
+ * Text settings in collapsible groups. The frequent choices are ready-made and signed ("Medium", "Loose", "Wide"),
+ * the exact numbers live under "Exact values"; the font is one row that opens a list with samples. Only one control
+ * changes the size — the same row as in the quick panel.
  */
 @Composable
 private fun TextSettings(s: TextReaderSettings, vm: ReaderViewModel, query: String) {
-    val context = LocalContext.current
-    val fontsDir = remember { File(context.filesDir, "fonts").apply { mkdirs() } }
-    var customFonts by remember { mutableStateOf(fontsDir.listFiles()?.map { it.name }?.sorted().orEmpty()) }
-    val importFont = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            runCatching {
-                val name = Files.sanitize(Files.displayName(context, uri) ?: "font.ttf")
-                Files.copy(context, uri, File(fontsDir, name))
-                customFonts = fontsDir.listFiles()?.map { it.name }?.sorted().orEmpty()
-                vm.updateText { it.copy(fontFamily = name) }
-            }
-        }
-    }
+    var fontOpen by remember { mutableStateOf(false) }
+    val weightOptions =
+        listOf(400 to R.string.rs_weight_regular, 500 to R.string.rs_weight_medium, 700 to R.string.rs_weight_bold)
 
     CollapsibleSection(
         title = stringResource(R.string.rs_group_font),
@@ -186,36 +342,34 @@ private fun TextSettings(s: TextReaderSettings, vm: ReaderViewModel, query: Stri
         icon = Icons.Filled.TextFields,
         initiallyExpanded = true,
     ) {
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(start = Dimens.l, end = Dimens.l, top = Dimens.s), horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
-            (ReaderCss.BUILT_IN_FONTS + customFonts).forEach { f ->
-                FilterChip(selected = s.fontFamily == f, onClick = { vm.updateText { it.copy(fontFamily = f) } }, label = { Text(fontLabel(f)) })
+        PreferenceItem(
+            title = stringResource(R.string.rs_font_current, fontLabelText(s.fontFamily)),
+            icon = Icons.Filled.TextFields,
+            onClick = { fontOpen = true },
+        )
+        FontSizeRow(s, vm)
+        Text(
+            stringResource(R.string.rs_weight),
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(start = Dimens.l, top = Dimens.s),
+        )
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs)) {
+            weightOptions.forEachIndexed { i, (weight, label) ->
+                SegmentedButton(
+                    selected = s.fontWeight == weight,
+                    onClick = { vm.updateText { it.copy(fontWeight = weight) } },
+                    shape = SegmentedButtonDefaults.itemShape(i, weightOptions.size),
+                ) { Text(stringResource(label)) }
             }
-            FilterChip(
-                selected = false,
-                onClick = { importFont.launch(arrayOf("font/ttf", "font/otf", "application/x-font-ttf", "application/octet-stream", "*/*")) },
-                label = { Text(stringResource(R.string.rs_import_font)) },
-                leadingIcon = { Icon(Icons.Default.Add, null) },
+        }
+        if (weightOptions.none { it.first == s.fontWeight }) {
+            Text(
+                "${stringResource(R.string.rs_weight_custom)} · ${s.fontWeight}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = Dimens.l),
             )
         }
-        PreferenceSlider(
-            stringResource(R.string.rs_font_size),
-            s.fontSizePercent.toFloat(),
-            50f..250f,
-            { v -> vm.updateText { it.copy(fontSizePercent = v.toInt()) } },
-            { "${it.toInt()}%" },
-            steps = 39,
-            icon = Icons.Default.FormatSize,
-            summary = stringResource(R.string.rs_font_size_summary),
-        )
-        PreferenceSlider(
-            stringResource(R.string.rs_weight),
-            s.fontWeight.toFloat(),
-            300f..700f,
-            { v -> vm.updateText { it.copy(fontWeight = (v / 100).toInt() * 100) } },
-            { it.toInt().toString() },
-            steps = 3,
-            summary = stringResource(R.string.rs_weight_summary),
-        )
     }
 
     CollapsibleSection(
@@ -223,32 +377,32 @@ private fun TextSettings(s: TextReaderSettings, vm: ReaderViewModel, query: Stri
         query = query,
         summary = stringResource(R.string.rs_group_spacing_summary),
         icon = Icons.Outlined.FormatLineSpacing,
+        initiallyExpanded = true,
     ) {
-        PreferenceSlider(
-            stringResource(R.string.rs_line_height), s.lineHeight, 1f..2.5f,
-            { v -> vm.updateText { it.copy(lineHeight = (v * 20).toInt() / 20f) } },
-            { "%.2f".format(it) }, steps = 29, summary = stringResource(R.string.rs_line_height_summary),
+        Text(
+            stringResource(R.string.rs_line_height),
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(start = Dimens.l, top = Dimens.s),
         )
-        PreferenceSlider(
-            stringResource(R.string.rs_letter_spacing), s.letterSpacing, 0f..0.2f,
-            { v -> vm.updateText { it.copy(letterSpacing = Math.round(v * 100) / 100f) } },
-            { "%.2f".format(it) }, steps = 19, summary = stringResource(R.string.rs_letter_spacing_summary),
-        )
-        PreferenceSlider(
-            stringResource(R.string.rs_word_spacing), s.wordSpacing, 0f..0.5f,
-            { v -> vm.updateText { it.copy(wordSpacing = Math.round(v * 50) / 50f) } },
-            { "%.2f".format(it) }, steps = 24, summary = stringResource(R.string.rs_word_spacing_summary),
-        )
-        PreferenceSlider(
-            stringResource(R.string.rs_paragraph), s.paragraphSpacing, 0f..2f,
-            { v -> vm.updateText { it.copy(paragraphSpacing = (v * 10).toInt() / 10f) } },
-            { "%.1f".format(it) }, steps = 19, summary = stringResource(R.string.rs_paragraph_summary),
-        )
-        PreferenceSlider(
-            stringResource(R.string.rs_indent), s.indent, 0f..3f,
-            { v -> vm.updateText { it.copy(indent = (v * 10).toInt() / 10f) } },
-            { "%.1f".format(it) }, steps = 29, summary = stringResource(R.string.rs_indent_summary),
-        )
+        val lineOptions =
+            listOf(1.3f to R.string.rs_line_compact, 1.5f to R.string.rs_line_normal, 1.8f to R.string.rs_line_loose)
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs)) {
+            lineOptions.forEachIndexed { i, (value, label) ->
+                SegmentedButton(
+                    selected = kotlin.math.abs(s.lineHeight - value) < 0.02f,
+                    onClick = { vm.updateText { it.copy(lineHeight = value) } },
+                    shape = SegmentedButtonDefaults.itemShape(i, lineOptions.size),
+                ) { Text(stringResource(label)) }
+            }
+        }
+        if (lineOptions.none { kotlin.math.abs(s.lineHeight - it.first) < 0.02f }) {
+            Text(
+                "${stringResource(R.string.rs_custom_value)} · ${"%.2f×".format(s.lineHeight)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = Dimens.l),
+            )
+        }
         Text(
             stringResource(R.string.rs_align),
             style = MaterialTheme.typography.titleSmall,
@@ -278,16 +432,28 @@ private fun TextSettings(s: TextReaderSettings, vm: ReaderViewModel, query: Stri
         summary = stringResource(R.string.rs_group_margins_summary),
         icon = Icons.Outlined.Margin,
     ) {
-        PreferenceSlider(
-            stringResource(R.string.rs_margin_h), s.marginHorizontal.toFloat(), 0f..80f,
-            { v -> vm.updateText { it.copy(marginHorizontal = v.toInt()) } },
-            { "${it.toInt()}" }, steps = 15, summary = stringResource(R.string.rs_margin_h_summary),
+        val marginOptions = listOf(
+            Triple(10, 16, R.string.rs_margins_narrow),
+            Triple(20, 28, R.string.rs_margins_medium),
+            Triple(32, 40, R.string.rs_margins_wide),
         )
-        PreferenceSlider(
-            stringResource(R.string.rs_margin_v), s.marginVertical.toFloat(), 0f..96f,
-            { v -> vm.updateText { it.copy(marginVertical = v.toInt()) } },
-            { "${it.toInt()}" }, steps = 11, summary = stringResource(R.string.rs_margin_v_summary),
-        )
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs)) {
+            marginOptions.forEachIndexed { i, (h, v, label) ->
+                SegmentedButton(
+                    selected = s.marginHorizontal == h && s.marginVertical == v,
+                    onClick = { vm.updateText { it.copy(marginHorizontal = h, marginVertical = v) } },
+                    shape = SegmentedButtonDefaults.itemShape(i, marginOptions.size),
+                ) { Text(stringResource(label)) }
+            }
+        }
+        if (marginOptions.none { s.marginHorizontal == it.first && s.marginVertical == it.second }) {
+            Text(
+                stringResource(R.string.rs_custom_value) + " · ${s.marginHorizontal} / ${s.marginVertical}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = Dimens.l),
+            )
+        }
     }
 
     CollapsibleSection(
@@ -330,10 +496,24 @@ private fun TextSettings(s: TextReaderSettings, vm: ReaderViewModel, query: Stri
         icon = Icons.Filled.SwapHoriz,
         initiallyExpanded = true,
     ) {
-        PreferenceSwitch(
-            stringResource(R.string.rs_paged), s.paged,
-            { v -> vm.updateText { it.copy(paged = v) } },
-            summary = stringResource(if (s.paged) R.string.rs_paged_on else R.string.rs_paged_off),
+        Text(
+            stringResource(R.string.rs_mode),
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(start = Dimens.l, top = Dimens.s),
+        )
+        OptionTiles(
+            listOf(
+                TileOption(true, stringResource(R.string.rs_mode_paged)),
+                TileOption(false, stringResource(R.string.rs_mode_scroll)),
+            ),
+            s.paged,
+            { paged -> vm.updateText { it.copy(paged = paged) } },
+        )
+        Text(
+            stringResource(if (s.paged) R.string.rs_mode_paged_sum else R.string.rs_mode_scroll_sum),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
         )
         if (s.paged && !s.verticalText) {
             PreferenceSwitch(
@@ -363,6 +543,56 @@ private fun TextSettings(s: TextReaderSettings, vm: ReaderViewModel, query: Stri
             Text(stringResource(R.string.rs_reset_layout))
         }
     }
+
+    CollapsibleSection(
+        title = stringResource(R.string.rs_exact_values),
+        query = query,
+        summary = stringResource(R.string.rs_exact_values_summary),
+        icon = Icons.Outlined.FormatLineSpacing,
+    ) {
+        PreferenceSlider(
+            stringResource(R.string.rs_weight), s.fontWeight.toFloat(), 300f..700f,
+            { v -> vm.updateText { it.copy(fontWeight = (v / 100).toInt() * 100) } },
+            { it.toInt().toString() }, steps = 3, summary = stringResource(R.string.rs_weight_summary),
+        )
+        PreferenceSlider(
+            stringResource(R.string.rs_line_height), s.lineHeight, 1f..2.5f,
+            { v -> vm.updateText { it.copy(lineHeight = (v * 20).toInt() / 20f) } },
+            { "%.2f".format(it) }, steps = 29, summary = stringResource(R.string.rs_line_height_summary),
+        )
+        PreferenceSlider(
+            stringResource(R.string.rs_letter_spacing), s.letterSpacing, 0f..0.2f,
+            { v -> vm.updateText { it.copy(letterSpacing = Math.round(v * 100) / 100f) } },
+            { "%.2f".format(it) }, steps = 19, summary = stringResource(R.string.rs_letter_spacing_summary),
+        )
+        PreferenceSlider(
+            stringResource(R.string.rs_word_spacing), s.wordSpacing, 0f..0.5f,
+            { v -> vm.updateText { it.copy(wordSpacing = Math.round(v * 50) / 50f) } },
+            { "%.2f".format(it) }, steps = 24, summary = stringResource(R.string.rs_word_spacing_summary),
+        )
+        PreferenceSlider(
+            stringResource(R.string.rs_paragraph), s.paragraphSpacing, 0f..2f,
+            { v -> vm.updateText { it.copy(paragraphSpacing = (v * 10).toInt() / 10f) } },
+            { "%.1f".format(it) }, steps = 19, summary = stringResource(R.string.rs_paragraph_summary),
+        )
+        PreferenceSlider(
+            stringResource(R.string.rs_indent), s.indent, 0f..3f,
+            { v -> vm.updateText { it.copy(indent = (v * 10).toInt() / 10f) } },
+            { "%.1f".format(it) }, steps = 29, summary = stringResource(R.string.rs_indent_summary),
+        )
+        PreferenceSlider(
+            stringResource(R.string.rs_margin_h), s.marginHorizontal.toFloat(), 0f..80f,
+            { v -> vm.updateText { it.copy(marginHorizontal = v.toInt()) } },
+            { "${it.toInt()}" }, steps = 15, summary = stringResource(R.string.rs_margin_h_summary),
+        )
+        PreferenceSlider(
+            stringResource(R.string.rs_margin_v), s.marginVertical.toFloat(), 0f..96f,
+            { v -> vm.updateText { it.copy(marginVertical = v.toInt()) } },
+            { "${it.toInt()}" }, steps = 11, summary = stringResource(R.string.rs_margin_v_summary),
+        )
+    }
+
+    if (fontOpen) BookFontDialog(s.fontFamily, vm) { fontOpen = false }
 }
 
 /** Paper and ink: the reading theme, the custom colours and the night theme with its schedule. */
@@ -418,46 +648,6 @@ private fun ThemeSection(text: TextReaderSettings, vm: ReaderViewModel, query: S
                 selected = text.nightTheme,
                 title = stringResource(R.string.rs_night_theme),
             )
-        }
-    }
-}
-
-/** Font size and theme: the two things changed most often, always at hand above the tabs. */
-@Composable
-internal fun QuickTextBar(s: TextReaderSettings, vm: ReaderViewModel) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs), verticalAlignment = Alignment.CenterVertically) {
-        val smaller = stringResource(R.string.rs_font_smaller)
-        val larger = stringResource(R.string.rs_font_larger)
-        FilledTonalIconButton(
-            onClick = { vm.updateText { it.copy(fontSizePercent = (it.fontSizePercent - 10).coerceAtLeast(50)) } },
-            enabled = s.fontSizePercent > 50,
-            modifier = Modifier.semantics { contentDescription = smaller },
-        ) { Text("A−", style = MaterialTheme.typography.labelLarge, modifier = Modifier.clearAndSetSemantics {}) }
-        Text(
-            "${s.fontSizePercent}%",
-            style = MaterialTheme.typography.titleSmall,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.width(56.dp),
-        )
-        FilledTonalIconButton(
-            onClick = { vm.updateText { it.copy(fontSizePercent = (it.fontSizePercent + 10).coerceAtMost(250)) } },
-            enabled = s.fontSizePercent < 250,
-            modifier = Modifier.semantics { contentDescription = larger },
-        ) { Text("A+", style = MaterialTheme.typography.titleMedium, modifier = Modifier.clearAndSetSemantics {}) }
-        Spacer(Modifier.weight(1f))
-        Row(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
-            TextPresets.quickThemes.forEach { t ->
-                val selected = s.theme == t
-                val name = stringResource(t.label())
-                Box(
-                    Modifier.size(32.dp)
-                        .background(Color(t.bg), CircleShape)
-                        .border(if (selected) 3.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape)
-                        .clickable { vm.updateText { it.copy(theme = t) } }
-                        .semantics { contentDescription = name; role = Role.RadioButton; this.selected = selected },
-                    contentAlignment = Alignment.Center,
-                ) { Text("A", color = Color(t.fg), style = MaterialTheme.typography.labelMedium) }
-            }
         }
     }
 }
@@ -544,17 +734,6 @@ private fun SwatchRow(colors: List<Long>, selected: Long, onSelect: (Long) -> Un
 }
 
 @Composable
-private fun fontLabel(f: String): String = when (f) {
-    "serif" -> stringResource(R.string.rs_font_serif)
-    "sans-serif" -> stringResource(R.string.rs_font_sans)
-    "monospace" -> stringResource(R.string.rs_font_mono)
-    "georgia" -> "Georgia"
-    "literata" -> "Literata"
-    "roboto" -> "Roboto"
-    else -> f.substringBeforeLast('.')
-}
-
-@Composable
 fun ThemePicker(
     s: TextReaderSettings,
     onSelect: (ReaderTheme) -> Unit,
@@ -605,19 +784,35 @@ private fun PdfSettingsContent(s: PdfSettings, vm: ReaderViewModel, query: Strin
         icon = Icons.AutoMirrored.Outlined.MenuBook,
         initiallyExpanded = true,
     ) {
-        Text(stringResource(R.string.rs_pdf_mode), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = Dimens.l, top = Dimens.m))
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs)) {
-            val opts = listOf(
-                PdfMode.SCROLL to R.string.rs_pdf_scroll,
-                PdfMode.PAGED to R.string.rs_pdf_paged,
-                PdfMode.DUAL to R.string.rs_pdf_dual,
-            )
-            opts.forEachIndexed { i, (m, label) ->
-                SegmentedButton(selected = s.mode == m, onClick = { vm.updatePdf { it.copy(mode = m) } }, shape = SegmentedButtonDefaults.itemShape(i, opts.size)) { Text(stringResource(label)) }
+        Text(stringResource(R.string.rs_pdf_representation), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = Dimens.l, top = Dimens.m))
+        OptionTiles(
+            listOf(
+                TileOption(false, stringResource(R.string.rs_pdf_original)),
+                TileOption(true, stringResource(R.string.rs_pdf_text)),
+            ),
+            s.reflow,
+            { reflow -> vm.updatePdf { it.copy(reflow = reflow) } },
+        )
+        Text(
+            stringResource(if (s.reflow) R.string.rs_pdf_text_sum else R.string.rs_pdf_original_sum),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+        )
+        if (!s.reflow) {
+            Text(stringResource(R.string.rs_pdf_mode), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = Dimens.l, top = Dimens.m))
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs)) {
+                val opts = listOf(
+                    PdfMode.SCROLL to R.string.rs_pdf_scroll,
+                    PdfMode.PAGED to R.string.rs_pdf_paged,
+                    PdfMode.DUAL to R.string.rs_pdf_dual,
+                )
+                opts.forEachIndexed { i, (m, label) ->
+                    SegmentedButton(selected = s.mode == m, onClick = { vm.updatePdf { it.copy(mode = m) } }, shape = SegmentedButtonDefaults.itemShape(i, opts.size)) { Text(stringResource(label)) }
+                }
             }
         }
         PreferenceSwitch(stringResource(R.string.rs_pdf_night), s.night, { v -> vm.updatePdf { it.copy(night = v) } }, summary = stringResource(R.string.rs_pdf_night_summary))
-        PreferenceSwitch(stringResource(R.string.rs_pdf_reflow), s.reflow, { v -> vm.updatePdf { it.copy(reflow = v) } }, summary = stringResource(R.string.rs_pdf_reflow_summary))
         PreferenceSwitch(stringResource(R.string.rs_pdf_zoom_lock), s.zoomLock, { v -> vm.updatePdf { it.copy(zoomLock = v) } }, summary = stringResource(R.string.rs_zoom_lock_summary))
     }
     CollapsibleSection(
@@ -628,6 +823,11 @@ private fun PdfSettingsContent(s: PdfSettings, vm: ReaderViewModel, query: Strin
     ) {
         PreferenceSwitch(stringResource(R.string.rs_pdf_crop), s.autoCrop, { v -> vm.updatePdf { it.copy(autoCrop = v) } }, summary = stringResource(R.string.rs_pdf_crop_summary))
         if (!s.autoCrop) {
+            Text(
+                stringResource(R.string.rs_pdf_manual_crop),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(start = Dimens.l, top = Dimens.s),
+            )
             val crop = s.manualCrop
             val update: (app.yomu.domain.model.CropMargins) -> Unit = { m -> vm.updatePdf { it.copy(manualCrop = m) } }
             PreferenceSlider(stringResource(R.string.rs_pdf_crop_left), crop.left * 100, 0f..25f, { v -> update(crop.copy(left = v / 100f)) }, { "${it.toInt()}%" }, steps = 25)

@@ -105,6 +105,7 @@ Details and signing checks: [docs/EXTENSIONS.md](docs/EXTENSIONS.md).
 
 - [User guide](docs/USER_GUIDE.md) · [Changelog](CHANGELOG.md) · [Releasing](docs/RELEASING.md)
 - [Architecture](docs/ARCHITECTURE.md) · [Decisions](docs/DECISIONS.md) · [Roadmap](docs/PROGRESS.md) · [Known limitations](docs/KNOWN_LIMITATIONS.md) · [Not done yet](docs/NOT_DONE.md) · [Audit](docs/AUDIT.md)
+- [UX and product audit (2026-11-13)](docs/UX_PRODUCT_AUDIT_2026-11-13.md) — usability improvements, competitor feedback, feature proposals and acceptance scenarios.
 - [Extensions](docs/EXTENSIONS.md) · [Tracking](docs/TRACKING.md) · [Privacy](docs/PRIVACY.md) · [Contributing](CONTRIBUTING.md)
 
 ## License

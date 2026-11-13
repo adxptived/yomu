@@ -146,7 +146,7 @@ internal fun trailName(destination: NavDestination, arguments: Bundle?): String 
  * their destinations (the library still links to the catalog and the settings).
  */
 @Composable
-fun YomuNavigation(main: MainViewModel, reduceMotion: Boolean, navLabels: Boolean = false, tabs: List<NavTab> = NavTab.entries) {
+fun YomuNavigation(main: MainViewModel, reduceMotion: Boolean, navLabels: Boolean = true, tabs: List<NavTab> = NavTab.entries) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val shown = tabs.ifEmpty { NavTab.entries }.map(TopLevel::of)
@@ -300,6 +300,8 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                                 }
                             },
                             onOpenDownloads = { nav.navigate(DownloadsRoute) },
+                            // The library-wide list: annotations of every book, not only the one just read.
+                            onOpenNotes = { nav.navigate(AnnotationsRoute(bookId = -1)) },
                         )
                         TopLevel.CATALOG -> CatalogScreen(
                             viewModel = koinViewModel(),

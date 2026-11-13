@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SignalCellularAlt
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.outlined.Wifi
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -48,6 +49,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -958,11 +960,13 @@ internal fun ColumnScope.BackupSection(vm: SettingsViewModel, onOpenSync: () -> 
     val s = vm.settings
     val context = LocalContext.current
     var includeFiles by rememberSaveable { mutableStateOf(false) }
-    var restoreUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var confirmReset by remember { mutableStateOf(false) }
     val create =
         rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri -> uri?.let { vm.createBackup(it, includeFiles) } }
-    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> restoreUri = uri }
+    // Reading the archive's manifest first: the restore prompt lists what it actually contains.
+    val open =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::previewBackup) }
+    val preview by vm.backupPreview.collectAsStateWithLifecycle()
     val backupFolderPick =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(vm::setBackupFolder) }
     val lastBackup by s.lastBackupAt.state()
@@ -971,6 +975,7 @@ internal fun ColumnScope.BackupSection(vm: SettingsViewModel, onOpenSync: () -> 
 
     PreferenceItem(stringResource(R.string.set_backup_create), stringResource(R.string.set_backup_create_sum), onClick = { create.launch(vm.suggestedBackupName()) }, icon = settingIcon(R.string.set_backup_create))
     PreferenceSwitch(stringResource(R.string.set_backup_files), includeFiles, { includeFiles = it }, stringResource(R.string.set_backup_files_sum), icon = settingIcon(R.string.set_backup_files))
+    Hint(stringResource(R.string.set_backup_scope_hint))
     PreferenceItem(stringResource(R.string.set_backup_restore), stringResource(R.string.set_backup_restore_sum), onClick = { open.launch(arrayOf("*/*")) }, icon = settingIcon(R.string.set_backup_restore))
     MihonImportItem(vm)
 
@@ -991,8 +996,27 @@ internal fun ColumnScope.BackupSection(vm: SettingsViewModel, onOpenSync: () -> 
     PreferenceHeader(stringResource(R.string.set_reset))
     PreferenceItem(stringResource(R.string.set_reset_all), stringResource(R.string.set_reset_all_sum), onClick = { confirmReset = true }, icon = settingIcon(R.string.set_reset_all))
 
-    restoreUri?.let { uri ->
-        ConfirmDialog(stringResource(R.string.set_backup_restore), stringResource(R.string.set_restore_confirm), stringResource(R.string.set_restore), onConfirm = { vm.restoreBackup(uri) }, onDismiss = { restoreUri = null })
+    preview?.let { p ->
+        AlertDialog(
+            onDismissRequest = vm::dismissBackupPreview,
+            title = { Text(stringResource(R.string.set_restore_preview_title)) },
+            text = {
+                Column {
+                    if (p.createdAt > 0) {
+                        val whenMade = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(p.createdAt))
+                        Text(stringResource(R.string.set_restore_preview_date, whenMade))
+                    }
+                    Text(stringResource(R.string.set_restore_preview_counts, p.books, p.highlights, p.notes, p.bookmarks, p.words))
+                    Text(
+                        if (p.files > 0) stringResource(R.string.set_restore_preview_files, p.files, Files.humanSize(p.bytes))
+                        else stringResource(R.string.set_restore_preview_no_files),
+                    )
+                    Text(stringResource(R.string.set_restore_preview_merge))
+                }
+            },
+            confirmButton = { TextButton(onClick = vm::confirmRestore) { Text(stringResource(R.string.set_restore)) } },
+            dismissButton = { TextButton(onClick = vm::dismissBackupPreview) { Text(stringResource(CoreR.string.cancel)) } },
+        )
     }
     if (confirmReset) {
         ConfirmDialog(stringResource(R.string.set_reset_all), stringResource(R.string.set_reset_all_confirm), stringResource(R.string.set_reset), onConfirm = vm::resetAll, onDismiss = { confirmReset = false })

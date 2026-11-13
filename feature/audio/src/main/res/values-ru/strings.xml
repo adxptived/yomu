@@ -14,6 +14,7 @@
     <string name="audio_sleep_minutes">%1$d мин</string>
     <string name="audio_sleep_left">Осталось %1$d мин</string>
     <string name="audio_play_error">Не удаётся воспроизвести: %1$s</string>
+    <string name="audio_retry_now">Повторить сейчас</string>
     <string name="audio_sign_in_hint">YouTube требует входа. Войдите в «Настройки → YouTube» и попробуйте снова.</string>
     <string name="audio_sign_in">Войти</string>
     <string name="audio_origin_catalog">Каталог</string>
@@ -56,4 +57,16 @@
     <string name="audio_sleep_custom_title">Таймер сна, минут</string>
     <string name="audio_minutes_label">Минуты</string>
     <string name="audio_start">Запустить</string>
+    <!-- Перемещения: журнал ручных перемоток, смен глав и переходов к закладкам -->
+    <string name="audio_history">История перемещений</string>
+    <string name="audio_history_empty">Перемещений пока нет. Перемотки, смены главы и переходы к закладкам появляются здесь, чтобы можно было вернуться.</string>
+    <string name="audio_history_clear">Очистить историю</string>
+    <string name="audio_back_to">Вернуться к %1$s</string>
+    <string name="audio_bookmark_edit">Изменить заметку</string>
+    <string name="audio_reason_seek">Перемотка</string>
+    <string name="audio_reason_back">Назад</string>
+    <string name="audio_reason_forward">Вперёд</string>
+    <string name="audio_reason_chapter">Глава</string>
+    <string name="audio_reason_return">Возврат</string>
+    <string name="audio_reason_bookmark">Закладка</string>
 </resources>

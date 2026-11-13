@@ -37,6 +37,8 @@ data class PlayerSnapshot(
     val sleepEndOfChapter: Boolean,
     val skipSilence: Boolean,
     val error: String?,
+    /** Recent manual jumps of this book, oldest first. */
+    val history: List<AudioPositionEvent> = emptyList(),
 )
 
 /** The app's connection to [AudioPlaybackService]. Created on first use; all calls on the main thread. */
@@ -126,6 +128,11 @@ class AudioController(private val context: Context) {
         )
     }
 
+    /** Forgets the jumps of the open book ("Clear history"). */
+    fun clearHistory() {
+        controller?.sendCustomCommand(SessionCommand(AudioPlaybackService.CMD_HISTORY_CLEAR, Bundle.EMPTY), Bundle.EMPTY)
+    }
+
     /** Ends playback; the position is saved by the service before the playlist is cleared. */
     fun stop() {
         val p = player() ?: return
@@ -174,6 +181,7 @@ class AudioController(private val context: Context) {
             sleepEndOfChapter = extras.getBoolean(AudioPlaybackService.KEY_SLEEP_CHAPTER, false),
             skipSilence = extras.getBoolean(AudioPlaybackService.KEY_SKIP_SILENCE, false),
             error = extras.getString(AudioPlaybackService.KEY_ERROR) ?: c.playerError?.let { it.localizedMessage ?: it.errorCodeName },
+            history = AudioHistory.decode(extras.getString(AudioPlaybackService.KEY_HISTORY)),
         )
     }
 }

@@ -364,8 +364,10 @@ fun AnnotationsScreen(
         NoteDialog(
             initial = initial,
             quote = (e as? AnnotationEntry.H)?.highlight?.text,
-            onSave = { viewModel.saveNote(e, it); noteFor = null },
-            onDelete = if (initial.isNotBlank()) ({ viewModel.saveNote(e, ""); noteFor = null }) else null,
+            draft = remember(e) { viewModel.draft(e) },
+            onDraft = { viewModel.saveDraft(e, it) },
+            onSave = { viewModel.saveNoteNow(e, it) },
+            onDelete = if (initial.isNotBlank()) ({ viewModel.clearDraft(e); viewModel.saveNote(e, ""); noteFor = null }) else null,
             onDismiss = { noteFor = null },
         )
     }

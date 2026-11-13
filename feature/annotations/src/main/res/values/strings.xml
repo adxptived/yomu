@@ -66,6 +66,9 @@
     <string name="note_edit">Edit</string>
     <string name="note_preview">Preview</string>
     <string name="note_empty_preview">Nothing to preview</string>
+    <string name="note_draft_restored">Draft restored. Close the dialog and the text stays here.</string>
+    <string name="note_saving">Saving…</string>
+    <string name="note_save_failed">Could not save. The text is kept as a draft — try again.</string>
 
     <string name="quote_share_title">Share quote</string>
     <string name="quote_style_light">Light card</string>

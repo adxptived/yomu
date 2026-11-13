@@ -16,6 +16,11 @@
     <string name="dict_online_source">Из онлайн-словаря</string>
     <string name="dict_no_dicts_title">Офлайн-словарей пока нет</string>
     <string name="dict_no_dicts_text">Импортируйте файлы StarDict, DSL, Wiktionary JSON или JMdict для поиска без интернета.</string>
+    <string name="dict_first_title">Найдите первое слово без интернета</string>
+    <string name="dict_first_step_lang">1. Язык берётся из открытой книги; другой язык можно выбрать в «Словарях».</string>
+    <string name="dict_first_step_add">2. Добавьте словарь: свой файл StarDict/DSL или онлайн-поиск.</string>
+    <string name="dict_first_step_check">3. Проверьте слово, чтобы убедиться, что всё работает.</string>
+    <string name="dict_first_meaning_vs_translation">Словарь объясняет слово; фразу переводят отдельно.</string>
 
     <string name="dicts_title">Словари</string>
     <string name="dicts_import">Импорт словаря</string>

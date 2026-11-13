@@ -1,4 +1,7 @@
-plugins { id("yomu.android.feature") }
+plugins {
+    id("yomu.android.feature")
+    alias(libs.plugins.kotlin.serialization)
+}
 dependencies {
     implementation(project(":core:network"))
     api(libs.media3.session)

@@ -38,6 +38,26 @@ import java.util.zip.ZipOutputStream
 data class RestoreResult(val tables: Int, val rows: Int, val files: Int, val skipped: Int = 0)
 
 /**
+ * What a backup file contains, read from its manifest before anything is written: the date, the counts of the records
+ * that matter for a choice, and whether book files travel with it. Shown in the restore dialog instead of a blind
+ * confirmation.
+ */
+data class BackupPreview(
+    val createdAt: Long = 0,
+    val version: Int = 0,
+    val books: Int = 0,
+    val highlights: Int = 0,
+    val notes: Int = 0,
+    val bookmarks: Int = 0,
+    val words: Int = 0,
+    /** Book and cover files inside the archive. */
+    val files: Int = 0,
+    /** Uncompressed size of those files. */
+    val bytes: Long = 0,
+    val hasSettings: Boolean = false,
+)
+
+/**
  * Backup = zip with backup.json (settings + database tables as JSON rows) and optionally the copied book files and covers.
  * Large derived tables (dictionary entries, caches) are not included; dictionaries must be imported again.
  */
@@ -108,6 +128,13 @@ class BackupManager(private val context: Context, private val db: YomuDatabase, 
             }
         }
     }
+
+    /**
+     * Reads only the manifest and the file listing of [input]; the database and the files on disk stay untouched, so a
+     * damaged or foreign archive is refused before the restore prompt.
+     */
+    suspend fun preview(input: InputStream): BackupPreview =
+        withContext(Dispatchers.IO) { previewZip(input) }
 
     suspend fun restore(input: InputStream): RestoreResult = withContext(NonCancellable + Dispatchers.IO) {
         // Extract to a private staging directory first. No existing book or cover may be
@@ -503,6 +530,67 @@ class BackupManager(private val context: Context, private val db: YomuDatabase, 
     }
 
     companion object {
+        /**
+         * Reads a backup's manifest and file listing without touching the disk. A pure function so it can be tested
+         * with any archive; [preview] only adds the IO dispatcher.
+         */
+        fun previewZip(input: InputStream): BackupPreview {
+            val parser = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            var root: JsonObject? = null
+            var files = 0
+            var bytes = 0L
+            ZipInputStream(input.buffered()).use { zip ->
+                while (true) {
+                    val e = zip.nextEntry ?: break
+                    when {
+                        e.name == "backup.json" && !e.isDirectory -> {
+                            val out = java.io.ByteArrayOutputStream()
+                            val buffer = ByteArray(8192)
+                            while (true) {
+                                val n = zip.read(buffer)
+                                if (n < 0) break
+                                if (out.size().toLong() + n > 8L * 1024 * 1024) throw java.io.IOException("Backup metadata is too large")
+                                out.write(buffer, 0, n)
+                            }
+                            root = parser.parseToJsonElement(SyncJson.text(out.toByteArray())).jsonObject
+                        }
+                        e.name.startsWith("files/") && !e.isDirectory -> {
+                            files++
+                            // The size in the archive header is enough; only a writer that omitted it makes the preview
+                            // read the file, so a multi-gigabyte backup is not decompressed just to show a summary.
+                            if (e.size > 0) {
+                                bytes += e.size
+                            } else {
+                                val buffer = ByteArray(8192)
+                                while (true) {
+                                    val n = zip.read(buffer)
+                                    if (n < 0) break
+                                    bytes += n
+                                }
+                            }
+                        }
+                    }
+                    zip.closeEntry()
+                }
+            }
+            val r = root ?: throw java.io.IOException("backup.json missing")
+            require(r["format"]?.jsonPrimitive?.content == FORMAT) { "Not a Yomu backup" }
+            val tables = r["tables"]?.jsonObject
+            fun count(name: String) = (tables?.get(name) as? JsonArray)?.size ?: 0
+            return BackupPreview(
+                createdAt = r["createdAt"]?.jsonPrimitive?.longOrNull ?: 0,
+                version = r["version"]?.jsonPrimitive?.longOrNull?.toInt() ?: 0,
+                books = count("books"),
+                highlights = count("highlights"),
+                notes = count("notes"),
+                bookmarks = count("bookmarks"),
+                words = count("words"),
+                files = files,
+                bytes = bytes,
+                hasSettings = r["settings"] != null,
+            )
+        }
+
         const val FORMAT = "yomu-backup"
         const val VERSION = 1
 

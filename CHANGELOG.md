@@ -1,16 +1,52 @@
 # Changelog
 
-## Unreleased — YouTube sign-in, quiet chapter ends, clearer reader settings
+## 2.3.0 — first launch, reader settings and data safety
+
+> **Install.** Installs over 2.2.0 if signed with the same key. The database schema is unchanged; no migration is needed. Verified by compilation, unit and Robolectric tests and screenshot review — **not on a real device**.
+
+### First launch and everyday navigation
+
+- **A task-first onboarding.** The first screen asks what you want to do — read books, read manga, listen to audiobooks or learn a language — and leads to one short step: pick a folder or a single file, see the import result, and start. The translation language is a separate step only for the language goal. The notification permission is no longer requested on finish; it is asked where it is used (downloads, updates, reminders). "Skip" still leads to a working app.
+- **Navigation labels are on by default** for new and existing installs that never changed the setting; the tab is renamed "Words" so it is not mistaken for the in-book dictionary. The choice remains configurable in Settings → Navigation bar.
+- **A smaller bulk-action bar in the library:** "To shelf", "Status" and "More" with labels instead of seven icons; favourite, tag, metadata, "Remove from library" and "Delete files from device" live in the menu.
+- **The continuation target is named:** the chapter list shows "Continue: Chapter 38 · page 12" computed by the same function that the main button opens.
+- **Notes and quotes from every book** are one entry in the Profile instead of being reachable only from inside a book.
+- **The first dictionary has a guide**: language → add a dictionary → check a word, with import in the empty state and a clear line between a word's meaning and translating a phrase.
+
+### Reader settings
+
+- **Two levels instead of one long panel.** The compact **View** panel groups the changes made most often: text size, font, themes, page-by-page or scrolling, brightness and the warm filter. "All reading settings" opens the full screen.
+- **One control for text size** (A−, the current value with exact input, A+) instead of a stepper and a second slider.
+- **Signed choices instead of raw numbers:** weight (Regular / Medium / Bold), line spacing (Compact / Normal / Loose) and margins (Narrow / Medium / Wide), with exact values under "Exact values". A custom value is labelled "Custom", not silently rounded to a preset.
+- **A live preview** of a paragraph in the book's own type and colours, using the actual page colours (auto-night included).
+- **Undo and reversibility:** "Undo the last change", "Done", and "Revert changes"; Back or a tap outside the sheet restores the settings that were in force when it opened. Switching tabs starts at the top.
+- **Reading mode as visual choices** — "Page by page" and "Scroll chapter" (manga already had its mode tiles); PDF separates "Original pages" from "Text for reading" and hides page-layout controls in the reflow view.
+- **"How to control"** in the reader menu shows the tap-zone scheme again; touch gestures are never the only way to a function.
+- **Search inside reading settings** covers all three tabs, says so when nothing matches, and never leaves a setting looking absent because it lives in another tab.
+- **Fonts:** the list shows samples and has search; importing a font confirms success or explains the failure; imported fonts can be deleted and presets fall back to Serif.
+
+### Notes, bookmarks and audiobooks
+
+- **Note drafts:** text is stored per book and anchor with a debounce, survives closing the dialog, rotation and a killed process, and is removed only after the note is actually written. "Saving…" and a failure message replace the previous close-on-tap, and deleting a note also discards its draft.
+- **Audio bookmarks capture the moment of the tap**, not the moment Save is pressed; an existing bookmark's note can be edited, and jumping from a pause no longer starts playback.
+- **A jump journal for audiobooks:** the position is recorded before a manual seek, a chapter change and a bookmark jump, with a reason and a time. The player shows "Back to 00:42:18" and a list of the last 30 moves. Recording happens in the media service, so it covers the screen, the notification and a headset; short repeated swipes merge, playback ticks are not stored, incognito keeps no file, and deleting a book clears its journal.
+- **Clearer audio sync composition:** listening positions are part of reading progress; audio bookmarks, player settings and audio files are explicitly listed as not transferred, instead of implying that the "Bookmarks" switch covers them.
+- **Audio recovery:** the initial error screen has "Try again now" and Back; a mid-playback failure retries the same position without reopening the book from the start.
+
+### Backups
+
+- **Restore shows the archive first:** date, counts of books, highlights, notes, bookmarks and words, whether files are inside and their size, and the merge strategy. A damaged or foreign archive is rejected before anything is written. The size is read from the ZIP header when available, so a large archive is not decompressed just for the preview.
+
+### Previously unreleased changes carried into 2.3.0
 
 - **YouTube sign-in**: Settings → YouTube opens Google's sign-in page in the app's browser. The session cookies are shared with the player and the downloads, and InnerTube requests are signed with `SAPISIDHASH` and carry YouTube's visitor id, so videos behind "Sign in to confirm you're not a bot" play without a second sign-in. An error that needs a sign-in shows a hint and a **Sign in** button right in the player.
 - **Chapter buttons**: the large "Previous chapter" / "Next chapter" pills at the ends of a chapter in continuous scrolling are now off by default, so a document reads as one uninterrupted text like a PDF. The switch is in the reader sheet → Page turning and in Settings → Reader.
 - **Word documents as printed pages**: Settings → Reader → "Word documents as printed pages" opens a DOCX in its real page layout, and every DOCX reader has a **Pages** button in the bottom bar. The layout is view-only (selection, the dictionary and notes live in the text mode).
-- **Reader settings**: the sheet is a set of collapsible groups with a one-line explanation under the options — font; spacing and alignment; margins; book style; page turning; theme, night theme, screen and status line; taps, edge swipes, keys, word lookup and auto-scroll. Manga and PDF settings use the same groups, and the global Reader/Manga settings gained descriptions. Slider ranges of the sheet and the app settings are unified (font 50–250 %, margins 0–80 dp).
 - **Catalog**: every source shows its kind on a coloured badge with an icon ("Manga", "Novels", "Books", "Audiobooks") next to a quieter "Extension" / "Built-in" / "OPDS" / "Local" badge; the badges are filters — tap one to show only that type or kind. Sources have a real `AUDIO` content type (YouTube and LibriVox). **Extensions** moved from the end of the list into the top bar with an update count. A pencil starts a bulk editor: tick any number of sources and pin, enable, hide — or hide their whole extensions — at once. The filter sheet can show every hidden source again, a source's menu opens its site or its own settings, and the YouTube visitor id is kept across restarts so the bot check is less likely to return.
 - **Library**: tapping a cover opens the book at once, tapping its title opens the details (list and grid alike). A long press opens the book's actions — **Read**, **Details**, **Status** (a dropdown of all statuses) and **Select** for multi-select. TalkBack calls the two direct actions "Read" and "Details", and the one-time hint explains them. The reading status is also a dropdown in the book details and in the bulk metadata editor.
 - **Reader**: the dictionary card opens only on a real double tap on a word in the middle of the page; a single tap turns the page (or shows the menu) as usual. Previously the default "double tap" mode opened the card on every single tap after a short delay.
 - **Profile**: Tracking and Downloads are two compact tiles under the header; the streak and today's goal sit in the header; reading numbers, milestones and "Most read" are folded into a collapsible Statistics group whose collapsed line shows the key figures, and "Share and transfer" is collapsed too. Settings → Profile chooses which blocks appear.
-- **Reader settings**: a search field in the sheet hides groups that do not match and opens the matching ones. Settings → YouTube shows the account name and retries a blocked audiobook automatically after signing in; signed-in InnerTube calls also try the web client as a last resort.
+- Settings → YouTube shows the account name and retries a blocked audiobook automatically after signing in; signed-in InnerTube calls also try the web client as a last resort.
 - Tests: the YouTube signature and cookie parsing are covered by `YouTubeAuthTest`; the smoke test follows the new cover/title targets and the Extensions icon; `titleOpensDetails` and `sourceBulkEditor` cover the title tap and the bulk editor.
 
 ## 2.2.0 — reader parity and audit fixes

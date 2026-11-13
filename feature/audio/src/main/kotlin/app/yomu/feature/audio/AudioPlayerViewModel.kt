@@ -109,6 +109,17 @@ class AudioPlayerViewModel(
         audio.open(bookId, play = true)
     }
 
+    /** A failed mid-playback stream: prepare again from the same position instead of reopening the whole book. */
+    fun retryNow() {
+        val p = audio.player()
+        if (p == null) {
+            retryPlayback()
+            return
+        }
+        p.prepare()
+        p.play()
+    }
+
     fun seekTo(positionMs: Long) { audio.player()?.seekTo(positionMs) }
 
     fun back() { seekBy(-audioSettings.value.skipBackSec * 1000L) }
@@ -122,19 +133,32 @@ class AudioPlayerViewModel(
 
     fun setSkipIntervals(backSec: Int, forwardSec: Int) = audio.setSkipIntervals(backSec, forwardSec)
 
-    fun addBookmark(note: String) {
-        val s = player.value ?: return
-        val mark = Bookmark(s.track, s.positionMs, note.trim(), System.currentTimeMillis())
+    /** Where the bookmark button was pressed: the dialog must not move the spot while a note is typed. */
+    fun bookmarkPoint(): Pair<Int, Long>? = player.value?.let { it.track to it.positionMs }
+
+    /** Saves a bookmark at the position captured when the button was pressed, not at the live one. */
+    fun addBookmark(track: Int, positionMs: Long, note: String) {
+        val mark = Bookmark(track, positionMs, note.trim(), System.currentTimeMillis())
         audio.setBookmarks((audioSettings.value.bookmarks + mark).sortedWith(compareBy({ it.track }, { it.positionMs })))
+    }
+
+    fun updateBookmark(mark: Bookmark, note: String) {
+        val next = audioSettings.value.bookmarks.map { if (it.track == mark.track && it.positionMs == mark.positionMs && it.createdAt == mark.createdAt) it.copy(note = note.trim()) else it }
+        audio.setBookmarks(next)
     }
 
     fun removeBookmark(mark: Bookmark) = audio.setBookmarks(audioSettings.value.bookmarks - mark)
 
+    /** Moves to a bookmark or a journal entry without starting playback: a jump from a pause stays paused. */
     fun jump(mark: Bookmark) {
-        val p = audio.player() ?: return
-        p.seekTo(mark.track, mark.positionMs)
-        if (!p.playWhenReady) p.play()
+        audio.player()?.seekTo(mark.track, mark.positionMs)
     }
+
+    fun jumpTo(track: Int, positionMs: Long) {
+        audio.player()?.seekTo(track, positionMs)
+    }
+
+    fun clearHistory() = audio.clearHistory()
 
     /** Adds [minutes] to the running sleep timer, or starts one of that length. */
     fun extendSleep(minutes: Int) {

@@ -13,10 +13,12 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -39,21 +41,46 @@ import androidx.compose.ui.unit.em
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.core.ui.theme.YomuTheme
+import kotlinx.coroutines.launch
 import app.yomu.core.ui.R as UiR
 
-/** Markdown note editor with a live preview tab. [quote] is shown above the editor for context. */
+private enum class NoteStatus { IDLE, SAVING, SAVED, ERROR }
+
+/**
+ * Markdown note editor with a live preview tab. [quote] is shown above the editor for context.
+ *
+ * [onSave] suspends and reports whether the note was really written: the dialog shows "Saving…" and closes only on
+ * success, so a failed write never looks like a saved note. [draft] is text restored from an earlier session (closing,
+ * rotation or a killed process); [onDraft] receives the text with a debounce while typing, so Back keeps it.
+ */
 @Composable
 fun NoteDialog(
     initial: String,
     quote: String?,
-    onSave: (String) -> Unit,
+    onSave: suspend (String) -> Boolean,
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit,
+    draft: String? = null,
+    onDraft: ((String) -> Unit)? = null,
 ) {
-    var text by rememberSaveable { mutableStateOf(initial) }
+    val restored = draft?.takeIf { it.isNotBlank() && it.trim() != initial.trim() }
+    var text by rememberSaveable(initial, draft) { mutableStateOf(restored ?: initial) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    var status by remember { mutableStateOf(NoteStatus.IDLE) }
+    val scope = rememberCoroutineScope()
+    val changed = text.trim() != initial.trim()
+    fun close() {
+        if (onDraft != null && changed) onDraft(text)
+        onDismiss()
+    }
+    // A draft, written after a short pause in typing; not a saved note and not every keystroke on disk.
+    LaunchedEffect(text) {
+        if (onDraft == null || !changed) return@LaunchedEffect
+        kotlinx.coroutines.delay(700)
+        onDraft(text)
+    }
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = ::close,
         title = { Text(stringResource(R.string.note_title)) },
         text = {
             Column {
@@ -86,14 +113,40 @@ fun NoteDialog(
                         }
                     }
                 }
+                val message = when {
+                    status == NoteStatus.SAVING -> stringResource(R.string.note_saving)
+                    status == NoteStatus.ERROR -> stringResource(R.string.note_save_failed)
+                    restored != null -> stringResource(R.string.note_draft_restored)
+                    else -> null
+                }
+                if (message != null) {
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (status == NoteStatus.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = Dimens.s),
+                    )
+                }
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(text.trim()) }) { Text(stringResource(UiR.string.save)) } },
+        confirmButton = {
+            TextButton(
+                enabled = status != NoteStatus.SAVING,
+                onClick = {
+                    status = NoteStatus.SAVING
+                    scope.launch {
+                        val ok = runCatching { onSave(text.trim()) }.getOrDefault(false)
+                        status = if (ok) NoteStatus.SAVED else NoteStatus.ERROR
+                        if (ok) onDismiss()
+                    }
+                },
+            ) { Text(stringResource(UiR.string.save)) }
+        },
         dismissButton = {
             if (onDelete != null) {
                 TextButton(onClick = onDelete) { Text(stringResource(UiR.string.delete), color = MaterialTheme.colorScheme.error) }
             }
-            TextButton(onClick = onDismiss) { Text(stringResource(UiR.string.cancel)) }
+            TextButton(onClick = ::close) { Text(stringResource(UiR.string.cancel)) }
         },
     )
 }

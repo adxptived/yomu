@@ -98,6 +98,13 @@ class AudioPlaybackService : MediaSessionService() {
     private var pausedAt = 0L
     private var skipSilence = false
     private var settings = AudioSettings()
+    private val historyStore by lazy { AudioHistoryStore(this) }
+
+    /** The last manual jumps of the open book; published to the player screen and saved to a file per book. */
+    private var recent = emptyList<AudioPositionEvent>()
+
+    /** Why the next recorded seek happened; set around the skip commands. */
+    private var seekReason = AudioHistory.SEEK
     private val retriedAt = mutableMapOf<Int, Long>()
     private val expiresAt = mutableMapOf<Int, Long>()
     private val resolving = mutableSetOf<Int>()
@@ -138,10 +145,27 @@ class AudioPlaybackService : MediaSessionService() {
         val seeking = object : ForwardingPlayer(player) {
             override fun getSeekBackIncrement() = settings.skipBackSec * 1000L
             override fun getSeekForwardIncrement() = settings.skipForwardSec * 1000L
-            override fun seekBack() = seekTo((currentPosition - seekBackIncrement).coerceAtLeast(0))
+
+            // Every manual seek goes through the session player: the screen, the notification, a headset and a car
+            // kit all pass here, so the journal covers the same places however the jump was made.
+            override fun seekTo(mediaItemIndex: Int, positionMs: Long) {
+                recordSeek(mediaItemIndex, positionMs.coerceAtLeast(0))
+                super.seekTo(mediaItemIndex, positionMs)
+            }
+
+            override fun seekTo(positionMs: Long) = seekTo(currentMediaItemIndex, positionMs)
+
+            override fun seekBack() {
+                seekReason = AudioHistory.BACK
+                seekTo((currentPosition - seekBackIncrement).coerceAtLeast(0))
+                seekReason = AudioHistory.SEEK
+            }
+
             override fun seekForward() {
                 val target = currentPosition + seekForwardIncrement
+                seekReason = AudioHistory.FORWARD
                 seekTo(if (duration != C.TIME_UNSET) target.coerceAtMost(duration) else target)
+                seekReason = AudioHistory.SEEK
             }
         }
         session = MediaSession.Builder(this, seeking)
@@ -226,6 +250,7 @@ class AudioPlaybackService : MediaSessionService() {
                 book = b
                 tracks = list
                 nav = AudioPositions.navigation(list)
+                recent = withContext(Dispatchers.IO) { historyStore.read(b.id) }
                 durations.clear()
                 list.forEachIndexed { i, t -> if (t.durationMs > 0) durations[i] = t.durationMs }
                 resolved.clear()
@@ -369,6 +394,28 @@ class AudioPlaybackService : MediaSessionService() {
             delay(wait)
             if (gen == generation && book != null && player.playWhenReady) action()
         }
+    }
+
+    /**
+     * Remembers a manual jump of the open book before it happens. Short moves and a repeat of the same swipe do not
+     * fill the journal; incognito keeps it in memory only for the session and does not write the file.
+     */
+    private fun recordSeek(toTrack: Int, toMs: Long) {
+        val b = book ?: return
+        val fromTrack = player.currentMediaItemIndex
+        val fromMs = player.currentPosition
+        if (fromTrack == toTrack && kotlin.math.abs(toMs - fromMs) < MIN_JOURNAL_MS) return
+        val event = AudioPositionEvent(fromTrack, fromMs, toTrack, toMs, seekReason, System.currentTimeMillis())
+        recent = AudioHistory.append(recent, event)
+        publish()
+        if (!incognito) scope.launch { historyStore.write(b.id, recent) }
+    }
+
+    private fun clearHistory() {
+        recent = emptyList()
+        publish()
+        val id = book?.id ?: return
+        scope.launch { historyStore.clear(id) }
     }
 
     private fun saveSettings() {
@@ -560,6 +607,7 @@ class AudioPlaybackService : MediaSessionService() {
                 putLong(KEY_SLEEP_AT, sleepAt)
                 putBoolean(KEY_SLEEP_CHAPTER, sleepChapter)
                 putBoolean(KEY_SKIP_SILENCE, skipSilence)
+                putString(KEY_HISTORY, AudioHistory.encode(recent.takeLast(HISTORY_IN_EXTRAS)))
                 error?.let { putString(KEY_ERROR, it) }
             },
         )
@@ -579,6 +627,7 @@ class AudioPlaybackService : MediaSessionService() {
                     .add(SessionCommand(CMD_SKIP_SILENCE, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SKIP_INTERVALS, Bundle.EMPTY))
                     .add(SessionCommand(CMD_BOOKMARKS, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_HISTORY_CLEAR, Bundle.EMPTY))
             }
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session).setAvailableSessionCommands(builder.build()).build()
         }
@@ -607,6 +656,7 @@ class AudioPlaybackService : MediaSessionService() {
                     settings = settings.copy(bookmarks = AudioSettings.decodeBookmarks(args.getString(KEY_BOOKMARKS)))
                     saveSettings()
                 }
+                CMD_HISTORY_CLEAR -> clearHistory()
                 else -> return Futures.immediateFuture(SessionResult(androidx.media3.session.SessionError.ERROR_NOT_SUPPORTED))
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -619,6 +669,8 @@ class AudioPlaybackService : MediaSessionService() {
         const val CMD_SKIP_SILENCE = "app.yomu.audio.SKIP_SILENCE"
         const val CMD_SKIP_INTERVALS = "app.yomu.audio.SKIP_INTERVALS"
         const val CMD_BOOKMARKS = "app.yomu.audio.BOOKMARKS"
+        const val CMD_HISTORY_CLEAR = "app.yomu.audio.HISTORY_CLEAR"
+        const val KEY_HISTORY = "history"
         const val KEY_SKIP_BACK = "skipBack"
         const val KEY_SKIP_FORWARD = "skipForward"
         const val KEY_BOOKMARKS = "bookmarks"
@@ -632,6 +684,10 @@ class AudioPlaybackService : MediaSessionService() {
         const val KEY_ERROR = "error"
         const val SLEEP_END_OF_CHAPTER = -1
         private const val SAVE_EVERY_MS = 10_000L
+        private const val MIN_JOURNAL_MS = 700L
+
+        /** How many recent jumps travel in the session extras (the sheet reads the newest first). */
+        const val HISTORY_IN_EXTRAS = 30
         private const val MIN_SESSION_MS = 15_000L
         private const val SLEEP_FADE_MS = 20_000L
         private const val RETRY_WINDOW_MS = 60_000L

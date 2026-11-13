@@ -7,6 +7,20 @@
     <string name="onboarding_back">Назад</string>
     <string name="onboarding_next">Далее</string>
     <string name="onboarding_start">Начать</string>
+    <string name="onboarding_goal_title">Что вы хотите делать?</string>
+    <string name="onboarding_goal_text">Этот выбор только подсказывает самый короткий первый шаг. Все возможности Yomu остаются доступны.</string>
+    <string name="onboarding_goal_read">Читать книги</string>
+    <string name="onboarding_goal_manga">Читать мангу и комиксы</string>
+    <string name="onboarding_goal_audio">Слушать аудиокниги</string>
+    <string name="onboarding_goal_language">Учить язык</string>
+    <string name="onboarding_goal_switch">Выбор можно изменить в любой момент; он ничего не скрывает.</string>
+    <string name="onboarding_manga_title">Где ваша манга?</string>
+    <string name="onboarding_manga_text">Выберите папку глав или один архив CBZ/ZIP. Папки с несколькими сериями группируются в книги.</string>
+    <string name="onboarding_audio_title">Где ваши аудиокниги?</string>
+    <string name="onboarding_audio_text">Выберите файл аудиокниги (M4B/MP3) или папку с треками. Yomu запоминает место и умеет скачивать онлайн-книги для прослушивания без сети.</string>
+    <string name="onboarding_file_pick">Выбрать файл</string>
+    <string name="onboarding_file_added">«%1$s» добавлено в библиотеку</string>
+    <string name="onboarding_file_failed">Не удалось добавить файл. Можно выбрать другой или добавить позже из библиотеки.</string>
     <string name="onboarding_welcome_title">Добро пожаловать в Yomu</string>
     <string name="onboarding_welcome_text">Читалка книг, комиксов и манги, которая помогает учить языки.</string>
     <string name="onboarding_feature_read">EPUB, PDF, FB2, MOBI, DOCX, TXT, CBZ/CBR и папки с картинками</string>
@@ -14,7 +28,7 @@
     <string name="onboarding_feature_catalog">Поиск книг и манги в OPDS-каталогах и онлайн-источниках</string>
     <string name="onboarding_feature_editor">Правка книг и комиксов во встроенном редакторе</string>
     <string name="onboarding_folder_title">Где лежат ваши книги?</string>
-    <string name="onboarding_folder_text">Выберите папку: Yomu добавит из неё книги и будет следить за новыми.</string>
+    <string name="onboarding_folder_text">Выберите папку — Yomu будет следить за новыми книгами, — или начните с одного файла.</string>
     <string name="onboarding_folder_pick">Выбрать папку</string>
     <string name="onboarding_folder_another">Добавить ещё папку</string>
     <string name="onboarding_folder_chosen">Папка «%1$s» добавлена</string>
@@ -41,6 +55,12 @@
     <string name="whats_new_title">Что нового в Yomu</string>
     <string name="whats_new_ok">Понятно</string>
     <string name="whats_new_all">Все изменения</string>
+    <string-array name="whats_new_2_3_0">
+        <item>Новый первый запуск: выберите задачу, добавьте файл или папку и начинайте читать без запросов разрешений.</item>
+        <item>Настройки чтения: компактная панель «Вид» и полный экран с живым предпросмотром, точными значениями и отменой.</item>
+        <item>Заметки сохраняют черновик и подтверждают запись; в аудио появились история перемещений и точные закладки.</item>
+        <item>Восстановление из копии сначала показывает состав; массовые действия и цель продолжения подписаны.</item>
+    </string-array>
     <string-array name="whats_new_2_2_0">
         <item>Паритет и стабильность ридера: кнопки и зоны PDF, восстановление TTS, плавные перелистывания и никаких крашей при опустошении списка.</item>
         <item>Токены, ключи API и PIN-хэш теперь шифруются ключом Android Keystore.</item>
@@ -210,6 +230,8 @@
     <string name="profile_tab_tracking">Трекинг</string>
     <string name="profile_tracking_entry">Аккаунты и отслеживаемые тайтлы</string>
     <string name="profile_downloads_entry">Открыть очередь загрузок</string>
+    <string name="profile_notes">Заметки и цитаты</string>
+    <string name="profile_notes_entry">Выделения, заметки и цитаты из всех книг одним списком</string>
     <string name="profile_tab_downloads">Загрузки</string>
     <string name="profile_track_refresh">Обновить с сервисов</string>
     <string name="profile_track_settings">Настройки трекинга</string>

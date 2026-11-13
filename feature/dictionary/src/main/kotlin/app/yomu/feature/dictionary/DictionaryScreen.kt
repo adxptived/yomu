@@ -96,6 +96,28 @@ fun DictionaryScreen(
     }
 }
 
+/** The first useful result without a dictionary: language, one import and a word to check, in that order. */
+@Composable
+private fun FirstDictionaryCard(onOpenDictionaries: () -> Unit, onTranslate: () -> Unit) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s)) {
+        Column(Modifier.padding(Dimens.l), verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
+            Text(stringResource(R.string.dict_first_title), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.dict_first_step_lang), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.dict_first_step_add), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.dict_first_step_check), style = MaterialTheme.typography.bodyMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FilledTonalButton(onClick = onOpenDictionaries) { Text(stringResource(R.string.dicts_import)) }
+                TextButton(onClick = onTranslate) { Text(stringResource(R.string.dict_translate)) }
+            }
+            Text(
+                stringResource(R.string.dict_first_meaning_vs_translation),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 @Composable
 private fun LookupTab(viewModel: DictionaryViewModel, onStartReview: () -> Unit, onOpenDictionaries: () -> Unit) {
     val query by viewModel.query.collectAsStateWithLifecycle()
@@ -163,13 +185,20 @@ private fun LookupTab(viewModel: DictionaryViewModel, onStartReview: () -> Unit,
                 }
             }
             r is UiState.Loading -> SkeletonList()
-            r is UiState.Empty -> EmptyState(
-                title = stringResource(R.string.dict_not_found),
-                message = stringResource(R.string.dict_not_found_hint),
-                icon = Icons.AutoMirrored.Outlined.MenuBook,
-                actionLabel = stringResource(R.string.dict_translate),
-                onAction = { translate = query },
-            )
+            r is UiState.Empty -> LazyColumn(contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.s))) {
+                if (dicts?.isEmpty() == true) {
+                    item { FirstDictionaryCard(onOpenDictionaries = onOpenDictionaries, onTranslate = { translate = query }) }
+                }
+                item {
+                    EmptyState(
+                        title = stringResource(R.string.dict_not_found),
+                        message = stringResource(R.string.dict_not_found_hint),
+                        icon = Icons.AutoMirrored.Outlined.MenuBook,
+                        actionLabel = stringResource(R.string.dict_translate),
+                        onAction = { translate = query },
+                    )
+                }
+            }
             r is UiState.Error -> ErrorState(r.error, onRetry = { viewModel.search() })
             r is UiState.Data -> LazyColumn(contentPadding = PaddingValues(start = Dimens.l, end = Dimens.l, top = Dimens.s, bottom = navBarBottomPadding(Dimens.s))) {
                 item {

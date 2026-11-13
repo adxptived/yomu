@@ -34,7 +34,7 @@
     <string name="library_import_failed">Не удалось импортировать: %s</string>
     <string name="library_mark_read">Отметить прочитанным</string>
     <string name="library_mark_unread">Отметить непрочитанным</string>
-    <string name="library_to_collection">Во вкладки</string>
+    <string name="library_to_collection">В полку</string>
     <string name="library_add_tag">Добавить тег</string>
     <string name="library_tag">Тег</string>
     <string name="library_tags">Теги</string>

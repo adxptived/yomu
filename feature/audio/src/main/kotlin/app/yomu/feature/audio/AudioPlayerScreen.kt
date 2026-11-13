@@ -34,7 +34,9 @@ import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
@@ -68,6 +70,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -126,6 +130,13 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
     val download by viewModel.download.collectAsStateWithLifecycle()
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
+    // Captured when the bookmark button is pressed: typing a note never moves the saved spot. Saved as primitives so a
+    // rotation or a killed process keeps the anchor and the bookmark being edited.
+    var bookmarkTrack by rememberSaveable { mutableIntStateOf(-1) }
+    var bookmarkPos by rememberSaveable { mutableLongStateOf(-1L) }
+    var editingAt by rememberSaveable { mutableStateOf<Long?>(null) }
+    val bookmarkAt = if (bookmarkTrack >= 0 && bookmarkPos >= 0) bookmarkTrack to bookmarkPos else null
+    val editingBookmark = editingAt?.let { at -> settings.bookmarks.firstOrNull { it.createdAt == at } }
     val playing = player?.isPlaying == true
     // Paused, the position only moves on seeks, which are player events: no need to poll.
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -153,8 +164,22 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent, scrolledContainerColor = Color.Transparent),
                     navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back)) } },
                     actions = {
-                        IconButton(onClick = { dialog = "bookmark" }, enabled = player != null) {
+                        IconButton(
+                            onClick = {
+                                val point = viewModel.bookmarkPoint()
+                                editingAt = null
+                                if (point != null) {
+                                    bookmarkTrack = point.first
+                                    bookmarkPos = point.second
+                                    dialog = "bookmark"
+                                }
+                            },
+                            enabled = player != null,
+                        ) {
                             Icon(Icons.Default.BookmarkAdd, stringResource(R.string.audio_bookmark_add))
+                        }
+                        IconButton(onClick = { sheet = "history" }, enabled = player != null) {
+                            Icon(Icons.Default.History, stringResource(R.string.audio_history))
                         }
                         if (offline != null) {
                             IconButton(onClick = { sheet = "offline" }) {
@@ -175,7 +200,14 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
         ) { padding ->
             val error = loadError
             if (error != null) {
-                ErrorState(error, Modifier.padding(padding).fillMaxSize())
+                ErrorState(
+                    error,
+                    Modifier.padding(padding).fillMaxSize(),
+                    onRetry = viewModel::retryPlayback,
+                    retryLabel = stringResource(R.string.audio_retry_now),
+                    secondaryLabel = stringResource(CoreR.string.back),
+                    onSecondary = onBack,
+                )
                 return@Scaffold
             }
             val s = player
@@ -199,6 +231,10 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             info()
+                            s?.history?.lastOrNull()?.takeIf { it.isJump }?.let { e ->
+                                Spacer(Modifier.height(8.dp))
+                                HistoryChip(e) { viewModel.jumpTo(e.fromTrack, e.fromMs) }
+                            }
                             Spacer(Modifier.height(12.dp))
                             controls()
                             Spacer(Modifier.height(16.dp))
@@ -215,6 +251,9 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
                         ) {
                             Cover(cover, book?.title.orEmpty(), Modifier.width(coverWidth))
                             info()
+                            s?.history?.lastOrNull()?.takeIf { it.isJump }?.let { e ->
+                                HistoryChip(e) { viewModel.jumpTo(e.fromTrack, e.fromMs) }
+                            }
                             controls()
                         }
                     }
@@ -264,7 +303,17 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
         "bookmarks" -> YomuSheet(onDismiss = { sheet = null }) {
             SheetTitle(stringResource(R.string.audio_bookmarks))
             Button(
-                onClick = { sheet = null; dialog = "bookmark" }, enabled = player != null,
+                onClick = {
+                    val point = viewModel.bookmarkPoint()
+                    editingAt = null
+                    if (point != null) {
+                        bookmarkTrack = point.first
+                        bookmarkPos = point.second
+                        sheet = null
+                        dialog = "bookmark"
+                    }
+                },
+                enabled = player != null,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
             ) {
                 Icon(Icons.Default.BookmarkAdd, null, Modifier.size(18.dp))
@@ -279,8 +328,38 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
             } else {
                 LazyColumn(Modifier.heightIn(max = 480.dp)) {
                     itemsIndexed(settings.bookmarks) { _, mark ->
-                        BookmarkRow(mark, chapters, onClick = { viewModel.jump(mark); sheet = null }, onDelete = { viewModel.removeBookmark(mark) })
+                        BookmarkRow(
+                            mark, chapters,
+                            onClick = { viewModel.jump(mark); sheet = null },
+                            onEdit = {
+                                bookmarkTrack = mark.track
+                                bookmarkPos = mark.positionMs
+                                editingAt = mark.createdAt
+                                sheet = null
+                                dialog = "bookmark"
+                            },
+                            onDelete = { viewModel.removeBookmark(mark) },
+                        )
                     }
+                }
+            }
+        }
+        "history" -> YomuSheet(onDismiss = { sheet = null }) {
+            SheetTitle(stringResource(R.string.audio_history))
+            val events = player?.history.orEmpty().asReversed()
+            if (events.isEmpty()) {
+                Text(
+                    stringResource(R.string.audio_history_empty), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                )
+            } else {
+                LazyColumn(Modifier.heightIn(max = 480.dp)) {
+                    itemsIndexed(events) { _, e ->
+                        HistoryRow(e, chapters) { viewModel.jumpTo(e.fromTrack, e.fromMs); sheet = null }
+                    }
+                }
+                TextButton(onClick = { viewModel.clearHistory(); sheet = null }, modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Text(stringResource(R.string.audio_history_clear))
                 }
             }
         }
@@ -302,18 +381,36 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
 
     when (dialog) {
         "bookmark" -> {
-            var note by rememberSaveable { mutableStateOf("") }
+            val at = bookmarkAt
+            val editing = editingBookmark
+            var note by rememberSaveable(bookmarkTrack, bookmarkPos, editingAt) { mutableStateOf(editing?.note.orEmpty()) }
+            val close = {
+                dialog = null
+                bookmarkTrack = -1
+                bookmarkPos = -1L
+                editingAt = null
+            }
             AlertDialog(
-                onDismissRequest = { dialog = null },
-                title = { Text(stringResource(R.string.audio_bookmark_here, time(player?.positionMs ?: 0))) },
+                onDismissRequest = close,
+                title = { Text(stringResource(R.string.audio_bookmark_here, time(at?.second ?: 0))) },
                 text = {
                     OutlinedTextField(
                         value = note, onValueChange = { note = it.take(200) }, singleLine = true,
                         label = { Text(stringResource(R.string.audio_bookmark_note)) },
                     )
                 },
-                confirmButton = { TextButton(onClick = { viewModel.addBookmark(note); dialog = null }) { Text(stringResource(R.string.audio_bookmark_save)) } },
-                dismissButton = { TextButton(onClick = { dialog = null }) { Text(stringResource(CoreR.string.cancel)) } },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            if (bookmarkTrack >= 0 && bookmarkPos >= 0) {
+                                if (editing != null) viewModel.updateBookmark(editing, note)
+                                else viewModel.addBookmark(bookmarkTrack, bookmarkPos, note)
+                            }
+                            close()
+                        },
+                    ) { Text(stringResource(R.string.audio_bookmark_save)) }
+                },
+                dismissButton = { TextButton(onClick = close) { Text(stringResource(CoreR.string.cancel)) } },
             )
         }
         "sleep" -> {
@@ -408,6 +505,8 @@ private fun Controls(
                 stringResource(R.string.audio_play_error, it), color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 4.dp),
             )
+            // A retry that does not replay the whole book: the same position, prepared again.
+            TextButton(onClick = viewModel::retryNow) { Text(stringResource(R.string.audio_retry_now)) }
             if (needsSignIn(it)) {
                 Text(
                     stringResource(R.string.audio_sign_in_hint), color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -541,8 +640,45 @@ private fun ChapterRow(entry: AudioNavEntry, lengthMs: Long, current: Boolean, o
     }
 }
 
+/** "Back to 0:42:18" for the last manual jump; the full journal is in the History sheet. */
 @Composable
-private fun BookmarkRow(mark: Bookmark, chapters: List<AudioNavEntry>, onClick: () -> Unit, onDelete: () -> Unit) {
+private fun HistoryChip(e: AudioPositionEvent, onBack: () -> Unit) {
+    AssistChip(
+        onClick = onBack,
+        label = { Text(stringResource(R.string.audio_back_to, duration(e.fromMs))) },
+        leadingIcon = { Icon(Icons.Default.History, null) },
+    )
+}
+
+@Composable
+private fun HistoryRow(e: AudioPositionEvent, chapters: List<AudioNavEntry>, onBack: () -> Unit) {
+    val chapter = chapters.getOrNull(AudioPositions.current(chapters, e.fromTrack, e.fromMs))?.title.orEmpty()
+    val reason = stringResource(
+        when (e.reason) {
+            AudioHistory.BACK -> R.string.audio_reason_back
+            AudioHistory.FORWARD -> R.string.audio_reason_forward
+            AudioHistory.CHAPTER -> R.string.audio_reason_chapter
+            AudioHistory.RETURN -> R.string.audio_reason_return
+            AudioHistory.BOOKMARK -> R.string.audio_reason_bookmark
+            else -> R.string.audio_reason_seek
+        },
+    )
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(onClick = onBack).padding(horizontal = 24.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(Icons.Default.History, null, tint = MaterialTheme.colorScheme.primary)
+        Column(Modifier.weight(1f)) {
+            Text("${duration(e.fromMs)} → ${duration(e.toMs)}", maxLines = 1)
+            val where = listOf(reason, chapter).filter { it.isNotBlank() }.joinToString(" · ")
+            Text(where, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun BookmarkRow(mark: Bookmark, chapters: List<AudioNavEntry>, onClick: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
     val chapter = chapters.getOrNull(AudioPositions.current(chapters, mark.track, mark.positionMs))?.title.orEmpty()
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(onClick = onClick).padding(start = 24.dp, end = 8.dp),
@@ -555,6 +691,7 @@ private fun BookmarkRow(mark: Bookmark, chapters: List<AudioNavEntry>, onClick: 
             val where = listOf(chapter, time(mark.positionMs)).filter { it.isNotBlank() && it != mark.note }.joinToString(" · ")
             Text(where, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, stringResource(R.string.audio_bookmark_edit)) }
         IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, stringResource(R.string.audio_bookmark_delete)) }
     }
 }

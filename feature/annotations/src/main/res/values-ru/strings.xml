@@ -66,6 +66,9 @@
     <string name="note_edit">Редактор</string>
     <string name="note_preview">Просмотр</string>
     <string name="note_empty_preview">Нечего показать</string>
+    <string name="note_draft_restored">Черновик восстановлен. Если закрыть диалог, текст останется здесь.</string>
+    <string name="note_saving">Сохраняется…</string>
+    <string name="note_save_failed">Не удалось сохранить. Текст сохранён как черновик — попробуйте ещё раз.</string>
 
     <string name="quote_share_title">Поделиться цитатой</string>
     <string name="quote_style_light">Светлая карточка</string>

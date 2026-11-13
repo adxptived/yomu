@@ -268,6 +268,7 @@ class BookRepositoryImpl(
         list.forEach { b ->
             covers.delete(b.coverPath)
             File(context.filesDir, "converted/${b.id}.epub").delete()
+            File(context.filesDir, "audio_history/${b.id}.json").delete()
             File(context.cacheDir, "pages/book_${b.id}").deleteRecursively()
             val uri = Uri.parse(b.uri)
             if (!b.isLinked && uri.scheme == "file") {

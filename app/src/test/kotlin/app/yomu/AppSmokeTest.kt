@@ -183,7 +183,7 @@ class AppSmokeTest {
         shot("03_library")
         for ((tab, file, marker) in listOf(
             Triple("Catalog", "04_catalog", "MangaDex"),
-            Triple("Dictionary", "05_dictionary", "Look up a word"),
+            Triple("Words", "05_dictionary", "Look up a word"),
             Triple("Settings", "06_settings", "Search settings"),
         )) {
             clickTab(tab)
@@ -211,7 +211,7 @@ class AppSmokeTest {
 
         // Reader chrome and settings sheet (only for the screenshots: the chrome may be hidden until a tap).
         runCatching {
-            val settings = compose.onAllNodes(hasContentDescription("Reading settings"))
+            val settings = compose.onAllNodes(hasContentDescription("All reading settings"))
             if (settings.fetchSemanticsNodes().isNotEmpty()) {
                 settings[0].performClick()
                 compose.mainClock.advanceTimeBy(1_000)
@@ -414,11 +414,11 @@ class AppSmokeTest {
         shot("23_manga_reader")
         compose.mainClock.advanceTimeBy(4_000)
         runCatching {
-            var settings = compose.onAllNodes(hasContentDescription("Reading settings"))
+            var settings = compose.onAllNodes(hasContentDescription("All reading settings"))
             if (settings.fetchSemanticsNodes().isEmpty()) {
                 compose.onAllNodes(isRoot())[0].performTouchInput { click(center) }
                 compose.mainClock.advanceTimeBy(1_000)
-                settings = compose.onAllNodes(hasContentDescription("Reading settings"))
+                settings = compose.onAllNodes(hasContentDescription("All reading settings"))
             }
             settings[0].performClick()
             compose.mainClock.advanceTimeBy(1_000)

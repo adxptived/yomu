@@ -1,0 +1,1 @@
+A task-first first launch, reworked reading settings with a compact View panel, a live preview and Undo, recoverable note drafts, an audiobook jump history with precise bookmarks, and a restore screen that shows the backup contents first.

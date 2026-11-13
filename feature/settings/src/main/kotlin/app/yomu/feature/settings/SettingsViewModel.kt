@@ -12,6 +12,7 @@ import app.yomu.core.common.runCatchingApp
 import app.yomu.core.datastore.AppSettings
 import app.yomu.core.datastore.Pref
 import app.yomu.data.backup.BackupManager
+import app.yomu.data.backup.BackupPreview
 import app.yomu.data.backup.MihonImporter
 import app.yomu.data.backup.SyncManager
 import app.yomu.data.backup.SyncProblemInfo
@@ -116,6 +117,38 @@ class SettingsViewModel(
         }.onSuccess { _events.send(SettingsEvent.Message(R.string.set_backup_done)) }
             .onFailure { _events.send(SettingsEvent.Failure(it)) }
         busy.value = false
+    }
+
+    /** The manifest of the archive the user picked, shown before anything is written. */
+    val backupPreview = MutableStateFlow<BackupPreview?>(null)
+    private var previewUri: Uri? = null
+
+    fun previewBackup(uri: Uri) = viewModelScope.launch(ScreenErrors) {
+        busy.value = true
+        runCatchingApp {
+            appScope.detached {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { backup.preview(it) } ?: error("Cannot read the file")
+                }
+            }
+        }.onSuccess { p ->
+            previewUri = uri
+            backupPreview.value = p
+        }.onFailure { _events.send(SettingsEvent.Failure(it)) }
+        busy.value = false
+    }
+
+    /** Restores the archive whose manifest was just shown. */
+    fun confirmRestore() {
+        val uri = previewUri
+        backupPreview.value = null
+        previewUri = null
+        uri?.let(::restoreBackup)
+    }
+
+    fun dismissBackupPreview() {
+        backupPreview.value = null
+        previewUri = null
     }
 
     fun restoreBackup(uri: Uri) = viewModelScope.launch(ScreenErrors) {

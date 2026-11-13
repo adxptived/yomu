@@ -71,7 +71,7 @@
     <string name="nav_library">Библиотека</string>
     <string name="nav_history">Профиль</string>
     <string name="nav_catalog">Каталог</string>
-    <string name="nav_dictionary">Словарь</string>
+    <string name="nav_dictionary">Слова</string>
     <string name="nav_settings">Настройки</string>
     <string name="nav_badge">есть новое</string>
     <string name="incognito_mode">Режим инкогнито</string>

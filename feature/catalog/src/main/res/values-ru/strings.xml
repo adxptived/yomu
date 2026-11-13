@@ -112,6 +112,8 @@
     <string name="title_open">Открыть тайтл</string>
     <string name="title_continue">Продолжить</string>
     <string name="title_start">Начать читать</string>
+    <string name="title_continue_at">Продолжить: %1$s</string>
+    <string name="title_continue_at_page">Продолжить: %1$s · стр. %2$d</string>
     <string name="title_files">Файлы</string>
     <string name="title_no_files">Нет файлов для скачивания</string>
     <string name="title_new_chapters">Новых глав: %1$s</string>

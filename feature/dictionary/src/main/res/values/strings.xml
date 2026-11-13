@@ -16,6 +16,11 @@
     <string name="dict_online_source">From an online dictionary</string>
     <string name="dict_no_dicts_title">No offline dictionaries yet</string>
     <string name="dict_no_dicts_text">Import StarDict, DSL, Wiktionary JSON or JMdict files for offline lookups.</string>
+    <string name="dict_first_title">Look up the first word offline</string>
+    <string name="dict_first_step_lang">1. The language comes from the open book; words of another language can be picked in Dictionaries.</string>
+    <string name="dict_first_step_add">2. Add a dictionary: your own StarDict/DSL file, or an online lookup.</string>
+    <string name="dict_first_step_check">3. Check a word to confirm it works.</string>
+    <string name="dict_first_meaning_vs_translation">A dictionary explains a word; a phrase is translated separately.</string>
 
     <string name="dicts_title">Dictionaries</string>
     <string name="dicts_import">Import dictionary</string>

@@ -103,7 +103,13 @@ fun DictionariesScreen(viewModel: DictionariesViewModel, onBack: () -> Unit) {
             val l = list
             when {
                 l == null -> SkeletonList()
-                l.isEmpty() -> EmptyState(stringResource(R.string.dicts_empty_title), message = stringResource(R.string.dicts_formats), icon = Icons.AutoMirrored.Outlined.MenuBook)
+                l.isEmpty() -> EmptyState(
+                    stringResource(R.string.dicts_empty_title),
+                    message = stringResource(R.string.dicts_formats),
+                    icon = Icons.AutoMirrored.Outlined.MenuBook,
+                    actionLabel = stringResource(R.string.dicts_import),
+                    onAction = { if (!importing) picker.launch(arrayOf("*/*")) },
+                )
                 else -> LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
                     itemsIndexed(l, key = { _, d -> d.id }) { i, d ->
                         ListItem(

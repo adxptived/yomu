@@ -14,6 +14,7 @@
     <string name="audio_sleep_minutes">%1$d min</string>
     <string name="audio_sleep_left">%1$d min left</string>
     <string name="audio_play_error">Cannot play: %1$s</string>
+    <string name="audio_retry_now">Try again now</string>
     <string name="audio_sign_in_hint">YouTube wants a signed-in device. Sign in under Settings → YouTube, then try again.</string>
     <string name="audio_sign_in">Sign in</string>
     <string name="audio_origin_catalog">Catalog</string>
@@ -56,4 +57,16 @@
     <string name="audio_sleep_custom_title">Sleep timer in minutes</string>
     <string name="audio_minutes_label">Minutes</string>
     <string name="audio_start">Start</string>
+    <!-- Jumps: a journal of manual seeks, chapter changes and bookmark jumps -->
+    <string name="audio_history">Jump history</string>
+    <string name="audio_history_empty">No jumps yet. Seeking, chapter changes and bookmark jumps appear here so you can come back.</string>
+    <string name="audio_history_clear">Clear history</string>
+    <string name="audio_back_to">Back to %1$s</string>
+    <string name="audio_bookmark_edit">Edit note</string>
+    <string name="audio_reason_seek">Jump</string>
+    <string name="audio_reason_back">Rewind</string>
+    <string name="audio_reason_forward">Fast forward</string>
+    <string name="audio_reason_chapter">Chapter</string>
+    <string name="audio_reason_return">Return</string>
+    <string name="audio_reason_bookmark">Bookmark</string>
 </resources>

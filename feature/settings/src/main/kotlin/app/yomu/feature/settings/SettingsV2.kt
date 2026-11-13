@@ -20,13 +20,17 @@ import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Password
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.RestartAlt
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -74,7 +78,7 @@ import java.util.Date
 import app.yomu.core.ui.R as CoreR
 
 @Composable
-private fun Hint(text: String) {
+internal fun Hint(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs))
 }
 
@@ -179,6 +183,15 @@ internal fun ColumnScope.SyncSection(vm: SettingsViewModel, onOpenProblems: () -
     SwitchPref(vm, s.syncTrackLinks, R.string.set_sync_track_links, R.string.set_sync_track_links_sum)
     SwitchPref(vm, s.syncBookFiles, R.string.set_sync_book_files, R.string.set_sync_book_files_sum)
     SwitchPref(vm, s.syncDeletions, R.string.set_sync_deletions, R.string.set_sync_deletions_sum)
+
+    // Audiobooks are listed separately because their parts do not all travel: a truthful list is better than a switch
+    // that looks like it covers bookmarks and files when it does not.
+    PreferenceHeader(stringResource(R.string.set_sync_audio))
+    Hint(stringResource(R.string.set_sync_audio_hint))
+    PreferenceItem(stringResource(R.string.set_sync_audio_progress), stringResource(R.string.set_sync_audio_progress_sum), icon = Icons.Outlined.Headphones)
+    PreferenceItem(stringResource(R.string.set_sync_audio_bookmarks), stringResource(R.string.set_sync_audio_bookmarks_sum), icon = Icons.Outlined.BookmarkBorder)
+    PreferenceItem(stringResource(R.string.set_sync_audio_player), stringResource(R.string.set_sync_audio_player_sum), icon = Icons.Outlined.Tune)
+    PreferenceItem(stringResource(R.string.set_sync_audio_files), stringResource(R.string.set_sync_audio_files_sum), icon = Icons.Outlined.CloudDownload)
     if (webdav) {
         Hint(stringResource(R.string.set_sync_track_links_hint))
         Hint(stringResource(R.string.set_sync_webdav_etag_hint))

@@ -193,12 +193,28 @@ class AnnotationsViewModel(
         }
     }
 
-    fun saveNote(entry: AnnotationEntry, text: String) = viewModelScope.launch(ScreenErrors) {
+    private val drafts = NoteDrafts(context)
+
+    /** Unsaved text of the note editor for this item, restored after closing or a killed process. */
+    fun draft(entry: AnnotationEntry): String? = drafts.get(entry.key)
+
+    fun saveDraft(entry: AnnotationEntry, text: String) =
+        drafts.put(entry.key, entry.bookId, entry.locator?.chapter ?: 0, entry.locator?.offset ?: 0, text)
+
+    fun clearDraft(entry: AnnotationEntry) = drafts.remove(entry.key)
+
+    /** Writes the note and reports success: the dialog closes only when the row is really in the database. */
+    suspend fun saveNoteNow(entry: AnnotationEntry, text: String): Boolean = runCatching {
         when (entry) {
             is AnnotationEntry.H -> repo.saveHighlight(entry.highlight.copy(note = text.ifBlank { null }, tags = TextTools.hashtags(text)))
             is AnnotationEntry.N -> if (text.isBlank()) repo.deleteNote(entry.note.id) else repo.saveNote(entry.note.copy(text = text, tags = TextTools.hashtags(text)))
             is AnnotationEntry.B -> repo.saveBookmark(entry.bookmark.copy(title = text.ifBlank { entry.bookmark.title }))
         }
+        drafts.remove(entry.key)
+    }.isSuccess
+
+    fun saveNote(entry: AnnotationEntry, text: String) = viewModelScope.launch(ScreenErrors) {
+        saveNoteNow(entry, text)
     }
 
     fun toggleFavorite(entry: AnnotationEntry.H) = viewModelScope.launch(ScreenErrors) {

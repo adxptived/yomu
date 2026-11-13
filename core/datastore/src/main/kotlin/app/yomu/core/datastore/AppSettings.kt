@@ -92,8 +92,8 @@ class AppSettings(context: Context) {
     /** ARGB colour of the "custom" accent (1.5.0). */
     val accentCustom = long("accent_custom", 0xFF8F7FD6)
 
-    /** Labels under every icon of the navigation bar; off: only the selected tab shows its name (1.5.0). */
-    val navLabels = bool("nav_labels", false)
+    /** Labels under every icon of the navigation bar; off: only the selected tab shows its name. On by default since 2.0.7: five icons alone are hard to tell apart on a first launch. */
+    val navLabels = bool("nav_labels", true)
 
     /** Tabs of the navigation bar in the user's order (names of core.ui NavTab); empty: the default order (1.6.0). */
     val navTabOrder = json("nav_tab_order", emptyList(), ListSerializer(String.serializer()))

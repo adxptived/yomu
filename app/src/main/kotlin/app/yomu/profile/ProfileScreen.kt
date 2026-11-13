@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Insights
@@ -89,6 +90,7 @@ import app.yomu.core.common.Share
 import app.yomu.core.datastore.AppSettings
 import app.yomu.core.ui.components.BookListItem
 import app.yomu.core.ui.components.CollapsibleSection
+import app.yomu.core.ui.components.PreferenceItem
 import app.yomu.core.ui.components.TopLevelBody
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.navBarBottomPadding
@@ -147,6 +149,7 @@ fun ProfileScreen(
     onOpenTitle: (Long) -> Unit,
     onOpenSettings: (SettingsSection) -> Unit,
     onOpenDownloads: (() -> Unit)? = null,
+    onOpenNotes: (() -> Unit)? = null,
 ) {
     var tab by rememberSaveable { mutableStateOf(ProfileTab.OVERVIEW) }
     var page by rememberSaveable { mutableStateOf(ProfilePage.NONE) }
@@ -220,6 +223,7 @@ fun ProfileScreen(
                                 onOpenHistory = { tab = ProfileTab.HISTORY },
                                 onOpenTracking = { page = ProfilePage.TRACKING },
                                 onOpenDownloads = onOpenDownloads,
+                                onOpenNotes = onOpenNotes,
                                 onOpenBook = onOpenBook,
                                 onReadChapter = onReadChapter,
                                 onOpenTitle = onOpenTitle,
@@ -281,6 +285,7 @@ private fun ProfileOverview(
     onOpenHistory: () -> Unit,
     onOpenTracking: () -> Unit,
     onOpenDownloads: (() -> Unit)?,
+    onOpenNotes: (() -> Unit)?,
     onOpenBook: (Long) -> Unit,
     onReadChapter: (Long) -> Unit,
     onOpenTitle: (Long) -> Unit,
@@ -364,6 +369,16 @@ private fun ProfileOverview(
                         Modifier.weight(1f),
                     )
                 }
+            }
+        }
+        if (onOpenNotes != null) {
+            item(key = "notes") {
+                PreferenceItem(
+                    stringResource(R.string.profile_notes),
+                    stringResource(R.string.profile_notes_entry),
+                    icon = Icons.Outlined.EditNote,
+                    onClick = onOpenNotes,
+                )
             }
         }
         item(key = "time") { TimeCard(state, onOpenStats) }

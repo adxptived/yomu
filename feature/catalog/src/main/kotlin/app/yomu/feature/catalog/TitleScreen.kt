@@ -232,6 +232,8 @@ private fun TitleContent(
     val links by viewModel.links.collectAsStateWithLifecycle()
     val selection by viewModel.selection.collectAsStateWithLifecycle()
     val display by viewModel.display.collectAsStateWithLifecycle()
+    // One target for the button and the label: the same function that opens the chapter names it.
+    val continueAt = remember(chapters, display) { viewModel.continueChapter() }
     val total by viewModel.totalChapters.collectAsStateWithLifecycle()
     val scanlators by viewModel.scanlators.collectAsStateWithLifecycle()
     val sourceName by viewModel.sourceName.collectAsStateWithLifecycle()
@@ -448,7 +450,7 @@ private fun TitleContent(
                 YomuFab(
                     text = stringResource(if (started) R.string.title_continue else R.string.title_start),
                     icon = Icons.Filled.PlayArrow,
-                    onClick = { viewModel.continueChapter()?.let(read) },
+                    onClick = { continueAt?.let(read) },
                     expanded = fabExpanded,
                 )
             }
@@ -533,6 +535,22 @@ private fun TitleContent(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                                // What the main button will open, computed by the same function that opens it.
+                                val target = continueAt
+                                if (target != null) {
+                                    Text(
+                                        stringResource(
+                                            if (target.lastPageRead > 0) R.string.title_continue_at_page else R.string.title_continue_at,
+                                            target.name,
+                                            target.lastPageRead,
+                                        ),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.clickable { read(target) },
+                                    )
+                                }
                             }
                             IconButton(onClick = { viewModel.updateDisplay { it.copy(descending = !it.descending) } }) {
                                 Icon(

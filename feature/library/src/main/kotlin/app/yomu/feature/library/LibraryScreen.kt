@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,6 +69,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -245,6 +247,8 @@ fun LibraryScreen(
     var onlineMenu by remember { mutableStateOf<CatalogEntry?>(null) }
     var contextBook by remember { mutableStateOf<Book?>(null) }
     var statusBook by remember { mutableStateOf<Book?>(null) }
+    var bulkStatus by remember { mutableStateOf(false) }
+    var bulkMenu by remember { mutableStateOf(false) }
     var tagDialog by remember { mutableStateOf<Set<Long>?>(null) }
     var deleteFilesDialog by remember { mutableStateOf<Set<Long>?>(null) }
     // The "Online" tab: every title added with the heart in the catalog.
@@ -436,14 +440,43 @@ fun LibraryScreen(
         },
         bottomBar = {
             AnimatedVisibility(selecting) {
+                // Three signed actions instead of seven icons: what changes the selection most often stays in front,
+                // the rarer ones (favorite, tag, metadata, both kinds of deletion) live in "More".
                 BottomAppBar {
-                    BulkAction(Icons.Default.DoneAll, stringResource(R.string.library_mark_read)) { viewModel.setStatus(selection, ReadingStatus.FINISHED) }
-                    BulkAction(Icons.Outlined.AutoStories, stringResource(R.string.library_mark_unread)) { viewModel.setStatus(selection, ReadingStatus.NEW) }
-                    BulkAction(Icons.Default.Star, stringResource(R.string.library_add_favorite)) { viewModel.setFavorite(selection, true) }
-                    BulkAction(Icons.Default.Bookmarks, stringResource(R.string.library_to_collection)) { viewModel.pickTabsForBooks(selection) }
-                    BulkAction(Icons.AutoMirrored.Filled.Label, stringResource(R.string.library_add_tag)) { tagDialog = selection }
-                    BulkAction(Icons.Default.Delete, stringResource(CoreR.string.delete)) { viewModel.requestDelete(selection) }
-                    BulkAction(Icons.Default.DeleteForever, stringResource(R.string.library_delete_files)) { deleteFilesDialog = selection }
+                    BulkActionLabeled(Icons.Default.Bookmarks, stringResource(R.string.library_to_collection), Modifier.weight(1f)) {
+                        viewModel.pickTabsForBooks(selection)
+                    }
+                    BulkActionLabeled(Icons.Default.DoneAll, stringResource(R.string.library_status), Modifier.weight(1f)) { bulkStatus = true }
+                    Box(Modifier.weight(1f)) {
+                        BulkActionLabeled(Icons.Default.MoreVert, stringResource(CoreR.string.more), Modifier.fillMaxWidth()) { bulkMenu = true }
+                        DropdownMenu(expanded = bulkMenu, onDismissRequest = { bulkMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.library_add_favorite)) },
+                                leadingIcon = { Icon(Icons.Default.Star, null) },
+                                onClick = { bulkMenu = false; viewModel.setFavorite(selection, true) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.library_add_tag)) },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Label, null) },
+                                onClick = { bulkMenu = false; tagDialog = selection },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.library_edit_metadata)) },
+                                leadingIcon = { Icon(Icons.Outlined.Edit, null) },
+                                onClick = { bulkMenu = false; viewModel.openBatchEdit(selection) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.library_remove_book)) },
+                                leadingIcon = { Icon(Icons.Default.Delete, null) },
+                                onClick = { bulkMenu = false; viewModel.requestDelete(selection) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.library_delete_files)) },
+                                leadingIcon = { Icon(Icons.Default.DeleteForever, null) },
+                                onClick = { bulkMenu = false; deleteFilesDialog = selection },
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -638,6 +671,17 @@ fun LibraryScreen(
                 ) {
                     viewModel.setStatus(setOf(book.id), s)
                     statusBook = null
+                }
+            }
+        }
+    }
+    if (bulkStatus) {
+        YomuSheet(onDismiss = { bulkStatus = false }) {
+            SheetTitle(stringResource(R.string.library_status))
+            ReadingStatus.entries.forEach { s ->
+                SheetAction(Icons.Outlined.RadioButtonUnchecked, stringResource(s.label())) {
+                    viewModel.setStatus(selection, s)
+                    bulkStatus = false
                 }
             }
         }
@@ -947,9 +991,17 @@ private fun NoBooksCard(onImport: () -> Unit) {
 }
 
 @Composable
-private fun BulkAction(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun BulkActionLabeled(icon: ImageVector, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val haptic = rememberHaptic()
-    IconButton(onClick = { haptic.confirm(); onClick() }, modifier = Modifier.semantics { contentDescription = label }) { Icon(icon, label) }
+    Column(
+        modifier.heightIn(min = Dimens.touch).clickable { haptic.confirm(); onClick() }.padding(horizontal = Dimens.xs, vertical = Dimens.xs)
+            .semantics(mergeDescendants = true) { contentDescription = label },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(icon, null, Modifier.size(22.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 private fun LibrarySort.label(): Int = when (this) {

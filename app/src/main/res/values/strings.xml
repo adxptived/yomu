@@ -8,6 +8,20 @@
     <string name="onboarding_back">Back</string>
     <string name="onboarding_next">Next</string>
     <string name="onboarding_start">Get started</string>
+    <string name="onboarding_goal_title">What do you want to do?</string>
+    <string name="onboarding_goal_text">This only picks the shortest first step. Every part of Yomu stays available afterwards.</string>
+    <string name="onboarding_goal_read">Read books</string>
+    <string name="onboarding_goal_manga">Read manga and comics</string>
+    <string name="onboarding_goal_audio">Listen to audiobooks</string>
+    <string name="onboarding_goal_language">Learn a language</string>
+    <string name="onboarding_goal_switch">You can change this at any time; the choice does not hide anything.</string>
+    <string name="onboarding_manga_title">Where is your manga?</string>
+    <string name="onboarding_manga_text">Pick a folder of chapters or one CBZ/ZIP archive. Folders with several series are grouped into books.</string>
+    <string name="onboarding_audio_title">Where are your audiobooks?</string>
+    <string name="onboarding_audio_text">Pick an audiobook file (M4B/MP3) or a folder of tracks. Yomu keeps your place and can download online books for offline listening.</string>
+    <string name="onboarding_file_pick">Choose a file</string>
+    <string name="onboarding_file_added">“%1$s” added to the library</string>
+    <string name="onboarding_file_failed">Could not add this file. You can try another one or add it later from the library.</string>
     <string name="onboarding_welcome_title">Welcome to Yomu</string>
     <string name="onboarding_welcome_text">A reader for books, comics and manga that helps you learn languages.</string>
     <string name="onboarding_feature_read">EPUB, PDF, FB2, MOBI, DOCX, TXT, CBZ/CBR and image folders</string>
@@ -15,7 +29,7 @@
     <string name="onboarding_feature_catalog">Find books and manga in OPDS catalogs and online sources</string>
     <string name="onboarding_feature_editor">Fix books and comics in the built-in editor</string>
     <string name="onboarding_folder_title">Where are your books?</string>
-    <string name="onboarding_folder_text">Choose a folder: Yomu adds the books from it and keeps the library up to date.</string>
+    <string name="onboarding_folder_text">Choose a folder and Yomu keeps the library up to date, or pick one book file to start with.</string>
     <string name="onboarding_folder_pick">Choose folder</string>
     <string name="onboarding_folder_another">Add another folder</string>
     <string name="onboarding_folder_chosen">Folder “%1$s” added</string>
@@ -40,6 +54,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_3_0">
+        <item>New first launch: choose what you want to do, add a file or folder, and start reading without permission prompts.</item>
+        <item>Reader settings now have a compact View panel and a full screen with a live preview, exact values and Undo.</item>
+        <item>Notes keep a recoverable draft and confirm only after they are saved; audiobooks get jump history and precise bookmarks.</item>
+        <item>Restoring a backup shows what is inside first; the library bulk actions and the chapter continuation are clearly labelled.</item>
+    </string-array>
     <string-array name="whats_new_2_2_0">
         <item>Reader parity and stability: PDF controls and tap zones, TTS recovery, smoother page turns, and no crash when a list becomes empty.</item>
         <item>Tokens, API keys and the PIN hash are now encrypted with the Android Keystore.</item>
@@ -205,6 +225,8 @@
     <string name="profile_tab_tracking">Tracking</string>
     <string name="profile_tracking_entry">Accounts and tracked titles</string>
     <string name="profile_downloads_entry">Open the download queue</string>
+    <string name="profile_notes">Notes and quotes</string>
+    <string name="profile_notes_entry">Highlights, notes and quotes from all books in one list</string>
     <string name="profile_tab_downloads">Downloads</string>
     <string name="profile_track_refresh">Refresh from the services</string>
     <string name="profile_track_settings">Tracking settings</string>

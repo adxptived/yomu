@@ -112,6 +112,8 @@
     <string name="title_open">Open title</string>
     <string name="title_continue">Continue</string>
     <string name="title_start">Start reading</string>
+    <string name="title_continue_at">Continue: %1$s</string>
+    <string name="title_continue_at_page">Continue: %1$s · page %2$d</string>
     <string name="title_files">Files</string>
     <string name="title_no_files">No downloadable files</string>
     <string name="title_new_chapters">New chapters: %1$s</string>

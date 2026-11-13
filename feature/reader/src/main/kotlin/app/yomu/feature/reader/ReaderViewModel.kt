@@ -1313,14 +1313,46 @@ class ReaderViewModel(
         }
     }
 
-    fun saveNote(text: String) {
-        val s = selection.value ?: return
-        val existing = s.highlightId?.let { id -> highlights.value.firstOrNull { it.id == id } }
-        if (existing != null) {
-            viewModelScope.launch(ScreenErrors) { annotations.saveHighlight(existing.copy(note = text.ifBlank { null }, tags = TextTools.hashtags(text))); clearSelection() }
-        } else {
-            highlight(HighlightColor.YELLOW, HighlightStyle.HIGHLIGHT, note = text.ifBlank { null })
-        }
+    private val drafts by lazy { app.yomu.feature.annotations.NoteDrafts(context) }
+
+    /** A draft is tied to the book and the selection (or page): reopening the dialog finds the typed text again. */
+    fun noteDraftKey(sel: ReaderSelection): String = "${args.bookId}:s:${sel.chapter}:${sel.start}"
+
+    fun noteDraft(key: String): String? = drafts.get(key)
+
+    fun saveNoteDraft(key: String, text: String) {
+        val sel = selection.value ?: return
+        drafts.put(key, args.bookId, sel.chapter, sel.start, text)
+    }
+
+    /** Removing the annotation also removes its unsaved text: a deleted note must not come back from a draft. */
+    fun discardNoteDraft(key: String) = drafts.remove(key)
+
+    /** Writes the note and returns whether the row was really saved; only then is the draft removed. */
+    suspend fun saveNote(text: String): Boolean {
+        val s = selection.value ?: return false
+        val key = noteDraftKey(s)
+        val ok = runCatching {
+            val existing = s.highlightId?.let { id -> highlights.value.firstOrNull { it.id == id } }
+            if (existing != null) {
+                annotations.saveHighlight(existing.copy(note = text.ifBlank { null }, tags = TextTools.hashtags(text)))
+            } else {
+                annotations.saveHighlight(
+                    Highlight(
+                        bookId = args.bookId,
+                        locator = selectionLocator(s),
+                        text = s.text,
+                        color = HighlightColor.YELLOW,
+                        style = HighlightStyle.HIGHLIGHT,
+                        note = text.ifBlank { null },
+                        tags = TextTools.hashtags(text),
+                    ),
+                )
+            }
+            drafts.remove(key)
+        }.isSuccess
+        if (ok) clearSelection()
+        return ok
     }
 
     fun deleteHighlight() {
@@ -1388,16 +1420,28 @@ class ReaderViewModel(
         }
     }
 
+    fun pageNoteDraftKey(): String {
+        val p = _position.value
+        return "${args.bookId}:p:${p.chapter}:${p.page}"
+    }
+
+    fun pageNoteDraft(): String? = drafts.get(pageNoteDraftKey())
+
+    fun savePageNoteDraft(text: String) = drafts.put(pageNoteDraftKey(), args.bookId, _position.value.chapter, 0, text)
+
     /** Free note attached to the current position (useful for PDF and comics, where there is no text selection). */
-    fun addPageNote(text: String) {
-        if (args.bookId <= 0 || text.isBlank()) return
+    suspend fun addPageNote(text: String): Boolean {
+        if (args.bookId <= 0 || text.isBlank()) return false
         val p = _position.value
         val offset = (current() as? ReaderContent.Text)?.controller?.progress?.offset
-        viewModelScope.launch(ScreenErrors) {
+        val key = pageNoteDraftKey()
+        val ok = runCatching {
             val locator = Locator(p.chapter, p.progression, p.total, offset = offset, chapterTitle = p.chapterTitle)
             annotations.saveNote(Note(bookId = args.bookId, locator = locator, text = text.trim(), tags = TextTools.hashtags(text)))
-            events.send(ReaderEvent.Message(R.string.reader_note_saved))
-        }
+            drafts.remove(key)
+        }.isSuccess
+        if (ok) events.send(ReaderEvent.Message(R.string.reader_note_saved))
+        return ok
     }
 
     fun undoBookmark(e: ReaderEvent) = viewModelScope.launch(ScreenErrors) {
@@ -1449,17 +1493,54 @@ class ReaderViewModel(
     }
 
     // ================================================================== settings
+    // A short in-memory journal of changed settings: "Undo the last change" after a wrong tap on a slider. One stack for
+    // all four groups, so brightness, typography and the page mode are taken back in the order they were changed.
+    private sealed interface SettingsChange {
+        data class Text(val value: TextReaderSettings, val perBook: Boolean) : SettingsChange
+        data class Manga(val value: MangaSettings, val perBook: Boolean) : SettingsChange
+        data class Pdf(val value: PdfSettings, val perBook: Boolean) : SettingsChange
+        data class Common(val value: CommonReaderSettings) : SettingsChange
+    }
+
+    private val undo = ArrayDeque<SettingsChange>()
+    private val _canUndo = MutableStateFlow(false)
+
+    /** Whether [undoLastChange] would do something. */
+    val canUndo: StateFlow<Boolean> = _canUndo
+
+    private fun push(change: SettingsChange) {
+        undo.addLast(change)
+        while (undo.size > UNDO_LIMIT) undo.removeFirst()
+        _canUndo.value = true
+    }
+
     fun updateText(transform: (TextReaderSettings) -> TextReaderSettings) = viewModelScope.launch(ScreenErrors) {
-        if (perBook.value) saveOverride(bookOverride.value.copy(text = transform(textSettings.value)))
-        else settings.textSettings.update(transform)
+        val before = textSettings.value
+        val after = transform(before)
+        if (after == before) return@launch
+        push(SettingsChange.Text(before, perBook.value))
+        writeText(after, perBook.value)
+    }
+
+    private suspend fun writeText(value: TextReaderSettings, local: Boolean = perBook.value) {
+        if (local) saveOverride(bookOverride.value.copy(text = value)) else settings.textSettings.set(value)
+    }
+
+    private suspend fun writeManga(value: MangaSettings, local: Boolean = perBook.value) {
+        if (local) saveOverride(bookOverride.value.copy(manga = value)) else settings.mangaSettings.set(value)
+    }
+
+    private suspend fun writePdf(value: PdfSettings, local: Boolean = perBook.value) {
+        if (local) saveOverride(bookOverride.value.copy(pdf = value)) else settings.pdfSettings.set(value)
     }
 
     fun updateManga(transform: (MangaSettings) -> MangaSettings) = viewModelScope.launch(ScreenErrors) {
         val before = mangaSettings.value
-        if (perBook.value) saveOverride(bookOverride.value.copy(manga = transform(mangaSettings.value)))
-        else settings.mangaSettings.update(transform)
-        // Changed where taps go: show the new zones right away.
         val after = transform(before)
+        if (after == before) return@launch
+        push(SettingsChange.Manga(before, perBook.value))
+        writeManga(after)
+        // Changed where taps go: show the new zones right away.
         if (after.tapZones != TapZoneLayout.DISABLED &&
             (after.tapZones != before.tapZones || after.invertTapZones != before.invertTapZones || after.direction != before.direction)
         ) {
@@ -1468,8 +1549,50 @@ class ReaderViewModel(
     }
 
     fun updatePdf(transform: (PdfSettings) -> PdfSettings) = viewModelScope.launch(ScreenErrors) {
-        if (perBook.value) saveOverride(bookOverride.value.copy(pdf = transform(pdfSettings.value)))
-        else settings.pdfSettings.update(transform)
+        val before = pdfSettings.value
+        val after = transform(before)
+        if (after == before) return@launch
+        push(SettingsChange.Pdf(before, perBook.value))
+        writePdf(after)
+    }
+
+    /** Takes back the last change made in the reading settings ("Undo the last change"). */
+    fun undoLastChange() = viewModelScope.launch(ScreenErrors) {
+        when (val change = undo.removeLastOrNull()) {
+            is SettingsChange.Text -> writeText(change.value, change.perBook)
+            is SettingsChange.Manga -> writeManga(change.value, change.perBook)
+            is SettingsChange.Pdf -> writePdf(change.value, change.perBook)
+            is SettingsChange.Common -> settings.commonReader.set(change.value)
+            null -> Unit
+        }
+        _canUndo.value = undo.isNotEmpty()
+    }
+
+    /**
+     * Returns the settings of the open book to [text], [manga], [pdf] and [common], as they were when the settings sheet
+     * opened ("Cancel"). The undo journal stays, so the change can still be taken back after closing.
+     */
+    fun revertSettings(
+        text: TextReaderSettings? = null,
+        manga: MangaSettings? = null,
+        pdf: PdfSettings? = null,
+        common: CommonReaderSettings? = null,
+    ) = viewModelScope.launch(ScreenErrors) {
+        text?.let { writeText(it) }
+        manga?.let { writeManga(it) }
+        pdf?.let { writePdf(it) }
+        common?.let { settings.commonReader.set(it) }
+    }
+
+    /** Removes an imported font; the current font and saved presets that use it fall back to the serif face. */
+    fun deleteFont(name: String) = viewModelScope.launch(ScreenErrors) {
+        val dir = File(context.filesDir, "fonts")
+        File(dir, name).delete()
+        if (textSettings.value.fontFamily == name) writeText(textSettings.value.copy(fontFamily = "serif"))
+        val presets = presets.value.map { p ->
+            if (p.settings.fontFamily == name) p.copy(settings = p.settings.copy(fontFamily = "serif")) else p
+        }
+        settings.readerPresetsJson.set(SettingsJson.encodeToString(ListSerializer(TextPreset.serializer()), presets))
     }
 
     val wordTapSetting = settings.wordTap.stateIn(viewModelScope)
@@ -1498,7 +1621,13 @@ class ReaderViewModel(
 
     fun setWordTap(g: app.yomu.domain.model.WordTapGesture) = viewModelScope.launch(ScreenErrors) { settings.wordTap.set(g) }
 
-    fun updateCommon(transform: (CommonReaderSettings) -> CommonReaderSettings) = viewModelScope.launch(ScreenErrors) { settings.commonReader.update(transform) }
+    fun updateCommon(transform: (CommonReaderSettings) -> CommonReaderSettings) = viewModelScope.launch(ScreenErrors) {
+        val before = common.value
+        val after = transform(before)
+        if (after == before) return@launch
+        push(SettingsChange.Common(before))
+        settings.commonReader.set(after)
+    }
 
     /** Switches between global settings and settings stored only for this book. */
     fun setPerBook(enabled: Boolean) = viewModelScope.launch(ScreenErrors) {
@@ -1936,6 +2065,9 @@ class ReaderViewModel(
 /** A pause longer than this without page turns ends the counted reading time. */
 private const val IDLE_MS = 5 * 60_000L
 private const val MAX_PRESETS = 12
+
+/** How many settings changes "Undo the last change" keeps for the open book. */
+private const val UNDO_LIMIT = 20
 
 /** Largest page bitmap decoded for OCR (~32 MiB as ARGB); bigger pages are downsampled first. */
 private const val MAX_OCR_PIXELS = 8_000_000L
