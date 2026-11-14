@@ -79,7 +79,7 @@ class DownloadedBookTest {
         val first = downloads.enqueueBook("Downloaded Book", url, "application/epub+zip")
         assertEquals(first, downloads.enqueueBook("Downloaded Book", url, "application/epub+zip"))
         process(downloads, db, first)
-        val book = db.books().all().single()
+        val book = awaitSingleBook(db)
         val file = File(Uri.parse(book.uri).path!!)
         assertTrue("downloaded file is missing: $file", file.exists())
         assertOpens(book.uri)
@@ -102,6 +102,15 @@ class DownloadedBookTest {
         assertEquals(1, db.books().all().size)
         assertTrue(File(Uri.parse(adopted.uri).path!!).exists())
         assertOpens(adopted.uri)
+    }
+
+    /**
+     * The book row of a finished download: the status can already be DONE while the import coroutine still writes the
+     * row, so the test waits for it instead of reading an empty table on a slow machine.
+     */
+    private suspend fun awaitSingleBook(db: YomuDatabase) = withTimeout(20_000) {
+        while (db.books().all().isEmpty()) delay(50)
+        db.books().all().single()
     }
 
     private suspend fun process(downloads: DownloadRepository, db: YomuDatabase, id: Long) {
