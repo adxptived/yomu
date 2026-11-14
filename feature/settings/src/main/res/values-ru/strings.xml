@@ -473,7 +473,7 @@
     <string name="set_update_card_title">Доступна Yomu %1$s</string>
     <string name="set_update_card_text">Нажмите, чтобы посмотреть, что нового, и обновить</string>
     <string name="set_app_icon">Значок приложения</string>
-    <string name="set_app_icon_hint">Значок сменится, когда вы выйдете из приложения. Некоторые лаунчеры убирают старый значок с рабочего стола — тогда добавьте Yomu заново из списка приложений.</string>
+    <string name="set_app_icon_hint">Значок меняется, когда вы выходите из приложения; выбор запоминается, даже если Yomu закрыть. Некоторые лаунчеры оставляют старый ярлык на рабочем столе — тогда добавьте Yomu заново из списка приложений.</string>
     <!-- 2.0: sync -->
     <string name="set_sync_section">Синхронизация</string>
     <string name="set_sync_section_sum">Общая папка, WebDAV или GitHub, удаления, онлайн-библиотека</string>
@@ -603,6 +603,8 @@
     <string name="set_quick">Меню долгого нажатия</string>
     <string name="set_quick_sum">Вид меню и действия для страниц и текста</string>
     <string name="set_page_menu_style">Долгое нажатие на страницу</string>
+    <string name="set_radial_drag">Выбор перетаскиванием в колесе</string>
+    <string name="set_radial_drag_sum">Как колесо в игре: круг появляется под пальцем, ведите к действию и отпустите, чтобы выполнить; если не вести — круг остаётся открытым, и действие можно нажать. Выключено: только нажатия, как раньше.</string>
     <string name="set_selection_menu_style">Меню выделения текста</string>
     <string name="set_style_radial">Круговое</string>
     <string name="set_style_list">Список</string>

@@ -71,6 +71,7 @@ import app.yomu.core.ui.components.item
 import app.yomu.data.audio.YouTubeAuth
 import app.yomu.data.repository.toJson
 import app.yomu.domain.model.BookFormat
+import app.yomu.domain.model.TextReaderSettings
 import app.yomu.domain.repository.BookRepository
 import app.yomu.feature.annotations.AnnotationsScreen
 import app.yomu.feature.audio.AudioController
@@ -363,15 +364,20 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
             val isAudio by produceState<Boolean?>(if (r.bookId < 0) false else null, r.bookId) {
                 if (r.bookId >= 0) value = runCatching { books.getBook(r.bookId)?.format?.isAudio == true }.getOrDefault(false)
             }
-            // A Word document can open directly in the printed-page layout (Settings → Reader).
+            // A Word document can open directly in the printed-page layout (Settings → Reader), unless the reading
+            // mode chosen for the book is a continuous one: "scroll" and "long strip" are promises the page layout
+            // cannot keep, so they win over the default view.
             val appSettings: AppSettings = koinInject()
             val docxPages by produceState<Boolean?>(if (r.bookId < 0) false else null, r.bookId) {
                 if (r.bookId >= 0) {
-                    val format = runCatching { books.getBook(r.bookId)?.format }.getOrNull()
+                    val book = runCatching { books.getBook(r.bookId) }.getOrNull()
                     // A locator or chapter means "open exactly here" (an annotation, Continue): the page layout
                     // cannot honour it, so the text reader opens instead.
                     val exactPosition = r.locator != null || r.chapterId >= 0 || r.positionReference != null
-                    value = format == BookFormat.DOCX && !exactPosition && runCatching { appSettings.docxPageLayout.get() }.getOrDefault(false)
+                    val text = runCatching { appSettings.textSettings.get() }.getOrDefault(TextReaderSettings())
+                    val continuous = text.longStrip || !text.paged
+                    value = book?.format == BookFormat.DOCX && !continuous && !exactPosition &&
+                        runCatching { appSettings.docxPageLayout.get() }.getOrDefault(false)
                 }
             }
             when {
@@ -381,7 +387,10 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                     back,
                     onYouTubeSignIn = { nav.navigate(WebViewRoute(YouTubeAuth.SIGN_IN_URL)) },
                 )
-                docxPages == true -> DocxLayoutScreen(koinViewModel { parametersOf(r.bookId) }, back)
+                docxPages == true -> DocxLayoutScreen(
+                    koinViewModel { parametersOf(r.bookId) }, back,
+                    onOpenText = { nav.navigate(ReaderRoute(bookId = r.bookId)) { popUpTo<DocxLayoutRoute> { inclusive = true } } },
+                )
                 else -> ReaderScreen(
                     viewModel = koinViewModel { parametersOf(ReaderArgs(bookId = r.bookId, locatorJson = r.locator, chapterId = r.chapterId, positionReference = r.positionReference)) },
                     onBack = back,
@@ -396,7 +405,10 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
         }
         screen<DocxLayoutRoute> { entry ->
             val r = entry.toRoute<DocxLayoutRoute>()
-            DocxLayoutScreen(koinViewModel { parametersOf(r.bookId) }, back)
+            DocxLayoutScreen(
+                koinViewModel { parametersOf(r.bookId) }, back,
+                onOpenText = { nav.navigate(ReaderRoute(bookId = r.bookId)) { popUpTo<DocxLayoutRoute> { inclusive = true } } },
+            )
         }
         screen<AnnotationsRoute> { entry ->
             val r = entry.toRoute<AnnotationsRoute>()

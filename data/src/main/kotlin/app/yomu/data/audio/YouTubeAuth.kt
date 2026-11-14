@@ -63,6 +63,12 @@ object YouTubeAuth {
     /** Headers of an authenticated call: ignored by YouTube when there is no session. */
     fun headers(): Map<String, String> = headers(authorization(), visitorData)
 
+    /**
+     * Only the visitor id, for the clients that do not accept a Google session: they answer a signed-in request with
+     * a bot check or a refusal, while the same request without the account works.
+     */
+    fun visitorHeaders(): Map<String, String> = buildMap { visitorData?.let { put("X-Goog-Visitor-Id", it) } }
+
     fun isSignedIn(raw: String): Boolean = SESSION_COOKIES.any { cookie(raw, it) != null }
 
     fun cookie(raw: String, name: String): String? = raw.split(';')

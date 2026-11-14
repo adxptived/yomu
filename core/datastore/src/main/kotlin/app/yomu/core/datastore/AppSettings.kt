@@ -92,8 +92,11 @@ class AppSettings(context: Context) {
     /** ARGB colour of the "custom" accent (1.5.0). */
     val accentCustom = long("accent_custom", 0xFF8F7FD6)
 
-    /** Labels under every icon of the navigation bar; off: only the selected tab shows its name. On by default since 2.0.7: five icons alone are hard to tell apart on a first launch. */
-    val navLabels = bool("nav_labels", true)
+    /**
+     * Labels under every icon of the navigation bar; off: only the selected tab shows its name. Off by default since
+     * 2.5.0: five icons alone keep the bar low and the content on screen gets the space back.
+     */
+    val navLabels = bool("nav_labels", false)
 
     /** Tabs of the navigation bar in the user's order (names of core.ui NavTab); empty: the default order (1.6.0). */
     val navTabOrder = json("nav_tab_order", emptyList(), ListSerializer(String.serializer()))
@@ -318,6 +321,12 @@ class AppSettings(context: Context) {
     val trackAutoUpdate = bool("track_auto_update", true)
 
     // Long-press menus (2.0.0)
+    /**
+     * Radial long-press menus work like a game wheel: the ring appears under the finger, dragging highlights an
+     * action and lifting the finger runs it. Off: every action is a button that runs on a tap.
+     */
+    val radialDrag = bool("radial_menu_drag", true)
+
     val pageMenuStyle = enum("page_menu_style", app.yomu.domain.model.QuickMenuStyle.RADIAL)
     val selectionMenuStyle = enum("selection_menu_style", app.yomu.domain.model.QuickMenuStyle.BAR)
     val pageActions =
@@ -422,6 +431,19 @@ class AppSettings(context: Context) {
                 }
             }
         }
+        if (level < 3) {
+            // Calmer 2.5.0 defaults: reading does not take over the screen brightness, screen-edge brightness/warm
+            // gestures and volume-key page turns start off, and the navigation bar shows no labels. Applied once to
+            // stored values as well; anything the user changes after this upgrade is kept.
+            val prefs = store.data.first()
+            if (prefs[navLabels.key] != null) navLabels.set(false)
+            if (prefs[commonReader.key] != null) {
+                commonReader.update {
+                    it.copy(brightness = -1f, edgeGestures = false, edgeBrightness = false, edgeWarm = false, volumeKeys = false)
+                }
+            }
+            if (prefs[mangaSettings.key] != null) mangaSettings.update { it.copy(volumeKeys = false) }
+        }
         if (level < MIGRATION_LEVEL) migrationLevel.set(MIGRATION_LEVEL)
     }
 
@@ -456,7 +478,7 @@ class AppSettings(context: Context) {
 
     companion object {
         private const val MIGRATION_KEY = "settings_migration"
-        private const val MIGRATION_LEVEL = 2
+        private const val MIGRATION_LEVEL = 3
 
         const val DEFAULT_LLM_PROMPT =
             "Translate the following text from {from} to {to}. Keep the meaning, tone and formatting. Reply with the translation only.\n\n{text}"

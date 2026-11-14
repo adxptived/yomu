@@ -12,7 +12,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,7 +27,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
@@ -711,8 +709,6 @@ fun ReaderScreen(
                     position = position,
                     marks = remember(bookmarks) { bookmarks.map { it.locator.totalProgression } },
                     isText = data is ReaderContent.Text,
-                    isDocx = viewModel.book?.format == BookFormat.DOCX && onOpenPageLayout != null,
-                    onPageLayout = onOpenPageLayout?.let { open -> { open(viewModel.bookId) } },
                     reversed = data is ReaderContent.Manga && mangaSettings.direction == MangaDirection.RTL,
                     canPrev = position.chapter > 0 || hasPrev,
                     canNext = position.chapter < position.chapterCount - 1 || hasNext,
@@ -931,9 +927,6 @@ private fun ReaderBottomBar(
     position: ReaderPosition,
     marks: List<Float>,
     isText: Boolean,
-    /** A Word document: the printed-page layout is one tap away. */
-    isDocx: Boolean,
-    onPageLayout: (() -> Unit)?,
     /** Right-to-left manga: the slider starts on the right, like the pages. */
     reversed: Boolean,
     canPrev: Boolean,
@@ -1000,6 +993,7 @@ private fun ReaderBottomBar(
                 }
                 IconButton(onClick = onNextChapter, enabled = canNext) { Icon(Icons.Default.SkipNext, stringResource(R.string.reader_next_chapter)) }
             }
+            // Chapter and page details of a book; comics and PDFs have the page chip above and no chapter of their own.
             if (isText) {
                 val chapterMin = (position.charsLeftInChapter / cpm.coerceAtLeast(1f)).toInt()
                 val info = buildList {
@@ -1013,16 +1007,15 @@ private fun ReaderBottomBar(
                 }
             }
             Spacer(Modifier.height(4.dp))
-            Row(
-                if (isDocx) Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Dimens.s) else Modifier.fillMaxWidth(),
-                horizontalArrangement = if (isDocx) Arrangement.spacedBy(Dimens.s) else Arrangement.SpaceEvenly,
-            ) {
+            // One row of the same buttons in the same order for every format: books, PDFs and comics differ only in
+            // which engines answer behind them, never in where a button is. The DOCX page layout stays in the top
+            // menu, so no format needs its own extra button or a sideways scrolling row here.
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 ChromeButton(Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.reader_toc), onToc)
                 ChromeButton(Icons.Default.Search, stringResource(CoreR.string.search), onSearch)
                 ChromeButton(Icons.Default.TextFields, stringResource(R.string.reader_settings), onSettings)
-                if (isDocx && onPageLayout != null) ChromeButton(Icons.Outlined.Description, stringResource(R.string.reader_page_layout), onPageLayout)
                 ChromeButton(Icons.Default.BrightnessMedium, stringResource(R.string.reader_quick_display), onQuick)
-                if (ttsAvailable) ChromeButton(Icons.Default.Headphones, stringResource(R.string.reader_tts), onTts)
+                ChromeButton(Icons.Default.Headphones, stringResource(R.string.reader_tts), onTts, enabled = ttsAvailable)
                 ChromeButton(if (autoScroll) Icons.Default.Pause else Icons.Default.SlowMotionVideo, stringResource(R.string.reader_autoscroll), onAutoScroll)
                 ChromeButton(Icons.Default.Translate, stringResource(R.string.reader_translate_page), onTranslate)
             }
@@ -1035,13 +1028,13 @@ private fun formatMinutes(min: Int): String =
     if (min >= 60) stringResource(R.string.reader_hours_minutes, min / 60, min % 60) else stringResource(R.string.reader_minutes, min.coerceAtLeast(1))
 
 @Composable
-private fun ChromeButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun ChromeButton(icon: ImageVector, label: String, onClick: () -> Unit, enabled: Boolean = true) {
     TooltipBox(
         positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
         tooltip = { PlainTooltip { Text(label) } },
         state = rememberTooltipState(),
     ) {
-        IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) { Icon(icon, label) }
+        IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) { Icon(icon, label) }
     }
 }
 

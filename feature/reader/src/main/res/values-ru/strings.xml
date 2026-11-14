@@ -381,6 +381,7 @@
     <string name="rs_footer_chapter">Название главы</string>
     <string name="reader_relink">Указать файл</string>
     <string name="reader_page_layout">Разметка страницы</string>
+    <string name="reader_text_mode">Текстовый режим</string>
     <string name="reader_page_layout_hint">Документ Word: показать страницы так, как они выглядят при печати?</string>
     <string name="reader_page_layout_open">Страницы</string>
     <string name="layout_subtitle">Разметка страницы</string>

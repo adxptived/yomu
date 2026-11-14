@@ -1,5 +1,58 @@
 # Changelog
 
+## 2.5.0 — the wheel, calmer defaults and YouTube with an account
+
+> **Install.** Installs over 2.4.0 if signed with the same key. No database migration. The stored reader settings are
+> upgraded once (below); a choice made after this update is kept.
+
+### Library
+
+- **The long-press wheel works like a game wheel:** it opens under the finger with a central "cancel" button, dragging
+  highlights the action the finger is over and lifting the finger runs it; a plain long press (no drag) leaves the ring
+  open, so the actions can simply be tapped. The wheel stays fully on screen near an edge. The old "tap an action"
+  style is a switch, Settings → Long-press menus → "Choose by dragging in the wheel" (on by default).
+- **Fixed a crash when returning to the library:** the paging snapshot can become empty between building the list and
+  measuring a row, and the item keys (and the fast-scroller labels) read it without a bounds check — "Illegal attempt
+  to access index 0 in ItemSnapshotList of size 0". Keys are now built through a guarded accessor, in the library and
+  in the catalog lists; the fast-scroller also refuses to scroll an empty list.
+
+### Reading
+
+- **One bottom bar for every format:** books, PDFs and comics have the same buttons in the same order (contents,
+  search, settings, view, read aloud, auto-scroll, translate). The Word document's "Page layout" moved to the ⋮ menu;
+  it no longer pushes the row into a sideways scroll, and comics keep the read-aloud slot (dimmed) so nothing shifts.
+- **Long strip wins over the printed-page layout:** with "Scroll chapter" or "Long strip" selected for a Word document,
+  it opens in the text reader even when Settings → Reader → "Word documents as printed pages" is on. The page layout
+  screen gained a "Text mode" button for the way back.
+- **Calmer defaults:** the reader no longer takes over the screen brightness, the edge brightness/warm gestures and
+  the volume-key page turns start off (books and comics), and the navigation bar has no labels. Stored settings from
+  older versions are switched once.
+
+### Appearance
+
+- **Picking the app icon is remembered:** the choice is stored on the device as well as in the package manager, so a
+  pick survives the app being closed before the aliases switch, and a stale state with two icons enabled repairs
+  itself on the next switch. The icon still changes when the app is left — disabling the alias the running screen was
+  started from would close that screen. The four HQ variants (Violet, Lilac, Amber, Peach) are the only artwork; their
+  1024 px vectors and 4096 px renders are in `branding/app-icons`.
+
+### YouTube audiobooks
+
+- **Signing in no longer breaks playback:** the account cookies and the `SAPISIDHASH` signature are now sent only to the
+  web player, the one client that accepts a session. The JS-less clients (visionOS, Android VR, Android, iOS) answer a
+  signed-in request with a bot check or "the page needs to be reloaded", so they now run anonymously with the visitor
+  id — which is what makes them return playable addresses at all.
+- **Another client in the fallback list:** the Android player client was added next to visionOS, Android VR and iOS.
+- **An honest error:** when every client refuses, the message lists what each one answered instead of one client's
+  reason (for example another client's "sign in" while the account is already signed in). The "Sign in" hint is only
+  offered when there is no session.
+- Verified against the live API (opt-in `YouTubeLiveTest`: search, playlist paging and a real stream) — 2/2 passed.
+
+### Tests
+
+- New `RadialSectorTest` (the wheel picks a sector from the drag direction), a new migration test for the calmer
+  defaults, and the live YouTube test above.
+
 ## 2.4.0 — library, reading flow and the player
 
 > **Install.** Installs over 2.3.0 if signed with the same key. The database moves to schema 11 (a rating column on books, added by a migration); nothing is lost. Verified by compilation, unit, migration and Robolectric tests, lint and detekt — **not on a real device**.

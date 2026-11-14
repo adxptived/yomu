@@ -84,7 +84,7 @@ data class MangaSettings(
     val cropBorders: Boolean = false,
     val tapZones: TapZoneLayout = TapZoneLayout.L_SHAPE,
     val invertTapZones: Boolean = false,
-    val volumeKeys: Boolean = true,
+    val volumeKeys: Boolean = false,
     val brightness: Float = 0f,
     val contrast: Float = 1f,
     val grayscale: Boolean = false,
@@ -157,8 +157,8 @@ data class CommonReaderSettings(
     val footer: Boolean = true,
     val footerClock: Boolean = true,
     val footerChapter: Boolean = true,
-    /** Vertical drag on the left screen edge changes brightness, on the right edge the warm filter. */
-    val edgeGestures: Boolean = true,
+    /** Vertical drag on the left screen edge changes brightness, on the right edge the warm filter. Off by default. */
+    val edgeGestures: Boolean = false,
     /** Which of the two edge swipes are active; both can be switched off independently. */
     val edgeBrightness: Boolean = true,
     val edgeWarm: Boolean = true,

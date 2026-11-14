@@ -380,6 +380,7 @@
     <string name="rs_footer_chapter">Chapter title</string>
     <string name="reader_relink">Choose the file</string>
     <string name="reader_page_layout">Page layout</string>
+    <string name="reader_text_mode">Text mode</string>
     <string name="reader_page_layout_hint">A Word document: open it with the pages as they are printed?</string>
     <string name="reader_page_layout_open">Pages</string>
     <string name="layout_subtitle">Page layout</string>

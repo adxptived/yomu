@@ -6,6 +6,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -116,10 +118,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -130,7 +141,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
-import androidx.paging.compose.itemKey
 import app.yomu.core.ui.components.BookGridItem
 import app.yomu.core.ui.components.BookListItem
 import app.yomu.core.ui.components.CircleIconButton
@@ -174,6 +184,7 @@ import app.yomu.domain.model.CatalogEntry
 import app.yomu.domain.model.LibraryFilter
 import app.yomu.domain.model.LibrarySort
 import app.yomu.domain.model.ReadingStatus
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.File
@@ -249,12 +260,19 @@ fun LibraryScreen(
     var newTab by remember { mutableStateOf(false) }
     var tabActions by remember { mutableStateOf<BookCollection?>(null) }
     var onlineMenu by remember { mutableStateOf<CatalogEntry?>(null) }
-    var contextBook by remember { mutableStateOf<Book?>(null) }
     var bulkSelect by remember { mutableStateOf(false) }
     var ratingRequest by remember { mutableStateOf<Set<Long>?>(null) }
     var ratingTitle by remember { mutableStateOf("") }
     var ratingCurrent by remember { mutableStateOf(0) }
     var statusBook by remember { mutableStateOf<Book?>(null) }
+    // The long-press wheel: where the finger went down, and the action it is over now.
+    var wheel by remember { mutableStateOf<RadialState?>(null) }
+    val radialDrag by viewModel.radialDrag.collectAsStateWithLifecycle()
+    val rootCoords = remember { AtomicReference<LayoutCoordinates?>(null) }
+    val pressAt = remember { AtomicReference(Offset.Unspecified) }
+    val wheelDensity = LocalDensity.current
+    val wheelWindow = LocalWindowInfo.current.containerSize
+    val wheelDeadZone = with(wheelDensity) { 30.dp.toPx() }
     var bulkStatus by remember { mutableStateOf(false) }
     var bulkMenu by remember { mutableStateOf(false) }
     var tagDialog by remember { mutableStateOf<Set<Long>?>(null) }
@@ -264,6 +282,50 @@ fun LibraryScreen(
     val inOnline = online != null && onlineTab
     val onlineShownTab = online != null && (onlineCount > 0 || onlineTab)
     val onlineTotal = onlineCount.coerceAtLeast(0)
+    // Labels of the wheel are resolved here, once: the actions are built inside gesture callbacks.
+    val wheelRead = stringResource(R.string.library_read_book)
+    val wheelDetails = stringResource(R.string.library_details)
+    val wheelRate = stringResource(R.string.library_action_rate)
+    val wheelFavorite = stringResource(R.string.details_favorite)
+    val wheelUnfavorite = stringResource(R.string.details_unfavorite)
+    val wheelStatus = stringResource(R.string.library_status)
+    val wheelSelect = stringResource(R.string.library_select_mode)
+    val wheelRemove = stringResource(R.string.library_remove_book)
+
+    /** The action under [finger], in the same geometry the wheel draws with. */
+    fun wheelIndexAt(w: RadialState, finger: Offset): Int? = with(wheelDensity) {
+        val radius = radialRadiusDp(w.actions.size).toPx()
+        val button = RADIAL_BUTTON_DP.toPx()
+        val center = wheelCenter(
+            w.anchor, radius, button, 10.dp.toPx(),
+            wheelWindow.width.toFloat(), wheelWindow.height.toFloat(),
+        )
+        radialSector(w.actions.size, center, finger, wheelDeadZone)
+    }
+
+    fun wheelActions(book: Book): List<RadialAction> = listOf(
+        RadialAction(Icons.Default.PlayArrow, wheelRead) { onOpenBook(book) },
+        RadialAction(Icons.Outlined.Info, wheelDetails) { onOpenDetails(book) },
+        RadialAction(Icons.Default.Star, wheelRate) {
+            ratingTitle = book.title
+            ratingCurrent = book.rating
+            ratingRequest = setOf(book.id)
+        },
+        RadialAction(
+            if (book.favorite) Icons.Default.Star else Icons.Default.StarOutline,
+            if (book.favorite) wheelUnfavorite else wheelFavorite,
+        ) { viewModel.setFavorite(setOf(book.id), !book.favorite) },
+        RadialAction(Icons.Outlined.CheckCircle, wheelStatus) { statusBook = book },
+        RadialAction(Icons.Outlined.Checklist, wheelSelect) {
+            haptic.perform()
+            bulkSelect = true
+            viewModel.toggleSelect(book.id)
+        },
+        RadialAction(Icons.Default.Delete, wheelRemove, destructive = true) {
+            haptic.confirm()
+            viewModel.requestDelete(setOf(book.id))
+        },
+    )
 
     val openDocs =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { viewModel.import(it) }
@@ -330,6 +392,18 @@ fun LibraryScreen(
     HideNavBarWhile(selecting)
 
     Scaffold(
+        // Where the finger went down, for the tap style of the long-press wheel; the drag style gets its own
+        // position from the item it started on. Neither consumes anything, so taps and scrolling are untouched.
+        modifier = Modifier
+            .onGloballyPositioned { if (it.isAttached) rootCoords.set(it) }
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.type == PointerEventType.Press) event.changes.firstOrNull()?.let { pressAt.set(it.position) }
+                    }
+                }
+            },
         contentWindowInsets = topLevelContentInsets(),
         topBar = {
             Column(Modifier.background(MaterialTheme.colorScheme.background)) {
@@ -566,7 +640,41 @@ fun LibraryScreen(
                             onOpenTitle = onOpenTitle,
                             onOnlineLongPress = { onlineMenu = it },
                             onClick = { book -> if (selecting) { haptic.tick(); viewModel.toggleSelect(book.id) } else onOpenBook(book) },
-                            onLongClick = { book -> if (selecting) onOpenDetails(book) else { haptic.perform(); contextBook = book } },
+                            onLongClick = { book ->
+                                if (selecting) {
+                                    onOpenDetails(book)
+                                } else {
+                                    haptic.perform()
+                                    val local = pressAt.get()
+                                    val at = rootCoords.get()?.takeIf { it.isAttached }?.let { coords ->
+                                        if (local.isSpecified) coords.localToWindow(local) else Offset.Unspecified
+                                    } ?: Offset.Unspecified
+                                    // In the drag style the wheel waits for the finger that opened it; otherwise it is
+                                    // tappable at once.
+                                    wheel = RadialState(at, wheelActions(book), book.title).also { it.dragging = radialDrag }
+                                }
+                            },
+                            bookDrag = { book ->
+                                Modifier.wheelGesture(
+                                    key = book.id,
+                                    enabled = radialDrag && !selecting,
+                                    wheelOpen = { wheel?.dragging == true },
+                                    onMove = { at ->
+                                        wheel?.let { w -> w.active = wheelIndexAt(w, at) }
+                                    },
+                                    onEnd = {
+                                        val w = wheel
+                                        val picked = w?.active?.let { i -> w.actions.getOrNull(i) }
+                                        if (picked != null) {
+                                            wheel = null
+                                            picked.onClick()
+                                        } else {
+                                            // Lifted in the middle: nothing runs, but the ring stays for a tap.
+                                            w?.dragging = false
+                                        }
+                                    },
+                                )
+                            },
                             onInfoClick = { book -> if (selecting) { haptic.tick(); viewModel.toggleSelect(book.id) } else onOpenDetails(book) },
                             onDetails = onOpenDetails,
                             sort = sort,
@@ -675,35 +783,9 @@ fun LibraryScreen(
             }
         }
     }
-    contextBook?.let { book ->
-        // The long-press wheel: one gesture, every action of a book around the finger's natural resting place.
-        RadialMenu(
-            title = book.title,
-            actions = listOf(
-                RadialAction(Icons.Default.PlayArrow, stringResource(R.string.library_read_book)) { onOpenBook(book) },
-                RadialAction(Icons.Outlined.Info, stringResource(R.string.library_details)) { onOpenDetails(book) },
-                RadialAction(Icons.Default.Star, stringResource(R.string.library_action_rate)) {
-                    ratingTitle = book.title
-                    ratingCurrent = book.rating
-                    ratingRequest = setOf(book.id)
-                },
-                RadialAction(
-                    if (book.favorite) Icons.Default.Star else Icons.Default.StarOutline,
-                    stringResource(if (book.favorite) R.string.details_unfavorite else R.string.details_favorite),
-                ) { viewModel.setFavorite(setOf(book.id), !book.favorite) },
-                RadialAction(Icons.Outlined.CheckCircle, stringResource(R.string.library_status)) { statusBook = book },
-                RadialAction(Icons.Outlined.Checklist, stringResource(R.string.library_select_mode)) {
-                    haptic.perform()
-                    bulkSelect = true
-                    viewModel.toggleSelect(book.id)
-                },
-                RadialAction(Icons.Default.Delete, stringResource(R.string.library_remove_book), destructive = true) {
-                    haptic.confirm()
-                    viewModel.requestDelete(setOf(book.id))
-                },
-            ),
-            onDismiss = { contextBook = null },
-        )
+    wheel?.let { w ->
+        // The long-press wheel: a game-wheel ring under the finger, or (in the old style) one tap per action.
+        RadialMenu(state = w, dragSelect = radialDrag, onDismiss = { wheel = null })
     }
     ratingRequest?.let { ids ->
         RatingDialog(
@@ -1110,6 +1192,54 @@ private fun FormatGroup.label(): Int = when (this) {
     FormatGroup.ONLINE -> R.string.format_online
 }
 
+/**
+ * A stable key of row [index] that never throws: Paging can swap its snapshot for an empty one between building the
+ * range and measuring a row (returning to the tab, a filter, a refresh), and both `itemKey` and `peek` index the
+ * snapshot without a bounds check.
+ */
+private fun LazyPagingItems<Book>.stableKey(index: Int): Any =
+    if (index in 0 until itemCount) peek(index)?.id?.let { "book-$it" } ?: "empty-$index" else "empty-$index"
+
+/**
+ * While the finger stays down after the long press, this steers the wheel: once the item's own `combinedClickable`
+ * has opened it (the same gesture, so no second long-press timer competes), the drag updates the sector under the
+ * finger and the lift runs it. Nothing is consumed before that, so taps and scrolling behave as before.
+ */
+@Composable
+private fun Modifier.wheelGesture(
+    key: Any,
+    enabled: Boolean,
+    /** True while the wheel is open and waiting for this finger, set by the long press. */
+    wheelOpen: () -> Boolean,
+    onMove: (Offset) -> Unit,
+    onEnd: () -> Unit,
+): Modifier {
+    if (!enabled) return this
+    val coords = remember(key) { AtomicReference<LayoutCoordinates?>(null) }
+    return this
+        .onGloballyPositioned { if (it.isAttached) coords.set(it) }
+        .pointerInput(key) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                var tracking = false
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) {
+                        // Also on a release without a move: the wheel then stays open, tappable.
+                        if (tracking || wheelOpen()) onEnd()
+                        break
+                    }
+                    if (!tracking && wheelOpen()) tracking = true
+                    if (tracking) {
+                        change.consume()
+                        coords.get()?.takeIf { it.isAttached }?.localToWindow(change.position)?.let(onMove)
+                    }
+                }
+            }
+        }
+}
+
 /** Books (paged) after the [header] and the online titles of the tab, as a grid or a list. */
 @Composable
 private fun LibraryGrid(
@@ -1133,11 +1263,18 @@ private fun LibraryGrid(
     swipeEnabled: Boolean,
     onToggleRead: (Book) -> Unit,
     onRemove: (Book) -> Unit,
+    /** Drag-after-long-press gesture that opens and steers the wheel, per book. */
+    bookDrag: @Composable (Book) -> Modifier = { Modifier },
 ) {
     val bookCount = if (showBooks) books.itemCount else 0
     val leading = 1 + (if (onlineTiles.isNotEmpty()) onlineTiles.size + (if (sectionLabels) 1 else 0) else 0) + (if (sectionLabels && bookCount > 0) 1 else 0)
     val dateFormat = rememberMonthFormat()
-    val label: (Int) -> String? = { i -> books.peek((i - leading).coerceIn(0, (bookCount - 1).coerceAtLeast(0)))?.fastScrollLabel(sort, dateFormat) }
+    // The fast scroller asks for a label while the paging snapshot may already be empty: peek() throws on an index
+    // outside it, so the live count is checked first.
+    val label: (Int) -> String? = { i ->
+        val index = i - leading
+        if (index >= 0 && index < books.itemCount) books.peek(index)?.fastScrollLabel(sort, dateFormat) else null
+    }
     val scrollDescription = stringResource(R.string.library_fast_scroll)
     if (grid) {
         val gridState = rememberLazyGridState()
@@ -1165,7 +1302,7 @@ private fun LibraryGrid(
                         SectionLabel(stringResource(R.string.library_section_books), null, Icons.Outlined.AutoStories)
                     }
                 }
-                items(bookCount, key = books.itemKey { it.id }, contentType = { "book" }) { index ->
+                items(bookCount, key = { index -> books.stableKey(index) }, contentType = { "book" }) { index ->
                     // The index is checked against the live count (it can drop to zero between building this range and
                     // composing a row after a refresh or filter change), then items[index] is used: unlike peek() it
                     // reports the access to Paging, which is what asks for the next page.
@@ -1186,7 +1323,7 @@ private fun LibraryGrid(
                         onInfoClick = { onInfoClick(book) },
                         readLabel = stringResource(R.string.library_read_book),
                         infoLabel = stringResource(R.string.library_details),
-                        modifier = motionItem(),
+                        modifier = motionItem().then(bookDrag(book)),
                     )
                 }
                 item(key = "footer", span = { GridItemSpan(maxLineSpan) }, contentType = "footer") { Column { footer() } }
@@ -1219,14 +1356,14 @@ private fun LibraryGrid(
                 if (sectionLabels && bookCount > 0) {
                     item(key = "books-label") { SectionLabel(stringResource(R.string.library_section_books), null, Icons.Outlined.AutoStories) }
                 }
-                items(bookCount, key = books.itemKey { it.id }, contentType = { "book" }) { index ->
+                items(bookCount, key = { index -> books.stableKey(index) }, contentType = { "book" }) { index ->
                     // items[index] (not peek) reports the access to Paging so the next page is requested; the index is
                     // checked against the live count because the list can shrink between building this range and drawing.
                     val book = if (index in 0 until books.itemCount) books[index] else null
                     if (book == null) return@items
                     val finished = book.status == ReadingStatus.FINISHED
                     SwipeActionsBox(
-                        modifier = motionItem(),
+                        modifier = motionItem().then(bookDrag(book)),
                         enabled = swipeEnabled,
                         start = SwipeAction.neutral(
                             if (finished) Icons.Outlined.AutoStories else Icons.Default.DoneAll,

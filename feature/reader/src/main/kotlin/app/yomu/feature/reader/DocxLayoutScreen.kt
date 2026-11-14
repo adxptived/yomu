@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.FindInPage
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -211,7 +212,7 @@ class DocxLayoutViewModel(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DocxLayoutScreen(viewModel: DocxLayoutViewModel, onBack: () -> Unit) {
+fun DocxLayoutScreen(viewModel: DocxLayoutViewModel, onBack: () -> Unit, onOpenText: (() -> Unit)? = null) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val title by viewModel.title.collectAsStateWithLifecycle()
     val page by viewModel.page.collectAsStateWithLifecycle()
@@ -242,6 +243,13 @@ fun DocxLayoutScreen(viewModel: DocxLayoutViewModel, onBack: () -> Unit) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back)) }
                 },
                 actions = {
+                    // The printed pages are view-only; the reflowable reader keeps the dictionary, selection and
+                    // notes. One tap back, also when this screen is the one that opens a Word document by default.
+                    if (onOpenText != null) {
+                        IconButton(onClick = onOpenText) {
+                            Icon(Icons.AutoMirrored.Outlined.MenuBook, stringResource(R.string.reader_text_mode))
+                        }
+                    }
                     if (state is UiState.Data && pages > 0) {
                         IconButton(onClick = { goTo = true }) { Icon(Icons.Outlined.FindInPage, stringResource(R.string.reader_go_to_page)) }
                     }

@@ -2,6 +2,7 @@ package app.yomu.data.settings
 
 import android.content.Context
 import app.yomu.core.datastore.AppSettings
+import app.yomu.domain.model.CommonReaderSettings
 import app.yomu.domain.model.MangaDirection
 import app.yomu.domain.model.MangaSettings
 import app.yomu.domain.model.ScaleType
@@ -9,6 +10,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -47,6 +50,37 @@ class SettingsMigrationTest {
         settings.importJson(old)
         assertEquals(MangaDirection.LTR, settings.mangaSettings.get().direction)
         assertEquals(5, settings.mangaSettings.get().preload)
+        settings.resetAll()
+    }
+
+    /** 2.5.0: brightness control, edge gestures, volume keys and navigation labels start off for old installs too. */
+    @Test
+    fun calmerDefaultsApplyOnceAndKeepLaterChoices() = runBlocking {
+        val settings = AppSettings(RuntimeEnvironment.getApplication() as Context)
+        settings.resetAll()
+        settings.navLabels.set(true)
+        settings.commonReader.set(
+            CommonReaderSettings(brightness = 0.4f, edgeGestures = true, edgeBrightness = true, edgeWarm = true, volumeKeys = true),
+        )
+        settings.mangaSettings.set(MangaSettings(volumeKeys = true))
+
+        settings.migrate()
+
+        assertFalse(settings.navLabels.get())
+        val common = settings.commonReader.get()
+        assertEquals(-1f, common.brightness, 0f)
+        assertFalse(common.edgeGestures)
+        assertFalse(common.volumeKeys)
+        assertFalse(settings.mangaSettings.get().volumeKeys)
+
+        // Switched on again after the upgrade: the migration must not take it away on the next start.
+        settings.navLabels.set(true)
+        settings.commonReader.update { it.copy(edgeGestures = true, brightness = 0.6f) }
+        settings.migrate()
+        assertTrue(settings.navLabels.get())
+        assertTrue(settings.commonReader.get().edgeGestures)
+        assertEquals(0.6f, settings.commonReader.get().brightness, 0f)
+
         settings.resetAll()
     }
 }

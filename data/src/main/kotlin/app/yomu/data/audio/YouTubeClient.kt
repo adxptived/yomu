@@ -195,8 +195,20 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
 
     private val streams = ConcurrentHashMap<Pair<String, Boolean>, YouTubeStream>()
 
-    /** The shared client without its cookie jar: the metadata fallback when YouTube refuses the account session. */
+    /**
+     * The shared client without its cookie jar: the metadata fallback when YouTube refuses the account session, and
+     * the player requests of every client that is not the web player.
+     */
     private val anonymous: OkHttpClient by lazy { client().newBuilder().cookieJar(CookieJar.NO_COOKIES).build() }
+
+    /**
+     * Only the web player accepts a Google session. The JS-less clients answer a request that carries the account
+     * cookies and the `SAPISIDHASH` with a bot check or "the page needs to be reloaded" — even for a signed-in user —
+     * while the very same request anonymous plays. So the session follows the client, not the app.
+     */
+    private fun httpFor(c: Client): OkHttpClient = if (c === WEB && YouTubeAuth.isSignedIn()) client() else anonymous
+
+    private fun withSession(c: Client): Boolean = c === WEB && YouTubeAuth.isSignedIn()
 
     /**
      * A stream address of [videoId] (valid for a few hours); [progressive] skips HLS, for downloading a single file.
@@ -210,23 +222,31 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
         streams.entries.removeIf { expiresAt(it.value.url) <= now }
         var lastError: YouTubeException? = null
         var networkError: IOException? = null
+        var answered = false
+        val failures = mutableListOf<String>()
         for (c in clients()) {
             val response = try {
                 postPlayer(c, videoId)
             } catch (e: IOException) {
                 networkError = e
+                failures += "${c.name}: ${e.message ?: "network error"}"
                 continue
             } catch (e: kotlinx.serialization.SerializationException) {
+                failures += "${c.name}: unexpected answer"
                 continue
             } catch (e: IllegalArgumentException) {
+                failures += "${c.name}: unexpected answer"
                 continue
             }
             val status = response.obj("playabilityStatus")?.str("status")
+            answered = true
             if (status != "OK") {
+                val reason = response.obj("playabilityStatus")?.str("reason")
                 lastError = YouTubeException(
                     if (status == "LOGIN_REQUIRED") YouTubeException.Reason.BLOCKED else YouTubeException.Reason.UNPLAYABLE,
-                    response.obj("playabilityStatus")?.str("reason"),
+                    reason,
                 )
+                failures += "${c.name}: ${reason ?: status}"
                 continue
             }
             // A Referer and Origin make the media server treat the request as coming from a player page.
@@ -235,14 +255,23 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
                 "Referer" to "https://www.youtube.com/",
                 "Origin" to "https://www.youtube.com",
             )
-            for (candidate in candidates(response, headers).filter { !progressive || !it.isHls }) {
+            val candidates = candidates(response, headers).filter { !progressive || !it.isHls }
+            if (candidates.isEmpty()) {
+                // Every format needs a signature that this client does not hand out (the iOS one often does).
+                failures += "${c.name}: no direct stream"
+                continue
+            }
+            for (candidate in candidates) {
                 if (reachable(candidate)) return@withContext candidate.also { streams[key] = it }
             }
-            // YouTube's own reason (the bot check of another client) explains more than this one.
-            if (lastError == null) lastError = YouTubeException(YouTubeException.Reason.BLOCKED, "No reachable stream from ${c.name}")
+            failures += "${c.name}: stream not reachable"
         }
         // Without any answer the network is the problem, not YouTube: callers retry those later.
-        throw lastError ?: networkError ?: YouTubeException(YouTubeException.Reason.BLOCKED)
+        if (!answered && networkError != null) throw networkError
+        // Which client said what: a single reason from the wrong client ("sign in" while already signed in) sent
+        // readers hunting for a session they had; the whole list shows what really happened.
+        val detail = failures.joinToString(" · ").take(240).ifBlank { null }
+        throw YouTubeException(lastError?.reason ?: YouTubeException.Reason.BLOCKED, detail ?: lastError?.message)
     }
 
     /**
@@ -267,6 +296,8 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
             put("contentCheckOk", true)
             put("racyCheckOk", true)
         },
+        http = httpFor(c),
+        auth = withSession(c),
     ).jsonObject
 
     /**
@@ -324,8 +355,10 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
             .header("Origin", "https://www.youtube.com")
             .post(Json.encodeToString(JsonObject.serializer(), payload).toRequestBody(JSON))
         // A Google session from the in-app WebView (Settings → YouTube): the cookies come from the shared cookie
-        // jar, the signature from here. Without a session, and for the anonymous fallback, the call stays anonymous.
+        // jar, the signature from here. Without a session, and for the anonymous fallback, the call stays anonymous;
+        // the visitor id is still sent, it keeps the bot check away without pretending to be an account.
         if (auth) YouTubeAuth.headers().forEach { (k, v) -> builder.header(k, v) }
+        else YouTubeAuth.visitorHeaders().forEach { (k, v) -> builder.header(k, v) }
         return http.newCall(builder.build()).execute().use { r ->
             val text = r.body.string()
             if (!r.isSuccessful) throw IOException("YouTube $endpoint: HTTP ${r.code}${serverReason(text)}")
@@ -346,7 +379,8 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
             s.headers.forEach { (k, v) -> header(k, v) }
             if (!s.isHls) header("Range", "bytes=0-1")
         }.build()
-        client().newCall(request).execute().use { it.isSuccessful }
+        // Anonymous on purpose: a media address needs no account, and the cookie jar must not be sent there.
+        anonymous.newCall(request).execute().use { it.isSuccessful }
     }.getOrDefault(false)
 
     private fun oembed(videoId: String): Pair<String, String?>? = runCatching {
@@ -378,7 +412,8 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
             mapOf("deviceMake" to "Apple", "deviceModel" to "RealityDevice17,1", "osName" to "visionOS", "osVersion" to "26.5.23O471"),
         )
 
-        // Clients without a JavaScript player, newest working first (yt-dlp, 2026-08: visionos is the JS-less default).
+        // Clients without a JavaScript player, newest working first (yt-dlp's table, checked against the live API
+        // 2026-11: visionOS, Android VR and Android hand out direct audio addresses without a PO token).
         // Metadata calls try them in this order and then the web client.
         private val CLIENTS = listOf(
             VISIONOS,
@@ -386,6 +421,11 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
                 "ANDROID_VR", 28, "1.61.48",
                 "com.google.android.apps.youtube.vr.oculus/1.61.48 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
                 mapOf("deviceMake" to "Oculus", "deviceModel" to "Quest 3", "androidSdkVersion" to 32, "osName" to "Android", "osVersion" to "12L"),
+            ),
+            Client(
+                "ANDROID", 3, "20.10.38",
+                "com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip",
+                mapOf("androidSdkVersion" to 34, "osName" to "Android", "osVersion" to "14"),
             ),
             Client(
                 "IOS", 5, "21.26.4",

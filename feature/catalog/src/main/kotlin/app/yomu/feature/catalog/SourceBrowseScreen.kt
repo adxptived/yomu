@@ -93,7 +93,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
-import androidx.paging.compose.itemKey
 import app.yomu.core.common.AppError
 import app.yomu.core.ui.components.BookGridItem
 import app.yomu.core.ui.components.BookListItem
@@ -288,6 +287,10 @@ private fun BrowseTabRow(tabs: List<BrowseTab>, pager: PagerState, onSelect: (In
     }
 }
 
+/** A row key that never throws: Paging may empty its snapshot between building the range and measuring a row. */
+private fun LazyPagingItems<SItem>.stableKey(index: Int): Any =
+    if (index in 0 until itemCount) peek(index)?.url?.let { "item-$it" } ?: "empty-$index" else "empty-$index"
+
 /**
  * One list of titles with its own states: a skeleton while the first page loads, the error with "Retry" (and
  * "Open in WebView" for verification pages), "Nothing found", or the titles with pull to refresh.
@@ -335,7 +338,7 @@ private fun BrowseList(
         else -> PullToRefreshBox(isRefreshing = settled && refresh is LoadState.Loading, onRefresh = { items.refresh() }, modifier = modifier.fillMaxSize()) {
             if (listMode) {
                 LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = Dimens.xl)) {
-                    items(count = items.itemCount, key = items.itemKey { it.url }) { i ->
+                    items(count = items.itemCount, key = { i -> items.stableKey(i) }) { i ->
                         // items[i] (not peek) reports the access to Paging so the next page is requested; the index is
                         // checked against the live count because the list can shrink between building and drawing.
                         val item = if (i in 0 until items.itemCount) items[i] else null
@@ -374,7 +377,7 @@ private fun BrowseList(
                     verticalArrangement = Arrangement.spacedBy(Dimens.m),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    items(count = items.itemCount, key = items.itemKey { it.url }) { i ->
+                    items(count = items.itemCount, key = { i -> items.stableKey(i) }) { i ->
                         // items[i] (not peek) reports the access to Paging so the next page is requested; the index is
                         // checked against the live count because the list can shrink between building and drawing.
                         val item = if (i in 0 until items.itemCount) items[i] else null

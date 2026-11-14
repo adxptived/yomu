@@ -163,6 +163,8 @@ fun FastScroller(
                             ) { change, dy ->
                                 change.consume()
                                 dragFraction = (dragFraction + dy / range).coerceIn(0f, 1f)
+                                // The list can empty while the thumb is held (a filter, a refresh): no index to jump to.
+                                if (count <= 0) return@detectVerticalDragGestures
                                 val i = (dragFraction * (count - 1)).roundToInt().coerceIn(0, count - 1)
                                 scope.launch { target.scrollToItem(i) }
                             }

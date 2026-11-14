@@ -54,6 +54,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_5_0">
+        <item>The long-press wheel works like a game wheel: it opens under your finger, drag to an action and lift to run it; a plain long press leaves it open for a tap.</item>
+        <item>One bottom bar in the reader for every format, and “Long strip” now opens Word documents as continuous text.</item>
+        <item>YouTube audiobooks play with a signed-in account again: the session goes only to the web player, which is the one that accepts it.</item>
+        <item>Calmer defaults — no screen-brightness takeover, no edge brightness gestures, no volume-key page turns, no navigation labels — and the app icon you pick is remembered.</item>
+    </string-array>
     <string-array name="whats_new_2_4_0">
         <item>Library: tick books with checkboxes, rate them with five stars, and act on one book from a circular long-press wheel.</item>
         <item>The “From the catalog” row can be hidden or moved under the books from its own menu (Settings → Library brings it back).</item>

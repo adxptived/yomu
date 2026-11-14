@@ -169,6 +169,8 @@ class LibraryViewModel(
     val ascending = settings.libraryAscending.stateIn(viewModelScope)
     val grid = settings.libraryGrid.stateIn(viewModelScope)
     val columns = settings.gridColumns.stateIn(viewModelScope)
+    /** The long-press wheel: drag to an action and lift (a game wheel), or tap an action. */
+    val radialDrag = settings.radialDrag.stateIn(viewModelScope)
     val showContinue = settings.showContinueReading.stateIn(viewModelScope)
 
     /** The "From the catalog" row: hidden by the user, and whether it sits under the books. */

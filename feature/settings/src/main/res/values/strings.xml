@@ -469,7 +469,7 @@
     <string name="set_update_card_title">Yomu %1$s is available</string>
     <string name="set_update_card_text">Tap to see what\'s new and update</string>
     <string name="set_app_icon">App icon</string>
-    <string name="set_app_icon_hint">The icon changes when you leave the app. Some launchers remove the old icon from the home screen: then add Yomu again from the app list.</string>
+    <string name="set_app_icon_hint">The icon changes when you leave the app; the pick is remembered even if Yomu is closed. Some launchers keep the old shortcut on the home screen: then add Yomu again from the app list.</string>
     <!-- 2.0: sync -->
     <string name="set_sync_section">Sync</string>
     <string name="set_sync_section_sum">Shared folder, WebDAV or GitHub, deletions, online library</string>
@@ -599,6 +599,8 @@
     <string name="set_quick">Long-press menus</string>
     <string name="set_quick_sum">Menu style and actions for pages and text</string>
     <string name="set_page_menu_style">Long press on a page</string>
+    <string name="set_radial_drag">Choose by dragging in the wheel</string>
+    <string name="set_radial_drag_sum">Like a game wheel: the ring opens under the finger, drag to an action and lift to run it; a plain long press leaves the ring open for a tap.</string>
     <string name="set_selection_menu_style">Text selection menu</string>
     <string name="set_style_radial">Radial</string>
     <string name="set_style_list">List</string>

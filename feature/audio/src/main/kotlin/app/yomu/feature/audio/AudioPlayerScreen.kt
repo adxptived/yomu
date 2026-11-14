@@ -557,7 +557,9 @@ private fun PlayerControls(
             )
             // A retry that does not replay the whole book: the same position, prepared again.
             TextButton(onClick = viewModel::retryNow) { Text(stringResource(R.string.audio_retry_now)) }
-            if (needsSignIn(it)) {
+            // The hint is only useful without a session: with one, "sign in" in the message comes from another
+            // client's bot check, and asking again would be a loop.
+            if (needsSignIn(it) && !YouTubeAuth.isSignedIn()) {
                 Text(
                     stringResource(R.string.audio_sign_in_hint), color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center,

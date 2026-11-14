@@ -400,6 +400,9 @@ internal fun QuickActionsSection(vm: SettingsViewModel, onOpenSelection: () -> U
         l
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
+        item(key = "radial-drag") {
+            SwitchPref(vm, s.radialDrag, R.string.set_radial_drag, R.string.set_radial_drag_sum)
+        }
         item(key = "page-style") {
             ChoicePref(
                 vm, s.pageMenuStyle, R.string.set_page_menu_style,
