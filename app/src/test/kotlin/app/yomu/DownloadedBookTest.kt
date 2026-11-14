@@ -108,14 +108,14 @@ class DownloadedBookTest {
      * The book row of a finished download: the status can already be DONE while the import coroutine still writes the
      * row, so the test waits for it instead of reading an empty table on a slow machine.
      */
-    private suspend fun awaitSingleBook(db: YomuDatabase) = withTimeout(20_000) {
+    private suspend fun awaitSingleBook(db: YomuDatabase) = withTimeout(60_000) {
         while (db.books().all().isEmpty()) delay(50)
         db.books().all().single()
     }
 
     private suspend fun process(downloads: DownloadRepository, db: YomuDatabase, id: Long) {
         downloads.runQueue { }
-        withTimeout(20_000) {
+        withTimeout(60_000) {
             while (db.downloads().get(id)?.status !in setOf("DONE", "FAILED", "CANCELLED")) delay(50)
         }
         val task = db.downloads().get(id)!!

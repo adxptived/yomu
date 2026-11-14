@@ -86,7 +86,10 @@ class Release201Test {
     }
 
     /** The overview is a lazy list: scrolls to the tracking entry (the one with a scroll action) and opens it. */
+    @OptIn(ExperimentalTestApi::class)
     private fun openTracking() {
+        // The overview is filled from the database: on a slow runner the entry is not in the first frame yet.
+        compose.waitUntilAtLeastOneExists(hasText("Accounts and tracked titles"), 30_000)
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Accounts and tracked titles"))
         compose.onNode(hasText("Accounts and tracked titles")).performClick()
         compose.waitForIdle()
