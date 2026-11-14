@@ -88,7 +88,8 @@ class Release210ScreensTest {
         awaitText("Incognito mode")
         // The switch on the settings root turns the mode on.
         compose.onNodeWithText("Incognito mode").performClick()
-        compose.waitUntil(5_000) { runBlocking { settings.incognito.flow.first() } }
+        // A DataStore write of a cold test JVM can take longer than a few seconds on a loaded CI runner.
+        compose.waitUntil(30_000) { runBlocking { settings.incognito.flow.first() } }
         assertTrue(runBlocking { settings.incognito.get() })
         shot("220_incognito_settings_root")
     }

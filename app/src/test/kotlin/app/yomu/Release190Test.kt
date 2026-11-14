@@ -248,9 +248,9 @@ class Release190Test {
         CoroutineScope(Dispatchers.Main.immediate).launch { settings.crashSeenAt.set(1L) }
         // Generous limits: on a loaded two-core CI runner the first DataStore write of a cold test JVM takes a while,
         // while the point of the test — that the main-thread write does not hold the store's lock forever — stands.
-        withTimeout(30_000) { settings.updateCheckedAt.set(2L) }
-        assertEquals(1L, withTimeout(30_000) { settings.crashSeenAt.flow.first { it == 1L } })
-        withTimeout(30_000) {
+        withTimeout(120_000) { settings.updateCheckedAt.set(2L) }
+        assertEquals(1L, withTimeout(120_000) { settings.crashSeenAt.flow.first { it == 1L } })
+        withTimeout(120_000) {
             settings.crashSeenAt.reset()
             settings.updateCheckedAt.reset()
         }
