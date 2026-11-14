@@ -43,11 +43,21 @@ import java.net.URLDecoder
 import kotlin.coroutines.resume
 
 @Serializable
-data class EpubProgress(val page: Int = 0, val pages: Int = 1, val progression: Float = 0f, val offset: Int = 0, val total: Int = 0)
+data class EpubProgress(
+    val page: Int = 0,
+    val pages: Int = 1,
+    val progression: Float = 0f,
+    val offset: Int = 0,
+    val total: Int = 0,
+    /** Chapter these offsets belong to; -1 when the runtime does not say (fixed-layout, old documents). */
+    val chapter: Int = -1,
+)
 
 @Serializable
 data class EpubSelection(
     val text: String = "",
+    /** Chapter the offsets belong to; -1 when the selection is in the single document that was loaded. */
+    val chapter: Int = -1,
     val start: Int = 0,
     val end: Int = 0,
     val left: Float = 0f,
@@ -60,6 +70,7 @@ data class EpubSelection(
 @Serializable
 data class EpubWord(
     val word: String = "",
+    val chapter: Int = -1,
     val start: Int = 0,
     val end: Int = 0,
     val tail: String = "",
@@ -137,9 +148,15 @@ class EpubController(
 
     /** The chapter the WebView actually shows: [chapter] may already point at the next one while it loads. */
     private var loadedChapter = 0
+    /** Chapters the long-strip document holds inline right now (inclusive), or an empty range before the first report. */
+    private var stripFrom = 0
+    private var stripTo = 0
     private var highlights: List<Highlight> = emptyList()
     private var savedWords: List<String> = emptyList()
     private var nonce = 0
+    /** Path of the document the reader itself loaded; the long strip's own fetched chapters are rendered without the
+     *  chapter manifest, which only the live document needs. */
+    private var mainPath = ""
 
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
     fun attach(view: EpubWebView) {
@@ -190,7 +207,7 @@ class EpubController(
         ":root{--yomu-accent:#%06X;--yomu-blend:multiply;}".format(accent and 0xFFFFFF)
     } else ReaderCss.build(settings, customFonts(), accent)
 
-    private fun config(target: EpubTarget?, index: Int = chapter): String = buildJsonObject {
+    private fun config(target: EpubTarget?, index: Int = chapter, stripChapters: Boolean = true): String = buildJsonObject {
         val fixed = document.isFixedLayout(index)
         put("fixed", fixed)
         put("paged", fixed || (settings.paged && !settings.verticalText && !settings.longStrip))
@@ -206,10 +223,30 @@ class EpubController(
         put("reduceMotion", reduceMotion)
         put("pageAnimation", settings.pageAnimation.name)
         put("chapterButtons", settings.chapterButtons)
+        put("chapter", index)
+        put("chapterCount", document.chapterCount)
         put("hasPrev", chapter > 0)
         put("hasNext", chapter < document.chapterCount - 1)
         put("prevLabel", prevLabel)
         put("nextLabel", nextLabel)
+        // The long strip fetches neighbouring chapters itself; it needs to know where they are and which ones can be
+        // inlined (fixed-layout and image-only chapters stay pages of their own).
+        if (stripChapters && settings.longStrip && !fixed && !settings.verticalText) {
+            put(
+                "chapters",
+                buildJsonArray {
+                    for (i in 0 until document.chapterCount) {
+                        add(
+                            buildJsonObject {
+                                put("path", document.chapterPath(i))
+                                put("fixed", document.isFixedLayout(i))
+                                put("image", document.isImageChapter(i))
+                            },
+                        )
+                    }
+                },
+            )
+        }
         if (target != null) {
             put(
                 "target",
@@ -228,11 +265,14 @@ class EpubController(
     fun open(index: Int, target: EpubTarget? = null) {
         val view = webView ?: return
         chapter = index.coerceIn(0, (document.chapterCount - 1).coerceAtLeast(0))
+        stripFrom = chapter
+        stripTo = chapter
         pendingTarget = target
         loading = true
         nonce++
+        mainPath = document.chapterPath(chapter)
         view.setBackgroundColor(settings.background.toInt())
-        view.loadUrl("https://$HOST/${encodePath(document.chapterPath(chapter))}?v=$nonce")
+        view.loadUrl("https://$HOST/${encodePath(mainPath)}?v=$nonce")
     }
 
     fun updateSettings(value: TextReaderSettings, relayout: Boolean = true) {
@@ -261,14 +301,38 @@ class EpubController(
     fun prev() = js("yomu.prev()")
 
     fun nextChapter() {
+        // A long strip already holds the neighbouring chapters: moving is a scroll, not a page load.
+        if (isStripMode()) {
+            js("yomu.chapterStep(1)")
+            return
+        }
         if (chapter < document.chapterCount - 1) open(chapter + 1, EpubTarget.Progression(0f))
     }
 
     fun prevChapter(toEnd: Boolean = false) {
+        if (isStripMode()) {
+            js("yomu.chapterStep(-1)")
+            return
+        }
         if (chapter > 0) open(chapter - 1, EpubTarget.Progression(if (toEnd) 1f else 0f))
     }
 
+    /** True when the chapter on screen is part of the long feed: fixed-layout pages are always loaded one at a time. */
+    private fun isStripMode(): Boolean =
+        settings.longStrip && !settings.verticalText && !loading && !document.isFixedLayout(chapter)
+
     fun goTo(index: Int, target: EpubTarget) {
+        if (isStripMode() && index in stripFrom..stripTo) {
+            val spec = buildJsonObject {
+                when (target) {
+                    is EpubTarget.Offset -> put("offset", target.offset)
+                    is EpubTarget.Progression -> put("progression", target.value)
+                    is EpubTarget.Anchor -> put("anchor", target.id)
+                }
+            }
+            js("yomu.goToChapter($index, $spec)")
+            return
+        }
         if (index == chapter && !loading) {
             when (target) {
                 is EpubTarget.Offset -> js("yomu.goToOffset(${target.offset})")
@@ -294,11 +358,15 @@ class EpubController(
     }
 
     private fun pushHighlights() {
+        // A strip document holds several chapters: send them all, the runtime maps each to its section. One chapter at
+        // a time otherwise, as before.
+        val strip = settings.longStrip
         val arr = buildJsonArray {
-            highlights.filter { it.locator.chapter == chapter && it.locator.offset != null }.forEach { h ->
+            highlights.filter { it.locator.offset != null && (strip || it.locator.chapter == chapter) }.forEach { h ->
                 add(
                     buildJsonObject {
                         put("id", h.id)
+                        put("chapter", h.locator.chapter)
                         put("start", h.locator.offset ?: 0)
                         put("end", h.locator.endOffset ?: ((h.locator.offset ?: 0) + h.text.length))
                         put("color", h.color.cssHex)
@@ -395,7 +463,9 @@ class EpubController(
         head.prependElement("meta").attr("name", "viewport").attr("content", "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no")
         head.appendElement("link").attr("rel", "stylesheet").attr("href", "/__yomu/reader.css")
         head.appendElement("style").attr("id", "yomu-user").appendChild(org.jsoup.nodes.DataNode(css()))
-        head.appendElement("script").attr("nonce", nonce).appendChild(org.jsoup.nodes.DataNode("window.__yomuConfig=${config(pendingTarget, index)};"))
+        head.appendElement("script").attr("nonce", nonce).appendChild(
+            org.jsoup.nodes.DataNode("window.__yomuConfig=${config(pendingTarget, index, stripChapters = path == mainPath)};"),
+        )
         head.appendElement("script").attr("src", "/__yomu/reader.js")
         return "<!DOCTYPE html>" + doc.outerHtml()
     }
@@ -491,10 +561,30 @@ class EpubController(
         @JavascriptInterface
         fun onProgress(data: String) = ui {
             runCatching { json.decodeFromString<EpubProgress>(data) }.getOrNull()?.let {
+                // While a new chapter loads, the document being replaced still reports its own position: that must not
+                // pull the app back to the chapter it is leaving.
+                if (loading && it.chapter >= 0 && it.chapter != chapter) return@let
                 progress = it
-                // A late report of the previous chapter must not be saved with the number of the new one.
-                listener?.onProgress(loadedChapter, it)
+                // The long strip reports the chapter the reader is actually looking at; the page follows it, so the
+                // title, the contents and "chapter N of M" stay true while scrolling across boundaries.
+                if (settings.longStrip && it.chapter >= 0) {
+                    if (it.chapter != chapter) chapter = it.chapter
+                    listener?.onProgress(it.chapter, it)
+                } else {
+                    // A late report of the previous chapter must not be saved with the number of the new one.
+                    listener?.onProgress(loadedChapter, it)
+                }
             }
+        }
+
+        @JavascriptInterface
+        fun onStripRange(from: Int, to: Int) = ui {
+            if (!settings.longStrip) return@ui
+            val changed = from != stripFrom || to != stripTo
+            stripFrom = from.coerceAtLeast(0)
+            stripTo = to.coerceAtLeast(from)
+            // The inserted chapters can bring highlights that were sent before those sections existed.
+            if (changed) pushHighlights()
         }
 
         @JavascriptInterface
@@ -554,6 +644,13 @@ class EpubController(
         @JavascriptInterface
         fun onEdge(direction: String) = ui { listener?.onEdgeReached(direction == "next") }
 
+        /** A strip neighbour that cannot be inlined (fixed layout, image-only): open it as its own page. */
+        @JavascriptInterface
+        fun onChapterEdge(next: Boolean) = ui {
+            val target = chapter + if (next) 1 else -1
+            if (target in 0 until document.chapterCount) open(target, EpubTarget.Progression(if (next) 0f else 1f))
+        }
+
         @JavascriptInterface
         fun onHighlightTap(data: String) = ui {
             runCatching { json.decodeFromString<TapRect>(data) }.getOrNull()?.let { listener?.onHighlightTap(it.id, it.left, it.top) }
@@ -569,8 +666,8 @@ class EpubController(
 
         /** Content policy of a rendered chapter: own packaged resources only, plus this document's config script. */
         private const val CSP = "default-src 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; " +
-            "font-src 'self' data:; media-src 'self'; script-src 'self' 'nonce-$NONCE'; frame-src 'none'; " +
-            "object-src 'none'; base-uri 'none'; form-action 'none'"
+            "font-src 'self' data:; media-src 'self'; connect-src 'self'; script-src 'self' 'nonce-$NONCE'; " +
+            "frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
     }
 }
 

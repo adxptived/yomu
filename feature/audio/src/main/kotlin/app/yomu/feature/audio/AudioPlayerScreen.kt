@@ -1,7 +1,9 @@
 package app.yomu.feature.audio
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -33,8 +36,10 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -66,6 +71,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -83,15 +89,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -100,6 +113,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import app.yomu.core.common.Files
 import app.yomu.core.ui.components.CoverImage
 import app.yomu.core.ui.components.ErrorState
+import app.yomu.core.ui.components.RadialAction
+import app.yomu.core.ui.components.RadialMenu
+import app.yomu.core.ui.components.RadialState
 import app.yomu.core.ui.components.SheetTitle
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.coverTint
@@ -110,6 +126,7 @@ import app.yomu.data.audio.YouTubeAuth
 import app.yomu.domain.model.AudioNavEntry
 import app.yomu.domain.model.AudioOrigin
 import app.yomu.domain.model.AudioPositions
+import me.saket.telephoto.zoomable.coil3.ZoomableAsyncImage
 import java.io.File
 import java.util.Locale
 import app.yomu.core.ui.R as CoreR
@@ -143,6 +160,8 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
     val editingBookmark = editingAt?.let { at -> settings.bookmarks.firstOrNull { it.createdAt == at } }
     val playing = player?.isPlaying == true
     var more by remember { mutableStateOf(false) }
+    var wheel by remember { mutableStateOf<RadialState?>(null) }
+    var coverViewer by rememberSaveable { mutableStateOf(false) }
     // The bookmark anchor is taken when the action is pressed, so typing a note never moves the saved spot.
     val addBookmark: () -> Unit = {
         val point = viewModel.bookmarkPoint()
@@ -153,6 +172,21 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
             dialog = "bookmark"
         }
     }
+    // The same wheel as the library: full cover, offline download, bookmark, chapters, sleep timer, speed.
+    val fullCoverLabel = stringResource(R.string.audio_full_cover)
+    val offlineLabel = stringResource(R.string.audio_offline)
+    val bookmarkLabel = stringResource(R.string.audio_bookmark_add)
+    val chaptersLabel = stringResource(R.string.audio_chapters)
+    val sleepLabelText = stringResource(R.string.audio_sleep)
+    val speedLabelText = stringResource(R.string.audio_speed)
+    val coverActions = listOfNotNull(
+        RadialAction(Icons.Default.Fullscreen, fullCoverLabel) { coverViewer = true },
+        offline?.let { RadialAction(Icons.Outlined.Download, offlineLabel) { sheet = "offline" } },
+        RadialAction(Icons.Default.BookmarkAdd, bookmarkLabel) { addBookmark() },
+        RadialAction(Icons.AutoMirrored.Filled.FormatListBulleted, chaptersLabel) { sheet = "chapters" },
+        RadialAction(Icons.Default.Bedtime, sleepLabelText) { sheet = "sleep" },
+        RadialAction(Icons.Default.Speed, speedLabelText) { sheet = "speed" },
+    )
     // Paused, the position only moves on seeks, which are player events: no need to poll.
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(playing, lifecycle) { if (playing) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.tickWhilePlaying() } }
@@ -174,7 +208,7 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.KeyboardArrowDown, stringResource(CoreR.string.back), Modifier.size(28.dp))
                     }
@@ -264,7 +298,11 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(40.dp),
                     ) {
-                        PlayerCover(cover, book?.title.orEmpty(), Modifier.size(side))
+                        PlayerCover(
+                            cover, book?.title.orEmpty(), Modifier.size(side),
+                            onOpen = { coverViewer = true },
+                            onLongPress = { at -> wheel = RadialState(at, coverActions, book?.title) },
+                        )
                         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                             NowPlaying(
                                 title = book?.title.orEmpty(),
@@ -284,7 +322,11 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
                         Spacer(Modifier.height(8.dp))
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            PlayerCover(cover, book?.title.orEmpty(), Modifier.size(side))
+                            PlayerCover(
+                                cover, book?.title.orEmpty(), Modifier.size(side),
+                                onOpen = { coverViewer = true },
+                                onLongPress = { at -> wheel = RadialState(at, coverActions, book?.title) },
+                            )
                         }
                         Spacer(Modifier.height(20.dp))
                         NowPlaying(
@@ -476,13 +518,69 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
             )
         }
     }
+
+    wheel?.let { RadialMenu(state = it, dragSelect = false, onDismiss = { wheel = null }) }
+    if (coverViewer) CoverViewerDialog(cover, book?.title.orEmpty()) { coverViewer = false }
 }
 
-/** Square album-style cover: the artwork is the page, so it gets the room. */
+/**
+ * Square album-style cover: the artwork is the page, so it gets the room. A tap opens the whole artwork (a YouTube
+ * thumbnail is cropped to a square here), a long press opens the action wheel.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PlayerCover(model: File?, title: String, modifier: Modifier) {
-    Box(modifier.shadow(24.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp))) {
+private fun PlayerCover(
+    model: File?,
+    title: String,
+    modifier: Modifier,
+    onOpen: () -> Unit,
+    onLongPress: (Offset) -> Unit,
+) {
+    // The long press opens the wheel at the middle of the cover, in window coordinates.
+    var center by remember { mutableStateOf(Offset.Unspecified) }
+    Box(
+        modifier
+            .shadow(24.dp, RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(18.dp))
+            .onGloballyPositioned { c ->
+                if (c.isAttached) center = c.localToWindow(Offset(c.size.width / 2f, c.size.height / 2f))
+            }
+            .combinedClickable(onClick = onOpen, onLongClick = { onLongPress(center) }),
+    ) {
         CoverImage(model, title, Modifier.fillMaxSize())
+        // The visible way to see the whole artwork; the same action sits in the long-press wheel.
+        val label = stringResource(R.string.audio_full_cover)
+        Surface(
+            onClick = onOpen,
+            shape = CircleShape,
+            color = Color.Black.copy(alpha = 0.45f),
+            contentColor = Color.White,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp).size(38.dp).semantics { contentDescription = label },
+        ) {
+            Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Fullscreen, null, Modifier.size(20.dp)) }
+        }
+    }
+}
+
+/** The whole artwork, uncropped and zoomable: for covers whose interesting part is not in the middle. */
+@Composable
+private fun CoverViewerDialog(model: File?, title: String, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            if (model != null) {
+                ZoomableAsyncImage(
+                    model = model,
+                    contentDescription = title,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                CoverImage(null, title, Modifier.fillMaxSize())
+            }
+            IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp)) {
+                Icon(Icons.Default.Close, stringResource(CoreR.string.close), tint = Color.White)
+            }
+        }
     }
 }
 

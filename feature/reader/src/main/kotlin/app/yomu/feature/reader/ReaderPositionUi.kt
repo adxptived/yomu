@@ -129,6 +129,16 @@ internal fun SeekPreviewCard(preview: SeekPreview, value: Float, modifier: Modif
                 style = MaterialTheme.typography.labelMedium,
                 color = LocalContentColor.current.copy(alpha = 0.75f),
             )
+            preview.minutesLeft?.let { m ->
+                Text(
+                    stringResource(
+                        R.string.reader_left_book,
+                        if (m >= 60) stringResource(R.string.reader_hours_minutes, m / 60, m % 60) else stringResource(R.string.reader_minutes, m),
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = LocalContentColor.current.copy(alpha = 0.75f),
+                )
+            }
         }
     }
 }

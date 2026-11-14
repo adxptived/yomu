@@ -20,8 +20,10 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
@@ -38,6 +40,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -200,24 +203,52 @@ fun YomuNavigation(main: MainViewModel, reduceMotion: Boolean, navLabels: Boolea
     val showIncognito = incognito && entry?.destination?.hasRoute(ReaderRoute::class) != true
     // An audiobook playing in the background: a bar on every screen but its player and the reader.
     val audio: AudioController = koinInject()
+    // The position is not part of this state (it changes every second): the bar reads it on its own, so only the bar
+    // recomposes while the numbers move.
     val nowPlaying by audio.nowPlaying.collectAsStateWithLifecycle(null)
     val playing = nowPlaying?.takeIf { entry?.destination?.hasRoute(ReaderRoute::class) != true }
     Column(Modifier.fillMaxSize()) {
         if (showIncognito) IncognitoBanner(onTurnOff = { main.setIncognito(false) })
-        playing?.let { np ->
-            NowPlayingBar(
-                np,
-                onOpen = { nav.navigate(ReaderRoute(bookId = np.bookId)) },
-                onToggle = audio::togglePlay,
-                onStop = audio::stop,
-                modifier = if (showIncognito) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier,
-            )
-        }
-        val topTaken = showIncognito || playing != null
+        val topTaken = showIncognito
         Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(if (topTaken) WindowInsets.statusBars else WindowInsets(0, 0, 0, 0))) {
-            Shell(adaptive, current, barHidden, items, shown, navLabels, tabsState, barInset, nav, reduceMotion)
+            // The mini player floats above the navigation bar; the screens leave room for it in their lists.
+            val miniRoom = if (playing != null) MINI_PLAYER_ROOM else 0.dp
+            Shell(adaptive, current, barHidden, items, shown, navLabels, tabsState, barInset + miniRoom, nav, reduceMotion)
+            playing?.let { np ->
+                MiniPlayer(
+                    audio, np,
+                    onOpen = { nav.navigate(ReaderRoute(bookId = np.bookId)) { launchSingleTop = true } },
+                    modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = 520.dp).padding(
+                        // Above the floating bar; a top-level screen with its own bottom bar (library selection) keeps
+                        // the same room, so the mini player never sits on top of those actions.
+                        bottom = if (adaptive == NavigationSuiteType.NavigationBar && current != null) barInset else navBarsBottom,
+                    ),
+                )
+            }
         }
     }
+}
+
+/** Room the mini player needs above the floating navigation bar (cover row and the seek line). */
+private val MINI_PLAYER_ROOM = 88.dp
+
+/** The mini player alone collects the moving position, so the rest of the shell does not recompose every second. */
+@Composable
+private fun MiniPlayer(
+    audio: AudioController,
+    np: app.yomu.feature.audio.PlayerSnapshot,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val live by audio.miniState.collectAsStateWithLifecycle(np)
+    NowPlayingBar(
+        live ?: np,
+        onOpen = onOpen,
+        onToggle = audio::togglePlay,
+        onStop = audio::stop,
+        onSeek = audio::seekTo,
+        modifier = modifier,
+    )
 }
 
 @Composable

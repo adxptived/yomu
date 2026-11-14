@@ -1,19 +1,18 @@
-package app.yomu.feature.library
+package app.yomu.core.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -23,15 +22,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.StarOutline
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,6 +41,8 @@ import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -63,20 +59,21 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
-import app.yomu.core.ui.components.rememberHaptic
-import app.yomu.core.ui.theme.Dimens
+import app.yomu.core.ui.R
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
-import app.yomu.core.ui.R as CoreR
 
 /** One entry of [RadialMenu]. */
 data class RadialAction(
     val icon: ImageVector,
     val label: String,
     val destructive: Boolean = false,
+    /** Icon colour for actions that carry a colour of their own (a highlight). */
+    val tint: Color? = null,
     val onClick: () -> Unit,
 )
 
@@ -96,24 +93,24 @@ private object WheelOrigin : PopupPositionProvider {
 }
 
 /** Distance of the ring from the centre, in dp, for [count] actions. */
-internal fun radialRadiusDp(count: Int) = when {
+fun radialRadiusDp(count: Int) = when {
     count <= 5 -> 92.dp
     count <= 7 -> 106.dp
     else -> 122.dp
 }
 
 /** Size of an action button on the ring, in dp. */
-internal val RADIAL_BUTTON_DP = 54.dp
+val RADIAL_BUTTON_DP = 54.dp
 
 /** Radius of the central "cancel" button, in dp. */
-internal val RADIAL_CENTER_DP = 56.dp
+val RADIAL_CENTER_DP = 56.dp
 
 /**
  * Where the ring is drawn for a finger at [anchor]: under it, unless that would push the ring off the screen —
  * then just close enough to the edge that every action stays visible. Both the drawing and the choice of the action
  * use this function, so a sector is always where it looks.
  */
-internal fun wheelCenter(
+fun wheelCenter(
     anchor: Offset,
     radiusPx: Float,
     buttonPx: Float,
@@ -132,7 +129,7 @@ internal fun wheelCenter(
  * there cancels). Sectors start at the top and go clockwise, like the buttons are drawn — any direction outside the
  * dead zone is a choice, no need to hit the button exactly.
  */
-internal fun radialSector(count: Int, center: Offset, finger: Offset, deadZonePx: Float): Int? {
+fun radialSector(count: Int, center: Offset, finger: Offset, deadZonePx: Float): Int? {
     if (count <= 0) return null
     val dx = finger.x - center.x
     val dy = finger.y - center.y
@@ -143,12 +140,13 @@ internal fun radialSector(count: Int, center: Offset, finger: Offset, deadZonePx
 }
 
 /**
- * The long-press wheel under the finger. A drag highlights an action and lifting the finger runs it; lifting it in
- * the middle leaves the ring open, so the same actions can simply be tapped (and read by TalkBack). Without
- * [dragSelect] the ring never follows a drag — the old "one tap per action" style.
+ * The long-press wheel: one ring of the same actions on every screen (library books, manga pages, text selections,
+ * audio covers). A drag highlights an action and lifting the finger runs it; lifting it in the middle leaves the ring
+ * open, so the same actions can simply be tapped (and read by TalkBack). Without [dragSelect] the ring never follows a
+ * drag — the actions are tapped directly.
  */
 @Composable
-internal fun RadialMenu(
+fun RadialMenu(
     state: RadialState,
     dragSelect: Boolean,
     onDismiss: () -> Unit,
@@ -168,7 +166,7 @@ internal fun RadialMenu(
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
     val progress by animateFloatAsState(if (shown) 1f else 0f, spring(dampingRatio = 0.7f, stiffness = 600f), label = "radialWheel")
-    val cancelLabel = stringResource(CoreR.string.close)
+    val cancelLabel = stringResource(R.string.close)
 
     Popup(
         popupPositionProvider = WheelOrigin,
@@ -331,49 +329,48 @@ private fun WheelButton(action: RadialAction, active: Boolean) {
         shadowElevation = if (active) 12.dp else 6.dp,
         modifier = Modifier.size(if (active) 60.dp else RADIAL_BUTTON_DP),
     ) {
-        Box(contentAlignment = Alignment.Center) { Icon(action.icon, null, Modifier.size(if (active) 28.dp else 24.dp)) }
+        Box(contentAlignment = Alignment.Center) {
+            Icon(action.icon, null, Modifier.size(if (active) 28.dp else 24.dp), tint = action.tint ?: content)
+        }
     }
 }
 
-/** Five stars for the reader's own score; the icon row is the whole control. */
+/**
+ * While the finger stays down after the long press, this steers the wheel: once the item's own gesture has opened it
+ * (the same gesture, so no second long-press timer competes), the drag updates the sector under the finger and the
+ * lift runs it. Nothing is consumed before that, so taps and scrolling behave as before.
+ */
 @Composable
-fun RatingDialog(title: String, current: Int, onRate: (Int) -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(Modifier.fillMaxWidth()) {
-                Text(
-                    stringResource(R.string.library_rating_text),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(
-                    Modifier.fillMaxWidth().padding(top = Dimens.m),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    for (star in 1..5) {
-                        IconButton(onClick = { onRate(star) }) {
-                            Icon(
-                                if (star <= current) Icons.Filled.Star else Icons.Filled.StarOutline,
-                                stringResource(R.string.library_rate_n, star),
-                                Modifier.size(32.dp),
-                                tint = if (star <= current) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+fun Modifier.wheelGesture(
+    key: Any,
+    enabled: Boolean,
+    /** True while the wheel is open and waiting for this finger, set by the long press. */
+    wheelOpen: () -> Boolean,
+    onMove: (Offset) -> Unit,
+    onEnd: () -> Unit,
+): Modifier {
+    if (!enabled) return this
+    val coords = remember(key) { AtomicReference<LayoutCoordinates?>(null) }
+    return this
+        .onGloballyPositioned { if (it.isAttached) coords.set(it) }
+        .pointerInput(key) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                var tracking = false
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) {
+                        // Also on a release without a move: the wheel then stays open, tappable.
+                        if (tracking || wheelOpen()) onEnd()
+                        break
+                    }
+                    if (!tracking && wheelOpen()) tracking = true
+                    if (tracking) {
+                        change.consume()
+                        coords.get()?.takeIf { it.isAttached }?.localToWindow(change.position)?.let(onMove)
                     }
                 }
             }
-        },
-        confirmButton = {},
-        dismissButton = {
-            Row {
-                if (current > 0) {
-                    TextButton(onClick = { onRate(0) }) { Text(stringResource(R.string.library_rating_clear)) }
-                }
-                TextButton(onClick = onDismiss) { Text(stringResource(CoreR.string.close)) }
-            }
-        },
-    )
+        }
 }

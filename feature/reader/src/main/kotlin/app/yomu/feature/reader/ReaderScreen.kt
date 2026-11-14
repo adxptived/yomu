@@ -224,6 +224,7 @@ fun ReaderScreen(
     val customSearchUrl by viewModel.settings.customSearchUrl.flow.collectAsStateWithLifecycle("")
     val cpm by produceState(1000f) { value = viewModel.readingSpeed() }
     val jumpBack by viewModel.jumpBack.collectAsStateWithLifecycle()
+    val chapterStarts by viewModel.chapterStarts.collectAsStateWithLifecycle()
     val selectionMenuStyle by viewModel.selectionMenuStyle.collectAsStateWithLifecycle()
     val pageMenu by viewModel.pageMenu.collectAsStateWithLifecycle()
     val pageMenuStyle by viewModel.pageMenuStyle.collectAsStateWithLifecycle()
@@ -299,6 +300,13 @@ fun ReaderScreen(
         }
     }
     LaunchedEffect(chrome) { if (!chrome) quickPanel = false }
+    // The "back" offer is a hint, not a permanent button: after a jump it fades by itself.
+    LaunchedEffect(jumpBack) {
+        if (jumpBack != null) {
+            delay(6_000)
+            viewModel.dismissJumpBack()
+        }
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { viewModel.onPause() }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onResume() }
     // Manga have their own volume key switch (on by default) and may turn forward with volume up.
@@ -579,7 +587,7 @@ fun ReaderScreen(
         }
 
         seekDrag?.let { v ->
-            val preview = remember(v, position.bookPages) { viewModel.seekPreview(v) }
+            val preview = remember(v, position.bookPages, position.total, cpm) { viewModel.seekPreview(v, cpm) }
             val manga = (data as? ReaderContent.Manga)?.controller
             // A short pause first: dragging across the book must not fetch every page on the way.
             val thumbnail by produceState<File?>(null, manga, preview.page) {
@@ -708,6 +716,7 @@ fun ReaderScreen(
                 ReaderBottomBar(
                     position = position,
                     marks = remember(bookmarks) { bookmarks.map { it.locator.totalProgression } },
+                    chapterMarks = chapterStarts,
                     isText = data is ReaderContent.Text,
                     reversed = data is ReaderContent.Manga && mangaSettings.direction == MangaDirection.RTL,
                     canPrev = position.chapter > 0 || hasPrev,
@@ -926,6 +935,8 @@ private fun ReaderTopBar(
 private fun ReaderBottomBar(
     position: ReaderPosition,
     marks: List<Float>,
+    /** Chapter boundaries on the slider, 0..1 of the book. */
+    chapterMarks: List<Float>,
     isText: Boolean,
     /** Right-to-left manga: the slider starts on the right, like the pages. */
     reversed: Boolean,
@@ -950,7 +961,20 @@ private fun ReaderBottomBar(
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp)) {
             var dragging by remember { mutableStateOf<Float?>(null) }
-            val shown = dragging ?: position.total
+            // The engine answers a seek asynchronously: keep showing the chosen spot until it reports back, otherwise
+            // the thumb jumps to the old place for a moment and the drag looks ignored.
+            var pending by remember { mutableStateOf<Float?>(null) }
+            LaunchedEffect(pending) {
+                if (pending != null) {
+                    delay(1_500)
+                    pending = null
+                }
+            }
+            LaunchedEffect(position.total) {
+                val p = pending
+                if (p != null && kotlin.math.abs(position.total - p) < 0.02f) pending = null
+            }
+            val shown = dragging ?: pending ?: position.total
             val percent = (shown * 100).toInt().coerceIn(0, 100)
             val progressLabel = stringResource(R.string.reader_progress_percent, percent)
             // Where am I: page of the book (tap to jump to a page) and how much is left.
@@ -961,8 +985,9 @@ private fun ReaderBottomBar(
                     Text(stringResource(R.string.reader_page_of, position.page + 1, position.pages.coerceAtLeast(1)), style = MaterialTheme.typography.labelLarge)
                 }
                 Spacer(Modifier.weight(1f))
-                val left = if (isText && position.charsLeftInBook > 0) {
-                    stringResource(R.string.reader_left_book, formatMinutes((position.charsLeftInBook / cpm.coerceAtLeast(1f)).toInt()))
+                val minutesLeft = (position.charsLeftInBook / cpm.coerceAtLeast(1f)).toInt()
+                val left = if (isText && minutesLeft in 1..6000) {
+                    stringResource(R.string.reader_left_book, formatMinutes(minutesLeft))
                 } else null
                 Text(listOfNotNull(left, progressLabel).joinToString(" · "), style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
@@ -970,11 +995,30 @@ private fun ReaderBottomBar(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onPrevChapter, enabled = canPrev) { Icon(Icons.Default.SkipPrevious, stringResource(R.string.reader_prev_chapter)) }
                 Box(Modifier.weight(1f)) {
+                    if (chapterMarks.isNotEmpty()) {
+                        // Chapter starts, so the book's structure is visible on the track.
+                        val tick = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                        Canvas(Modifier.matchParentSize().padding(horizontal = 2.dp)) {
+                            val w = 1.dp.toPx()
+                            chapterMarks.forEach { m ->
+                                val x = size.width * m.coerceIn(0f, 1f).let { if (reversed) 1f - it else it }
+                                drawRect(tick, topLeft = Offset(x - w / 2, size.height / 2 - 8.dp.toPx()), size = Size(w, 16.dp.toPx()))
+                            }
+                        }
+                    }
                     CompositionLocalProvider(LocalLayoutDirection provides if (reversed) LayoutDirection.Rtl else LocalLayoutDirection.current) {
                         Slider(
                             value = shown,
                             onValueChange = { dragging = it; onDrag(it) },
-                            onValueChangeFinished = { dragging?.let(onSeek); dragging = null; onDrag(null) },
+                            onValueChangeFinished = {
+                                val v = dragging
+                                dragging = null
+                                if (v != null) {
+                                    pending = v
+                                    onSeek(v)
+                                }
+                                onDrag(null)
+                            },
                             modifier = Modifier.fillMaxWidth().semantics { contentDescription = progressLabel },
                         )
                     }
@@ -997,13 +1041,14 @@ private fun ReaderBottomBar(
             if (isText) {
                 val chapterMin = (position.charsLeftInChapter / cpm.coerceAtLeast(1f)).toInt()
                 val info = buildList {
+                    position.chapterTitle?.takeIf { it.isNotBlank() }?.let(::add)
                     if (position.chapterCount > 1) add(stringResource(R.string.reader_chapter_of, position.chapter + 1, position.chapterCount))
                     if (position.pages > 1) add(stringResource(R.string.reader_page_in_chapter, position.page + 1, position.pages))
                     if (position.charsLeftInChapter > 0 && position.chapterCount > 1) add(stringResource(R.string.reader_left_chapter, formatMinutes(chapterMin)))
                 }.joinToString(" · ")
                 if (info.isNotEmpty()) {
                     Text(info, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), maxLines = 2)
+                        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
             Spacer(Modifier.height(4.dp))

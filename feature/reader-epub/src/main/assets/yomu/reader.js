@@ -1,9 +1,13 @@
-/* Yomu EPUB reader runtime: pagination, text offsets, selection, highlights, footnotes, TTS marks. */
+/* Yomu EPUB reader runtime: pagination, text offsets, selection, highlights, footnotes, TTS marks.
+ * Long strip: the chapter being read is one document; the chapters around it are fetched and inserted into it as
+ * <section data-yomu-chapter="N"> blocks, so the whole book scrolls as one feed. Text offsets stay global inside the
+ * DOM; everything the app sees (progress, selection, words, blocks) is translated to the chapter it belongs to. */
 (function () {
   'use strict';
   var B = window.YomuBridge || { onReady: function () {}, onProgress: function () {}, onTap: function () {}, onSelection: function () {},
     onSelectionCleared: function () {}, onWord: function () {}, onLink: function () {}, onImage: function () {}, onFootnote: function () {},
-    onEdge: function () {}, onHighlightTap: function () {}, footnote: function () { return ''; }, log: function () {} };
+    onEdge: function () {}, onChapterEdge: function () {}, onStripRange: function () {}, onHighlightTap: function () {},
+    footnote: function () { return ''; }, log: function () {} };
   var cfg = window.__yomuConfig || {};
   var SKIP = 'data-yomu-skip';
   var BLOCK = { P: 1, H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1, LI: 1, BLOCKQUOTE: 1, DD: 1, DT: 1, TD: 1, FIGCAPTION: 1, DIV: 1, PRE: 1 };
@@ -11,6 +15,7 @@
   var pageW = 1, pageH = 1;
   var fixedScale = 1, fixedLeft = 0, fixedTop = 0;
   var highlights = [];
+  var drawnHighlights = [];
   var marks = {};
   var savedWords = [];
   var cache = null;
@@ -32,16 +37,34 @@
     }
     return false;
   }
+  function isStrip() { return !!cfg.strip && !cfg.paged && !cfg.fixed && !cfg.vertical; }
+  function sectionOfNode(n) {
+    var p = n.parentNode;
+    while (p && p !== document.body) {
+      if (p.nodeType === 1 && p.hasAttribute('data-yomu-chapter')) return p;
+      p = p.parentNode;
+    }
+    return null;
+  }
   function nodes() {
     if (cache) return cache;
     var list = [], map = new Map(), off = 0, n;
+    var sections = [], byChapter = new Map(), secEl = null, sec = null;
     var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
     while ((n = w.nextNode())) {
       if (skipped(n)) continue;
+      var owner = sectionOfNode(n);
+      if (owner !== secEl) {
+        secEl = owner;
+        sec = owner ? { el: owner, chapter: Number(owner.getAttribute('data-yomu-chapter')), start: off, len: 0 } : null;
+        if (sec) { sections.push(sec); byChapter.set(sec.chapter, sec); }
+      }
       var e = { node: n, start: off, len: n.nodeValue.length };
+      if (sec) { e.local = off - sec.start; e.chapter = sec.chapter; }
       list.push(e); map.set(n, e); off += e.len;
+      if (sec) sec.len = off - sec.start;
     }
-    cache = { list: list, map: map, total: off };
+    cache = { list: list, map: map, total: off, sections: sections, byChapter: byChapter };
     return cache;
   }
   function invalidate() { cache = null; }
@@ -80,6 +103,33 @@
   }
   function textBetween(start, end) { return rangeFor(start, end).toString(); }
   function fullText() { var l = nodes().list, s = ''; for (var i = 0; i < l.length; i++) s += l[i].node.nodeValue; return s; }
+
+  // ---------------------------------------------------------------- chapter sections (long strip)
+  function sectionAt(off) {
+    if (!isStrip()) return null;
+    var secs = nodes().sections, hit = null;
+    for (var i = 0; i < secs.length; i++) { if (off >= secs[i].start) hit = secs[i]; else break; }
+    return hit || (secs.length ? secs[0] : null);
+  }
+  function currentSection() { return isStrip() ? sectionAt(firstVisibleOffset()) : null; }
+  function currentChapter() { var s = currentSection(); return s ? s.chapter : (cfg.chapter != null ? cfg.chapter : 0); }
+  function baseOf(chapter) { var s = nodes().byChapter.get(chapter); return s ? s.start : null; }
+  function toGlobal(chapter, off) {
+    if (!isStrip()) return off;
+    var b = baseOf(chapter);
+    return b == null ? null : b + off;
+  }
+  function toLocal(off) {
+    var s = sectionAt(off);
+    if (!s) return { chapter: cfg.chapter != null ? cfg.chapter : 0, offset: off };
+    return { chapter: s.chapter, offset: off - s.start };
+  }
+  function sectionText(sec) {
+    if (!sec) return fullText();
+    return fullText().substring(sec.start, sec.start + sec.len);
+  }
+  /** Pages of a scrolling chapter, only for the page number and its estimate: 1500 characters is roughly one screen. */
+  function estimatePages(chars) { return Math.max(1, Math.round(chars / 1500)); }
 
   // ---------------------------------------------------------------- layout
   function isRtlDoc() { try { return getComputedStyle(document.body).direction === 'rtl'; } catch (e) { return false; } }
@@ -130,7 +180,9 @@
         'p,li,h1,h2,h3,h4,h5,h6{orphans:2;widows:2;}';
     } else {
       css = 'html{overflow-x:hidden;}body{margin:0!important;padding:' + mv + 'px ' + mh + 'px ' + (cfg.footer ? Math.max(mv, 30) : mv) + 'px ' + mh + 'px!important;box-sizing:border-box;}' +
-        'img,svg,video{max-width:100%!important;height:auto;}';
+        'img,svg,video{max-width:100%!important;height:auto;}' +
+        'section[data-yomu-chapter]{display:block;}' +
+        'section[data-yomu-chapter]+section[data-yomu-chapter]{margin-top:1.4em;}';
     }
     st.textContent = css;
     navButtons();
@@ -219,9 +271,32 @@
   }
   function report() {
     if (!ready) return;
-    var o = { page: currentPage(), pages: pageCount(), progression: progression(), offset: firstVisibleOffset(), total: nodes().total };
-    var s = json(o);
-    if (s !== lastReport) { lastReport = s; B.onProgress(s); }
+    var o;
+    if (isStrip()) {
+      var g = firstVisibleOffset();
+      var s = sectionAt(g);
+      if (s) {
+        var local = Math.max(0, Math.min(s.len, g - s.start));
+        var pages = estimatePages(s.len);
+        o = {
+          chapter: s.chapter,
+          page: Math.min(pages - 1, Math.floor((local / Math.max(1, s.len)) * pages)),
+          pages: pages,
+          progression: s.len <= 1 ? 1 : local / s.len,
+          offset: local,
+          total: s.len,
+        };
+      } else {
+        o = { chapter: cfg.chapter != null ? cfg.chapter : 0, page: 0, pages: 1, progression: 0, offset: 0, total: 0 };
+      }
+    } else {
+      o = {
+        chapter: cfg.chapter != null ? cfg.chapter : 0,
+        page: currentPage(), pages: pageCount(), progression: progression(), offset: firstVisibleOffset(), total: nodes().total,
+      };
+    }
+    var str = json(o);
+    if (str !== lastReport) { lastReport = str; B.onProgress(str); }
     drawAll();
   }
   var reportLater = debounce(report, 160);
@@ -232,8 +307,13 @@
     var rc = rects.length ? rects[0] : r.getBoundingClientRect();
     return rc;
   }
-  function goToOffset(off, smooth) {
+  function goToOffset(off, smooth, chapter) {
     if (cfg.fixed) { setTimeout(report, 30); return; }
+    if (isStrip()) {
+      var g = toGlobal(chapter == null ? currentChapter() : chapter, off);
+      if (g == null) { setTimeout(report, 30); return; }
+      off = g;
+    }
     off = Math.max(0, Math.min(off, nodes().total));
     var rc = rectOfOffset(off);
     if (cfg.vertical) { se.scrollLeft = se.scrollLeft + rc.right - pageW + (cfg.marginH || 20); }
@@ -247,17 +327,65 @@
   function goToProgression(p) {
     if (cfg.fixed) { setTimeout(report, 30); return; }
     p = Math.max(0, Math.min(1, p || 0));
+    if (isStrip()) {
+      var s = currentSection();
+      if (!s) { setTimeout(report, 30); return; }
+      goToOffset(Math.round(p * Math.max(0, s.len - 1)), false, s.chapter);
+      return;
+    }
     if (cfg.vertical) se.scrollLeft = -p * (se.scrollWidth - pageW);
     else if (cfg.paged) { setPage(Math.round(p * (pageCount() - 1)), false); return; }
     else se.scrollTop = p * (se.scrollHeight - pageH);
     setTimeout(report, 30);
   }
+  function anchorIn(root, id) {
+    var all = root.querySelectorAll ? root.querySelectorAll('[id]') : [];
+    for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i];
+    if (root.id === id) return root;
+    return null;
+  }
   function goToAnchor(id) {
-    var el = document.getElementById(id) || document.getElementsByName(id)[0];
+    var s = currentSection();
+    var el = (s ? anchorIn(s.el, id) : null) || document.getElementById(id) || document.getElementsByName(id)[0];
     if (!el) return false;
     var off = posToOffset(el, 0);
+    if (isStrip()) {
+      se.scrollTop = se.scrollTop + el.getBoundingClientRect().top - (cfg.marginV || 28);
+      setTimeout(report, 30);
+      return true;
+    }
     goToOffset(off, false);
     return true;
+  }
+  /** Long strip: scroll to a loaded [index] chapter, at a local offset, progression or anchor. */
+  function goToChapter(index, spec) {
+    if (!isStrip()) return false;
+    var s = nodes().byChapter.get(index);
+    if (!s) return false;
+    spec = spec || {};
+    var local = 0;
+    if (spec.anchor) {
+      var el = anchorIn(s.el, spec.anchor) || document.getElementById(spec.anchor);
+      if (el) {
+        se.scrollTop = se.scrollTop + el.getBoundingClientRect().top - (cfg.marginV || 28);
+        setTimeout(report, 30);
+        return true;
+      }
+    } else if (spec.offset != null) {
+      local = Math.max(0, Math.min(s.len, spec.offset));
+    } else if (spec.progression != null) {
+      local = Math.round(Math.max(0, Math.min(1, spec.progression)) * Math.max(0, s.len - 1));
+    }
+    var rc = rectOfOffset(s.start + local);
+    se.scrollTop = se.scrollTop + rc.top - (cfg.marginV || 28);
+    setTimeout(report, 30);
+    return true;
+  }
+  function scrollToSection(s) {
+    if (!s) return;
+    var rc = rectOfOffset(s.start);
+    se.scrollTop = se.scrollTop + rc.top - (cfg.marginV || 28);
+    setTimeout(report, 30);
   }
   function scrollBehavior() { return cfg.reduceMotion || cfg.pageAnimation === 'NONE' || cfg.pageAnimation === 'FADE' ? 'auto' : 'smooth'; }
   function next() {
@@ -280,6 +408,211 @@
       if (cfg.vertical) se.scrollBy({ left: pageW - 40, behavior: scrollBehavior() });
       else se.scrollBy({ top: -(pageH - 60), behavior: scrollBehavior() });
       setTimeout(function () { var after = cfg.vertical ? Math.abs(se.scrollLeft) : se.scrollTop; if (Math.abs(after - before) < 2) B.onEdge('prev'); else report(); }, 400);
+    }
+  }
+  /**
+   * Bottom bar chapter buttons: in the strip move to the neighbouring chapter (scrolling, or fetching it into the feed).
+   * A neighbour that cannot be inlined (fixed layout, image-only) is opened as its own page by the app.
+   */
+  function chapterStep(dir) {
+    if (!isStrip()) { B.onEdge(dir > 0 ? 'next' : 'prev'); return; }
+    var s = currentSection();
+    if (!s) return;
+    var target = s.chapter + dir;
+    if (target < 0) return;
+    if (target > (cfg.chapterCount || 1) - 1) { if (dir > 0) B.onEdge('next'); return; }
+    var m = nodes().byChapter;
+    if (m.has(target)) { scrollToSection(m.get(target)); return; }
+    if (!canInline(target)) { B.onChapterEdge(dir > 0); return; }
+    var go = function () {
+      var mm = nodes().byChapter;
+      if (mm.has(target)) scrollToSection(mm.get(target));
+    };
+    if (dir > 0) loadNext().then(go); else loadPrev().then(go);
+  }
+
+  // ---------------------------------------------------------------- long strip loader
+  var stripBusy = false;
+  var stripSent = false;
+  function chapterMeta(i) { return cfg.chapters ? cfg.chapters[i] : null; }
+  function canInline(i) {
+    var c = chapterMeta(i);
+    return !!c && !c.fixed && !c.image;
+  }
+  function chapterUrl(i) {
+    var c = chapterMeta(i);
+    if (!c || !c.path) return null;
+    return '/' + c.path.split('/').map(encodeURIComponent).join('/');
+  }
+  function isAbsoluteUrl(v) { return !v || /^(data:|blob:|[a-z][a-z0-9+.-]*:|\/)/i.test(v); }
+  function absoluteUrl(v, baseUrl) { return isAbsoluteUrl(v) ? v : new URL(v, baseUrl).href; }
+  function absolutize(root, baseUrl) {
+    ['src', 'poster'].forEach(function (attr) {
+      var els = root.querySelectorAll('[' + attr + ']');
+      for (var i = 0; i < els.length; i++) els[i].setAttribute(attr, absoluteUrl(els[i].getAttribute(attr), baseUrl));
+    });
+    // SVG illustrations reference their files through xlink:href rather than src.
+    var images = root.querySelectorAll('image,use');
+    for (var k = 0; k < images.length; k++) {
+      var href = images[k].getAttribute('xlink:href') || images[k].getAttribute('href');
+      if (!href || href.charAt(0) === '#') continue;
+      var abs = absoluteUrl(href, baseUrl);
+      images[k].setAttribute('xlink:href', abs);
+      images[k].setAttribute('href', abs);
+    }
+    var links = root.querySelectorAll('a[href]');
+    for (var j = 0; j < links.length; j++) {
+      var target = links[j].getAttribute('href');
+      if (!target || target.charAt(0) === '#' || /^(mailto:|tel:|[a-z][a-z0-9+.-]*:)/i.test(target)) continue;
+      links[j].setAttribute('href', new URL(target, baseUrl).href);
+    }
+    // Relative url(...) in an inline style would otherwise point at the opened chapter's folder.
+    var styled = root.querySelectorAll('[style]');
+    for (var s = 0; s < styled.length; s++) {
+      var css = styled[s].getAttribute('style');
+      if (css && css.indexOf('url(') >= 0) {
+        styled[s].setAttribute('style', css.replace(/url\((['"]?)([^'")]+)\1\)/g, function (all, quote, value) {
+          return 'url("' + absoluteUrl(value.trim(), baseUrl) + '")';
+        }));
+      }
+    }
+  }
+  function fetchSection(i) {
+    var path = chapterUrl(i);
+    if (!path) return Promise.resolve(null);
+    var url = new URL(path, location.href).href;
+    return fetch(url + (url.indexOf('?') >= 0 ? '&' : '?') + 'v=strip-' + i)
+      .then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (html) {
+        if (!html) return null;
+        var parsed = new DOMParser().parseFromString(html, 'text/html');
+        if (!parsed || !parsed.body) return null;
+        absolutize(parsed.body, url);
+        var sec = document.createElement('section');
+        sec.setAttribute('data-yomu-chapter', String(i));
+        sec.className = 'yomu-strip-chapter';
+        while (parsed.body.firstChild) sec.appendChild(parsed.body.firstChild);
+        // The chapter's own styles, once per sheet, so the inserted text looks like it does when opened alone.
+        var heads = parsed.head.querySelectorAll('link[rel=stylesheet],style');
+        for (var k = 0; k < heads.length; k++) {
+          var node = heads[k];
+          if (node.tagName === 'STYLE') {
+            // The reader's own user styles are already in this document.
+            if (node.id === 'yomu-user' || node.id === 'yomu-layout') continue;
+            var st = document.createElement('style');
+            st.setAttribute(SKIP, '1');
+            st.textContent = node.textContent;
+            document.head.appendChild(st);
+          } else {
+            var href = node.getAttribute('href') || '';
+            if (!href || href.indexOf('__yomu/') >= 0 || href.indexOf('reader.css') >= 0) continue;
+            var abs = new URL(href, url).href;
+            if (!document.querySelector('link[data-yomu-strip-css="' + abs.replace(/"/g, '') + '"]')) {
+              var l = document.createElement('link');
+              l.rel = 'stylesheet';
+              l.href = abs;
+              l.setAttribute('data-yomu-strip-css', abs);
+              document.head.appendChild(l);
+            }
+          }
+        }
+        return sec;
+      })
+      .catch(function () { return null; });
+  }
+  function notifyRange() {
+    var secs = nodes().sections;
+    if (!secs.length || !B.onStripRange) return;
+    B.onStripRange(secs[0].chapter, secs[secs.length - 1].chapter);
+  }
+  function loadedChapters() {
+    var els = document.querySelectorAll('section[data-yomu-chapter]'), out = [];
+    for (var i = 0; i < els.length; i++) out.push(Number(els[i].getAttribute('data-yomu-chapter')));
+    return out;
+  }
+  function appendSection(sec) {
+    var index = sec.getAttribute('data-yomu-chapter');
+    if (document.querySelector('section[data-yomu-chapter="' + index + '"]')) return;
+    var all = document.querySelectorAll('section[data-yomu-chapter]');
+    var last = all.length ? all[all.length - 1] : null;
+    if (last) document.body.insertBefore(sec, last.nextSibling); else document.body.appendChild(sec);
+    invalidate();
+    drawAll();
+    notifyRange();
+  }
+  function prependSection(sec) {
+    var index = sec.getAttribute('data-yomu-chapter');
+    if (document.querySelector('section[data-yomu-chapter="' + index + '"]')) return;
+    var before = se.scrollHeight, top = se.scrollTop;
+    var first = document.querySelector('section[data-yomu-chapter]');
+    document.body.insertBefore(sec, first || document.body.firstChild);
+    invalidate();
+    // The content above pushes everything down: keep the reader looking at the same line.
+    se.scrollTop = top + (se.scrollHeight - before);
+    drawAll();
+    notifyRange();
+  }
+  function loadNext() {
+    if (!isStrip() || stripBusy) return Promise.resolve(false);
+    var loaded = loadedChapters();
+    if (!loaded.length) return Promise.resolve(false);
+    var next = loaded[loaded.length - 1] + 1;
+    if (next >= (cfg.chapterCount || 0) || !canInline(next)) return Promise.resolve(false);
+    stripBusy = true;
+    return fetchSection(next).then(function (sec) {
+      stripBusy = false;
+      if (!sec) return false;
+      appendSection(sec);
+      return true;
+    }).catch(function () { stripBusy = false; return false; });
+  }
+  function loadPrev() {
+    if (!isStrip() || stripBusy) return Promise.resolve(false);
+    var loaded = loadedChapters();
+    if (!loaded.length) return Promise.resolve(false);
+    var prev = loaded[0] - 1;
+    if (prev < 0 || !canInline(prev)) return Promise.resolve(false);
+    stripBusy = true;
+    return fetchSection(prev).then(function (sec) {
+      stripBusy = false;
+      if (!sec) return false;
+      prependSection(sec);
+      return true;
+    }).catch(function () { stripBusy = false; return false; });
+  }
+  function underfilled() {
+    var all = document.querySelectorAll('section[data-yomu-chapter]');
+    if (!all.length) return false;
+    return all[all.length - 1].getBoundingClientRect().bottom < pageH * 2;
+  }
+  function stripFill(rounds) {
+    if (!isStrip()) return;
+    rounds = rounds == null ? 8 : rounds;
+    if (rounds <= 0) return;
+    loadNext().then(function (ok) {
+      if (!ok) { loadPrev(); return; }
+      if (underfilled()) stripFill(rounds - 1);
+    });
+  }
+  // A last resort for chapters whose inline copy fails: the app opens the neighbour as its own page.
+  function stripManage() {
+    if (!isStrip() || stripBusy) return;
+    var max = se.scrollHeight - pageH;
+    if (max <= 0) { loadNext(); return; }
+    var y = se.scrollTop;
+    if (y > max - pageH * 1.5) loadNext();
+    if (y < pageH * 1.2) loadPrev();
+    if (y >= max - 2) {
+      var secs = nodes().sections;
+      var lastChapter = secs.length ? secs[secs.length - 1].chapter : -1;
+      if (lastChapter >= (cfg.chapterCount || 1) - 1) {
+        if (!stripSent) { stripSent = true; B.onEdge('next'); }
+      } else if (lastChapter >= 0 && !canInline(lastChapter + 1)) {
+        // The next chapter is a fixed-layout page: it cannot join the feed, so the app opens it.
+        if (!stripSent) { stripSent = true; B.onChapterEdge(true); }
+      }
+    } else {
+      stripSent = false;
     }
   }
 
@@ -327,9 +660,30 @@
   }
   function drawAll() {
     if (!ready) return;
-    drawRanges(layer('yomu-hl', 1), highlights, 'yomu-hl');
+    var items = [];
+    for (var i = 0; i < highlights.length; i++) {
+      var h = highlights[i];
+      if (isStrip()) {
+        var g = toGlobal(h.chapter, h.start);
+        if (g == null) continue;
+        var ge = toGlobal(h.chapter, h.end);
+        if (ge == null) ge = g + Math.max(1, (h.end || h.start) - h.start);
+        items.push({ id: h.id, start: g, end: ge, color: h.color, style: h.style, note: h.note });
+      } else {
+        items.push(h);
+      }
+    }
+    drawnHighlights = items;
+    drawRanges(layer('yomu-hl', 1), items, 'yomu-hl');
     var m = [];
-    Object.keys(marks).forEach(function (k) { if (marks[k]) m.push({ start: marks[k].start, end: marks[k].end, style: 'yomu-mark-' + k }); });
+    Object.keys(marks).forEach(function (k) {
+      var mk = marks[k];
+      if (!mk) return;
+      var gs = isStrip() ? toGlobal(mk.chapter, mk.start) : mk.start;
+      var ge = isStrip() ? toGlobal(mk.chapter, mk.end) : mk.end;
+      if (gs == null || ge == null) return;
+      m.push({ start: gs, end: ge, style: 'yomu-mark-' + k });
+    });
     drawRanges(layer('yomu-marks', 2), m, 'yomu-mark');
     drawWords();
   }
@@ -358,7 +712,12 @@
     var r = sel.getRangeAt(0);
     var start = posToOffset(r.startContainer, r.startOffset), end = posToOffset(r.endContainer, r.endOffset);
     var rc = r.getBoundingClientRect();
-    return { text: sel.toString(), start: start, end: end, left: rc.left, top: rc.top, right: rc.right, bottom: rc.bottom, sentence: sentenceAround(start, end) };
+    var a = toLocal(start), b = toLocal(end);
+    return {
+      text: sel.toString(), chapter: a.chapter, start: a.offset,
+      end: b.chapter === a.chapter ? b.offset : a.offset + (end - start),
+      left: rc.left, top: rc.top, right: rc.right, bottom: rc.bottom, sentence: sentenceAround(start, end),
+    };
   }
   var onSelectionChange = debounce(function () {
     var info = selectionInfo();
@@ -367,7 +726,10 @@
   }, 220);
   function clearSelection() { var s = window.getSelection(); if (s) s.removeAllRanges(); selectionShown = false; }
   function select(start, end) {
-    var s = window.getSelection(); s.removeAllRanges(); s.addRange(rangeFor(start, end));
+    var base = 0;
+    var s = currentSection();
+    if (isStrip() && s) base = s.start;
+    var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(rangeFor(base + start, base + end));
   }
   function blockOf(node) {
     var n = node.nodeType === 3 ? node.parentNode : node;
@@ -395,8 +757,11 @@
   function sentenceAround(start, end) { var b = sentenceBounds(start, end); return textBetween(b.start, b.end).trim().slice(0, 600); }
   function expand(kind) {
     var info = selectionInfo(); if (!info) return;
-    var b = kind === 'paragraph' ? blockBounds(info.start) : sentenceBounds(info.start, info.end);
-    select(b.start, b.end);
+    var sec = currentSection();
+    var base = isStrip() && sec ? sec.start : 0;
+    var gs = base + info.start, ge = base + info.end;
+    var b = kind === 'paragraph' ? blockBounds(gs) : sentenceBounds(gs, ge);
+    select(b.start - base, b.end - base);
   }
 
   // ---------------------------------------------------------------- words
@@ -427,10 +792,14 @@
     }
     var base = nodes().map.get(node); if (!base) return null;
     var start = base.start + s, end = base.start + e;
+    var loc = toLocal(start);
     var wr = document.createRange(); wr.setStart(node, s); wr.setEnd(node, e);
     var rc = wr.getBoundingClientRect();
-    return { word: text.substring(s, e), start: start, end: end, tail: textBetween(start, Math.min(nodes().total, start + 24)),
-      sentence: sentenceAround(start, end), left: rc.left, top: rc.top, right: rc.right, bottom: rc.bottom };
+    return {
+      word: text.substring(s, e), chapter: loc.chapter, start: loc.offset, end: loc.offset + (e - s),
+      tail: textBetween(start, Math.min(nodes().total, start + 24)),
+      sentence: sentenceAround(start, end), left: rc.left, top: rc.top, right: rc.right, bottom: rc.bottom,
+    };
   }
 
   // ---------------------------------------------------------------- touch, taps, links
@@ -452,9 +821,9 @@
     }
   }
   function hitHighlight(x, y) {
-    for (var i = 0; i < highlights.length; i++) {
-      var rs = highlights[i].rects || [];
-      for (var j = 0; j < rs.length; j++) { var r = rs[j]; if (x >= r.l && x <= r.r && y >= r.t && y <= r.b) return highlights[i]; }
+    for (var i = 0; i < drawnHighlights.length; i++) {
+      var rs = drawnHighlights[i].rects || [];
+      for (var j = 0; j < rs.length; j++) { var r = rs[j]; if (x >= r.l && x <= r.r && y >= r.t && y <= r.b) return drawnHighlights[i]; }
     }
     return null;
   }
@@ -519,7 +888,7 @@
       return;
     }
     if (cfg.wordTap === 'SINGLE_TAP') {
-      var zoneX = x / pageW;
+      var zoneX = window.innerWidth ? x / pageW : x;
       if (zoneX > 0.2 && zoneX < 0.8) { var w2 = wordAt(x, y); if (w2) { dropPendingTap(); B.onWord(json(w2)); return; } }
     }
     dropPendingTap();
@@ -543,17 +912,26 @@
   }
   function blocks(from) {
     var list = leafBlocks(), res = [];
-    for (var i = 0; i < list.length; i++) {
-      var el = list[i]; el.setAttribute('data-yomu-i', String(i));
+    var sec = currentSection();
+    var base = isStrip() && sec ? sec.start : 0;
+    var i = 0;
+    for (var k = 0; k < list.length; k++) {
+      var el = list[k];
+      if (sec && !sec.el.contains(el)) continue;
       var r = document.createRange(); r.selectNodeContents(el);
-      var s = posToOffset(r.startContainer, r.startOffset), e = posToOffset(r.endContainer, r.endOffset);
+      var gs = posToOffset(r.startContainer, r.startOffset), ge = posToOffset(r.endContainer, r.endOffset);
+      var s = gs - base, e = ge - base;
+      var local = i++;
+      el.setAttribute('data-yomu-i', String(local));
       if (from != null && e < from) continue;
-      res.push({ i: i, start: s, end: e, text: (el.textContent || '').trim(), translated: !!(el.nextElementSibling && el.nextElementSibling.classList.contains('yomu-tr')) });
+      res.push({ i: local, start: s, end: e, text: (el.textContent || '').trim(), translated: !!(el.nextElementSibling && el.nextElementSibling.classList.contains('yomu-tr')) });
     }
     return res;
   }
   function insertTranslation(i, text) {
-    var el = document.querySelector('[data-yomu-i="' + i + '"]');
+    var sec = currentSection();
+    var root = sec ? sec.el : document;
+    var el = root.querySelector ? root.querySelector('[data-yomu-i="' + i + '"]') : null;
     if (!el) return;
     var n = el.nextElementSibling;
     if (n && n.classList.contains('yomu-tr')) { n.textContent = text; return; }
@@ -563,7 +941,9 @@
   }
   function removeTranslations() { var l = document.querySelectorAll('.yomu-tr'); for (var i = 0; i < l.length; i++) l[i].remove(); }
   function sentences(from) {
-    var text = fullText(), out = [], start = Math.max(0, from || 0);
+    var sec = currentSection();
+    var text = isStrip() ? sectionText(sec) : fullText();
+    var out = [], start = Math.max(0, from || 0);
     var list = blocks(start);
     list.forEach(function (b) {
       var s0 = Math.max(b.start, start), t = text.substring(s0, b.end);
@@ -577,12 +957,14 @@
     return out;
   }
   function ensureVisible(off) {
+    var sec = currentSection();
+    var g = isStrip() && sec ? sec.start + off : off;
     if (cfg.paged && !cfg.vertical) {
-      var rc = rectOfOffset(off);
-      if (rc.left < 0 || rc.left > pageW || rc.top < 0 || rc.top > pageH) goToOffset(off, true);
+      var rc = rectOfOffset(g);
+      if (rc.left < 0 || rc.left > pageW || rc.top < 0 || rc.top > pageH) goToOffset(g, true);
     } else {
-      var r = rectOfOffset(off);
-      if (r.top < 0 || r.bottom > pageH - 20) goToOffset(off, false);
+      var r = rectOfOffset(g);
+      if (r.top < 0 || r.bottom > pageH - 20) se.scrollTop = se.scrollTop + r.top - (cfg.marginV || 28);
     }
   }
 
@@ -592,15 +974,23 @@
     goToOffset: function (o) { goToOffset(o, false); },
     goToProgression: goToProgression,
     goToAnchor: goToAnchor,
+    goToChapter: goToChapter,
+    chapterStep: chapterStep,
     setConfig: function (c, css) {
       var keep = ready ? firstVisibleOffset() : null;
+      var local = ready && isStrip() ? toLocal(keep) : null;
       cfg = Object.assign(cfg, c || {});
       if (css != null) { var u = document.getElementById('yomu-user'); if (u) u.textContent = css; }
       applyLayout(); invalidate();
-      if (keep != null) setTimeout(function () { goToOffset(keep, false); }, 60);
+      if (local != null) setTimeout(function () { goToOffset(local.offset, false, local.chapter); }, 60);
+      else if (keep != null) setTimeout(function () { goToOffset(keep, false); }, 60);
     },
     setHighlights: function (list) { highlights = list || []; drawAll(); },
-    mark: function (kind, start, end, scroll) { marks[kind] = (start == null) ? null : { start: start, end: end }; if (start != null && scroll) ensureVisible(start); drawAll(); },
+    mark: function (kind, start, end, scroll) {
+      marks[kind] = (start == null) ? null : { chapter: currentChapter(), start: start, end: end };
+      if (start != null && scroll) ensureVisible(start);
+      drawAll();
+    },
     setSavedWords: function (list) { savedWords = (list || []).filter(function (w) { return w && w.length > 1; }).slice(0, 3000); drawAll(); },
     clearSelection: clearSelection,
     select: select,
@@ -612,23 +1002,14 @@
     removeTranslations: function () { var keep = firstVisibleOffset(); removeTranslations(); invalidate(); setTimeout(function () { goToOffset(keep, false); }, 30); },
     sentences: function (from) { return json(sentences(from)); },
     visibleText: function () { var a = firstVisibleOffset(), b = lastVisibleOffset(); return textBetween(a, Math.max(a, b)); },
-    text: function (s, e) { return textBetween(s, e); },
+    text: function (s, e) {
+      var sec = currentSection();
+      var base = isStrip() && sec ? sec.start : 0;
+      return textBetween(base + s, base + e);
+    },
     scrollStep: function (px) { if (cfg.paged && !cfg.vertical) return; var before = se.scrollTop; se.scrollTop += px; if (se.scrollTop === before && px > 0) B.onEdge('next'); else reportLater(); },
     state: function () { return json({ page: currentPage(), pages: pageCount(), progression: progression(), offset: firstVisibleOffset(), total: nodes().total }); }
   };
-
-  // Long strip: reaching the bottom of a chapter opens the next one, so the text never stops at a chapter boundary.
-  var stripSent = false;
-  function stripEdge() {
-    if (!cfg.strip || cfg.paged || cfg.fixed || !cfg.hasNext) return;
-    var max = se.scrollHeight - pageH;
-    if (max <= 0) return;
-    if (se.scrollTop >= max - 2) {
-      if (!stripSent) { stripSent = true; B.onEdge('next'); }
-    } else {
-      stripSent = false;
-    }
-  }
 
   function start() {
     applyLayout();
@@ -643,6 +1024,8 @@
         lastReport = '';
         report();
         B.onReady(json({ pages: pageCount(), total: nodes().total }));
+        // Fill the feed around the opened chapter: below first, then a little above, so scrolling never runs out.
+        if (isStrip()) setTimeout(function () { stripFill(); }, 100);
       }, 40);
     };
     var fontsReady = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
@@ -652,7 +1035,7 @@
     document.addEventListener('touchstart', onTouchStart, { passive: true });
     document.addEventListener('touchend', onTouchEnd, { passive: true });
     document.addEventListener('click', onClick, true);
-    window.addEventListener('scroll', function () { if (!cfg.paged || cfg.vertical) reportLater(); stripEdge(); }, { passive: true });
+    window.addEventListener('scroll', function () { if (!cfg.paged || cfg.vertical) reportLater(); stripManage(); }, { passive: true });
     window.addEventListener('resize', debounce(function () { var keep = firstVisibleOffset(); applyLayout(); invalidate(); setTimeout(function () { goToOffset(keep, false); }, 50); }, 200));
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();

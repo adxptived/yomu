@@ -54,6 +54,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_6_0">
+        <item>Long strip scrolls the whole book: neighbouring chapters flow into one page, up and down, with progress, highlights and read-aloud following along.</item>
+        <item>The page slider holds its place, shows chapter boundaries and names the chapter; “Back to page” only appears after a real jump and hides by itself.</item>
+        <item>The audiobook player stays clear of the system bars, opens the whole cover full-screen, and the mini player now floats above the bottom bar with a seek line.</item>
+        <item>One long-press wheel for the library, manga pages, selections and audiobook covers.</item>
+    </string-array>
     <string-array name="whats_new_2_5_0">
         <item>The long-press wheel works like a game wheel: it opens under your finger, drag to an action and lift to run it; a plain long press leaves it open for a tap.</item>
         <item>One bottom bar in the reader for every format, and “Long strip” now opens Word documents as continuous text.</item>

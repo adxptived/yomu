@@ -6,8 +6,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -152,6 +150,10 @@ import app.yomu.core.ui.components.HideNavBarWhile
 import app.yomu.core.ui.components.OneTimeHint
 import app.yomu.core.ui.components.PillTab
 import app.yomu.core.ui.components.PillTabRow
+import app.yomu.core.ui.components.RADIAL_BUTTON_DP
+import app.yomu.core.ui.components.RadialAction
+import app.yomu.core.ui.components.RadialMenu
+import app.yomu.core.ui.components.RadialState
 import app.yomu.core.ui.components.RemovableChip
 import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.SheetAction
@@ -172,10 +174,14 @@ import app.yomu.core.ui.components.asFastScrollTarget
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.motionItem
 import app.yomu.core.ui.components.navBarBottomPadding
+import app.yomu.core.ui.components.radialRadiusDp
+import app.yomu.core.ui.components.radialSector
 import app.yomu.core.ui.components.rememberHaptic
 import app.yomu.core.ui.components.sharedCover
 import app.yomu.core.ui.components.tabState
 import app.yomu.core.ui.components.topLevelContentInsets
+import app.yomu.core.ui.components.wheelCenter
+import app.yomu.core.ui.components.wheelGesture
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.download.DownloadSummary
 import app.yomu.domain.model.Book
@@ -1199,46 +1205,6 @@ private fun FormatGroup.label(): Int = when (this) {
  */
 private fun LazyPagingItems<Book>.stableKey(index: Int): Any =
     if (index in 0 until itemCount) peek(index)?.id?.let { "book-$it" } ?: "empty-$index" else "empty-$index"
-
-/**
- * While the finger stays down after the long press, this steers the wheel: once the item's own `combinedClickable`
- * has opened it (the same gesture, so no second long-press timer competes), the drag updates the sector under the
- * finger and the lift runs it. Nothing is consumed before that, so taps and scrolling behave as before.
- */
-@Composable
-private fun Modifier.wheelGesture(
-    key: Any,
-    enabled: Boolean,
-    /** True while the wheel is open and waiting for this finger, set by the long press. */
-    wheelOpen: () -> Boolean,
-    onMove: (Offset) -> Unit,
-    onEnd: () -> Unit,
-): Modifier {
-    if (!enabled) return this
-    val coords = remember(key) { AtomicReference<LayoutCoordinates?>(null) }
-    return this
-        .onGloballyPositioned { if (it.isAttached) coords.set(it) }
-        .pointerInput(key) {
-            awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false)
-                var tracking = false
-                while (true) {
-                    val event = awaitPointerEvent()
-                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                    if (!change.pressed) {
-                        // Also on a release without a move: the wheel then stays open, tappable.
-                        if (tracking || wheelOpen()) onEnd()
-                        break
-                    }
-                    if (!tracking && wheelOpen()) tracking = true
-                    if (tracking) {
-                        change.consume()
-                        coords.get()?.takeIf { it.isAttached }?.localToWindow(change.position)?.let(onMove)
-                    }
-                }
-            }
-        }
-}
 
 /** Books (paged) after the [header] and the online titles of the tab, as a grid or a list. */
 @Composable

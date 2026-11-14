@@ -1,11 +1,11 @@
-package app.yomu.feature.library
+package app.yomu.core.ui.components
 
 import androidx.compose.ui.geometry.Offset
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
-/** The game wheel picks a sector from the direction of the drag, not from hitting a button. */
+/** The wheel picks a sector from the direction of the drag, not from hitting a button. */
 class RadialSectorTest {
     private val center = Offset(100f, 100f)
     private val deadZone = 30f

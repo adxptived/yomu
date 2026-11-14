@@ -24,6 +24,8 @@
     <string name="audio_origin_podcast">Подкаст</string>
     <string name="audio_origin_link">Ссылка</string>
     <string name="audio_book_left">До конца книги: %1$s</string>
+    <string name="audio_seek">Перемотка внутри трека</string>
+    <string name="audio_full_cover">Вся обложка</string>
     <string name="audio_hours_minutes">%1$d ч %2$02d мин</string>
     <string name="audio_speed_down">Медленнее</string>
     <string name="audio_speed_up">Быстрее</string>

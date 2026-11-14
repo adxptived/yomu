@@ -1,5 +1,40 @@
 # Changelog
 
+## 2.6.0 — the whole book in one strip, and a player out of the way
+
+> **Install.** Installs over 2.5.0 if signed with the same key. No database migration.
+
+### Reading
+
+- **Long strip reads the whole book, not one chapter at a time:** the neighbouring chapters are fetched and inserted
+  into the same page as you scroll, in both directions, so the text no longer ends at a chapter boundary and there is no
+  reload flash between chapters. Progress, the chapter title, selection, the dictionary, highlights, search and
+  read-aloud follow the chapter actually on screen. Fixed-layout and image-only chapters still open as their own page.
+- **A slider that holds its place:** after a drag the thumb no longer snaps back while the engine catches up. The track
+  shows the chapter boundaries, the drag card adds the reading time left, and the bar names the chapter and the page
+  inside it.
+- **"Back to page N" only when there is something to go back to:** no chip on a fresh book, none for a one-percent
+  nudge of the slider, and it hides itself after a few seconds.
+
+### Audiobooks
+
+- **The player keeps clear of the system bars**, and the cover gets a full-screen, zoomable view of the whole artwork
+  (tap the cover or its corner button) — a YouTube thumbnail is no longer seen only in the middle.
+- **The cover has the wheel too:** a long press offers the full cover, offline download, a bookmark, chapters, the
+  sleep timer and speed.
+- **The mini player sits above the navigation bar**, like a music player: cover, title and chapter, play/pause, stop and
+  a draggable progress line. Lists leave room for it.
+
+### Long-press menus
+
+- **One wheel everywhere:** the library's ring is now a shared component, so the library, manga pages, the
+  text-selection menu and the audiobook cover have the same look, the same central cancel button and the same kind of
+  actions.
+
+### Tests
+
+- The wheel geometry test moved with the component to `core:ui`.
+
 ## 2.5.0 — the wheel, calmer defaults and YouTube with an account
 
 > **Install.** Installs over 2.4.0 if signed with the same key. No database migration. The stored reader settings are

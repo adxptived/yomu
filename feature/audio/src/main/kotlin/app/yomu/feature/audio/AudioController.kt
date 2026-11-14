@@ -9,11 +9,15 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -52,6 +56,31 @@ class AudioController(private val context: Context) {
 
     /** [state] without the moving position, for views that do not show it (they would recompose on every tick). */
     val nowPlaying: Flow<PlayerSnapshot?> = _state.map { it?.copy(positionMs = 0, durationMs = 0, isBuffering = false) }.distinctUntilChanged()
+
+    /**
+     * [state] with the live position, sampled once a second while a book is loaded: the progress line of the mini
+     * player is worth one recomposition per second, nothing more.
+     */
+    val miniState: Flow<PlayerSnapshot?> = _state.flatMapLatest { s ->
+        if (s == null) {
+            flowOf(null)
+        } else {
+            flow {
+                while (true) {
+                    val p = controller?.takeIf { it.isConnected }
+                    emit(
+                        s.copy(
+                            positionMs = p?.currentPosition?.coerceAtLeast(0) ?: s.positionMs,
+                            durationMs = p?.duration?.takeIf { it > 0 } ?: s.durationMs,
+                        ),
+                    )
+                    // Paused, the position only changes on seeks (a player event that restarts this flow).
+                    if (!s.playWhenReady) break
+                    delay(1_000)
+                }
+            }
+        }
+    }
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = refresh()
@@ -152,6 +181,10 @@ class AudioController(private val context: Context) {
             if (p.playbackState == Player.STATE_IDLE) p.prepare()
             p.play()
         }
+    }
+
+    fun seekTo(positionMs: Long) {
+        player()?.seekTo(positionMs.coerceAtLeast(0))
     }
 
     /** Position updates are not events: the screen calls this on its own clock. */

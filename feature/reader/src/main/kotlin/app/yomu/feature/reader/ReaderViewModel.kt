@@ -139,7 +139,7 @@ data class ReaderPosition(
 )
 
 /** Where a slider position would lead: shown in the bubble while dragging. */
-data class SeekPreview(val page: Int, val pages: Int, val approximate: Boolean, val chapterTitle: String?)
+data class SeekPreview(val page: Int, val pages: Int, val approximate: Boolean, val chapterTitle: String?, val minutesLeft: Int? = null)
 
 /** The place before a jump (slider, contents, search, "go to page"), to return with one tap. */
 data class JumpBack(val locator: Locator, val page: Int)
@@ -209,6 +209,11 @@ class ReaderViewModel(
     val toc: StateFlow<List<TocItem>> = _toc
     private val _position = MutableStateFlow(ReaderPosition())
     val position: StateFlow<ReaderPosition> = _position
+
+    /** Where the chapters start on the book slider (0..1), drawn as ticks so the slider shows the book's structure. */
+    private val _chapterStarts = MutableStateFlow<List<Float>>(emptyList())
+    val chapterStarts: StateFlow<List<Float>> = _chapterStarts
+    private var chapterStartsFor: Any? = null
 
     val chromeVisible = MutableStateFlow(false)
     val selection = MutableStateFlow<ReaderSelection?>(null)
@@ -657,6 +662,7 @@ class ReaderViewModel(
         // Reports that belong to a chapter the controller already left would move the saved position backwards.
         if (chapter != c.chapter) return
         val doc = c.document
+        updateChapterStarts(doc)
         chapterLengths[chapter] = progress.total
         markActivity()
         if (lastPage != progress.page || lastOffset == null) sessionPages++
@@ -728,17 +734,20 @@ class ReaderViewModel(
     override fun onSelection(selection: EpubSelection?) {
         val c = (current() as? ReaderContent.Text)?.controller ?: return
         this.selection.value = selection?.takeIf { it.text.isNotBlank() }?.let {
-            ReaderSelection(it.text, cssRect(it.left, it.top, it.right, it.bottom), c.chapter, it.start, it.end, it.sentence)
+            // A long strip spans several chapters: the runtime says which one the selection is in.
+            val chapter = it.chapter.takeIf { ch -> ch >= 0 } ?: c.chapter
+            ReaderSelection(it.text, cssRect(it.left, it.top, it.right, it.bottom), chapter, it.start, it.end, it.sentence)
         }
     }
 
     override fun onWord(word: EpubWord) {
         val c = (current() as? ReaderContent.Text)?.controller ?: return
+        val chapter = word.chapter.takeIf { ch -> ch >= 0 } ?: c.chapter
         wordTap.value = WordTap(
             word = word.word,
             sentence = word.sentence,
             anchor = cssRect(word.left, word.top, word.right, word.bottom),
-            locator = Locator(chapter = c.chapter, offset = word.start, endOffset = word.end, text = word.word, chapterTitle = c.document.chapterTitle(c.chapter)),
+            locator = Locator(chapter = chapter, offset = word.start, endOffset = word.end, text = word.word, chapterTitle = c.document.chapterTitle(chapter)),
         )
     }
 
@@ -1132,6 +1141,16 @@ class ReaderViewModel(
     }
 
     // ================================================================== page numbers & jumps
+    private fun updateChapterStarts(doc: app.yomu.feature.reader.epub.TextDocument) {
+        if (chapterStartsFor === doc) return
+        chapterStartsFor = doc
+        _chapterStarts.value = if (doc.chapterCount <= 1) {
+            emptyList()
+        } else {
+            (1 until doc.chapterCount).map { doc.totalProgression(it, 0f) }.filter { it in 0.002f..0.998f }.distinct()
+        }
+    }
+
     /** Book weight units per screen page, measured on chapters long enough to be representative. */
     private var weightPerPage = 0f
     private var hereLocator: Locator? = null
@@ -1152,20 +1171,28 @@ class ReaderViewModel(
         return (before + progress.page + 1).coerceAtMost(all) to all
     }
 
-    /** What the slider at [value] (0..1 of the book) points to. */
-    fun seekPreview(value: Float): SeekPreview {
+    /** What the slider at [value] (0..1 of the book) points to; [cpm] is the user's reading speed. */
+    fun seekPreview(value: Float, cpm: Float = 1000f): SeekPreview {
         val p = _position.value
+        // Reading time to the target, from the time left in the book and how far the target is from the end. It is an
+        // estimate like the page count itself, so the card says "min left" without a decimal precision it cannot have.
+        val minutesLeft = if (p.charsLeftInBook > 0 && p.total < 0.999f) {
+            (((1f - value.coerceIn(0f, 1f)) / (1f - p.total).coerceAtLeast(0.001f)) * p.charsLeftInBook / cpm.coerceAtLeast(1f))
+                .toInt().takeIf { it in 1..6000 }
+        } else {
+            null
+        }
         return when (val c = current()) {
             is ReaderContent.Text -> {
                 val doc = c.controller.document
                 val (ch, _) = doc.locate(value.coerceIn(0f, 1f))
                 val pages = p.bookPages.coerceAtLeast(1)
-                SeekPreview((value * (pages - 1)).toInt() + 1, pages, p.approximate, doc.chapterTitle(ch))
+                SeekPreview((value * (pages - 1)).toInt() + 1, pages, p.approximate, doc.chapterTitle(ch), minutesLeft)
             }
             else -> {
                 val pages = p.pages.coerceAtLeast(1)
                 val page = (value * (pages - 1)).toInt()
-                SeekPreview(page + 1, pages, false, _toc.value.lastOrNull { it.chapter <= page }?.title)
+                SeekPreview(page + 1, pages, false, _toc.value.lastOrNull { it.chapter <= page }?.title, minutesLeft)
             }
         }
     }
@@ -1185,8 +1212,11 @@ class ReaderViewModel(
     }
 
     private fun rememberJump() {
+        // Before the engine reports anything there is no place to return to: "Back to page 1" from a fresh book is noise.
         val l = hereLocator ?: return
-        val jump = JumpBack(l, _position.value.bookPage)
+        val page = _position.value.bookPage
+        if (page <= 0) return
+        val jump = JumpBack(l, page)
         if (jumpStack.lastOrNull()?.locator == jump.locator) return
         jumpStack.addLast(jump)
         while (jumpStack.size > JUMP_STACK_MAX) jumpStack.removeFirst()
@@ -1207,7 +1237,8 @@ class ReaderViewModel(
 
     /** Slider: 0..1 over the whole publication. */
     fun seekTotal(value: Float) {
-        rememberJump()
+        // A nudge of a percent is not a jump worth a "back" chip; a real move still is.
+        if (kotlin.math.abs(value - _position.value.total) > 0.03f) rememberJump()
         when (val c = current()) {
             is ReaderContent.Text -> {
                 val (ch, p) = c.controller.document.locate(value)
@@ -1798,6 +1829,14 @@ class ReaderViewModel(
                 if (c.controller.chapter < c.controller.document.chapterCount - 1) {
                     ttsChapter = -1
                     c.controller.nextChapter()
+                    // A long strip scrolls into the next chapter instead of loading it, so no onReady arrives: read on
+                    // from its first sentence once the runtime has reported the new position.
+                    if (textSettings.value.longStrip) {
+                        viewModelScope.launch(ScreenErrors) {
+                            delay(500)
+                            if (_ttsActive.value) speakTextFrom(c.controller, 0)
+                        }
+                    }
                 } else {
                     stopTts()
                     finishBook()
