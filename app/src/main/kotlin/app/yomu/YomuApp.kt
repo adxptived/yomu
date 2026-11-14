@@ -76,6 +76,10 @@ class YomuApp : Application(), SingletonImageLoader.Factory {
             clientCustomizer = { it.addNetworkInterceptor(TrafficMeter.interceptor) },
         )
 
+        // One process, one Koin. Robolectric creates several application instances in one JVM; a previous test can
+        // leave its Koin running, and starting a second one throws and fails every later test, so a leftover
+        // container is closed first. In the app itself this is the first and only start.
+        if (org.koin.core.context.GlobalContext.getOrNull() != null) org.koin.core.context.stopKoin()
         startKoin {
             androidContext(this@YomuApp)
             modules(yomuModules)
