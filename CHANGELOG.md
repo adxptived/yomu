@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.7.0 — covers ready before you look, and a bar that stays
+
+> **Install.** Installs over 2.6.0 if signed with the same key. No database migration.
+
+### Covers and the catalog
+
+- **Covers are kept on the device.** The picture cache moved out of the system cache directory (Android may empty it at any moment) into the app's own folder, so a cover seen once opens at once on the next start and stays there offline. The old cache directory is removed on the first launch after the update.
+- **A pull-to-refresh refreshes the pictures too.** Pulling down in the library asks again for the covers of the online shelf; on a source list and on a title page it drops the pictures of the titles being reloaded, so artwork a source replaced under the same address is visible instead of an old cached copy.
+- **The cache fills itself ahead of time.** Once the first screen has settled, the online shelf's covers are fetched in the background; in a source every loaded page is cached, not only the tiles the eye has reached. "Hide covers" and the mobile-data cover setting still apply.
+- **"Clear cache" now clears the pictures.** Settings → Storage counts the picture cache with the other caches and clears it through its owner instead of deleting the folder out from under a running image loader.
+- **Covers tint pages again after a refresh:** the dominant colour is sampled from the new picture, not from the cached one.
+
+### The long-press wheel
+
+- **It opens exactly under the finger.** The wheel's popup was limited to the platform's default width while its anchor was in window coordinates, so on some screens the ring landed away from the touch. The popup now covers the whole window (the list style too), and the audiobook cover uses the point of the touch instead of the middle of the artwork (the middle remains the fallback for TalkBack).
+
+### The app shell
+
+- **The bottom bar stays on every screen.** It used to disappear as soon as a book's details, a title page, a source or a settings section opened. It is now shown everywhere except the reader and the editor, which keep the whole screen; on non-tab screens it takes a strip of its own, so FABs, bottom buttons and the last row of a list are never under it. Tapping a tab from a detail screen returns to the tabs, and the mini player stays above the bar (or above the library's actions for selected books).
+- **Two-pane layouts follow the window, not the screen.** Split-screen and free-form windows measure their real width now, so a tablet does not keep a two-pane layout that no longer fits.
+
+### YouTube audiobooks
+
+- **Only the audio track is fetched.** The player tries audio-only streams from every client before any client's video-with-sound; the muxed video remains a last resort for videos that offer nothing else. Less traffic, a faster start, and the video track stays disabled in the player.
+
 ## 2.6.0 — the whole book in one strip, and a player out of the way
 
 > **Install.** Installs over 2.5.0 if signed with the same key. No database migration.

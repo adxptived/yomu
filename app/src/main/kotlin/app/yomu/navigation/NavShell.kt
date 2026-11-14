@@ -46,14 +46,18 @@ private const val BAR_EXIT_MS = 200
  * of on every frame of the animation (that relayout of the whole navigation host was what made the old expand/shrink
  * animation stutter).
  *
- * The floating bar (1.8.0) reserves no strip of its own: the content takes the whole height and the bar is drawn over
- * it, so the screens show through around the pill. The top-level screens leave room for it in their lists, FABs and
- * snackbars through [app.yomu.core.ui.components.LocalNavBarInset]. A rail still takes its width beside the content.
+ * On the top-level screens the floating bar (1.8.0) reserves no strip of its own: the content takes the whole height
+ * and the bar is drawn over it, so the screens show through around the pill; they leave room for it in their lists,
+ * FABs and snackbars through [app.yomu.core.ui.components.LocalNavBarInset]. Everywhere else ([reserveBottom]) the bar
+ * keeps the same look but takes its own strip at the bottom, so a detail screen's buttons and lists are never hidden
+ * under it. A rail still takes its width beside the content.
  */
 @Composable
 fun NavShell(
     type: NavigationSuiteType,
     visible: Boolean,
+    /** The bar is not floating over the content but keeps a strip of its own (screens that are not tabs). */
+    reserveBottom: Boolean = false,
     items: List<NavItem>,
     selected: Int,
     showLabels: Boolean,
@@ -118,7 +122,10 @@ fun NavShell(
                 barPlaceables.forEach { it.place(0, 0) }
             }
         } else {
-            val contentPlaceables = contentMeasurables.map { it.measure(Constraints.fixed(width, height)) }
+            val barHeight = barPlaceables.maxOfOrNull { it.height } ?: 0
+            // A detail screen keeps the bar's strip: its content ends above the pill instead of running under it.
+            val contentHeight = if (reserveBottom && visible) (height - barHeight).coerceAtLeast(0) else height
+            val contentPlaceables = contentMeasurables.map { it.measure(Constraints.fixed(width, contentHeight)) }
             layout(width, height) {
                 contentPlaceables.forEach { it.place(0, 0) }
                 barPlaceables.forEach { it.place(0, height - it.height) }

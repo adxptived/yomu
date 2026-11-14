@@ -90,9 +90,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -129,6 +134,7 @@ import app.yomu.domain.model.AudioPositions
 import me.saket.telephoto.zoomable.coil3.ZoomableAsyncImage
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicReference
 import app.yomu.core.ui.R as CoreR
 
 private val SPEEDS = listOf(0.75f, 1f, 1.1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
@@ -536,16 +542,40 @@ private fun PlayerCover(
     onOpen: () -> Unit,
     onLongPress: (Offset) -> Unit,
 ) {
-    // The long press opens the wheel at the middle of the cover, in window coordinates.
+    // The wheel opens under the finger, in window coordinates. A press without a position (TalkBack) falls back to
+    // the middle of the cover, where the artwork is.
+    val coords = remember { AtomicReference<LayoutCoordinates?>(null) }
+    val down = remember { AtomicReference(Offset.Unspecified) }
     var center by remember { mutableStateOf(Offset.Unspecified) }
     Box(
         modifier
             .shadow(24.dp, RoundedCornerShape(18.dp))
             .clip(RoundedCornerShape(18.dp))
             .onGloballyPositioned { c ->
-                if (c.isAttached) center = c.localToWindow(Offset(c.size.width / 2f, c.size.height / 2f))
+                if (c.isAttached) {
+                    coords.set(c)
+                    center = c.localToWindow(Offset(c.size.width / 2f, c.size.height / 2f))
+                }
             }
-            .combinedClickable(onClick = onOpen, onLongClick = { onLongPress(center) }),
+            // The down point is in the cover's own coordinates; it is converted to the window in the long press.
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.type == PointerEventType.Press) event.changes.firstOrNull()?.let { down.set(it.position) }
+                    }
+                }
+            }
+            .combinedClickable(
+                onClick = onOpen,
+                onLongClick = {
+                    val local = down.get()
+                    val at = coords.get()?.takeIf { it.isAttached }?.let { c ->
+                        if (local.isSpecified) c.localToWindow(local) else center
+                    } ?: center
+                    onLongPress(at)
+                },
+            ),
     ) {
         CoverImage(model, title, Modifier.fillMaxSize())
         // The visible way to see the whole artwork; the same action sits in the long-press wheel.

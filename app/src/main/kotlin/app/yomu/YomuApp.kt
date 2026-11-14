@@ -6,13 +6,16 @@ import androidx.appcompat.app.AppCompatDelegate
 import app.yomu.compat.tachiyomi.TachiyomiCompat
 import app.yomu.core.common.AppError
 import app.yomu.core.common.ErrorLog
+import app.yomu.core.common.ImageCache
 import app.yomu.core.datastore.AppSettings
 import app.yomu.core.network.DataSaver
 import app.yomu.core.network.NetworkClients
 import app.yomu.core.network.NetworkMonitor
 import app.yomu.core.network.TrafficMeter
+import app.yomu.core.ui.components.CoverCache
 import app.yomu.data.audio.YouTubeAuth
 import app.yomu.data.book.pdf.PdfAnnotationStore
+import app.yomu.data.catalog.CatalogRepository
 import app.yomu.data.di.dataModule
 import app.yomu.data.work.Notifications
 import app.yomu.data.work.WorkScheduler
@@ -45,6 +48,7 @@ import coil3.request.crossfade
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -67,6 +71,8 @@ class YomuApp : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         ErrorLog.install(this, BuildConfig.VERSION_NAME)
         if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
+        // Pictures moved out of the cache directory (they are kept across starts now): the old copy is dead weight.
+        cacheDir.resolve("images").deleteRecursively()
 
         // Host objects for Mihon/Tachiyomi extensions (Injekt) must exist before any extension class is loaded.
         TachiyomiCompat.init(
@@ -83,6 +89,15 @@ class YomuApp : Application(), SingletonImageLoader.Factory {
         startKoin {
             androidContext(this@YomuApp)
             modules(yomuModules)
+        }
+
+        // Settings → Storage clears the pictures through the image loader, so its own files are not pulled apart
+        // while it is still using them.
+        ImageCache.clear = {
+            SingletonImageLoader.get(this).apply {
+                diskCache?.clear()
+                memoryCache?.clear()
+            }
         }
 
         YouTubeAuth.init(this)
@@ -135,6 +150,15 @@ class YomuApp : Application(), SingletonImageLoader.Factory {
             runCatching { get<WorkScheduler>().scheduleAll() }.onFailure { Timber.w(it, "Scheduling background work failed") }
             if (!BuildConfig.DEBUG && settings.verboseLogging.flow.first()) Timber.plant(Timber.DebugTree())
         }
+        // Covers of the online shelf are fetched once the first screen has settled, so a later entry loads them from
+        // the device (and they are there offline). Hidden covers are not fetched at all.
+        appScope.launch {
+            delay(COVER_WARMUP_DELAY_MS)
+            runCatching {
+                if (settings.hideCovers.flow.first()) return@runCatching
+                CoverCache.warm(this@YomuApp, get<CatalogRepository>().observeFavorites().first().map { it.coverUrl })
+            }.onFailure { Timber.w(it, "Warming covers failed") }
+        }
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader {
@@ -145,7 +169,9 @@ class YomuApp : Application(), SingletonImageLoader.Factory {
                 add(CoverTrafficInterceptor)
             }
             .memoryCache { MemoryCache.Builder().maxSizePercent(context, 0.20).build() }
-            .diskCache { DiskCache.Builder().directory(cacheDir.resolve("images")).maxSizeBytes(256L * 1024 * 1024).build() }
+            // A cover seen once is there on the next start and offline: the folder is the app's own, not a cache the
+            // system may empty.
+            .diskCache { DiskCache.Builder().directory(ImageCache.dir(context)).maxSizeBytes(256L * 1024 * 1024).build() }
             .crossfade(true)
             .build()
     }
@@ -163,6 +189,9 @@ class YomuApp : Application(), SingletonImageLoader.Factory {
         else -> null
     }
 }
+
+/** The first screen composes first; fetching every shelf cover at the same moment would only compete with it. */
+private const val COVER_WARMUP_DELAY_MS = 3_000L
 
 /** With "Covers on mobile data" off, images from the internet come only from the cache while the network is metered. */
 private object CoverTrafficInterceptor : Interceptor {

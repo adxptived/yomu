@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,7 +88,15 @@ fun CoverImage(model: Any?, title: String, modifier: Modifier = Modifier, conten
             )
         }
         if (model != null && !LocalHideCovers.current) {
-            AsyncImage(model = model, contentDescription = null, contentScale = contentScale, modifier = Modifier.fillMaxSize())
+            // A cover from the internet is requested again after a pull to refresh; a local file changes only with
+            // its path, so it is not reloaded on every refresh.
+            if (CoverCache.remoteCoverUrl(model) != null) {
+                key(CoverCache.revision) {
+                    AsyncImage(model = model, contentDescription = null, contentScale = contentScale, modifier = Modifier.fillMaxSize())
+                }
+            } else {
+                AsyncImage(model = model, contentDescription = null, contentScale = contentScale, modifier = Modifier.fillMaxSize())
+            }
         }
     }
 }

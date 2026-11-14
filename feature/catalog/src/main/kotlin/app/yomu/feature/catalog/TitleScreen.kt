@@ -151,6 +151,7 @@ import app.yomu.core.common.Files
 import app.yomu.core.common.Share
 import app.yomu.core.network.TrafficMeter
 import app.yomu.core.ui.components.ConfirmDialog
+import app.yomu.core.ui.components.CoverCache
 import app.yomu.core.ui.components.CoverImage
 import app.yomu.core.ui.components.CoverTheme
 import app.yomu.core.ui.components.ErrorState
@@ -265,6 +266,11 @@ private fun TitleContent(
 
     val e = entry
     val isBook = e?.type == ContentType.BOOK || e?.type == ContentType.AUDIO
+    // A refresh re-reads the title and asks for its cover again: a source may have replaced the picture.
+    val refreshTitle: () -> Unit = {
+        CoverCache.refresh(context, listOf(e?.coverUrl))
+        viewModel.refresh()
+    }
     val selecting = selection.isNotEmpty()
     var wasSelecting by rememberSaveable { mutableStateOf(selecting) }
     LaunchedEffect(selecting) {
@@ -383,7 +389,7 @@ private fun TitleContent(
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.title_refresh)) },
                                     leadingIcon = { Icon(Icons.Filled.Refresh, null) },
-                                    onClick = { showMenu = false; viewModel.refresh() },
+                                    onClick = { showMenu = false; refreshTitle() },
                                 )
                                 viewModel.webUrl()?.let { url ->
                                     DropdownMenuItem(
@@ -461,7 +467,7 @@ private fun TitleContent(
             SkeletonList(Modifier.padding(padding).fillMaxSize())
             return@Scaffold
         }
-        PullToRefreshBox(isRefreshing = refreshing, onRefresh = viewModel::refresh, modifier = Modifier.padding(padding).fillMaxSize()) {
+        PullToRefreshBox(isRefreshing = refreshing, onRefresh = refreshTitle, modifier = Modifier.padding(padding).fillMaxSize()) {
             LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 96.dp)) {
                 item(key = "header") { TitleHeader(e, sourceName ?: if (sourceMissing) stringResource(R.string.source_not_installed) else null) }
                 if (sourceMissing) item(key = "missing") { MissingSourceCard(onMigrate = { onMigrate(e.id, e.title) }) }

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.withTransaction
 import app.yomu.core.common.AppError
 import app.yomu.core.common.Files
+import app.yomu.core.common.ImageCache
 import app.yomu.core.database.DownloadTaskEntity
 import app.yomu.core.database.YomuDatabase
 import app.yomu.core.datastore.AppSettings
@@ -695,7 +696,7 @@ class DownloadRepository(
         books = Files.dirSize(File(context.filesDir, "books")) + Files.dirSize(booksDir),
         chapters = Files.dirSize(chaptersDir),
         covers = Files.dirSize(File(context.filesDir, "covers")),
-        cache = Files.dirSize(context.cacheDir),
+        cache = Files.dirSize(context.cacheDir) + ImageCache.sizeOnDisk(context),
         converted = Files.dirSize(File(context.filesDir, "converted")),
     )
 
@@ -705,8 +706,10 @@ class DownloadRepository(
      */
     fun clearCache() {
         val own =
-            listOf("pages", "http", "ext_network_cache", "rar", "docx-layout", "share", "anki", "audiozip", "image_cache")
+            listOf("pages", "http", "ext_network_cache", "rar", "docx-layout", "share", "anki", "audiozip", "images")
         own.forEach { File(context.cacheDir, it).deleteRecursively() }
+        // The picture cache is closed properly by its owner (deleting its folder under a running loader breaks it).
+        ImageCache.clear?.invoke()
         context.cacheDir.listFiles()?.forEach { f ->
             if (f.isFile && (f.name.startsWith("dict_import_") || (f.name.startsWith("ext-") && f.name.endsWith(".tmp")))) f.delete()
         }

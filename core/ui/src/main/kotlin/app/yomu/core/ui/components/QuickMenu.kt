@@ -70,7 +70,12 @@ fun QuickActionMenu(radial: Boolean, anchor: Offset, items: List<QuickMenuItem>,
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
     val progress by animateFloatAsState(if (shown) 1f else 0f, spring(dampingRatio = 0.7f, stiffness = 500f), label = "quickMenu")
-    Popup(popupPositionProvider = WindowOrigin, onDismissRequest = onDismiss, properties = PopupProperties(focusable = true)) {
+    // The popup must cover the whole window: [anchor] is in window coordinates and the list is placed from it.
+    Popup(
+        popupPositionProvider = WindowOrigin,
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true, clippingEnabled = false, usePlatformDefaultWidth = false),
+    ) {
         Box(
             Modifier.fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.12f * progress))

@@ -171,8 +171,10 @@ fun RadialMenu(
     Popup(
         popupPositionProvider = WheelOrigin,
         onDismissRequest = onDismiss,
-        // While the finger is down the wheel must not take the touch stream away from it.
-        properties = PopupProperties(focusable = tappable, clippingEnabled = false),
+        // While the finger is down the wheel must not take the touch stream away from it. The window must be the
+        // whole screen: with the platform's default width the anchor (window coordinates) lands outside the popup,
+        // and the ring shows up somewhere far from the finger.
+        properties = PopupProperties(focusable = tappable, clippingEnabled = false, usePlatformDefaultWidth = false),
     ) {
         Box(
             Modifier.fillMaxSize()

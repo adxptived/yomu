@@ -36,13 +36,15 @@ private val cache = LruCache<Any, Int>(64)
 fun rememberCoverColor(model: Any?, fallback: Color? = null): Color? {
     val context = LocalContext.current
     val hidden = LocalHideCovers.current
-    val state = produceState<Color?>(null, model, hidden, fallback) {
+    // A refreshed remote cover may be a different picture, so its colour is sampled again; a local file is unchanged.
+    val key: Any = CoverCache.remoteCoverUrl(model)?.let { it to CoverCache.revision } ?: model ?: Unit
+    val state = produceState<Color?>(null, model, hidden, fallback, key) {
         if (model == null || hidden) { value = fallback; return@produceState }
-        val cached = cache[model]
+        val cached = cache[key]
         val argb = cached ?: withContext(Dispatchers.Default) {
             val request = ImageRequest.Builder(context).data(model).size(Size(SAMPLE, SAMPLE)).allowHardware(false).build()
             val bitmap = ((SingletonImageLoader.get(context).execute(request) as? SuccessResult)?.image as? BitmapImage)?.bitmap
-            (bitmap?.let(::vibrant) ?: NONE).also { cache.put(model, it) }
+            (bitmap?.let(::vibrant) ?: NONE).also { cache.put(key, it) }
         }
         value = if (argb == NONE) fallback else Color(argb)
     }

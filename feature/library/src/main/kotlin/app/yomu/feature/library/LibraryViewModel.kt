@@ -11,6 +11,7 @@ import androidx.paging.filter
 import app.yomu.core.common.ScreenErrors
 import app.yomu.core.datastore.AppSettings
 import app.yomu.core.datastore.stateIn
+import app.yomu.core.ui.components.CoverCache
 import app.yomu.data.audio.AudiobookStore
 import app.yomu.data.audio.YouTubeResult
 import app.yomu.data.catalog.CatalogRepository
@@ -358,6 +359,10 @@ class LibraryViewModel(
         viewModelScope.launch(ScreenErrors) {
             _refreshing.value = true
             try {
+                // The online shelf is the only part of the library with covers from the internet: a pull-down asks
+                // for those pictures again, so new artwork is not hidden behind the old cache.
+                val online = runCatching { catalog.observeFavorites().first() }.getOrDefault(emptyList())
+                CoverCache.refresh(context, online.map { it.coverUrl })
                 val folders = settings.scanFolders.get()
                 if (folders.isEmpty()) {
                     _events.send(LibraryEvent.Message(R.string.library_no_scan_folders))

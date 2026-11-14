@@ -42,9 +42,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
@@ -156,7 +158,10 @@ fun YomuNavigation(main: MainViewModel, reduceMotion: Boolean, navLabels: Boolea
     val shown = tabs.ifEmpty { NavTab.entries }.map(TopLevel::of)
     // The tab the app opens with is fixed for the lifetime of the screen: a new order applies from the next start.
     val tabsState = rememberSaveable(saver = TabsState.Saver) { TabsState(shown.first()) }
-    val current = if (entry?.destination?.hasRoute(HomeRoute::class) == true) tabsState.selected else null
+    val onHome = entry?.destination?.hasRoute(HomeRoute::class) == true
+    // The reader and the editor have the whole screen (text, pages, the editing canvas); every other screen keeps the
+    // bar, so another tab is always one tap away instead of a Back and a tap.
+    val immersive = entry?.destination?.let { it.hasRoute(ReaderRoute::class) || it.hasRoute(EditorRoute::class) } == true
     val context = LocalContext.current
     val resources = LocalResources.current
 
@@ -199,6 +204,9 @@ fun YomuNavigation(main: MainViewModel, reduceMotion: Boolean, navLabels: Boolea
     val navBarsBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val barInset = if (adaptive == NavigationSuiteType.NavigationBar) FloatingNavBarDefaults.height(navLabels) + navBarsBottom else 0.dp
     val incognito by main.incognito.collectAsStateWithLifecycle()
+    // The bar is on every screen but the reader and the editor. On the tabs themselves the library's own bar for
+    // selected books can take its place for a while; there is nothing to replace on a detail screen, so it stays.
+    val barVisible = !immersive && (!onHome || !barHidden.value)
     // Every screen but the reader, which keeps the whole screen for the text.
     val showIncognito = incognito && entry?.destination?.hasRoute(ReaderRoute::class) != true
     // An audiobook playing in the background: a bar on every screen but its player and the reader.
@@ -213,15 +221,15 @@ fun YomuNavigation(main: MainViewModel, reduceMotion: Boolean, navLabels: Boolea
         Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(if (topTaken) WindowInsets.statusBars else WindowInsets(0, 0, 0, 0))) {
             // The mini player floats above the navigation bar; the screens leave room for it in their lists.
             val miniRoom = if (playing != null) MINI_PLAYER_ROOM else 0.dp
-            Shell(adaptive, current, barHidden, items, shown, navLabels, tabsState, barInset + miniRoom, nav, reduceMotion)
+            Shell(adaptive, onHome, barVisible, tabsState.selected, barHidden, items, shown, navLabels, tabsState, barInset + miniRoom, nav, reduceMotion)
             playing?.let { np ->
                 MiniPlayer(
                     audio, np,
                     onOpen = { nav.navigate(ReaderRoute(bookId = np.bookId)) { launchSingleTop = true } },
                     modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = 520.dp).padding(
-                        // Above the floating bar; a top-level screen with its own bottom bar (library selection) keeps
-                        // the same room, so the mini player never sits on top of those actions.
-                        bottom = if (adaptive == NavigationSuiteType.NavigationBar && current != null) barInset else navBarsBottom,
+                        // Above the bar; a tab with its own bottom bar (library selection) keeps the same room, so
+                        // the mini player never sits on top of those actions.
+                        bottom = if (adaptive == NavigationSuiteType.NavigationBar && (barVisible || onHome)) barInset else navBarsBottom,
                     ),
                 )
             }
@@ -254,7 +262,9 @@ private fun MiniPlayer(
 @Composable
 private fun Shell(
     adaptive: NavigationSuiteType,
-    current: TopLevel?,
+    onHome: Boolean,
+    barVisible: Boolean,
+    selectedTab: TopLevel,
     barHidden: androidx.compose.runtime.MutableState<Boolean>,
     items: List<app.yomu.core.ui.components.NavItem>,
     shown: List<TopLevel>,
@@ -266,11 +276,20 @@ private fun Shell(
 ) {
     NavShell(
         type = adaptive,
-        visible = current != null && !barHidden.value,
+        visible = barVisible,
+        // A tab is drawn over its own content; any other screen keeps a strip for the bar.
+        reserveBottom = !onHome,
         items = items,
-        selected = shown.indexOf(current),
+        selected = shown.indexOf(selectedTab),
         showLabels = navLabels,
-        onSelect = { index -> shown.getOrNull(index)?.let(tabsState::select) },
+        onSelect = { index ->
+            shown.getOrNull(index)?.let { target ->
+                // From a detail screen the tab goes back to the tabs: switching the hidden tab alone would leave the
+                // same screen on top and make the tap look dead.
+                if (!onHome) nav.popBackStack(HomeRoute, inclusive = false)
+                tabsState.select(target)
+            }
+        },
         // A press already composes a tab never opened: by the time the finger lifts, it is ready to be shown.
         onPress = { index -> shown.getOrNull(index)?.let(tabsState::prepare) },
     ) {
@@ -309,7 +328,7 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
             onOpenYouTubeLogin = { nav.navigate(WebViewRoute(YouTubeAuth.SIGN_IN_URL)) },
         )
         screen<HomeRoute> {
-            val wide = LocalConfiguration.current.screenWidthDp >= TWO_PANE_MIN_WIDTH_DP
+            val wide = windowWidthDp() >= TWO_PANE_MIN_WIDTH_DP.dp
             var settingsPane by rememberSaveable { mutableStateOf(SettingsSection.APPEARANCE.name) }
             TabsHost(tabs, reduceMotion) { tab ->
                 CompositionLocalProvider(LocalNavBarInset provides LocalTabBarInset.current) {
@@ -480,7 +499,7 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
         screen<SourceRoute> { entry ->
             val r = entry.toRoute<SourceRoute>()
             // Wide windows keep the grid and show the tapped title in a pane beside it.
-            val twoPane = LocalConfiguration.current.screenWidthDp >= 840
+            val twoPane = windowWidthDp() >= 840.dp
             var paneTitle by rememberSaveable { mutableStateOf<Long?>(null) }
             val pane = paneTitle
             Row(Modifier.fillMaxSize()) {
@@ -561,6 +580,13 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
  */
 private val LocalTabBarInset = compositionLocalOf { 0.dp }
 
+/**
+ * Width of the window the app actually has. A split-screen or free-form window is narrower than the screen, so
+ * [androidx.compose.ui.platform.LocalConfiguration.screenWidthDp] would keep a two-pane layout that no longer fits.
+ */
+@Composable
+private fun windowWidthDp(): Dp = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() }
+
 /** A destination that exposes its animation scope for shared cover transitions. */
 private inline fun <reified T : Any> NavGraphBuilder.screen(crossinline content: @Composable AnimatedContentScope.(androidx.navigation.NavBackStackEntry) -> Unit) {
     composable<T> { entry ->
@@ -579,7 +605,7 @@ private fun LibraryTab(nav: NavHostController, tabs: TabsState) {
         }
     }
     // Wide windows keep the grid and show the details of the tapped book in a pane beside it.
-    val twoPane = LocalConfiguration.current.screenWidthDp >= 840
+    val twoPane = windowWidthDp() >= 840.dp
     var paneBook by rememberSaveable { mutableStateOf<Long?>(null) }
     val library: @Composable (Modifier) -> Unit = { modifier ->
         Box(modifier) {

@@ -52,6 +52,7 @@ class AudioParsersTest {
         ).jsonObject
         val list = YouTubeClient.candidates(response, mapOf("User-Agent" to "ua"))
         assertEquals(listOf("140", "251", "18", "hls"), list.map { it.url.substringAfterLast('/') })
+        assertEquals(listOf(true, true, false, false), list.map { it.audioOnly })
         assertTrue(list.last().isHls)
         assertEquals("ua", list.first().headers["User-Agent"])
     }

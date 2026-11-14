@@ -42,7 +42,10 @@ data class YouTubeStream(
     val isHls: Boolean,
     val headers: Map<String, String>,
     val contentLength: Long? = null,
-)
+) {
+    /** Audio alone: an audiobook never needs the pictures, and they are most of the bytes. */
+    val audioOnly: Boolean get() = mimeType?.startsWith("audio/") == true
+}
 
 /** A search result: a video or a playlist. */
 data class YouTubeResult(
@@ -224,6 +227,9 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
         var networkError: IOException? = null
         var answered = false
         val failures = mutableListOf<String>()
+        // Everything every client offered, so the second pass can fall back to sound-with-video only when no client
+        // has a working audio-only stream at all.
+        val offered = mutableListOf<YouTubeStream>()
         for (c in clients()) {
             val response = try {
                 postPlayer(c, videoId)
@@ -255,16 +261,23 @@ class YouTubeClient(private val client: () -> OkHttpClient) {
                 "Referer" to "https://www.youtube.com/",
                 "Origin" to "https://www.youtube.com",
             )
-            val candidates = candidates(response, headers).filter { !progressive || !it.isHls }
-            if (candidates.isEmpty()) {
+            val formats = candidates(response, headers).filter { !progressive || !it.isHls }
+            if (formats.isEmpty()) {
                 // Every format needs a signature that this client does not hand out (the iOS one often does).
                 failures += "${c.name}: no direct stream"
                 continue
             }
-            for (candidate in candidates) {
-                if (reachable(candidate)) return@withContext candidate.also { streams[key] = it }
+            offered += formats
+            // The audio of every client is tried before any client's picture: the second pass below only runs when
+            // no audio-only stream answered, and then a video with sound is better than a book that will not open.
+            formats.filter { it.audioOnly }.firstOrNull { reachable(it) }?.let { audio ->
+                return@withContext audio.also { streams[key] = it }
             }
-            failures += "${c.name}: stream not reachable"
+            if (formats.any { it.audioOnly }) failures += "${c.name}: audio not reachable"
+        }
+        offered.filterNot { it.audioOnly }.firstOrNull { reachable(it) }?.let { video ->
+            Timber.d("No audio-only YouTube stream for %s: using %s", videoId, video.mimeType)
+            return@withContext video.also { streams[key] = it }
         }
         // Without any answer the network is the problem, not YouTube: callers retry those later.
         if (!answered && networkError != null) throw networkError

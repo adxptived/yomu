@@ -96,9 +96,11 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import app.yomu.core.common.AppError
 import app.yomu.core.ui.components.BookGridItem
 import app.yomu.core.ui.components.BookListItem
+import app.yomu.core.ui.components.CoverCache
 import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.ErrorState
 import app.yomu.core.ui.components.ExpandVisibility
+import app.yomu.core.ui.components.LocalHideCovers
 import app.yomu.core.ui.components.LocalReduceMotion
 import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.SkeletonGrid
@@ -316,6 +318,12 @@ private fun BrowseList(
     LaunchedEffect(refresh) {
         if (refresh is LoadState.Error && items.itemCount > 0) snackbar.showSnackbar(errorMessage(context, refresh.error))
     }
+    // Every loaded page is cached, not just the tiles the eye has reached: scrolling stays smooth and the covers of
+    // this list are there on the next visit. "Hide covers" means no pictures are fetched at all.
+    val hideCovers = LocalHideCovers.current
+    LaunchedEffect(items.itemCount, hideCovers) {
+        if (!hideCovers) CoverCache.warm(context, items.itemSnapshotList.items.map { it.thumbnailUrl })
+    }
     // The refresh indicator only spins for refreshes that start while titles are shown (pull to refresh). The first
     // page can arrive a frame before its "loaded" state: without this the indicator would flash in and out.
     var settled by remember(items) { mutableStateOf(false) }
@@ -335,7 +343,16 @@ private fun BrowseList(
         empty && refresh is LoadState.NotLoading && items.loadState.append.endOfPaginationReached ->
             EmptyState(title = stringResource(R.string.browse_nothing), icon = Icons.Outlined.SearchOff, modifier = modifier.fillMaxSize())
         empty -> if (listMode) SkeletonList(modifier.fillMaxSize()) else SkeletonGrid(modifier.fillMaxSize())
-        else -> PullToRefreshBox(isRefreshing = settled && refresh is LoadState.Loading, onRefresh = { items.refresh() }, modifier = modifier.fillMaxSize()) {
+        else -> PullToRefreshBox(
+            isRefreshing = settled && refresh is LoadState.Loading,
+            onRefresh = {
+                // A source may replace a cover under the same address: those pictures are dropped before the list
+                // asks for them again.
+                CoverCache.refresh(context, items.itemSnapshotList.items.map { it.thumbnailUrl })
+                items.refresh()
+            },
+            modifier = modifier.fillMaxSize(),
+        ) {
             if (listMode) {
                 LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = Dimens.xl)) {
                     items(count = items.itemCount, key = { i -> items.stableKey(i) }) { i ->

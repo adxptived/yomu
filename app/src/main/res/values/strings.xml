@@ -54,6 +54,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_7_0">
+        <item>Covers are kept on the device: one seen once opens instantly on the next start and works offline, and a pull-to-refresh updates the pictures of the online shelf.</item>
+        <item>The long-press wheel now opens exactly under your finger — everywhere, including the audiobook cover.</item>
+        <item>The bottom bar stays on every screen except the reader and the editor, and never covers buttons or the last row of a list.</item>
+        <item>YouTube audiobooks fetch only the audio track, and two-pane screens follow the real window width in split-screen.</item>
+    </string-array>
     <string-array name="whats_new_2_6_0">
         <item>Long strip scrolls the whole book: neighbouring chapters flow into one page, up and down, with progress, highlights and read-aloud following along.</item>
         <item>The page slider holds its place, shows chapter boundaries and names the chapter; “Back to page” only appears after a real jump and hides by itself.</item>
