@@ -341,6 +341,7 @@
         <item quantity="other">Всего %d произведения за период</item>
     </plurals>
     <!-- Page position -->
+    <string name="reader_preparing_pages">Раскладываем страницы…</string>
     <string name="reader_page_short">Стр. %1$d из %2$s</string>
     <string name="reader_of_pages">из %1$s</string>
     <string name="reader_page_in_chapter">стр. %1$d/%2$d главы</string>

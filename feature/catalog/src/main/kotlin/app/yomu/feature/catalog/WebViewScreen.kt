@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
 import app.yomu.core.common.Share
 import app.yomu.core.ui.components.RequireWebView
+import app.yomu.core.ui.components.aboveNavBar
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.source.SourceNetwork
 import app.yomu.core.ui.R as CoreR
@@ -104,9 +105,11 @@ fun WebViewScreen(url: String, onBack: () -> Unit) {
             }
         },
     ) { padding ->
-        RequireWebView(Modifier.padding(padding)) {
+        // A web page cannot scroll under the pill: it ends above it, leaving the bar its room.
+        val insets = Modifier.padding(padding.aboveNavBar())
+        RequireWebView(insets) {
             AndroidView(
-                modifier = Modifier.padding(padding).fillMaxSize(),
+                modifier = insets.fillMaxSize(),
                 factory = { ctx ->
                     WebView(ctx).apply {
                         settings.javaScriptEnabled = true

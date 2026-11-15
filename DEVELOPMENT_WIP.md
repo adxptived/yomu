@@ -2,6 +2,14 @@
 
 Based on 2.0.4. Version numbers follow the releases (2.0.5, 2.0.6). Do not distribute this tree as a finished build.
 
+## Text reader paging and the floating bar (2.8.0)
+
+- **A whole book is one paginated document.** `BookHtml` stitches every chapter into a cached HTML file under `cacheDir/book-html` (sections, absolute URLs, one shared stylesheet); `reader.js` paginates it with CSS columns and starts each chapter at a column boundary. Page turns cross chapters as ordinary scrolls, `EpubProgress` reports exact book pages and chapter page starts, and the slip of byte weights is gone from the normal path. Over 6 MB/600 chapters, fixed layout and vertical text keep the per-chapter engine.
+- **A Word file is one document**: `DocxConverter` no longer cuts at Heading 1; headings become contents anchors (`EpubBuilder.addTocEntry`). Converted books are cached in `converted/v2` and rebuilt once.
+- **RTL pages** put their columns in an element scroller (`#yomu-scroller`/`#yomu-columns`): Chromium lays RTL multicol columns to the left of a body-level container and paints nothing there. The same wrapper is created for a single-chapter RTL document and removed when the reading mode changes.
+- **The floating bar has no scrim and no reserved strip on any screen.** `LocalNavBarInset` is provided to every destination; lists add `navBarBottomPadding`, `Scaffold`s use `topLevelContentInsets`, and non-scrolling content uses `PaddingValues.aboveNavBar()`.
+- Not verified on a device: the CSS `break-before: column` behaviour in Android WebView and the memory/time cost of the first whole-book layout. The paginator was exercised in headless Chromium (the same Blink engine) in paged, RTL, long-strip and scroll modes, with highlights, a textless chapter and a reading-mode switch.
+
 ## Stage 1 sync completion (2.0.5)
 
 - Conflicts no longer end in a single error line: sync problems are recorded per item (kind, subject, detail, target) in `filesDir/sync/problems.json`, and Settings → Sync opens a conflicts screen listing them with dismiss/clear. Raising a problem still never deletes or overwrites data.

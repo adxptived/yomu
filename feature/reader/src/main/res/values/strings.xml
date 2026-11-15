@@ -340,6 +340,7 @@
         <item quantity="other">%d titles in this period</item>
     </plurals>
     <!-- Page position -->
+    <string name="reader_preparing_pages">Laying out the pages…</string>
     <string name="reader_page_short">Page %1$d of %2$s</string>
     <string name="reader_of_pages">of %1$s</string>
     <string name="reader_page_in_chapter">page %1$d/%2$d of chapter</string>

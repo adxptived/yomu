@@ -58,6 +58,7 @@ import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.ViewAgenda
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -225,6 +226,8 @@ fun ReaderScreen(
     val cpm by produceState(1000f) { value = viewModel.readingSpeed() }
     val jumpBack by viewModel.jumpBack.collectAsStateWithLifecycle()
     val chapterStarts by viewModel.chapterStarts.collectAsStateWithLifecycle()
+    val preparing by viewModel.preparing.collectAsStateWithLifecycle()
+    val textReady by viewModel.textReady.collectAsStateWithLifecycle()
     val selectionMenuStyle by viewModel.selectionMenuStyle.collectAsStateWithLifecycle()
     val pageMenu by viewModel.pageMenu.collectAsStateWithLifecycle()
     val pageMenuStyle by viewModel.pageMenuStyle.collectAsStateWithLifecycle()
@@ -248,6 +251,7 @@ fun ReaderScreen(
     var quickPanel by rememberSaveable { mutableStateOf(false) }
     var tapZonesDone by rememberSaveable { mutableStateOf(false) }
     var goToPage by rememberSaveable { mutableStateOf(false) }
+    var readyTimedOut by remember { mutableStateOf(false) }
     var lastInteraction by remember { mutableLongStateOf(System.currentTimeMillis()) }
     // Written on every pointer event without recomposing the reader (35 state reads) for each finger movement.
     val interactionClock = remember { java.util.concurrent.atomic.AtomicLong(0L) }
@@ -474,7 +478,20 @@ fun ReaderScreen(
     ) {
         val stateColor = if (imageCanvas) Color(0xFFE3E3E3) else Color(readerText.foreground)
         when (val s = content) {
-            UiState.Loading -> ReaderSkeleton(stateColor)
+            UiState.Loading -> Box(Modifier.fillMaxSize()) {
+                ReaderSkeleton(stateColor)
+                // The first open of a book lays out the whole publication as one document: say so, with progress.
+                preparing?.let { p ->
+                    Column(
+                        Modifier.align(Alignment.Center).padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(stringResource(R.string.reader_preparing_pages), color = stateColor, style = MaterialTheme.typography.bodyMedium)
+                        LinearProgressIndicator(progress = { p.coerceIn(0f, 1f) }, modifier = Modifier.widthIn(max = 260.dp))
+                    }
+                }
+            }
             UiState.Empty -> CompositionLocalProvider(LocalContentColor provides stateColor) {
                 EmptyState(stringResource(R.string.reader_no_text))
             }
@@ -495,6 +512,31 @@ fun ReaderScreen(
                 }
                 is ReaderContent.Pdf -> PdfReaderView(c.controller, viewModel, readerText, landscape)
                 is ReaderContent.Manga -> MangaReaderView(c.controller, viewModel, landscape, hasPrev, hasNext)
+            }
+        }
+
+        // A WebView that cannot be created reports its own error instead of the page: after a few seconds it must show.
+        LaunchedEffect(data, textReady) {
+            readyTimedOut = false
+            if (data is ReaderContent.Text && !textReady) {
+                delay(5_000)
+                readyTimedOut = true
+            }
+        }
+        // The first page of chapter 0 is laid out before the WebView can jump to the restored page: hide that moment.
+        if (data is ReaderContent.Text && !textReady && !readyTimedOut) {
+            Box(
+                Modifier.fillMaxSize().background(Color(readerText.background)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator()
+                    Text(
+                        stringResource(R.string.reader_preparing_pages),
+                        color = Color(readerText.foreground),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
         }
 
@@ -970,9 +1012,11 @@ private fun ReaderBottomBar(
                     pending = null
                 }
             }
-            LaunchedEffect(position.total) {
+            LaunchedEffect(position.total, position.bookPages) {
                 val p = pending
-                if (p != null && kotlin.math.abs(position.total - p) < 0.02f) pending = null
+                // A page seek lands on the nearest page, so a short book can differ by more than 2 %: allow one page.
+                val tolerance = if (position.bookPages > 1) maxOf(0.02f, 0.75f / (position.bookPages - 1)) else 0.02f
+                if (p != null && kotlin.math.abs(position.total - p) < tolerance) pending = null
             }
             val shown = dragging ?: pending ?: position.total
             val percent = (shown * 100).toInt().coerceIn(0, 100)

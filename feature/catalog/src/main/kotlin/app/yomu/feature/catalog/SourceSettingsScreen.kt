@@ -21,6 +21,7 @@ import androidx.preference.DialogPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceGroup
+import app.yomu.core.ui.components.aboveNavBar
 import app.yomu.data.source.SourceManager
 import app.yomu.data.source.tachiyomi.TachiyomiSource
 import eu.kanade.tachiyomi.source.ConfigurableSource
@@ -49,8 +50,9 @@ fun SourceSettingsScreen(sourceId: Long, onBack: () -> Unit) {
             )
         },
     ) { padding ->
+        // A source's own preference screen cannot scroll under the pill: it ends above it.
         AndroidFragment<SourcePreferencesFragment>(
-            modifier = Modifier.padding(padding).fillMaxSize(),
+            modifier = Modifier.padding(padding.aboveNavBar()).fillMaxSize(),
             arguments = bundleOf(SourcePreferencesFragment.ARG_SOURCE to sourceId),
         )
     }

@@ -103,6 +103,7 @@ import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.motionItem
+import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.domain.export.AnnotationFormat
 import app.yomu.domain.model.HighlightColor
@@ -294,7 +295,7 @@ fun AnnotationsScreen(
                 }
                 is UiState.Error -> ErrorState(s.error, onRetry = viewModel::retry)
                 is UiState.Data -> LazyColumn(
-                    contentPadding = PaddingValues(horizontal = Dimens.l, vertical = Dimens.s),
+                    contentPadding = PaddingValues(start = Dimens.l, top = Dimens.s, end = Dimens.l, bottom = navBarBottomPadding(Dimens.s)),
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     item(key = "swipe-hint") { OneTimeHint("annotations_swipe", stringResource(R.string.hint_annotations_swipe), Modifier.fillMaxWidth()) }

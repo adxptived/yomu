@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
@@ -20,12 +19,9 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.dp
 import app.yomu.core.ui.components.FloatingNavBar
 import app.yomu.core.ui.components.LocalReduceMotion
 import app.yomu.core.ui.components.NavItem
@@ -46,18 +42,14 @@ private const val BAR_EXIT_MS = 200
  * of on every frame of the animation (that relayout of the whole navigation host was what made the old expand/shrink
  * animation stutter).
  *
- * On the top-level screens the floating bar (1.8.0) reserves no strip of its own: the content takes the whole height
- * and the bar is drawn over it, so the screens show through around the pill; they leave room for it in their lists,
- * FABs and snackbars through [app.yomu.core.ui.components.LocalNavBarInset]. Everywhere else ([reserveBottom]) the bar
- * keeps the same look but takes its own strip at the bottom, so a detail screen's buttons and lists are never hidden
- * under it. A rail still takes its width beside the content.
+ * The floating bar reserves no strip of its own on any screen: the content takes the whole height and the bar is drawn
+ * over it, so the page shows through around the pill. Screens leave room for it in their lists, FABs and snackbars
+ * through [app.yomu.core.ui.components.LocalNavBarInset]. A rail still takes its width beside the content.
  */
 @Composable
 fun NavShell(
     type: NavigationSuiteType,
     visible: Boolean,
-    /** The bar is not floating over the content but keeps a strip of its own (screens that are not tabs). */
-    reserveBottom: Boolean = false,
     items: List<NavItem>,
     selected: Int,
     showLabels: Boolean,
@@ -88,15 +80,8 @@ fun NavShell(
             if (horizontal) {
                 YomuNavRail(items, selected, onSelect, slide, onPress = onPress)
             } else if (type == NavigationSuiteType.NavigationBar) {
-                // A fade from the page colour behind the pill, so lists don't run into it. It has no pointer input:
-                // touches above the pill still reach the screen below.
-                val bg = MaterialTheme.colorScheme.background
-                Box(
-                    slide.background(Brush.verticalGradient(0f to Color.Transparent, 0.5f to bg.copy(alpha = 0.82f), 1f to bg))
-                        .padding(top = 20.dp),
-                ) {
-                    FloatingNavBar(items, selected, showLabels, onSelect, onPress = onPress)
-                }
+                // No scrim and no reserved strip: the pill floats over the page, exactly like on the tabs.
+                FloatingNavBar(items, selected, showLabels, onSelect, slide, onPress = onPress)
             }
         }
     }
@@ -122,10 +107,8 @@ fun NavShell(
                 barPlaceables.forEach { it.place(0, 0) }
             }
         } else {
-            val barHeight = barPlaceables.maxOfOrNull { it.height } ?: 0
-            // A detail screen keeps the bar's strip: its content ends above the pill instead of running under it.
-            val contentHeight = if (reserveBottom && visible) (height - barHeight).coerceAtLeast(0) else height
-            val contentPlaceables = contentMeasurables.map { it.measure(Constraints.fixed(width, contentHeight)) }
+            // Every screen takes the whole height: the bar floats over it and the screens leave room in their lists.
+            val contentPlaceables = contentMeasurables.map { it.measure(Constraints.fixed(width, height)) }
             layout(width, height) {
                 contentPlaceables.forEach { it.place(0, 0) }
                 barPlaceables.forEach { it.place(0, height - it.height) }

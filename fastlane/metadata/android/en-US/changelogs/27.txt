@@ -1,0 +1,1 @@
+Text books are one continuous document: page turns cross chapters, page numbers are exact and the slider matches real pages. Word files keep Heading 1 in the contents instead of splitting into chapters. The bottom bar floats over every screen, and RTL and long-strip pages render correctly.

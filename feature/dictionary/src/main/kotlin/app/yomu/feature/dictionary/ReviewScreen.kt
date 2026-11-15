@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.SkeletonBox
+import app.yomu.core.ui.components.aboveNavBar
 import app.yomu.core.ui.components.rememberHaptic
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.domain.model.ReviewMode
@@ -84,7 +85,7 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
+        Column(Modifier.padding(padding.aboveNavBar()).fillMaxSize()) {
             Column(Modifier.padding(horizontal = Dimens.l)) {
                 Text(stringResource(R.string.review_daily, s.reviewedToday, s.goal), style = MaterialTheme.typography.labelMedium)
                 LinearProgressIndicator(progress = { (s.reviewedToday.toFloat() / s.goal.coerceAtLeast(1)).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(vertical = Dimens.xs))

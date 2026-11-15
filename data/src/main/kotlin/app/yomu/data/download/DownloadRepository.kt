@@ -706,7 +706,7 @@ class DownloadRepository(
      */
     fun clearCache() {
         val own =
-            listOf("pages", "http", "ext_network_cache", "rar", "docx-layout", "share", "anki", "audiozip", "images")
+            listOf("pages", "http", "ext_network_cache", "rar", "docx-layout", "book-html", "share", "anki", "audiozip", "images")
         own.forEach { File(context.cacheDir, it).deleteRecursively() }
         // The picture cache is closed properly by its owner (deleting its folder under a running loader breaks it).
         ImageCache.clear?.invoke()

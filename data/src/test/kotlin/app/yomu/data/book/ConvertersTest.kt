@@ -1,8 +1,10 @@
 package app.yomu.data.book
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.io.ByteArrayInputStream
 
 class ConvertersTest {
     @Test
@@ -62,5 +64,38 @@ class ConvertersTest {
         val conv = HtmlConverter.convert("<html><head><title>Page</title></head><body><h1>Head</h1><p>Body text</p></body></html>".toByteArray(), "page.html")
         assertTrue(conv.builder.chapters.isNotEmpty())
         assertTrue(conv.builder.chapters.joinToString { it.xhtml }.contains("Body text"))
+    }
+
+    @Test
+    fun `docx is one document with its headings as a contents outline`() {
+        val xml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Chapter One</w:t></w:r></w:p>
+                <w:p><w:r><w:t>First paragraph.</w:t></w:r></w:p>
+                <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Chapter Two</w:t></w:r></w:p>
+                <w:p><w:r><w:t>Second paragraph.</w:t></w:r></w:p>
+              </w:body>
+            </w:document>
+        """.trimIndent()
+        val conv = DocxConverter.convert(MapContainer(mapOf("word/document.xml" to xml.toByteArray())), "report.docx")
+        // No cut at Heading 1: the whole document is one chapter, so pages never reset between headings.
+        assertEquals(1, conv.builder.chapters.size)
+        assertEquals(listOf("Chapter One", "Chapter Two"), conv.builder.toc.map { it.title })
+        assertEquals(listOf("yomu-h1-1", "yomu-h1-2"), conv.builder.toc.map { it.anchor })
+        assertEquals(conv.builder.chapters[0].href, conv.builder.toc[0].href)
+        val body = conv.builder.chapters[0].xhtml
+        assertTrue(body.contains("First paragraph."), body)
+        assertTrue(body.contains("Second paragraph."), body)
+        assertTrue(body.contains("id=\"yomu-h1-2\""), body)
+        assertNotNull(conv.builder.toc[1].anchor)
+    }
+
+    private class MapContainer(private val files: Map<String, ByteArray>) : ResourceContainer {
+        override val entries: List<String> = files.keys.toList()
+        override val entrySet: Set<String> = files.keys
+        override fun open(path: String) = files[path]?.let { ByteArrayInputStream(it) }
+        override fun close() = Unit
     }
 }

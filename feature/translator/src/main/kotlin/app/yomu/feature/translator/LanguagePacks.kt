@@ -44,6 +44,7 @@ import app.yomu.core.ui.components.PreferenceHeader
 import app.yomu.core.ui.components.PreferenceSwitch
 import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.data.translation.MlKitEngine
 import app.yomu.data.translation.TranslationService
 import kotlinx.coroutines.channels.Channel
@@ -117,7 +118,7 @@ fun LanguagePacksScreen(viewModel: LanguagePacksViewModel, onBack: () -> Unit) {
             SkeletonList(Modifier.padding(padding))
             return@Scaffold
         }
-        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 24.dp)) {
+        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = navBarBottomPadding(24.dp))) {
             item {
                 Column {
                     Text(

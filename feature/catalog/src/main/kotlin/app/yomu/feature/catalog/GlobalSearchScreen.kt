@@ -47,6 +47,7 @@ import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.FilterChipsRow
 import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.source.SourceContent
 import app.yomu.core.ui.R as CoreR
@@ -120,7 +121,7 @@ fun GlobalSearchScreen(
         }
         val shown = if (onlyWithResults) list.filter { it.loading || it.items.isNotEmpty() } else list
         val answered = list.count { !it.loading }
-        LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = Dimens.xl)) {
+        LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
             if (list.isEmpty()) item(key = "no-sources") { EmptyState(title = stringResource(R.string.sources_empty), modifier = Modifier.fillMaxWidth()) }
             if (list.isNotEmpty()) {
                 item(key = "summary") {

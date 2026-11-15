@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -57,6 +56,7 @@ import app.yomu.core.common.Share
 import app.yomu.core.common.UiState
 import app.yomu.core.ui.components.ErrorState
 import app.yomu.core.ui.components.RequireWebView
+import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.data.book.Containers
 import app.yomu.data.book.docx.DocxLayout
 import app.yomu.data.repository.BookRepositoryImpl
@@ -311,7 +311,7 @@ fun DocxLayoutScreen(viewModel: DocxLayoutViewModel, onBack: () -> Unit, onOpenT
                             pages = pages,
                             approximate = !laidOut,
                             onClick = { goTo = true },
-                            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = navBarBottomPadding(16.dp)),
                         )
                     }
                 }

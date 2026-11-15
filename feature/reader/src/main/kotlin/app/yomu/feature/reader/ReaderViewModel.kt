@@ -57,8 +57,10 @@ import app.yomu.domain.model.TextPreset
 import app.yomu.domain.model.TextReaderSettings
 import app.yomu.domain.model.TocItem
 import app.yomu.domain.text.TextTools
+import app.yomu.feature.reader.epub.BookHtml
 import app.yomu.feature.reader.epub.ChapterText
 import app.yomu.feature.reader.epub.EpubController
+import app.yomu.feature.reader.epub.EpubLayout
 import app.yomu.feature.reader.epub.EpubListener
 import app.yomu.feature.reader.epub.EpubProgress
 import app.yomu.feature.reader.epub.EpubSelection
@@ -132,7 +134,7 @@ data class ReaderPosition(
     val chapterTitle: String? = null,
     val charsLeftInChapter: Int = 0,
     val charsLeftInBook: Long = 0,
-    /** 1-based page in the whole book: exact for PDF and comics, estimated from the chapter sizes for text books. */
+    /** 1-based page in the whole book: exact for PDF, comics and a whole-book text document; estimated otherwise. */
     val bookPage: Int = 0,
     val bookPages: Int = 0,
     val approximate: Boolean = false,
@@ -214,6 +216,17 @@ class ReaderViewModel(
     private val _chapterStarts = MutableStateFlow<List<Float>>(emptyList())
     val chapterStarts: StateFlow<List<Float>> = _chapterStarts
     private var chapterStartsFor: Any? = null
+
+    /** First page of every chapter of a whole-book document (index = chapter); drives page → chapter previews. */
+    private val _chapterStartPages = MutableStateFlow<List<Int>>(emptyList())
+
+    /** 0..1 while the whole-book document is being built (first open), null when the reader can show the page. */
+    private val _preparing = MutableStateFlow<Float?>(null)
+    val preparing: StateFlow<Float?> = _preparing
+
+    /** True once the WebView has laid the text out and jumped to the saved position; before that the page is hidden. */
+    private val _textReady = MutableStateFlow(false)
+    val textReady: StateFlow<Boolean> = _textReady
 
     val chromeVisible = MutableStateFlow(false)
     val selection = MutableStateFlow<ReaderSelection?>(null)
@@ -469,10 +482,31 @@ class ReaderViewModel(
                         withContext(Dispatchers.IO) { EpubTextDocument.open(Containers.open(context, uri, BookFormat.EPUB)) }
                     // An empty or unreadable book would show a blank page with no explanation.
                     if (doc.chapterCount < 1) throw AppError.CorruptedFile("The book has no readable chapters")
-                    val c = newTextController(doc)
+                    // The whole publication as one document: pages cross chapters, page numbers are exact.
+                    // A book that cannot fit in one document — or is set to vertical text, which pages along the
+                    // other axis — keeps the per-chapter engine (null here).
+                    val text = bookOverride.value.text ?: runCatching { settings.textSettings.get() }.getOrDefault(TextReaderSettings())
+                    val sourceKey = BookHtml.sourceKey(context, uri)
+                    _preparing.value = 0f
+                    val wholeBook = if (text.verticalText) {
+                        null
+                    } else {
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                BookHtml.prepare(context, b.id, sourceKey, doc) { p -> _preparing.value = p }
+                            }
+                        }.onFailure { Timber.w(it, "Whole-book document failed") }.getOrNull()
+                    }
+                    _preparing.value = null
+                    val c = newTextController(doc, wholeBook)
                     _toc.value = doc.toc
                     initialTarget = if (saved != null) {
-                        if (saved.offset == null && saved.progression == 0f && saved.totalProgression > 0f) {
+                        if (saved.chapter !in 0 until doc.chapterCount) {
+                            // The file was re-converted (a Word document is one chapter now): the old chapter number
+                            // means nothing, so the whole-book progression is the closest place.
+                            val (ch, p) = doc.locate(saved.totalProgression)
+                            ch to EpubTarget.Progression(p)
+                        } else if (saved.offset == null && saved.progression == 0f && saved.totalProgression > 0f) {
                             val (ch, p) = doc.locate(saved.totalProgression)
                             ch to EpubTarget.Progression(p)
                         } else {
@@ -520,9 +554,11 @@ class ReaderViewModel(
         } finally { lease?.close() }
     }
 
-    private fun newTextController(doc: app.yomu.feature.reader.epub.TextDocument): EpubController {
-        val c = EpubController(context, doc, File(context.filesDir, "fonts").apply { mkdirs() })
+    private fun newTextController(doc: app.yomu.feature.reader.epub.TextDocument, wholeBook: File? = null): EpubController {
+        val c = EpubController(context, doc, File(context.filesDir, "fonts").apply { mkdirs() }, wholeBook)
         c.listener = this
+        _textReady.value = false
+        _chapterStartPages.value = emptyList()
         c.columns = textColumns(effectiveText.value, landscape.value)
         c.updateSettings(effectiveText.value, relayout = false)
         c.footerSpace = common.value.footer
@@ -639,6 +675,8 @@ class ReaderViewModel(
 
     /** Called by the screen every time a WebView is attached (first open and after configuration changes). */
     fun onWebViewAttached(c: EpubController) {
+        // The old page must not flash before the new WebView has laid the text out and jumped to the position.
+        _textReady.value = false
         if (!attachedOnce) {
             attachedOnce = true
             val (ch, target) = initialTarget ?: (0 to null)
@@ -650,6 +688,7 @@ class ReaderViewModel(
 
     // ================================================================== text listener
     override fun onReady(chapter: Int) {
+        _textReady.value = true
         pushHighlights()
         val c = (current() as? ReaderContent.Text)?.controller ?: return
         c.setSavedWords(savedWords.value.toList())
@@ -657,38 +696,71 @@ class ReaderViewModel(
         if (_ttsActive.value && ttsChapter != chapter) viewModelScope.launch(ScreenErrors) { delay(300); speakTextFrom(c, 0) }
     }
 
+    /** Exact page starts of a whole-book document: the page chip, the chapter ticks and the seek preview. */
+    override fun onLayout(layout: EpubLayout) {
+        if (layout.pages <= 0) return
+        _chapterStartPages.value = layout.starts
+        _chapterStarts.value = if (layout.pages <= 1) {
+            emptyList()
+        } else {
+            val marks = layout.starts.filter { it in 1 until layout.pages }
+                .map { it.toFloat() / (layout.pages - 1) }
+                .filter { it in 0.002f..0.998f }
+                .distinct()
+            // A novel can have hundreds of chapters: keep the track readable (and the canvas cheap) for the eye.
+            val step = ((marks.size + 79) / 80).coerceAtLeast(1)
+            marks.filterIndexed { index, _ -> index % step == 0 }
+        }
+        // The page chip is right before the first scroll report after a reflow.
+        _position.value = _position.value.copy(bookPages = layout.pages, approximate = false)
+    }
+
     override fun onProgress(chapter: Int, progress: EpubProgress) {
         val c = (current() as? ReaderContent.Text)?.controller ?: return
         // Reports that belong to a chapter the controller already left would move the saved position backwards.
         if (chapter != c.chapter) return
         val doc = c.document
-        updateChapterStarts(doc)
+        if (!c.wholeBook) updateChapterStarts(doc)
         chapterLengths[chapter] = progress.total
         markActivity()
         if (lastPage != progress.page || lastOffset == null) sessionPages++
         lastOffset?.let { if (progress.offset > it) sessionChars += (progress.offset - it).coerceAtMost(5000) }
         lastOffset = progress.offset
         lastPage = progress.page
-        val total = doc.totalProgression(chapter, progress.progression)
+        val whole = c.wholeBook
+        val exactPages = whole && progress.bookPages > 0 && progress.bookPage >= 0
+        val exactChars = whole && progress.bookTotal > 0
+        val total = when {
+            exactPages && c.pagedBook -> progress.bookPage.toFloat() / (progress.bookPages - 1).coerceAtLeast(1)
+            exactChars -> progress.bookOffset.toFloat() / progress.bookTotal.coerceAtLeast(1)
+            else -> doc.totalProgression(chapter, progress.progression)
+        }.coerceIn(0f, 1f)
         val charsLeft = (progress.total - progress.offset).coerceAtLeast(0)
-        val totalWeight = (0 until doc.chapterCount).sumOf { doc.weight(it).coerceAtLeast(1) }
-        val (bookPage, bookPages) = estimatePages(doc, chapter, progress)
+        val (bookPage, bookPages) = if (exactPages) progress.bookPage + 1 to progress.bookPages else estimatePages(doc, chapter, progress)
+        // The weights of every chapter are only needed for the estimate; a whole-book document knows the exact rest.
+        val leftInBook = if (exactChars) {
+            (progress.bookTotal - progress.bookOffset).coerceAtLeast(0).toLong()
+        } else {
+            val totalWeight = (0 until doc.chapterCount).sumOf { doc.weight(it).coerceAtLeast(1) }
+            ((1f - total) * totalWeight).toLong().coerceAtLeast(charsLeft.toLong())
+        }
+        val title = doc.chapterTitle(chapter)
         hereLocator = Locator(chapter = chapter, progression = progress.progression, totalProgression = total, offset = progress.offset)
         _position.value = ReaderPosition(
             bookPage = bookPage,
             bookPages = bookPages,
-            approximate = doc.chapterCount > 1,
+            approximate = if (whole) false else doc.chapterCount > 1,
             chapter = chapter,
             chapterCount = doc.chapterCount,
             page = progress.page,
             pages = progress.pages,
             progression = progress.progression,
             total = total,
-            chapterTitle = doc.chapterTitle(chapter),
+            chapterTitle = title,
             charsLeftInChapter = charsLeft,
-            charsLeftInBook = ((1f - total) * totalWeight).toLong().coerceAtLeast(charsLeft.toLong()),
+            charsLeftInBook = leftInBook,
         )
-        scheduleSave(Locator(chapter = chapter, progression = progress.progression, totalProgression = total, offset = progress.offset, chapterTitle = doc.chapterTitle(chapter)))
+        scheduleSave(Locator(chapter = chapter, progression = progress.progression, totalProgression = total, offset = progress.offset, chapterTitle = title))
     }
 
     override fun onTap(x: Float, y: Float) {
@@ -770,6 +842,11 @@ class ReaderViewModel(
 
     override fun onEdgeReached(forward: Boolean) {
         val c = (current() as? ReaderContent.Text)?.controller ?: return
+        // A whole-book document has one edge: the end of the book. Chapters inside it are ordinary page turns.
+        if (c.wholeBook) {
+            if (forward) finishBook()
+            return
+        }
         if (forward) {
             if (c.chapter < c.document.chapterCount - 1) c.nextChapter()
             else if (isOnline && hasNextChapter.value) openAdjacentChapter(true)
@@ -1185,9 +1262,16 @@ class ReaderViewModel(
         return when (val c = current()) {
             is ReaderContent.Text -> {
                 val doc = c.controller.document
-                val (ch, _) = doc.locate(value.coerceIn(0f, 1f))
                 val pages = p.bookPages.coerceAtLeast(1)
-                SeekPreview((value * (pages - 1)).toInt() + 1, pages, p.approximate, doc.chapterTitle(ch), minutesLeft)
+                val page = ((value.coerceIn(0f, 1f) * (pages - 1)).toInt() + 1).coerceAtMost(pages)
+                val title = if (c.controller.wholeBook) {
+                    val starts = _chapterStartPages.value
+                    val ch = if (starts.isEmpty()) p.chapter else starts.indexOfLast { it <= page - 1 }.coerceAtLeast(0)
+                    doc.chapterTitle(ch) ?: p.chapterTitle
+                } else {
+                    doc.chapterTitle(doc.locate(value.coerceIn(0f, 1f)).first)
+                }
+                SeekPreview(page, pages, p.approximate, title, minutesLeft)
             }
             else -> {
                 val pages = p.pages.coerceAtLeast(1)
@@ -1197,13 +1281,18 @@ class ReaderViewModel(
         }
     }
 
-    /** Jumps to the 1-based [page] of the whole book (estimated for text books). */
+    /** Jumps to the 1-based [page] of the whole book. */
     fun goToPage(page: Int) {
         val p = _position.value
         when (val c = current()) {
             is ReaderContent.Text -> {
-                val pages = p.bookPages.coerceAtLeast(1)
-                seekTotal(((page - 1).toFloat() / (pages - 1).coerceAtLeast(1)).coerceIn(0f, 1f))
+                if (c.controller.pagedBook && p.bookPages > 1) {
+                    rememberJump()
+                    c.controller.goToPage((page - 1).coerceIn(0, p.bookPages - 1))
+                } else {
+                    val pages = p.bookPages.coerceAtLeast(1)
+                    seekTotal(((page - 1).toFloat() / (pages - 1).coerceAtLeast(1)).coerceIn(0f, 1f))
+                }
             }
             is ReaderContent.Pdf -> { rememberJump(); c.controller.goTo((page - 1).coerceIn(0, c.controller.pageCount - 1)) }
             is ReaderContent.Manga -> { rememberJump(); c.controller.goTo((page - 1).coerceIn(0, c.controller.count - 1)) }
@@ -1241,8 +1330,18 @@ class ReaderViewModel(
         if (kotlin.math.abs(value - _position.value.total) > 0.03f) rememberJump()
         when (val c = current()) {
             is ReaderContent.Text -> {
-                val (ch, p) = c.controller.document.locate(value)
-                c.controller.goTo(ch, EpubTarget.Progression(p))
+                val pages = _position.value.bookPages
+                when {
+                    // A whole book laid out as pages: the thumb is a page, the jump is a page, both exact.
+                    c.controller.pagedBook && pages > 0 ->
+                        c.controller.goToPage((value.coerceIn(0f, 1f) * (pages - 1)).toInt().coerceIn(0, pages - 1))
+                    // A whole book scrolled as one document: the thumb is the text position.
+                    c.controller.wholeBook -> c.controller.goToProgression(value.coerceIn(0f, 1f))
+                    else -> {
+                        val (ch, p) = c.controller.document.locate(value)
+                        c.controller.goTo(ch, EpubTarget.Progression(p))
+                    }
+                }
             }
             is ReaderContent.Pdf -> c.controller.goTo((value * (c.controller.pageCount - 1)).toInt())
             is ReaderContent.Manga -> c.controller.goTo((value * (c.controller.count - 1)).toInt())

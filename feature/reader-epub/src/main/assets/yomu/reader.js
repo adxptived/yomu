@@ -6,7 +6,7 @@
   'use strict';
   var B = window.YomuBridge || { onReady: function () {}, onProgress: function () {}, onTap: function () {}, onSelection: function () {},
     onSelectionCleared: function () {}, onWord: function () {}, onLink: function () {}, onImage: function () {}, onFootnote: function () {},
-    onEdge: function () {}, onChapterEdge: function () {}, onStripRange: function () {}, onHighlightTap: function () {},
+    onEdge: function () {}, onChapterEdge: function () {}, onStripRange: function () {}, onLayout: function () {}, onHighlightTap: function () {},
     footnote: function () { return ''; }, log: function () {} };
   var cfg = window.__yomuConfig || {};
   var SKIP = 'data-yomu-skip';
@@ -18,7 +18,15 @@
   var drawnHighlights = [];
   var marks = {};
   var savedWords = [];
+  var savedWordRe = null;
   var cache = null;
+  // Page of each chapter's first character in a paged whole-book document; rebuilt after every reflow.
+  var pageStarts = null;
+  // Direction the book itself declares, read once before the reader sets the page direction.
+  var docRtl = null;
+  // Right-to-left page layout needs the columns in their own scroller: Chromium paints nothing when multicol is put
+  // directly on the body in RTL (the columns fall outside the scrolled area).
+  var pageScroller = null;
   var lastReport = '';
   var selectionShown = false;
   var anchorOffset = null;
@@ -38,7 +46,11 @@
     return false;
   }
   function isStrip() { return !!cfg.strip && !cfg.paged && !cfg.fixed && !cfg.vertical; }
+  // A document with several chapters as sections: the whole book (paged or scrolling) or the long strip.
+  function isSectioned() { return !!cfg.book || isStrip(); }
   function sectionOfNode(n) {
+    if (!n) return null;
+    if (n.nodeType === 1 && n.hasAttribute && n.hasAttribute('data-yomu-chapter')) return n;
     var p = n.parentNode;
     while (p && p !== document.body) {
       if (p.nodeType === 1 && p.hasAttribute('data-yomu-chapter')) return p;
@@ -64,10 +76,30 @@
       list.push(e); map.set(n, e); off += e.len;
       if (sec) sec.len = off - sec.start;
     }
+    // A chapter may have no text at all — a full-page illustration. It still owns a chapter and its page: give it an
+    // empty span at its place in the document, or the page map and "chapter N of M" silently skip it.
+    var all = document.body.querySelectorAll('section[data-yomu-chapter]');
+    if (all.length && sections.length !== all.length) {
+      var byEl = new Map();
+      for (var k = 0; k < sections.length; k++) byEl.set(sections[k].el, sections[k]);
+      var ordered = [], pos = 0;
+      for (var j = 0; j < all.length; j++) {
+        var el = all[j], s = byEl.get(el);
+        if (!s) {
+          s = { el: el, chapter: Number(el.getAttribute('data-yomu-chapter')), start: pos, len: 0 };
+          byChapter.set(s.chapter, s);
+        }
+        ordered.push(s);
+        pos = s.start + s.len;
+      }
+      sections = ordered;
+    }
     cache = { list: list, map: map, total: off, sections: sections, byChapter: byChapter };
     return cache;
   }
-  function invalidate() { cache = null; }
+  function invalidate() { cache = null; pageStarts = null; }
+  // A layout change (font, margins, columns, screen, a late picture) does not touch the text: the node map stays valid.
+  function invalidatePages() { pageStarts = null; }
   function posToOffset(c, o) {
     var m = nodes();
     if (c.nodeType === 3) {
@@ -106,16 +138,16 @@
 
   // ---------------------------------------------------------------- chapter sections (long strip)
   function sectionAt(off) {
-    if (!isStrip()) return null;
+    if (!isSectioned()) return null;
     var secs = nodes().sections, hit = null;
     for (var i = 0; i < secs.length; i++) { if (off >= secs[i].start) hit = secs[i]; else break; }
     return hit || (secs.length ? secs[0] : null);
   }
-  function currentSection() { return isStrip() ? sectionAt(firstVisibleOffset()) : null; }
+  function currentSection() { return isSectioned() ? sectionAt(firstVisibleOffset()) : null; }
   function currentChapter() { var s = currentSection(); return s ? s.chapter : (cfg.chapter != null ? cfg.chapter : 0); }
   function baseOf(chapter) { var s = nodes().byChapter.get(chapter); return s ? s.start : null; }
   function toGlobal(chapter, off) {
-    if (!isStrip()) return off;
+    if (!isSectioned()) return off;
     var b = baseOf(chapter);
     return b == null ? null : b + off;
   }
@@ -126,7 +158,7 @@
   }
   function sectionText(sec) {
     if (!sec) return fullText();
-    return fullText().substring(sec.start, sec.start + sec.len);
+    return textBetween(sec.start, sec.start + sec.len);
   }
   /** Pages of a scrolling chapter, only for the page number and its estimate: 1500 characters is roughly one screen. */
   function estimatePages(chars) { return Math.max(1, Math.round(chars / 1500)); }
@@ -148,8 +180,55 @@
     if (!(width >= 10 && width <= 20000 && height >= 10 && height <= 20000)) return [1024, 768];
     return [width, height];
   }
+  /**
+   * Paged RTL keeps its columns in their own scroll container. Chromium lays RTL multicol columns out to the left of
+   * the container; on the body itself that area is outside the document's scroller and the page paints as nothing.
+   */
+  function ensurePageStructure(wanted) {
+    var existing = document.getElementById('yomu-scroller');
+    if (wanted && !existing) {
+      var host = document.createElement('div');
+      host.id = 'yomu-columns';
+      var scroller = document.createElement('div');
+      scroller.id = 'yomu-scroller';
+      scroller.appendChild(host);
+      var moved = [];
+      for (var node = document.body.firstChild; node; node = node.nextSibling) {
+        if (node.nodeType === 1 && (node.id === 'yomu-prev' || node.id === 'yomu-next')) continue;
+        moved.push(node);
+      }
+      moved.forEach(function (n) { host.appendChild(n); });
+      document.body.appendChild(scroller);
+      // The decoration layers belong to the scrolled content, not to the document.
+      ['yomu-hl', 'yomu-marks', 'yomu-words'].forEach(function (id) {
+        var l = document.getElementById(id);
+        if (l) scroller.appendChild(l);
+      });
+    } else if (!wanted && existing) {
+      var host = document.getElementById('yomu-columns');
+      if (host) {
+        while (host.firstChild) document.body.insertBefore(host.firstChild, existing);
+      }
+      ['yomu-hl', 'yomu-marks', 'yomu-words'].forEach(function (id) {
+        var l = document.getElementById(id);
+        if (l) document.documentElement.appendChild(l);
+      });
+      existing.remove();
+    }
+    pageScroller = wanted ? document.getElementById('yomu-scroller') : null;
+  }
+
   function applyLayout() {
-    se = document.scrollingElement || document.documentElement;
+    // The book may not say it, and the user can force it: the page direction is part of the layout, not the markup.
+    if (docRtl === null) {
+      try {
+        docRtl = document.documentElement.dir === 'rtl' || getComputedStyle(document.body).direction === 'rtl';
+      } catch (e) { docRtl = false; }
+    }
+    var rtl = !!(cfg.rtl || docRtl);
+    try { document.documentElement.dir = rtl ? 'rtl' : 'ltr'; } catch (e) { /* ignore */ }
+    ensurePageStructure(cfg.paged && !cfg.fixed && !cfg.vertical && rtl);
+    se = pageScroller || document.scrollingElement || document.documentElement;
     pageW = window.innerWidth; pageH = window.innerHeight;
     var mh = cfg.marginH || 20, mv = cfg.marginV || 28;
     var st = document.getElementById('yomu-layout');
@@ -172,12 +251,24 @@
       var colW = Math.floor((pageW - 2 * mh * cols) / cols);
       // The status line (page, clock) lives in the bottom margin: keep it free of text.
       var mb = cfg.footer ? Math.max(mv, 30) : mv;
-      css = 'html{height:' + pageH + 'px!important;overflow:hidden!important;margin:0!important;padding:0!important;}' +
-        'body{margin:0!important;padding:' + mv + 'px ' + mh + 'px ' + mb + 'px ' + mh + 'px!important;height:' + pageH + 'px!important;box-sizing:border-box!important;' +
-        'column-width:' + colW + 'px!important;column-gap:' + (2 * mh) + 'px!important;column-fill:auto!important;overflow:visible!important;' +
-        'max-width:none!important;width:auto!important;}' +
-        'img,svg,video{max-height:' + (pageH - mv - mb - 4) + 'px!important;max-width:100%!important;object-fit:contain;break-inside:avoid;}' +
-        'p,li,h1,h2,h3,h4,h5,h6{orphans:2;widows:2;}';
+      var columnCss = 'column-width:' + colW + 'px!important;column-gap:' + (2 * mh) + 'px!important;column-fill:auto!important;overflow:visible!important;' +
+        'max-width:none!important;width:auto!important;';
+      var pageCss = 'img,svg,video{max-height:' + (pageH - mv - mb - 4) + 'px!important;max-width:100%!important;object-fit:contain;break-inside:avoid;}' +
+        'p,li,h1,h2,h3,h4,h5,h6{orphans:2;widows:2;}' +
+        // Each chapter starts on a page of its own: chapter page counts never depend on the neighbour before it.
+        'section[data-yomu-chapter]{display:block;break-before:column;-webkit-column-break-before:always;}' +
+        'body > section[data-yomu-chapter]:first-child,#yomu-columns > section[data-yomu-chapter]:first-child{break-before:auto;-webkit-column-break-before:auto;}';
+      if (pageScroller) {
+        // RTL: the scroller and the columns are elements; see ensurePageStructure.
+        css = 'html,body{height:' + pageH + 'px!important;overflow:hidden!important;margin:0!important;padding:0!important;}' +
+          '#yomu-scroller{position:relative;width:' + pageW + 'px;height:' + pageH + 'px;overflow-x:auto;overflow-y:hidden;direction:rtl;touch-action:none;}' +
+          '#yomu-columns{position:relative;height:' + pageH + 'px!important;box-sizing:border-box!important;padding:' + mv + 'px ' + mh + 'px ' + mb + 'px ' + mh + 'px!important;' +
+          columnCss + 'direction:rtl;}' + pageCss;
+      } else {
+        css = 'html{height:' + pageH + 'px!important;overflow:hidden!important;margin:0!important;padding:0!important;}' +
+          'body{margin:0!important;padding:' + mv + 'px ' + mh + 'px ' + mb + 'px ' + mh + 'px!important;height:' + pageH + 'px!important;box-sizing:border-box!important;' +
+          columnCss + '}' + pageCss;
+      }
     } else {
       css = 'html{overflow-x:hidden;}body{margin:0!important;padding:' + mv + 'px ' + mh + 'px ' + (cfg.footer ? Math.max(mv, 30) : mv) + 'px ' + mh + 'px!important;box-sizing:border-box;}' +
         'img,svg,video{max-width:100%!important;height:auto;}' +
@@ -191,28 +282,24 @@
     if (cfg.paged || cfg.vertical || cfg.chapterButtons === false) { ['yomu-prev', 'yomu-next'].forEach(function (id) { var e = document.getElementById(id); if (e) e.remove(); }); return; }
     if (cfg.hasPrev && !document.getElementById('yomu-prev')) {
       var p = document.createElement('div'); p.id = 'yomu-prev'; p.className = 'yomu-nav'; p.setAttribute(SKIP, '1'); p.textContent = cfg.prevLabel || '‹';
-      p.addEventListener('click', function (e) { e.stopPropagation(); B.onEdge('prev'); });
+      // In a whole-book document the arrows move a chapter (the app's edge means the end of the book there).
+      p.addEventListener('click', function (e) { e.stopPropagation(); if (cfg.book) chapterStep(-1); else B.onEdge('prev'); });
       document.body.insertBefore(p, document.body.firstChild);
     }
     if (cfg.hasNext && !document.getElementById('yomu-next')) {
       var n = document.createElement('div'); n.id = 'yomu-next'; n.className = 'yomu-nav'; n.setAttribute(SKIP, '1'); n.textContent = cfg.nextLabel || '›';
-      n.addEventListener('click', function (e) { e.stopPropagation(); B.onEdge('next'); });
+      n.addEventListener('click', function (e) { e.stopPropagation(); if (cfg.book) chapterStep(1); else B.onEdge('next'); });
       document.body.appendChild(n);
     }
   }
-  // A landscape spread moves by the content width (window minus both margins), not by the window width:
-  // two columns plus the gutter occupy exactly that width, so page turns never drift.
-  function pageStep() {
-    if (cfg.paged && !cfg.vertical && (cfg.columns || 1) > 1) {
-      var mh = cfg.marginH || 20;
-      return Math.max(1, pageW - 2 * mh);
-    }
-    return pageW;
-  }
+  // A page turn always advances by the window width, whatever the column count: the body's margins live inside that
+  // width, so the next column (or spread) starts exactly one window further. (The old 2-column step subtracted both
+  // margins and drifted by 40–80 px per turn.)
+  function pageStep() { return pageW; }
   function pageCount() {
     if (cfg.fixed || !cfg.paged || cfg.vertical) return 1;
     // The laid-out width is a multiple of the window width: one page, or one spread of two columns.
-    return Math.max(1, Math.round(se.scrollWidth / pageW));
+    return Math.max(1, Math.round((se.scrollWidth - 1) / pageW));
   }
   function currentPage() { return cfg.fixed ? 0 : Math.round(Math.abs(se.scrollLeft) / pageStep()); }
   function setPage(i, smooth) {
@@ -243,61 +330,193 @@
     if (cfg.paged) { var n = pageCount(); return n <= 1 ? 1 : currentPage() / (n - 1); }
     var m = se.scrollHeight - pageH; return m <= 0 ? 1 : Math.min(1, se.scrollTop / m);
   }
+  /** Pages of a scrolling whole-book document: one screen is one page. */
+  function scrollPageCount() { return Math.max(1, Math.round((se.scrollHeight - pageH) / pageH) + 1); }
+  function currentScrollPage() { return Math.max(0, Math.min(scrollPageCount() - 1, Math.round(se.scrollTop / pageH))); }
+  function indexOfSection(sec) {
+    var secs = nodes().sections;
+    for (var i = 0; i < secs.length; i++) if (secs[i] === sec) return i;
+    return -1;
+  }
+  /** The first column rect of a section (a section is fragmented into one rect per column). */
+  function sectionRect(sec) {
+    if (sec.len > 0) return rangeFor(sec.start, sec.start + 1).getBoundingClientRect();
+    var rects = sec.el.getClientRects();
+    return rects.length ? rects[0] : sec.el.getBoundingClientRect();
+  }
+  /** Page where a chapter starts. Chapters always begin at a column boundary (`break-before: column`). */
+  function pageStartsMap() {
+    if (pageStarts) return pageStarts;
+    var secs = nodes().sections, out = [];
+    var mh = cfg.marginH || 20, rtl = isRtlDoc();
+    for (var i = 0; i < secs.length; i++) {
+      var page = 0;
+      try {
+        var rc = sectionRect(secs[i]);
+        // Distance from the leading edge of the content, in window widths: a page of a spread is one width.
+        // The rect is in viewport coordinates, so the scroll position turns it into a content position.
+        var x = rtl ? pageW - (rc.right + se.scrollLeft) : rc.left + se.scrollLeft;
+        // A chapter can start in either column of a spread: both belong to the same page.
+        page = Math.max(0, Math.floor((x - mh) / pageW + 0.001));
+      } catch (e) { page = 0; }
+      // A chapter can never start before the one above it: rounding must not steal its pages.
+      if (i > 0 && page < out[i - 1]) page = out[i - 1];
+      out.push(page);
+    }
+    pageStarts = out;
+    return out;
+  }
+  function sectionStartPage(sec) {
+    var i = indexOfSection(sec);
+    return i < 0 ? 0 : pageStartsMap()[i];
+  }
+  function sectionPageCount(sec) {
+    var i = indexOfSection(sec);
+    if (i < 0) return 1;
+    var map = pageStartsMap();
+    var end = i + 1 < map.length ? map[i + 1] : pageCount();
+    return Math.max(1, end - map[i]);
+  }
+  function sectionAtPage(page) {
+    var secs = nodes().sections;
+    if (!secs.length) return null;
+    var map = pageStartsMap(), hit = secs[0];
+    for (var i = 0; i < secs.length; i++) if (map[i] <= page) hit = secs[i]; else break;
+    return hit;
+  }
+  /**
+   * The section under the eye in a scrolling document. A chapter that is only an illustration has no text for
+   * [sectionAt] to find, so ask the layout itself; the first points avoid the chapter arrows in the top margin.
+   */
+  function sectionAtViewport() {
+    if (!isSectioned()) return null;
+    var top = Math.min(pageH / 3, (cfg.marginV || 28) + 8);
+    var pts = [[pageW / 4, top], [pageW * 3 / 4, top], [pageW / 2, pageH / 3], [pageW / 2, pageH / 2]];
+    for (var i = 0; i < pts.length; i++) {
+      var el = document.elementFromPoint(pts[i][0], pts[i][1]);
+      var s = el ? sectionOfNode(el) : null;
+      if (s) return nodes().byChapter.get(Number(s.getAttribute('data-yomu-chapter'))) || null;
+    }
+    return null;
+  }
+  /** Page count and chapter page starts, sent to the app after every layout. */
+  function layoutInfo() {
+    var starts = [], pages = 0;
+    if (cfg.paged && isSectioned()) {
+      starts = pageStartsMap().slice();
+      pages = pageCount();
+    } else if (cfg.book) {
+      var secs = nodes().sections;
+      for (var i = 0; i < secs.length; i++) {
+        starts.push(Math.max(0, Math.round((secs[i].el.getBoundingClientRect().top + se.scrollTop) / pageH)));
+      }
+      pages = scrollPageCount();
+    } else if (cfg.paged) {
+      pages = pageCount();
+    }
+    return { pages: pages, starts: starts };
+  }
   function caretAt(x, y) {
     var r = document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
     if (r && r.startContainer && (r.startContainer.nodeType === 3 || r.startContainer.childNodes.length)) return r;
     return null;
   }
+  /**
+   * Offset at a viewport point, but only when the caret it answers with is really there. A point in the top margin can
+   * return the first line of the document (another page, far off screen); adding that to the visible range made the
+   * "first visible offset" 1 on page 40.
+   */
+  function caretOffsetAt(x, y) {
+    var r = caretAt(x, y);
+    if (!r) return null;
+    var rc = r.getBoundingClientRect();
+    if (rc.width === 0 && rc.height === 0) return null;
+    if (rc.right < -2 || rc.left > pageW + 2 || rc.bottom < -2 || rc.top > pageH + 2) return null;
+    return posToOffset(r.startContainer, r.startOffset);
+  }
   function firstVisibleOffset() {
     if (cfg.fixed) return 0;
     var mh = cfg.marginH || 20, mv = cfg.marginV || 28;
-    var pts = [[mh + 2, mv + 2], [mh + 20, mv + 12], [pageW / 2, mv + 20], [pageW / 2, pageH / 3], [pageW / 2, pageH / 2]];
+    // In a right-to-left page the first line starts at the top-right, not the top-left.
+    // The first points are in the top margin, the next ones just below it: a chapter heading starts lower than a
+    // paragraph, so the margin points alone can resolve above the first line.
+    var pts = isRtlDoc()
+      ? [[pageW - mh - 2, mv + 2], [pageW - mh - 20, mv + 12], [pageW - mh - 2, mv + 40], [pageW - mh - 20, mv + 60],
+        [pageW / 2, mv + 20], [pageW / 2, pageH / 3], [pageW / 2, pageH / 2]]
+      : [[mh + 2, mv + 2], [mh + 20, mv + 12], [mh + 2, mv + 40], [mh + 20, mv + 60],
+        [pageW / 2, mv + 20], [pageW / 3, pageH / 3], [pageW / 2, pageH / 2]];
+    // The top margin has no text: take the topmost real hit, not the first point that answers.
+    var best = null;
     for (var i = 0; i < pts.length; i++) {
-      var r = caretAt(pts[i][0], pts[i][1]);
-      if (r) return posToOffset(r.startContainer, r.startOffset);
+      var off = caretOffsetAt(pts[i][0], pts[i][1]);
+      if (off === null) continue;
+      if (best === null || off < best) best = off;
     }
-    return Math.round(progression() * nodes().total);
+    return best === null ? Math.round(progression() * nodes().total) : best;
   }
   function lastVisibleOffset() {
     if (cfg.fixed) return nodes().total;
     var mh = cfg.marginH || 20, mv = cfg.marginV || 28;
     if (cfg.footer) mv = Math.max(mv, 30);
-    var pts = [[pageW - mh - 2, pageH - mv - 4], [pageW - mh - 20, pageH - mv - 16], [pageW / 2, pageH - mv - 24], [pageW / 2, pageH * 0.75]];
+    // The last line of a right-to-left page ends at the bottom-left.
+    var pts = isRtlDoc()
+      ? [[mh + 2, pageH - mv - 4], [mh + 20, pageH - mv - 16], [pageW / 2, pageH - mv - 24], [pageW / 2, pageH * 0.75]]
+      : [[pageW - mh - 2, pageH - mv - 4], [pageW - mh - 20, pageH - mv - 16], [pageW / 2, pageH - mv - 24], [pageW / 2, pageH * 0.75]];
+    // The bottom margin has no text either: a caret there may answer with the end of the whole book.
+    var best = null;
     for (var i = 0; i < pts.length; i++) {
-      var r = caretAt(pts[i][0], pts[i][1]);
-      if (r) return posToOffset(r.startContainer, r.startOffset);
+      var off = caretOffsetAt(pts[i][0], pts[i][1]);
+      if (off === null) continue;
+      if (best === null || off > best) best = off;
     }
-    return nodes().total;
+    return best === null ? nodes().total : best;
   }
   function report() {
     if (!ready) return;
-    var o;
-    if (isStrip()) {
-      var g = firstVisibleOffset();
-      var s = sectionAt(g);
+    var g = firstVisibleOffset();
+    var page = currentPage();
+    var o = { chapter: cfg.chapter != null ? cfg.chapter : 0, page: page, pages: pageCount(), progression: progression(), offset: g, total: nodes().total,
+      bookPage: -1, bookPages: 0, bookOffset: g, bookTotal: nodes().total };
+    if (isSectioned()) {
+      // Paged: the measured page decides the chapter (an illustration has no text for the caret to land on). Scrolling:
+      // the section under the eye, then the text under the first visible point.
+      var s = cfg.paged ? sectionAtPage(page) : (sectionAtViewport() || sectionAt(g));
       if (s) {
+        // Never report a position outside the chapter the page belongs to (the caret may answer from a margin).
+        if (g < s.start) g = s.start;
+        if (g > s.start + s.len) g = s.start + s.len;
         var local = Math.max(0, Math.min(s.len, g - s.start));
-        var pages = estimatePages(s.len);
-        o = {
-          chapter: s.chapter,
-          page: Math.min(pages - 1, Math.floor((local / Math.max(1, s.len)) * pages)),
-          pages: pages,
-          progression: s.len <= 1 ? 1 : local / s.len,
-          offset: local,
-          total: s.len,
-        };
-      } else {
-        o = { chapter: cfg.chapter != null ? cfg.chapter : 0, page: 0, pages: 1, progression: 0, offset: 0, total: 0 };
+        if (cfg.paged) {
+          // Exact pages of the whole document, and the page inside this chapter.
+          var start = sectionStartPage(s), count = sectionPageCount(s);
+          var localPage = Math.max(0, Math.min(count - 1, page - start));
+          o = {
+            chapter: s.chapter, page: localPage, pages: count,
+            progression: count <= 1 ? 1 : localPage / (count - 1),
+            offset: local, total: s.len,
+            bookPage: page, bookPages: pageCount(), bookOffset: g, bookTotal: nodes().total,
+          };
+        } else {
+          // Scrolling: page-like numbers come from the real scroll height; the chapter itself from its section.
+          var pages = estimatePages(s.len);
+          o = {
+            chapter: s.chapter,
+            page: Math.min(pages - 1, Math.floor((local / Math.max(1, s.len)) * pages)),
+            pages: pages,
+            progression: s.len <= 1 ? 1 : local / s.len,
+            offset: local,
+            total: s.len,
+            bookPage: cfg.book ? currentScrollPage() : -1,
+            bookPages: cfg.book ? scrollPageCount() : 0,
+            bookOffset: g,
+            bookTotal: nodes().total,
+          };
+        }
       }
-    } else {
-      o = {
-        chapter: cfg.chapter != null ? cfg.chapter : 0,
-        page: currentPage(), pages: pageCount(), progression: progression(), offset: firstVisibleOffset(), total: nodes().total,
-      };
     }
     var str = json(o);
     if (str !== lastReport) { lastReport = str; B.onProgress(str); }
-    drawAll();
+    drawAll(g);
   }
   var reportLater = debounce(report, 160);
 
@@ -309,7 +528,7 @@
   }
   function goToOffset(off, smooth, chapter) {
     if (cfg.fixed) { setTimeout(report, 30); return; }
-    if (isStrip()) {
+    if (isSectioned()) {
       var g = toGlobal(chapter == null ? currentChapter() : chapter, off);
       if (g == null) { setTimeout(report, 30); return; }
       off = g;
@@ -324,10 +543,21 @@
     } else { se.scrollTop = se.scrollTop + rc.top - (cfg.marginV || 28); }
     setTimeout(report, 30);
   }
+  /** Go to an offset of the whole document (the translation of chapter-local offsets happens here). */
+  function goToGlobal(g, smooth) {
+    if (isSectioned()) {
+      var loc = toLocal(g);
+      goToOffset(loc.offset, smooth, loc.chapter);
+    } else {
+      goToOffset(g, smooth);
+    }
+  }
   function goToProgression(p) {
     if (cfg.fixed) { setTimeout(report, 30); return; }
     p = Math.max(0, Math.min(1, p || 0));
-    if (isStrip()) {
+    if (isSectioned()) {
+      // A whole-book document scrolls by the whole book; the long strip stays inside the chapter it shows.
+      if (!cfg.paged && cfg.book) { se.scrollTop = p * (se.scrollHeight - pageH); setTimeout(report, 30); return; }
       var s = currentSection();
       if (!s) { setTimeout(report, 30); return; }
       goToOffset(Math.round(p * Math.max(0, s.len - 1)), false, s.chapter);
@@ -354,36 +584,48 @@
       setTimeout(report, 30);
       return true;
     }
-    goToOffset(off, false);
+    goToGlobal(off, false);
     return true;
   }
-  /** Long strip: scroll to a loaded [index] chapter, at a local offset, progression or anchor. */
+  /** Move to a chapter of the loaded document, at a local offset, progression or anchor. Never loads a document. */
   function goToChapter(index, spec) {
-    if (!isStrip()) return false;
+    if (!isSectioned()) return false;
     var s = nodes().byChapter.get(index);
     if (!s) return false;
     spec = spec || {};
-    var local = 0;
+    var local = 0, hasTarget = false;
     if (spec.anchor) {
       var el = anchorIn(s.el, spec.anchor) || document.getElementById(spec.anchor);
       if (el) {
-        se.scrollTop = se.scrollTop + el.getBoundingClientRect().top - (cfg.marginV || 28);
-        setTimeout(report, 30);
+        if (cfg.paged) {
+          goToGlobal(posToOffset(el, 0), false);
+        } else {
+          se.scrollTop = se.scrollTop + el.getBoundingClientRect().top - (cfg.marginV || 28);
+          setTimeout(report, 30);
+        }
         return true;
       }
     } else if (spec.offset != null) {
       local = Math.max(0, Math.min(s.len, spec.offset));
+      hasTarget = true;
     } else if (spec.progression != null) {
       local = Math.round(Math.max(0, Math.min(1, spec.progression)) * Math.max(0, s.len - 1));
+      hasTarget = true;
     }
-    var rc = rectOfOffset(s.start + local);
+    if (cfg.paged) {
+      // Every chapter starts at a column boundary: its first page is measured, not guessed.
+      if (hasTarget) goToGlobal(s.start + local, false); else setPage(sectionStartPage(s), true);
+      return true;
+    }
+    // A chapter may have no text at all (a full-page illustration): its element is its position, a text offset is not.
+    var rc = hasTarget && s.len > 0 ? rectOfOffset(s.start + local) : s.el.getBoundingClientRect();
     se.scrollTop = se.scrollTop + rc.top - (cfg.marginV || 28);
     setTimeout(report, 30);
     return true;
   }
   function scrollToSection(s) {
     if (!s) return;
-    var rc = rectOfOffset(s.start);
+    var rc = s.el.getBoundingClientRect();
     se.scrollTop = se.scrollTop + rc.top - (cfg.marginV || 28);
     setTimeout(report, 30);
   }
@@ -415,14 +657,20 @@
    * A neighbour that cannot be inlined (fixed layout, image-only) is opened as its own page by the app.
    */
   function chapterStep(dir) {
-    if (!isStrip()) { B.onEdge(dir > 0 ? 'next' : 'prev'); return; }
-    var s = currentSection();
+    if (!isSectioned()) { B.onEdge(dir > 0 ? 'next' : 'prev'); return; }
+    // The chapter the reader is looking at: the measured page when paged, the section under the eye when scrolling.
+    // A text caret may sit in the neighbouring chapter when the page shows only an illustration.
+    var s = cfg.paged ? sectionAtPage(currentPage()) : (sectionAtViewport() || currentSection());
     if (!s) return;
     var target = s.chapter + dir;
     if (target < 0) return;
     if (target > (cfg.chapterCount || 1) - 1) { if (dir > 0) B.onEdge('next'); return; }
     var m = nodes().byChapter;
-    if (m.has(target)) { scrollToSection(m.get(target)); return; }
+    if (m.has(target)) {
+      // Paged: the chapter's first page, measured. Scroll/strip: the chapter's first line.
+      if (cfg.paged) setPage(sectionStartPage(m.get(target)), true); else scrollToSection(m.get(target));
+      return;
+    }
     if (!canInline(target)) { B.onChapterEdge(dir > 0); return; }
     var go = function () {
       var mm = nodes().byChapter;
@@ -596,7 +844,8 @@
   }
   // A last resort for chapters whose inline copy fails: the app opens the neighbour as its own page.
   function stripManage() {
-    if (!isStrip() || stripBusy) return;
+    // The whole book is already here; nothing to fetch.
+    if (cfg.book || !isStrip() || stripBusy) return;
     var max = se.scrollHeight - pageH;
     if (max <= 0) { loadNext(); return; }
     var y = se.scrollTop;
@@ -618,16 +867,18 @@
 
   // ---------------------------------------------------------------- decorations
   function layer(id, z) {
+    var host = pageScroller || document.documentElement;
     var l = document.getElementById(id);
     if (!l) {
       l = document.createElement('div'); l.id = id; l.setAttribute(SKIP, '1');
       l.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;z-index:' + z + ';';
-      document.documentElement.appendChild(l);
     }
+    if (l.parentNode !== host) host.appendChild(l);
     return l;
   }
   function drawRanges(l, items, cls) {
-    var sx = window.scrollX, sy = window.scrollY, frag = document.createDocumentFragment();
+    // Content coordinates of the real scroller (the element one in RTL paged mode, the document otherwise).
+    var sx = se ? se.scrollLeft : 0, sy = se ? se.scrollTop : 0, frag = document.createDocumentFragment();
     items.forEach(function (h) {
       var rects = rangeFor(h.start, h.end).getClientRects();
       h.rects = [];
@@ -658,12 +909,18 @@
     l.innerHTML = '';
     l.appendChild(frag);
   }
-  function drawAll() {
+  function drawAll(from, to) {
     if (!ready) return;
+    var wants = highlights.length || savedWords.length || Object.keys(marks).length;
+    if (wants && from == null) from = firstVisibleOffset();
+    if ((highlights.length || savedWords.length) && to == null) to = lastVisibleOffset();
+    // A caret in the bottom margin can answer with the end of the book. A page holds far fewer characters, so a
+    // runaway "last visible" only makes the decoration filter useless.
+    if (from != null && to != null && to > from + 8000) to = from + 8000;
     var items = [];
     for (var i = 0; i < highlights.length; i++) {
       var h = highlights[i];
-      if (isStrip()) {
+      if (isSectioned()) {
         var g = toGlobal(h.chapter, h.start);
         if (g == null) continue;
         var ge = toGlobal(h.chapter, h.end);
@@ -673,30 +930,46 @@
         items.push(h);
       }
     }
+    // Decorate only the text around the page: a whole book can hold many highlights and every page turn used to
+    // recreate every one of them. A tap can only hit a decoration that is on the screen anyway.
+    if (from != null && to != null) {
+      var pad = 2000;
+      items = items.filter(function (h) { return h.end >= from - pad && h.start <= to + pad; });
+    }
     drawnHighlights = items;
     drawRanges(layer('yomu-hl', 1), items, 'yomu-hl');
     var m = [];
     Object.keys(marks).forEach(function (k) {
       var mk = marks[k];
       if (!mk) return;
-      var gs = isStrip() ? toGlobal(mk.chapter, mk.start) : mk.start;
-      var ge = isStrip() ? toGlobal(mk.chapter, mk.end) : mk.end;
+      var gs = isSectioned() ? toGlobal(mk.chapter, mk.start) : mk.start;
+      var ge = isSectioned() ? toGlobal(mk.chapter, mk.end) : mk.end;
       if (gs == null || ge == null) return;
       m.push({ start: gs, end: ge, style: 'yomu-mark-' + k });
     });
     drawRanges(layer('yomu-marks', 2), m, 'yomu-mark');
-    drawWords();
+    drawWords(from, to);
   }
-  function drawWords() {
+  /** The pattern of the saved words, built once: rebuilding it on every page turn was the most expensive part. */
+  function wordRegex() {
+    if (!savedWords.length) return null;
+    if (savedWordRe) return savedWordRe;
+    var esc = savedWords.map(function (w) { return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
+    try { savedWordRe = new RegExp('(^|[^\\p{L}\\p{M}])(' + esc.join('|') + ')(?=$|[^\\p{L}\\p{M}])', 'giu'); } catch (e) { savedWordRe = null; }
+    return savedWordRe;
+  }
+  function drawWords(from, to) {
     var l = layer('yomu-words', 1);
     if (!savedWords.length) { l.innerHTML = ''; return; }
-    var text = fullText();
-    var esc = savedWords.map(function (w) { return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
-    var re;
-    try { re = new RegExp('(^|[^\\p{L}\\p{M}])(' + esc.join('|') + ')(?=$|[^\\p{L}\\p{M}])', 'giu'); } catch (e) { return; }
+    var re = wordRegex();
+    if (!re) return;
     var items = [], m, count = 0;
-    var lo = Math.max(0, firstVisibleOffset() - 4000), hi = Math.min(text.length, lastVisibleOffset() + 4000);
-    var part = text.substring(lo, hi);
+    if (from == null) from = firstVisibleOffset();
+    if (to == null) to = lastVisibleOffset();
+    // Only the text around the page: a whole book would be rebuilt on every page turn otherwise.
+    var lo = Math.max(0, from - 4000), hi = Math.min(nodes().total, to + 4000);
+    var part = textBetween(lo, hi);
+    re.lastIndex = 0;
     while ((m = re.exec(part)) && count < 400) {
       var s = lo + m.index + m[1].length;
       items.push({ start: s, end: s + m[2].length, style: 'yomu-word' });
@@ -728,7 +1001,7 @@
   function select(start, end) {
     var base = 0;
     var s = currentSection();
-    if (isStrip() && s) base = s.start;
+    if (isSectioned() && s) base = s.start;
     var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(rangeFor(base + start, base + end));
   }
   function blockOf(node) {
@@ -758,7 +1031,7 @@
   function expand(kind) {
     var info = selectionInfo(); if (!info) return;
     var sec = currentSection();
-    var base = isStrip() && sec ? sec.start : 0;
+    var base = isSectioned() && sec ? sec.start : 0;
     var gs = base + info.start, ge = base + info.end;
     var b = kind === 'paragraph' ? blockBounds(gs) : sentenceBounds(gs, ge);
     select(b.start - base, b.end - base);
@@ -839,7 +1112,9 @@
     var path = href.substring(0, href.indexOf('#'));
     var html = '';
     if (!path) {
-      var el = document.getElementById(id);
+      // The same id may exist in every chapter: look in the chapter on screen first.
+      var sec = currentSection();
+      var el = (sec ? anchorIn(sec.el, id) : null) || document.getElementById(id);
       if (el) {
         var holder = el;
         if (el.tagName === 'A' && el.parentNode && el.parentNode !== document.body) holder = el.closest('li,p,aside,div,dd') || el.parentNode;
@@ -859,6 +1134,14 @@
       e.preventDefault();
       var note = footnoteFor(a);
       if (note) { B.onFootnote(note); return; }
+      var rawHref = a.getAttribute('href') || '';
+      // A link inside this document: the whole book is one page now, so B.onLink would not find a chapter for it.
+      if (rawHref.charAt(0) === '#') {
+        var id = rawHref.substring(1);
+        try { id = decodeURIComponent(id); } catch (err) { /* keep the raw id */ }
+        goToAnchor(id);
+        return;
+      }
       B.onLink(a.href);
       return;
     }
@@ -913,7 +1196,7 @@
   function blocks(from) {
     var list = leafBlocks(), res = [];
     var sec = currentSection();
-    var base = isStrip() && sec ? sec.start : 0;
+    var base = isSectioned() && sec ? sec.start : 0;
     var i = 0;
     for (var k = 0; k < list.length; k++) {
       var el = list[k];
@@ -942,7 +1225,7 @@
   function removeTranslations() { var l = document.querySelectorAll('.yomu-tr'); for (var i = 0; i < l.length; i++) l[i].remove(); }
   function sentences(from) {
     var sec = currentSection();
-    var text = isStrip() ? sectionText(sec) : fullText();
+    var text = isSectioned() ? sectionText(sec) : fullText();
     var out = [], start = Math.max(0, from || 0);
     var list = blocks(start);
     list.forEach(function (b) {
@@ -958,10 +1241,10 @@
   }
   function ensureVisible(off) {
     var sec = currentSection();
-    var g = isStrip() && sec ? sec.start + off : off;
+    var g = isSectioned() && sec ? sec.start + off : off;
     if (cfg.paged && !cfg.vertical) {
       var rc = rectOfOffset(g);
-      if (rc.left < 0 || rc.left > pageW || rc.top < 0 || rc.top > pageH) goToOffset(g, true);
+      if (rc.left < 0 || rc.left > pageW || rc.top < 0 || rc.top > pageH) goToGlobal(g, true);
     } else {
       var r = rectOfOffset(g);
       if (r.top < 0 || r.bottom > pageH - 20) se.scrollTop = se.scrollTop + r.top - (cfg.marginV || 28);
@@ -972,18 +1255,21 @@
   window.yomu = {
     next: next, prev: prev,
     goToOffset: function (o) { goToOffset(o, false); },
+    goToPage: function (p) { if (cfg.paged && !cfg.vertical) setPage(p, false); },
     goToProgression: goToProgression,
     goToAnchor: goToAnchor,
     goToChapter: goToChapter,
     chapterStep: chapterStep,
     setConfig: function (c, css) {
       var keep = ready ? firstVisibleOffset() : null;
-      var local = ready && isStrip() ? toLocal(keep) : null;
+      var local = ready && isSectioned() ? toLocal(keep) : null;
       cfg = Object.assign(cfg, c || {});
       if (css != null) { var u = document.getElementById('yomu-user'); if (u) u.textContent = css; }
-      applyLayout(); invalidate();
+      applyLayout(); invalidatePages();
       if (local != null) setTimeout(function () { goToOffset(local.offset, false, local.chapter); }, 60);
-      else if (keep != null) setTimeout(function () { goToOffset(keep, false); }, 60);
+      else if (keep != null) setTimeout(function () { goToGlobal(keep, false); }, 60);
+      // A new font, margin or column count changes the page map: the page chip and the chapter ticks follow it.
+      setTimeout(function () { if (ready && isSectioned()) B.onLayout(json(layoutInfo())); }, 160);
     },
     setHighlights: function (list) { highlights = list || []; drawAll(); },
     mark: function (kind, start, end, scroll) {
@@ -991,20 +1277,20 @@
       if (start != null && scroll) ensureVisible(start);
       drawAll();
     },
-    setSavedWords: function (list) { savedWords = (list || []).filter(function (w) { return w && w.length > 1; }).slice(0, 3000); drawAll(); },
+    setSavedWords: function (list) { savedWords = (list || []).filter(function (w) { return w && w.length > 1; }).slice(0, 3000); savedWordRe = null; drawAll(); },
     clearSelection: clearSelection,
     select: select,
     expand: expand,
     selection: function () { return json(selectionInfo()); },
     blocks: function (from) { return json(blocks(from)); },
     insertTranslation: function (i, t) { insertTranslation(i, t); },
-    commitTranslations: function () { var keep = firstVisibleOffset(); invalidate(); if (anchorOffset != null) keep = anchorOffset; setTimeout(function () { goToOffset(keep, false); drawAll(); }, 30); },
-    removeTranslations: function () { var keep = firstVisibleOffset(); removeTranslations(); invalidate(); setTimeout(function () { goToOffset(keep, false); }, 30); },
+    commitTranslations: function () { var keep = firstVisibleOffset(); invalidate(); if (anchorOffset != null) keep = anchorOffset; setTimeout(function () { goToGlobal(keep, false); drawAll(); if (isSectioned()) B.onLayout(json(layoutInfo())); }, 60); },
+    removeTranslations: function () { var keep = firstVisibleOffset(); removeTranslations(); invalidate(); setTimeout(function () { goToGlobal(keep, false); if (isSectioned()) B.onLayout(json(layoutInfo())); }, 60); },
     sentences: function (from) { return json(sentences(from)); },
     visibleText: function () { var a = firstVisibleOffset(), b = lastVisibleOffset(); return textBetween(a, Math.max(a, b)); },
     text: function (s, e) {
       var sec = currentSection();
-      var base = isStrip() && sec ? sec.start : 0;
+      var base = isSectioned() && sec ? sec.start : 0;
       return textBetween(base + s, base + e);
     },
     scrollStep: function (px) { if (cfg.paged && !cfg.vertical) return; var before = se.scrollTop; se.scrollTop += px; if (se.scrollTop === before && px > 0) B.onEdge('next'); else reportLater(); },
@@ -1016,27 +1302,63 @@
     var go = function () {
       invalidate();
       var t = cfg.target || {};
+      var ch = cfg.chapter != null ? cfg.chapter : 0;
       if (t.anchor && goToAnchor(t.anchor)) { /* positioned */ }
-      else if (t.offset != null) goToOffset(t.offset, false);
-      else if (t.progression != null) goToProgression(t.progression);
+      else if (t.offset != null) goToOffset(t.offset, false, ch);
+      else if (t.progression != null) {
+        if (isSectioned()) {
+          var sec = nodes().byChapter.get(ch);
+          if (sec) goToOffset(Math.round(Math.max(0, Math.min(1, t.progression)) * Math.max(0, sec.len - 1)), false, ch);
+        } else {
+          goToProgression(t.progression);
+        }
+      }
       ready = true;
       setTimeout(function () {
         lastReport = '';
         report();
-        B.onReady(json({ pages: pageCount(), total: nodes().total }));
+        var info = layoutInfo();
+        B.onReady(json({ pages: info.pages || pageCount(), total: nodes().total, starts: info.starts }));
+        if (isSectioned() && info.starts.length) B.onLayout(json(info));
         // Fill the feed around the opened chapter: below first, then a little above, so scrolling never runs out.
-        if (isStrip()) setTimeout(function () { stripFill(); }, 100);
+        if (isStrip() && !cfg.book) setTimeout(function () { stripFill(); }, 100);
       }, 40);
     };
     var fontsReady = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
-    var loaded = document.readyState === 'complete' ? Promise.resolve() : new Promise(function (res) { window.addEventListener('load', res, { once: true }); setTimeout(res, 2500); });
+    // A whole book may hold hundreds of illustrations: waiting for all of them would delay the first page by seconds.
+    // Fonts (which change line breaks) are waited for; pictures that arrive later re-anchor the page below.
+    var loaded = cfg.book
+      ? (document.readyState === 'loading'
+        ? new Promise(function (res) { document.addEventListener('DOMContentLoaded', res, { once: true }); setTimeout(res, 1200); })
+        : Promise.resolve())
+      : (document.readyState === 'complete' ? Promise.resolve() : new Promise(function (res) { window.addEventListener('load', res, { once: true }); setTimeout(res, 2500); }));
     Promise.all([fontsReady, loaded]).then(function () { applyLayout(); setTimeout(go, 30); });
+    if (cfg.book) {
+      // A late picture changes the line breaks above it: keep the same text on screen and send the new page map.
+      var imageLoaded = debounce(function () {
+        if (!ready) return;
+        var keep = firstVisibleOffset();
+        applyLayout(); invalidatePages();
+        setTimeout(function () {
+          goToGlobal(keep, false);
+          if (isSectioned()) B.onLayout(json(layoutInfo()));
+        }, 80);
+      }, 400);
+      document.addEventListener('load', function (e) { if (e.target && e.target.tagName === 'IMG') imageLoaded(); }, true);
+    }
     document.addEventListener('selectionchange', onSelectionChange);
     document.addEventListener('touchstart', onTouchStart, { passive: true });
     document.addEventListener('touchend', onTouchEnd, { passive: true });
     document.addEventListener('click', onClick, true);
     window.addEventListener('scroll', function () { if (!cfg.paged || cfg.vertical) reportLater(); stripManage(); }, { passive: true });
-    window.addEventListener('resize', debounce(function () { var keep = firstVisibleOffset(); applyLayout(); invalidate(); setTimeout(function () { goToOffset(keep, false); }, 50); }, 200));
+    window.addEventListener('resize', debounce(function () {
+      var keep = firstVisibleOffset();
+      applyLayout(); invalidatePages();
+      setTimeout(function () {
+        goToGlobal(keep, false);
+        if (isSectioned()) B.onLayout(json(layoutInfo()));
+      }, 120);
+    }, 200));
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();

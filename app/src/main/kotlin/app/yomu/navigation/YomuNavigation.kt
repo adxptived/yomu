@@ -277,8 +277,6 @@ private fun Shell(
     NavShell(
         type = adaptive,
         visible = barVisible,
-        // A tab is drawn over its own content; any other screen keeps a strip for the bar.
-        reserveBottom = !onHome,
         items = items,
         selected = shown.indexOf(selectedTab),
         showLabels = navLabels,
@@ -294,7 +292,13 @@ private fun Shell(
         onPress = { index -> shown.getOrNull(index)?.let(tabsState::prepare) },
     ) {
         SharedTransitionLayout {
-            CompositionLocalProvider(LocalSharedTransitionScope provides this, LocalNavBarHidden provides barHidden, LocalTabBarInset provides barInset) {
+            CompositionLocalProvider(
+                LocalSharedTransitionScope provides this,
+                LocalNavBarHidden provides barHidden,
+                LocalTabBarInset provides barInset,
+                // Every screen draws under the floating bar and leaves room for it in its lists, FABs and snackbars.
+                LocalNavBarInset provides if (barVisible) barInset else 0.dp,
+            ) {
                 YomuNavHost(nav, reduceMotion, tabsState)
             }
         }

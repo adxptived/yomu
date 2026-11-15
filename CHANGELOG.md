@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.8.0 — the whole book on one page stack, and a bar with no band
+
+> **Install.** Installs over 2.7.0 if signed with the same key. No database migration. Converted Word/TXT/HTML/MOBI books are rebuilt once.
+
+### Reading text
+
+- **A book is one document, so pages cross chapters.** EPUB, Word, TXT, HTML and MOBI open as a single paginated document: a page turn at the end of a chapter is an ordinary page turn, not a reload, and the page counter runs through the whole book. The book is built once (with a progress line), cached on the device and reused.
+- **Exact page numbers and a slider that means them.** The bottom slider, the page chip and the "go to page" dialog use the real laid-out pages of the whole book, like a PDF; chapter ticks are the measured first page of every chapter. The old byte-weight estimate is only a fallback for books too large for one document.
+- **A Word document is no longer cut into chapters.** Heading 1 paragraphs stay in the contents as anchors; the whole file reads as one continuous document.
+- **Reading position, contents jumps, bookmarks, highlights, selection, dictionary, translation and read-aloud all work across the new page stack**, and the long strip uses the same whole-book document.
+- **Two-column landscape pages no longer drift:** a page turn always advances one window width.
+- **Right-to-left books render their pages** (Chromium painted RTL columns put directly on the page body as a blank screen): the page columns now live in their own scroller, and highlights, bookmarks and page turns follow. The page map was also made robust to a caret in the top margin answering from another page.
+
+### The app shell
+
+- **No scrim, no reserved strip.** The floating bar now really floats over every screen, exactly like on the Library tab; lists run on under it and leave room at the end, and FABs, snackbars and bottom buttons sit above it.
+
 ## 2.7.0 — covers ready before you look, and a bar that stays
 
 > **Install.** Installs over 2.6.0 if signed with the same key. No database migration.

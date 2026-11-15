@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -92,6 +94,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -108,6 +111,8 @@ import app.yomu.core.ui.components.YomuFab
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.core.ui.components.copyText
+import app.yomu.core.ui.components.navBarBottomPadding
+import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.source.AvailableExtension
 import app.yomu.data.source.BrokenReason
@@ -168,6 +173,8 @@ fun ExtensionsScreen(
     LaunchedEffect(addStoreUrl) { if (addStoreUrl != null) viewModel.previewStore(addStoreUrl) }
 
     Scaffold(
+        // The "add repository" button stays above the floating bar; the lists run on under it.
+        contentWindowInsets = topLevelContentInsets(),
         topBar = {
             Column {
                 TopAppBar(
@@ -239,9 +246,16 @@ fun ExtensionsScreen(
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        val modifier = Modifier.padding(padding).fillMaxSize()
+        val direction = LocalLayoutDirection.current
+        val modifier = Modifier
+            .padding(
+                start = padding.calculateStartPadding(direction),
+                top = padding.calculateTopPadding(),
+                end = padding.calculateEndPadding(direction),
+            )
+            .fillMaxSize()
         when (tab) {
-            0 -> LazyColumn(modifier, contentPadding = PaddingValues(bottom = Dimens.xl)) {
+            0 -> LazyColumn(modifier, contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
                 installedTab(
                     installed = installed, updates = updates, installing = installing, query = query,
                     onUpdate = viewModel::update, onUpdateAll = viewModel::updateAll,
@@ -252,7 +266,7 @@ fun ExtensionsScreen(
                     onHide = { ext, hide -> viewModel.setExtensionHidden(ext.pkg, hide) },
                 )
             }
-            1 -> LazyColumn(modifier, contentPadding = PaddingValues(bottom = Dimens.xl)) {
+            1 -> LazyColumn(modifier, contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
                 item {
                     LanguageChips(languages, onClick = { pickLanguages = true })
                 }
@@ -282,7 +296,7 @@ fun ExtensionsScreen(
                     }
                 }
             }
-            else -> LazyColumn(modifier, contentPadding = PaddingValues(bottom = 96.dp)) {
+            else -> LazyColumn(modifier, contentPadding = PaddingValues(bottom = navBarBottomPadding(96.dp))) {
                 item {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),

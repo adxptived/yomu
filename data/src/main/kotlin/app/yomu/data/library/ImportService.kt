@@ -329,7 +329,11 @@ class ImportService(
 
 /** Resolves the file used by the readers: converted formats are cached as EPUB. */
 object BookFiles {
-    fun convertedFile(context: Context, bookId: Long): File = File(context.filesDir, "converted/$bookId.epub")
+    /** Bump when a converter's output changes; old conversions are rebuilt once. v2: a Word file is one document. */
+    private const val CONVERTER_VERSION = 2
+
+    fun convertedFile(context: Context, bookId: Long): File =
+        File(context.filesDir, "converted/v$CONVERTER_VERSION/$bookId.epub")
 
     suspend fun readingUri(context: Context, book: Book): Uri = withContext(Dispatchers.IO) {
         val uri = Uri.parse(book.uri)
@@ -337,6 +341,10 @@ object BookFiles {
             BookFormat.FB2, BookFormat.TXT, BookFormat.HTML, BookFormat.DOCX, BookFormat.MOBI -> {
                 val file = convertedFile(context, book.id)
                 if (!file.exists()) {
+                    // Conversions of older versions are obsolete: a Word document used to be cut into chapters.
+                    File(context.filesDir, "converted").listFiles()
+                        ?.filter { it.isFile && it.extension.equals("epub", ignoreCase = true) }
+                        ?.forEach { it.delete() }
                     val name = Files.displayName(context, uri) ?: "book.${book.format.extensions.firstOrNull().orEmpty()}"
                     val converted = MetadataExtractor.convert(context, uri, book.format, name) ?: throw AppError.UnsupportedFormat(book.format.name)
                     converted.builder.writeTo(file)

@@ -22,12 +22,12 @@ import androidx.compose.ui.unit.dp
 import app.yomu.core.ui.theme.Dimens
 
 /**
- * How much of the bottom of a top-level screen the floating navigation bar covers, the system navigation under it
- * included; 0.dp on every other screen and beside a navigation rail.
+ * How much of the bottom of a screen the floating navigation bar covers, the system navigation under it included;
+ * 0.dp when the bar is hidden and beside a navigation rail.
  *
- * Since 1.8.0 the top-level screens are drawn under the bar, so it really floats over their content instead of sitting
- * on a strip of background: their lists add this as bottom content padding (the last row can still scroll above the
- * bar) and their FABs and snackbars stay above it ([topLevelContentInsets]).
+ * Every screen — the tabs and the detail screens alike — is drawn under the bar, so it really floats over the content
+ * instead of sitting on a strip of background: lists add this as bottom content padding (the last row can still scroll
+ * above the bar) and FABs and snackbars stay above it ([topLevelContentInsets]).
  */
 val LocalNavBarInset = compositionLocalOf { 0.dp }
 
@@ -68,6 +68,22 @@ fun TopLevelBody(padding: PaddingValues, modifier: Modifier = Modifier, content:
 /** Bottom content padding of a list on a top-level screen: [extra] plus the room the floating bar takes. */
 @Composable
 fun navBarBottomPadding(extra: Dp = 0.dp): Dp = extra + LocalNavBarInset.current
+
+/**
+ * [padding] with the bottom raised to clear the floating bar. For a screen whose content cannot scroll under the pill
+ * (a web page, a source's own preference fragment, a row of buttons): everything that scrolls uses [TopLevelBody] and
+ * [navBarBottomPadding] instead, so its content runs under the bar.
+ */
+@Composable
+fun PaddingValues.aboveNavBar(): PaddingValues {
+    val direction = LocalLayoutDirection.current
+    return PaddingValues(
+        start = calculateStartPadding(direction),
+        top = calculateTopPadding(),
+        end = calculateEndPadding(direction),
+        bottom = maxOf(calculateBottomPadding(), LocalNavBarInset.current),
+    )
+}
 
 /** Hides the floating navigation bar while [hidden] is true (and puts it back when the caller leaves the screen). */
 @Composable

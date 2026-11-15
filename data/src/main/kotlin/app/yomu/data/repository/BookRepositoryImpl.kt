@@ -27,6 +27,7 @@ import app.yomu.data.backup.FolderReadSyncGate
 import app.yomu.data.backup.FolderRevisionCommit
 import app.yomu.data.backup.FolderSnapshot
 import app.yomu.data.book.FolderPageProof
+import app.yomu.data.library.BookFiles
 import app.yomu.data.library.CoverStore
 import app.yomu.data.library.ImportService
 import app.yomu.domain.model.BatchMetadata
@@ -270,6 +271,7 @@ class BookRepositoryImpl(
         books.delete(ids)
         list.forEach { b ->
             covers.delete(b.coverPath)
+            BookFiles.convertedFile(context, b.id).delete()
             File(context.filesDir, "converted/${b.id}.epub").delete()
             File(context.filesDir, "audio_history/${b.id}.json").delete()
             File(context.cacheDir, "pages/book_${b.id}").deleteRecursively()
@@ -340,7 +342,10 @@ class BookRepositoryImpl(
     }
 
     fun invalidateCaches(bookId: Long) {
+        BookFiles.convertedFile(context, bookId).delete()
         File(context.filesDir, "converted/$bookId.epub").delete()
+        File(context.cacheDir, "book-html/$bookId.html").delete()
+        File(context.cacheDir, "book-html/$bookId.stamp").delete()
         File(context.cacheDir, "pages/book_$bookId").deleteRecursively()
     }
 

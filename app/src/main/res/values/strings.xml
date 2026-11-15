@@ -54,6 +54,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_8_0">
+        <item>Text books read as one continuous book: page turns cross chapters without a reload, page numbers are exact, and the slider matches the real pages.</item>
+        <item>A Word document is one document too: Heading 1 stays in the contents instead of splitting the book into tiny chapters.</item>
+        <item>The bottom bar really floats on every screen, with no background strip behind it.</item>
+        <item>Long strip and right-to-left books: an illustration-only chapter keeps its place, and RTL pages render again.</item>
+    </string-array>
     <string-array name="whats_new_2_7_0">
         <item>Covers are kept on the device: one seen once opens instantly on the next start and works offline, and a pull-to-refresh updates the pictures of the online shelf.</item>
         <item>The long-press wheel now opens exactly under your finger — everywhere, including the audiobook cover.</item>

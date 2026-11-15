@@ -317,12 +317,11 @@ object DocxConverter {
             builder.addResource(path.substringAfterLast('/'), "image/" + if (ext == "jpg") "jpeg" else ext, bytes)
         }
         val body = doc.firstLocal("body") ?: throw AppError.CorruptedFile("Empty DOCX")
-        var chapterTitle = meta.title
-        var html = StringBuilder()
-        fun flush() {
-            if (html.isNotBlank()) builder.addChapter(chapterTitle, html.toString())
-            html = StringBuilder()
-        }
+        // One continuous document, like the printed pages: a Heading 1 is an entry in the contents, not a new chapter
+        // that has to be loaded (and starts its own page) while reading.
+        val html = StringBuilder()
+        val outline = mutableListOf<Triple<String, String, Int>>()
+        var heading = 0
         fun runs(p: Element): String = buildString {
             p.getAllElements().filter { it.tagName() == "w:r" }.forEach { r ->
                 val props = r.childrenLocal("rPr").firstOrNull()
@@ -365,9 +364,10 @@ object DocxConverter {
                     }
                     when {
                         level == 1 && content.isNotBlank() -> {
-                            flush()
-                            chapterTitle = Jsoup.parse(content).text().ifBlank { chapterTitle }
-                            html.append("<h1>").append(content).append("</h1>")
+                            val id = "yomu-h1-${++heading}"
+                            val title = Jsoup.parse(content).text().ifBlank { meta.title }
+                            outline += Triple(title, id, 0)
+                            html.append("<h1 id=\"").append(id).append("\">").append(content).append("</h1>")
                         }
                         level > 1 -> html.append("<h$level>").append(content).append("</h$level>")
                         block.firstLocal("numPr") != null -> html.append("<p class=\"li\">• ").append(content).append("</p>")
@@ -386,8 +386,9 @@ object DocxConverter {
                 }
             }
         }
-        flush()
-        if (builder.chapters.isEmpty()) builder.addChapter(meta.title, "<p></p>")
+        if (html.isBlank()) html.append("<p></p>")
+        val href = builder.addChapter(meta.title, html.toString())
+        outline.forEach { (title, id, level) -> builder.addTocEntry(title, href, id, level) }
         return Converted(builder, null)
     }
 }

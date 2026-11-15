@@ -43,13 +43,21 @@ object Xhtml {
 /** Builds an EPUB 3 publication (with an NCX for EPUB 2 readers). Used by converters, the editor and bilingual export. */
 class EpubBuilder(var meta: EpubMeta) {
     data class Chapter(val title: String, val href: String, val xhtml: String, val level: Int)
+    /** A contents entry; [anchor] points inside a chapter (a heading of one continuous document). */
+    data class TocEntry(val title: String, val href: String, val anchor: String? = null, val level: Int = 0)
     data class Resource(val href: String, val mediaType: String, val bytes: ByteArray)
 
     val chapters = mutableListOf<Chapter>()
+    /** An explicit table of contents; empty means "one entry per chapter". */
+    val toc = mutableListOf<TocEntry>()
     val resources = mutableListOf<Resource>()
     var css: String = DEFAULT_CSS
     var coverHref: String? = null
     var rtl: Boolean = false
+
+    fun addTocEntry(title: String, href: String, anchor: String? = null, level: Int = 0) {
+        toc += TocEntry(title, href, anchor, level)
+    }
 
     /** Adds a chapter whose body is an HTML fragment. Returns its href relative to the OPF. */
     fun addChapter(title: String, bodyHtml: String, level: Int = 0, alreadyXhtml: Boolean = false): String {
@@ -130,11 +138,18 @@ class EpubBuilder(var meta: EpubMeta) {
         append("</spine>\n</package>\n")
     }
 
+    /** The entries written into the nav and the NCX: an explicit outline, or one entry per chapter. */
+    private fun entries(): List<TocEntry> =
+        toc.ifEmpty { chapters.map { TocEntry(it.title, it.href, level = it.level) } }
+
+    private fun TocEntry.target(): String = href + (anchor?.let { "#$it" } ?: "")
+
     private fun nav(): String {
+        val entries = entries()
         val body = buildString {
             append("<nav epub:type=\"toc\" id=\"toc\"><h1>${Xhtml.escape(meta.title)}</h1><ol>")
             var depth = 0
-            chapters.forEachIndexed { i, c ->
+            entries.forEachIndexed { i, c ->
                 val level = c.level.coerceIn(0, depth + 1)
                 when {
                     i == 0 -> Unit
@@ -145,9 +160,9 @@ class EpubBuilder(var meta: EpubMeta) {
                     }
                 }
                 depth = level
-                append("<li><a href=\"${Xhtml.escape(c.href)}\">${Xhtml.escape(c.title)}</a>")
+                append("<li><a href=\"${Xhtml.escape(c.target())}\">${Xhtml.escape(c.title)}</a>")
             }
-            if (chapters.isNotEmpty()) {
+            if (entries.isNotEmpty()) {
                 append("</li>")
                 repeat(depth) { append("</ol></li>") }
             }
@@ -160,9 +175,9 @@ class EpubBuilder(var meta: EpubMeta) {
         append("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<ncx xmlns=\"http://www.daisy.org/z3986/2005/ncx/\" version=\"2005-1\">\n")
         append("<head><meta name=\"dtb:uid\" content=\"${Xhtml.escape(id)}\"/></head>\n")
         append("<docTitle><text>${Xhtml.escape(meta.title)}</text></docTitle>\n<navMap>\n")
-        chapters.forEachIndexed { i, c ->
+        entries().forEachIndexed { i, c ->
             append("<navPoint id=\"np$i\" playOrder=\"${i + 1}\"><navLabel><text>${Xhtml.escape(c.title)}</text></navLabel>")
-            append("<content src=\"${Xhtml.escape(c.href)}\"/></navPoint>\n")
+            append("<content src=\"${Xhtml.escape(c.target())}\"/></navPoint>\n")
         }
         append("</navMap>\n</ncx>\n")
     }

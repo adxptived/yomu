@@ -50,7 +50,10 @@ import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.PreferenceSwitch
 import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.YomuFab
+import app.yomu.core.ui.components.TopLevelBody
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.navBarBottomPadding
+import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.domain.model.DictFormat
 import app.yomu.domain.model.DictionaryInfo
@@ -77,6 +80,8 @@ fun DictionariesScreen(viewModel: DictionariesViewModel, onBack: () -> Unit) {
         }
     }
     Scaffold(
+        // The import button stays above the floating bar; the list runs on under it.
+        contentWindowInsets = topLevelContentInsets(),
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
@@ -92,7 +97,8 @@ fun DictionariesScreen(viewModel: DictionariesViewModel, onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
+        TopLevelBody(padding, Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
             if (importing) {
                 Column(Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s)) {
                     Text(progress?.let { stringResource(R.string.dicts_importing, it.name, it.entries) } ?: stringResource(R.string.dicts_preparing), style = MaterialTheme.typography.bodyMedium)
@@ -110,7 +116,7 @@ fun DictionariesScreen(viewModel: DictionariesViewModel, onBack: () -> Unit) {
                     actionLabel = stringResource(R.string.dicts_import),
                     onAction = { if (!importing) picker.launch(arrayOf("*/*")) },
                 )
-                else -> LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
+                else -> LazyColumn(contentPadding = PaddingValues(bottom = navBarBottomPadding(96.dp))) {
                     itemsIndexed(l, key = { _, d -> d.id }) { i, d ->
                         ListItem(
                             modifier = Modifier.animateItem(),
@@ -141,6 +147,7 @@ fun DictionariesScreen(viewModel: DictionariesViewModel, onBack: () -> Unit) {
                     }
                 }
             }
+        }
         }
     }
     confirm?.let { d ->

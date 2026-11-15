@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -104,7 +106,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -136,6 +137,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -172,8 +174,10 @@ import app.yomu.core.ui.components.animateMotionFloat
 import app.yomu.core.ui.components.coverTint
 import app.yomu.core.ui.components.motionItem
 import app.yomu.core.ui.components.motionSpec
+import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.rememberCoverColor
 import app.yomu.core.ui.components.rememberHaptic
+import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.domain.catalog.ChapterDisplay
 import app.yomu.domain.catalog.ChapterSortMode
@@ -246,7 +250,7 @@ private fun TitleContent(
     val haptic = rememberHaptic()
     val scope = rememberCoroutineScope()
     val barInsets = if (inPane) WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.End) else TopAppBarDefaults.windowInsets
-    val scaffoldInsets = if (inPane) WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical + WindowInsetsSides.End) else ScaffoldDefaults.contentWindowInsets
+    val scaffoldInsets = if (inPane) WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical + WindowInsetsSides.End) else topLevelContentInsets()
     val listState = rememberLazyListState()
     val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
     var mobileAsk by remember { mutableStateOf<Long?>(null) }
@@ -467,8 +471,24 @@ private fun TitleContent(
             SkeletonList(Modifier.padding(padding).fillMaxSize())
             return@Scaffold
         }
-        PullToRefreshBox(isRefreshing = refreshing, onRefresh = refreshTitle, modifier = Modifier.padding(padding).fillMaxSize()) {
-            LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 96.dp)) {
+        // The list runs on under the floating bar: only the sides and the top are inset, the bottom is list padding.
+        val direction = LocalLayoutDirection.current
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = refreshTitle,
+            modifier = Modifier
+                .padding(
+                    start = padding.calculateStartPadding(direction),
+                    top = padding.calculateTopPadding(),
+                    end = padding.calculateEndPadding(direction),
+                )
+                .fillMaxSize(),
+        ) {
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    state = listState,
+                    contentPadding = PaddingValues(bottom = navBarBottomPadding(96.dp)),
+                ) {
                 item(key = "header") { TitleHeader(e, sourceName ?: if (sourceMissing) stringResource(R.string.source_not_installed) else null) }
                 if (sourceMissing) item(key = "missing") { MissingSourceCard(onMigrate = { onMigrate(e.id, e.title) }) }
                 item(key = "actions") {

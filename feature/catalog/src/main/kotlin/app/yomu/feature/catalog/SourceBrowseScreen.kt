@@ -108,6 +108,7 @@ import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.motionItem
+import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.rememberHaptic
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.source.FilterList
@@ -354,7 +355,7 @@ private fun BrowseList(
             modifier = modifier.fillMaxSize(),
         ) {
             if (listMode) {
-                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = Dimens.xl)) {
+                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
                     items(count = items.itemCount, key = { i -> items.stableKey(i) }) { i ->
                         // items[i] (not peek) reports the access to Paging so the next page is requested; the index is
                         // checked against the live count because the list can shrink between building and drawing.
@@ -389,7 +390,7 @@ private fun BrowseList(
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(Dimens.gridMin),
                     state = gridState,
-                    contentPadding = PaddingValues(Dimens.m),
+                    contentPadding = PaddingValues(start = Dimens.m, top = Dimens.m, end = Dimens.m, bottom = navBarBottomPadding(Dimens.m)),
                     horizontalArrangement = Arrangement.spacedBy(Dimens.m),
                     verticalArrangement = Arrangement.spacedBy(Dimens.m),
                     modifier = Modifier.fillMaxSize(),

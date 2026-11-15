@@ -59,6 +59,22 @@ class EpubRoundTripTest {
     }
 
     @Test
+    fun `an explicit contents keeps its anchors`() {
+        val b = EpubBuilder(EpubMeta(title = "Report", language = "en"))
+        val href = b.addChapter("Report", "<h1 id=\"one\">One</h1><p>a</p><h1 id=\"two\">Two</h1><p>b</p>")
+        b.addTocEntry("One", href, "one")
+        b.addTocEntry("Two", href, "two")
+        val file = File(tmp, "anchors.epub")
+        b.writeTo(file)
+        ZipContainer.open(file).use { c ->
+            val pkg = EpubParser.parse(c)
+            assertEquals(listOf("One", "Two"), pkg.toc.map { it.title })
+            assertEquals(listOf(0, 0), pkg.toc.map { it.chapter })
+            assertEquals(listOf("one", "two"), pkg.toc.map { it.anchor })
+        }
+    }
+
+    @Test
     fun `zipDirectory writes mimetype first and uncompressed`() {
         val dir = File(tmp, "dir").apply { mkdirs() }
         File(dir, "OEBPS").mkdirs()

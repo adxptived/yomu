@@ -51,7 +51,18 @@ data class EpubProgress(
     val total: Int = 0,
     /** Chapter these offsets belong to; -1 when the runtime does not say (fixed-layout, old documents). */
     val chapter: Int = -1,
+    /** 0-based page of the whole document (whole-book mode), -1 when the runtime does not know it. */
+    val bookPage: Int = -1,
+    /** Pages of the whole document (whole-book mode), 0 when unknown. */
+    val bookPages: Int = 0,
+    /** Character offset and length of the whole document, for an exact "time left". */
+    val bookOffset: Int = 0,
+    val bookTotal: Int = 0,
 )
+
+/** Page starts of all chapters after a layout (whole-book mode); index = chapter. */
+@Serializable
+data class EpubLayout(val pages: Int = 0, val starts: List<Int> = emptyList())
 
 @Serializable
 data class EpubSelection(
@@ -91,11 +102,12 @@ data class EpubSentence(val start: Int, val end: Int, val text: String)
 private data class TapRect(val id: Long = 0, val left: Float = 0f, val top: Float = 0f, val right: Float = 0f, val bottom: Float = 0f)
 
 @Serializable
-private data class ReadyInfo(val pages: Int = 1, val total: Int = 0)
+private data class ReadyInfo(val pages: Int = 1, val total: Int = 0, val starts: List<Int> = emptyList())
 
 /** Callbacks from the reader runtime. All of them are delivered on the main thread. */
 interface EpubListener {
     fun onReady(chapter: Int) {}
+    fun onLayout(layout: EpubLayout) {}
     fun onProgress(chapter: Int, progress: EpubProgress) {}
     fun onTap(x: Float, y: Float) {}
     fun onSelection(selection: EpubSelection?) {}
@@ -119,8 +131,16 @@ class EpubController(
     private val context: Context,
     val document: TextDocument,
     private val fontsDir: File,
+    /** One HTML document for the whole book (see [BookHtml]); null keeps the per-chapter engine. */
+    private val wholeBookHtml: File? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    /** True when every chapter is a section of the loaded document: pages cross chapters without a reload. */
+    val wholeBook: Boolean get() = wholeBookHtml != null
+
+    /** True when the whole book is laid out as pages: the bottom slider and the page chip are exact. */
+    val pagedBook: Boolean get() = wholeBook && settings.paged && !settings.verticalText && !settings.longStrip
     private val main = Handler(Looper.getMainLooper())
     var listener: EpubListener? = null
     var webView: EpubWebView? = null
@@ -229,9 +249,12 @@ class EpubController(
         put("hasNext", chapter < document.chapterCount - 1)
         put("prevLabel", prevLabel)
         put("nextLabel", nextLabel)
+        // Every chapter is already a section of the loaded document: offsets are translated per section and pages are
+        // counted over the whole book.
+        put("book", wholeBook)
         // The long strip fetches neighbouring chapters itself; it needs to know where they are and which ones can be
         // inlined (fixed-layout and image-only chapters stay pages of their own).
-        if (stripChapters && settings.longStrip && !fixed && !settings.verticalText) {
+        if (!wholeBook && stripChapters && settings.longStrip && !fixed && !settings.verticalText) {
             put(
                 "chapters",
                 buildJsonArray {
@@ -265,14 +288,18 @@ class EpubController(
     fun open(index: Int, target: EpubTarget? = null) {
         val view = webView ?: return
         chapter = index.coerceIn(0, (document.chapterCount - 1).coerceAtLeast(0))
-        stripFrom = chapter
-        stripTo = chapter
+        stripFrom = if (wholeBook) 0 else chapter
+        stripTo = if (wholeBook) (document.chapterCount - 1).coerceAtLeast(0) else chapter
         pendingTarget = target
         loading = true
         nonce++
-        mainPath = document.chapterPath(chapter)
         view.setBackgroundColor(settings.background.toInt())
-        view.loadUrl("https://$HOST/${encodePath(mainPath)}?v=$nonce")
+        if (wholeBook) {
+            view.loadUrl("https://$HOST/$BOOK_PATH?v=$nonce")
+        } else {
+            mainPath = document.chapterPath(chapter)
+            view.loadUrl("https://$HOST/${encodePath(mainPath)}?v=$nonce")
+        }
     }
 
     fun updateSettings(value: TextReaderSettings, relayout: Boolean = true) {
@@ -280,9 +307,10 @@ class EpubController(
         settings = value
         webView?.setBackgroundColor(value.background.toInt())
         if (!relayout) return
-        if (structural) {
+        if (structural && !wholeBook) {
             open(chapter, EpubTarget.Offset(progress.offset))
         } else {
+            // The whole book is already in the document: a new layout is a reflow, not a page load.
             js("yomu.setConfig(${config(null)}, ${JsonPrimitive(css())})")
         }
     }
@@ -300,9 +328,15 @@ class EpubController(
     fun next() = js("yomu.next()")
     fun prev() = js("yomu.prev()")
 
+    /** Whole-book paged mode: jump straight to a 0-based page of the document. */
+    fun goToPage(page: Int) = js("yomu.goToPage(${page.coerceAtLeast(0)})")
+
+    /** Whole-book scrolling mode: jump to a 0..1 progression of the whole document. */
+    fun goToProgression(value: Float) = js("yomu.goToProgression($value)")
+
     fun nextChapter() {
-        // A long strip already holds the neighbouring chapters: moving is a scroll, not a page load.
-        if (isStripMode()) {
+        // The whole book and the long strip already hold the neighbouring chapters: moving is a scroll, not a load.
+        if (sectioned()) {
             js("yomu.chapterStep(1)")
             return
         }
@@ -310,19 +344,22 @@ class EpubController(
     }
 
     fun prevChapter(toEnd: Boolean = false) {
-        if (isStripMode()) {
+        if (sectioned()) {
             js("yomu.chapterStep(-1)")
             return
         }
         if (chapter > 0) open(chapter - 1, EpubTarget.Progression(if (toEnd) 1f else 0f))
     }
 
+    /** True when the loaded document holds several chapters as sections and can scroll between them. */
+    private fun sectioned(): Boolean = !loading && (wholeBook || isStripMode())
+
     /** True when the chapter on screen is part of the long feed: fixed-layout pages are always loaded one at a time. */
     private fun isStripMode(): Boolean =
         settings.longStrip && !settings.verticalText && !loading && !document.isFixedLayout(chapter)
 
     fun goTo(index: Int, target: EpubTarget) {
-        if (isStripMode() && index in stripFrom..stripTo) {
+        if (sectioned() && index in stripFrom..stripTo) {
             val spec = buildJsonObject {
                 when (target) {
                     is EpubTarget.Offset -> put("offset", target.offset)
@@ -358,9 +395,9 @@ class EpubController(
     }
 
     private fun pushHighlights() {
-        // A strip document holds several chapters: send them all, the runtime maps each to its section. One chapter at
-        // a time otherwise, as before.
-        val strip = settings.longStrip
+        // A document that holds several chapters (whole book or long strip) gets every highlight, the runtime maps
+        // each to its section. One chapter at a time otherwise, as before.
+        val strip = settings.longStrip || wholeBook
         val arr = buildJsonArray {
             highlights.filter { it.locator.offset != null && (strip || it.locator.chapter == chapter) }.forEach { h ->
                 add(
@@ -470,6 +507,22 @@ class EpubController(
         return "<!DOCTYPE html>" + doc.outerHtml()
     }
 
+    /** The cached whole-book document with this load's CSP, styles, config and target injected. */
+    private fun renderBook(): String {
+        val raw = wholeBookHtml?.readText() ?: return ""
+        val nonce = java.util.UUID.randomUUID().toString().replace("-", "")
+        val head = buildString {
+            append("<meta http-equiv=\"Content-Security-Policy\" content=\"").append(CSP.replace(NONCE, nonce)).append("\">")
+            append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no\">")
+            append("<link rel=\"stylesheet\" href=\"/__yomu/reader.css\">")
+            append("<style id=\"yomu-user\">").append(css()).append("</style>")
+            append("<script nonce=\"").append(nonce).append("\">window.__yomuConfig=")
+                .append(config(pendingTarget, chapter, stripChapters = false)).append(";</script>")
+            append("<script nonce=\"").append(nonce).append("\" src=\"/__yomu/reader.js\"></script>")
+        }
+        return raw.replace(BookHtml.MARKER, head)
+    }
+
     private fun mime(path: String): String = when (path.substringAfterLast('.').lowercase()) {
         "css" -> "text/css"
         "js" -> "application/javascript"
@@ -496,6 +549,9 @@ class EpubController(
         val path = URLDecoder.decode(url.encodedPath.orEmpty().removePrefix("/"), "UTF-8")
         return try {
             when {
+                path == BOOK_PATH && wholeBookHtml != null -> {
+                    WebResourceResponse("text/html", "UTF-8", ByteArrayInputStream(renderBook().toByteArray()))
+                }
                 path.startsWith("__yomu/") -> {
                     val name = path.removePrefix("__yomu/")
                     WebResourceResponse(mime(name), "UTF-8", context.assets.open("yomu/$name"))
@@ -550,12 +606,21 @@ class EpubController(
 
         @JavascriptInterface
         fun onReady(data: String) = ui {
-            runCatching { json.decodeFromString<ReadyInfo>(data) }
+            val info = runCatching { json.decodeFromString<ReadyInfo>(data) }.getOrNull()
             loadedChapter = chapter
             loading = false
             pushHighlights()
             pushWords()
+            // The whole book has no chapters to load: the layout (page count and chapter starts) is final right here.
+            if (wholeBook && info != null && info.starts.isNotEmpty()) listener?.onLayout(EpubLayout(info.pages, info.starts))
             listener?.onReady(chapter)
+        }
+
+        /** Page starts after a reflow (font, margins, columns, screen): the page chip and the chapter ticks. */
+        @JavascriptInterface
+        fun onLayout(data: String) = ui {
+            if (!wholeBook) return@ui
+            runCatching { json.decodeFromString<EpubLayout>(data) }.getOrNull()?.let { listener?.onLayout(it) }
         }
 
         @JavascriptInterface
@@ -565,9 +630,9 @@ class EpubController(
                 // pull the app back to the chapter it is leaving.
                 if (loading && it.chapter >= 0 && it.chapter != chapter) return@let
                 progress = it
-                // The long strip reports the chapter the reader is actually looking at; the page follows it, so the
-                // title, the contents and "chapter N of M" stay true while scrolling across boundaries.
-                if (settings.longStrip && it.chapter >= 0) {
+                // A document that holds several chapters reports the one the reader is looking at; the page follows it,
+                // so the title, the contents and "chapter N of M" stay true while crossing a chapter boundary.
+                if ((settings.longStrip || wholeBook) && it.chapter >= 0) {
                     if (it.chapter != chapter) chapter = it.chapter
                     listener?.onProgress(it.chapter, it)
                 } else {
@@ -579,7 +644,7 @@ class EpubController(
 
         @JavascriptInterface
         fun onStripRange(from: Int, to: Int) = ui {
-            if (!settings.longStrip) return@ui
+            if (!settings.longStrip && !wholeBook) return@ui
             val changed = from != stripFrom || to != stripTo
             stripFrom = from.coerceAtLeast(0)
             stripTo = to.coerceAtLeast(from)
@@ -605,7 +670,12 @@ class EpubController(
             if (uri.host == HOST) {
                 val path = URLDecoder.decode(uri.encodedPath.orEmpty().removePrefix("/"), "UTF-8")
                 val index = document.chapterIndexOf(path)
-                if (index >= 0) goTo(index, uri.fragment?.let { EpubTarget.Anchor(it) } ?: EpubTarget.Progression(0f))
+                val anchor = uri.fragment?.let { EpubTarget.Anchor(it) }
+                when {
+                    index >= 0 -> goTo(index, anchor ?: EpubTarget.Progression(0f))
+                    // A fragment of the whole-book document: an anchor of the chapter on screen.
+                    wholeBook && anchor != null -> goTo(chapter, anchor)
+                }
             } else {
                 listener?.onExternalLink(url)
             }
@@ -647,6 +717,12 @@ class EpubController(
         /** A strip neighbour that cannot be inlined (fixed layout, image-only): open it as its own page. */
         @JavascriptInterface
         fun onChapterEdge(next: Boolean) = ui {
+            // The whole book already holds every chapter: it is a scroll, never a page load.
+            if (wholeBook) {
+                val target = chapter + if (next) 1 else -1
+                if (target in 0 until document.chapterCount) goTo(target, EpubTarget.Progression(0f))
+                return@ui
+            }
             val target = chapter + if (next) 1 else -1
             if (target in 0 until document.chapterCount) open(target, EpubTarget.Progression(if (next) 0f else 1f))
         }
@@ -662,6 +738,9 @@ class EpubController(
 
     companion object {
         const val HOST = "book.yomu"
+
+        /** URL of the cached whole-book document, served from [BookHtml]'s file. */
+        const val BOOK_PATH = "__book/book.html"
         private const val NONCE = "__yomu_nonce__"
 
         /** Content policy of a rendered chapter: own packaged resources only, plus this document's config script. */
@@ -683,15 +762,19 @@ internal fun sanitizeChapter(doc: Document) {
             "meta[http-equiv=refresh]",
     ).remove()
     for (el in doc.allElements) {
-        for (name in el.attributes().asList().map { it.key }) {
-            val key = name.lowercase()
-            val value = el.attr(name).trim().lowercase()
+        // Collect first: removing an attribute while iterating the set is not safe. Most elements have nothing to
+        // remove, so no list is allocated for them.
+        var remove: MutableList<String>? = null
+        for (attr in el.attributes()) {
+            val key = attr.key.lowercase()
+            val value = attr.value.trim().lowercase()
             if (key.startsWith("on") || key == "srcdoc" || key == "formaction" ||
                 value.startsWith("javascript:") || value.startsWith("vbscript:") || value.startsWith("data:text/html")
             ) {
-                el.removeAttr(name)
+                (remove ?: ArrayList<String>(2).also { remove = it }).add(attr.key)
             }
         }
+        remove?.forEach { el.removeAttr(it) }
     }
 }
 

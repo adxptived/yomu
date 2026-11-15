@@ -96,8 +96,10 @@ import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.YomuFab
 import app.yomu.core.ui.components.coverTint
+import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.rememberCoverColor
 import app.yomu.core.ui.components.sharedCover
+import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.translation.BookTranslator
 import app.yomu.domain.model.Book
@@ -159,6 +161,8 @@ private fun BookDetailsContent(
     val current = book
     LaunchedEffect(current) { if (current === BookDetailsViewModel.MISSING) onBack() }
     Scaffold(
+        // Keeps the "Continue" button above the floating bar; the scroll body runs on under the bar below.
+        contentWindowInsets = topLevelContentInsets(),
         topBar = {
             TopAppBar(
                 title = {},
@@ -249,7 +253,10 @@ private fun BookDetailsContent(
             SkeletonList(Modifier.padding(padding))
             return@Scaffold
         }
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(bottom = navBarBottomPadding(Dimens.xl)),
+        ) {
             Box(Modifier.fillMaxWidth().heightIn(min = 300.dp)) {
                 val cover = current.coverPath?.takeIf { !app.yomu.core.ui.components.LocalHideCovers.current }?.let { File(it) }
                 val tint = app.yomu.core.ui.components.rememberCoverColor(cover, app.yomu.core.ui.components.coverPlaceholderColor(current.title))
