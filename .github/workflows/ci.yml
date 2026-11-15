@@ -19,14 +19,14 @@ jobs:
       matrix:
         java: [17, 21]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
@@ -48,7 +48,7 @@ jobs:
 
       - name: Upload screenshot diffs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: screenshot-diffs-java${{ matrix.java }}
           path: |
@@ -72,21 +72,21 @@ jobs:
 
       - name: Upload debug APK
         if: matrix.java == 21
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: yomu-debug-apk
           path: app/build/outputs/apk/debug/*.apk
 
       - name: Upload release-like APK
         if: matrix.java == 21
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: yomu-fast-apk
           path: app/build/outputs/apk/fast/*.apk
 
       - name: Upload reports and screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-java${{ matrix.java }}
           path: |
