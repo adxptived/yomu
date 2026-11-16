@@ -79,6 +79,9 @@ import app.yomu.domain.model.MangaDirection
 import app.yomu.domain.model.MangaSettings
 import app.yomu.domain.model.ScaleType
 import app.yomu.domain.model.TapZoneLayout
+import app.yomu.domain.reader.ReaderInput
+import app.yomu.domain.reader.ReaderPoint
+import app.yomu.domain.reader.ReaderTapAction
 import coil3.compose.AsyncImage
 import coil3.imageLoader
 import coil3.request.ImageRequest
@@ -254,12 +257,13 @@ private fun Paged(controller: MangaController, listener: MangaListener, layout: 
         }
     }
     val onTap: (Offset, IntSize) -> Unit = { pos, size ->
-        val action = TapZones.action(s.tapZones, s.invertTapZones, rtl, pos.x / size.width, pos.y / size.height)
+        val point = ReaderPoint(pos.x / size.width, pos.y / size.height)
+        val action = ReaderInput.action(s.tapZones, s.invertTapZones, rtl, point)
         // A locked page is view-only: taps open the menu instead of leaving it, and the pager below does not swipe.
-        when (if (s.zoomLock) TapAction.MENU else action) {
-            TapAction.MENU -> listener.onMenu()
-            TapAction.NEXT -> scope.launch { go((pager.currentPage + 1).coerceAtMost(layout.total - 1)) }
-            TapAction.PREV -> scope.launch {
+        when (if (s.zoomLock) ReaderTapAction.MENU else action) {
+            ReaderTapAction.MENU -> listener.onMenu()
+            ReaderTapAction.NEXT -> scope.launch { go((pager.currentPage + 1).coerceAtMost(layout.total - 1)) }
+            ReaderTapAction.PREV -> scope.launch {
                 if (pager.currentPage == 0 && !layout.hasPrev) listener.onChapterEdge(false) else go((pager.currentPage - 1).coerceAtLeast(0))
             }
         }
@@ -526,12 +530,13 @@ private fun Webtoon(controller: MangaController, listener: MangaListener, hasPre
             .pointerInput(s.tapZones, s.invertTapZones, s.webtoonDoubleTapZoom, zoom > 1.01f, s.zoomLock) {
                 detectTapGestures(
                     onTap = { pos ->
-                        val action = TapZones.action(s.tapZones, s.invertTapZones, false, pos.x / size.width, pos.y / size.height)
+                        val point = ReaderPoint(pos.x / size.width, pos.y / size.height)
+                        val action = ReaderInput.action(s.tapZones, s.invertTapZones, false, point)
                         // Locked, the strip only scrolls: a tap opens the menu instead of jumping a screen.
-                        when (if (s.zoomLock) TapAction.MENU else action) {
-                            TapAction.MENU -> listener.onMenu()
-                            TapAction.NEXT -> scope.launch { scrollBy(size.height * 0.8f) }
-                            TapAction.PREV -> scope.launch { scrollBy(-size.height * 0.8f) }
+                        when (if (s.zoomLock) ReaderTapAction.MENU else action) {
+                            ReaderTapAction.MENU -> listener.onMenu()
+                            ReaderTapAction.NEXT -> scope.launch { scrollBy(size.height * 0.8f) }
+                            ReaderTapAction.PREV -> scope.launch { scrollBy(-size.height * 0.8f) }
                         }
                     },
                     // Without a double-tap handler single taps fire at once; zoomed in, a double tap always zooms back out.

@@ -32,13 +32,24 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-data class BookExtras(val highlights: Int = 0, val notes: Int = 0, val bookmarks: Int = 0, val readingMs: Long = 0, val collections: Set<Long> = emptySet())
+data class BookExtras(
+    val highlights: Int = 0,
+    val notes: Int = 0,
+    val bookmarks: Int = 0,
+    val readingMs: Long = 0,
+    val collections: Set<Long> = emptySet(),
+    /** Length of an audio book from its own track list; 0 when unknown (a single file without a tag). */
+    val audioDurationMs: Long = 0,
+    /** Number of tracks of an audio book whose manifest is loaded; 0 otherwise. */
+    val audioTracks: Int = 0,
+)
 
 class BookDetailsViewModel(
     private val bookId: Long,
@@ -49,16 +60,31 @@ class BookDetailsViewModel(
     private val translation: TranslationService,
     private val bookTranslator: BookTranslator,
     private val trackers: TrackerManager,
+    private val audiobooks: app.yomu.data.audio.AudiobookStore,
 ) : ViewModel(), TrackingViewModel {
     /** null while loading; a deleted book emits [Missing]. */
     val book: StateFlow<Book?> = books.observeBook(bookId).map { it ?: MISSING }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val collections = books.observeCollections().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val allTags = books.observeTags().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private val refresh = MutableStateFlow(0)
+    /** Length and track count of an audio book, read from its own track list; null for everything else. */
+    private val audioInfo: StateFlow<Pair<Long, Int>?> = books.observeBook(bookId).mapLatest { book ->
+        if (book == null || !book.format.isAudio) return@mapLatest null
+        runCatching { audiobooks.tracks(book) }.getOrNull()?.let { tracks -> tracks.sumOf { it.durationMs } to tracks.size }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     val extras: StateFlow<BookExtras> = combine(
-        annotations.observeHighlights(bookId), annotations.observeNotes(bookId), annotations.observeBookmarks(bookId), refresh,
-    ) { h, n, b, _ ->
-        BookExtras(h.size, n.size, b.size, stats.timeForBook(bookId), books.collectionsOf(bookId).toSet())
+        annotations.observeHighlights(bookId), annotations.observeNotes(bookId), annotations.observeBookmarks(bookId), refresh, audioInfo,
+    ) { h, n, b, _, audio ->
+        BookExtras(
+            highlights = h.size,
+            notes = n.size,
+            bookmarks = b.size,
+            readingMs = stats.timeForBook(bookId),
+            collections = books.collectionsOf(bookId).toSet(),
+            audioDurationMs = audio?.first ?: 0,
+            audioTracks = audio?.second ?: 0,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookExtras())
 
     override val localFile: Boolean = true

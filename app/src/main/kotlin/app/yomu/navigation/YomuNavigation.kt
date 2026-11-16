@@ -615,8 +615,10 @@ private fun LibraryTab(nav: NavHostController, tabs: TabsState) {
         Box(modifier) {
             LibraryScreen(
                 viewModel = koinViewModel(),
-                onOpenBook = { nav.navigate(ReaderRoute(bookId = it.id)) },
+                // A tile tap opens the card; the explicit read action and the Continue shelf open the reader at
+                // the saved position. Both decisions come from LibraryOpenResolver, not from per-call exceptions.
                 onOpenDetails = { if (twoPane) paneBook = it.id else nav.navigate(BookDetailsRoute(it.id)) },
+                onOpenBook = { nav.navigate(ReaderRoute(bookId = it.id)) },
                 onFindBooksOnline = { tabs.select(TopLevel.CATALOG) },
                 onOpenSettings = { tabs.select(TopLevel.SETTINGS) },
                 onOpenTitle = openTitle,

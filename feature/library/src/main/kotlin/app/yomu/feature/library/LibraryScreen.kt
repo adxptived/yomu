@@ -168,6 +168,7 @@ import app.yomu.core.ui.components.TabsPickerSheet
 import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.ToolbarPill
 import app.yomu.core.ui.components.TopLevelBody
+import app.yomu.core.ui.components.WheelLayout
 import app.yomu.core.ui.components.YomuFab
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.asFastScrollTarget
@@ -184,6 +185,7 @@ import app.yomu.core.ui.components.wheelCenter
 import app.yomu.core.ui.components.wheelGesture
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.download.DownloadSummary
+import app.yomu.domain.library.LibraryItemKey
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookCollection
 import app.yomu.domain.model.CatalogEntry
@@ -236,6 +238,7 @@ fun LibraryScreen(
     val shelfHidden by viewModel.shelfHidden.collectAsStateWithLifecycle()
     val shelfBelow by viewModel.shelfBelow.collectAsStateWithLifecycle()
     val selection by viewModel.selection.collectAsStateWithLifecycle()
+    val typedSelection by viewModel.typedSelection.collectAsStateWithLifecycle()
     val progress by viewModel.importProgress.collectAsStateWithLifecycle()
     val total by viewModel.total.collectAsStateWithLifecycle()
     val sort by viewModel.sort.collectAsStateWithLifecycle()
@@ -262,6 +265,7 @@ fun LibraryScreen(
     var showImport by rememberSaveable { mutableStateOf(false) }
     var showAudioLink by rememberSaveable { mutableStateOf(false) }
     var showFilters by rememberSaveable { mutableStateOf(false) }
+    var showDisplay by rememberSaveable { mutableStateOf(false) }
     var showMenu by rememberSaveable { mutableStateOf(false) }
     var newTab by remember { mutableStateOf(false) }
     var tabActions by remember { mutableStateOf<BookCollection?>(null) }
@@ -300,13 +304,15 @@ fun LibraryScreen(
 
     /** The action under [finger], in the same geometry the wheel draws with. */
     fun wheelIndexAt(w: RadialState, finger: Offset): Int? = with(wheelDensity) {
-        val radius = radialRadiusDp(w.actions.size).toPx()
+        // The ring holds at most MAX_WHEEL_SECTORS entries, so its radius and sectors follow the visible count.
+        val sectors = WheelLayout.ringIndices(w.actions.size).size
+        val radius = radialRadiusDp(sectors).toPx()
         val button = RADIAL_BUTTON_DP.toPx()
         val center = wheelCenter(
             w.anchor, radius, button, 10.dp.toPx(),
             wheelWindow.width.toFloat(), wheelWindow.height.toFloat(),
         )
-        radialSector(w.actions.size, center, finger, wheelDeadZone)
+        radialSector(sectors, center, finger, wheelDeadZone)
     }
 
     fun wheelActions(book: Book): List<RadialAction> = listOf(
@@ -355,6 +361,10 @@ fun LibraryScreen(
                     scope.launch { snackbar.showSnackbar(msg, withDismissAction = true) }
                 }
                 is LibraryEvent.Deleted -> Unit
+                // A partial bulk result names both numbers: the user must not read "done" over a half-finished set.
+                is LibraryEvent.BulkPartial -> scope.launch {
+                    snackbar.showSnackbar(resources.getString(R.string.library_bulk_partial, e.succeeded, e.succeeded + e.failed + e.unsupported))
+                }
                 is LibraryEvent.Message -> scope.launch { snackbar.showSnackbar(resources.getString(e.text)) }
                 is LibraryEvent.OpenBook -> onOpenBook(e.book)
                 is LibraryEvent.ReadChapter -> onReadChapter(e.chapterId)
@@ -375,7 +385,8 @@ fun LibraryScreen(
         }
     }
 
-    val selecting = bulkSelect || selection.isNotEmpty()
+    val selecting = bulkSelect || selection.isNotEmpty() || typedSelection.isActive
+    val selectionCount = typedSelection.count
     val exitSelection: () -> Unit = { bulkSelect = false; viewModel.clearSelection() }
     BackHandler(enabled = selecting) { exitSelection() }
     val filtered = search.isNotBlank() || activeFilters > 0
@@ -384,7 +395,8 @@ fun LibraryScreen(
     val onlineLoaded = onlineCount >= 0
     // What the grid shows: online titles as tiles (in a user tab, or in "All" while searching or filtering) and books.
     val inTab = filter.collectionId != null
-    val onlineTiles = if (inOnline || selecting) emptyList() else if (inTab || filtered) onlineShown else emptyList()
+    // Online tiles stay visible while selecting: a mixed selection is the point of the shared selection state.
+    val onlineTiles = if (inOnline) emptyList() else if (inTab || filtered) onlineShown else emptyList()
     // "From the catalog": shown above the books, moved under them, or hidden from its own menu.
     val shelfShown = !inOnline && !inTab && !filtered && !selecting && onlineShown.isNotEmpty() && !shelfHidden
     val shelf = shelfShown && !shelfBelow
@@ -415,7 +427,8 @@ fun LibraryScreen(
             Column(Modifier.background(MaterialTheme.colorScheme.background)) {
                 when {
                     selecting -> TopAppBar(
-                        title = { Text(pluralStringResource(R.plurals.library_selected, selection.size, selection.size)) },
+                        // Local books and online entries are counted together: they share one selection.
+                        title = { Text(pluralStringResource(R.plurals.library_selected, selectionCount, selectionCount)) },
                         navigationIcon = {
                             IconButton(onClick = exitSelection) { Icon(Icons.Default.Close, stringResource(CoreR.string.close)) }
                         },
@@ -450,13 +463,27 @@ fun LibraryScreen(
                             onlineTotal.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.library_online_short, it, it) },
                         ).joinToString(" · ").ifEmpty { null },
                         onSearch = { searching = true },
-                        onSelect = { haptic.tick(); bulkSelect = true },
                         downloads = viewModel.downloadSummary,
                         onDownloads = onOpenDownloads,
                     ) {
                         Box {
                             CircleIconButton(Icons.Default.MoreVert, stringResource(CoreR.string.more), onClick = { showMenu = true })
                             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.library_import)) },
+                                    leadingIcon = { Icon(Icons.Default.LibraryAdd, null) },
+                                    onClick = { showMenu = false; showImport = true },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.library_select_mode)) },
+                                    leadingIcon = { Icon(Icons.Outlined.Checklist, null) },
+                                    onClick = { showMenu = false; haptic.tick(); bulkSelect = true },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.library_downloads)) },
+                                    leadingIcon = { Icon(Icons.Default.Download, null) },
+                                    onClick = { showMenu = false; onOpenDownloads() },
+                                )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.library_new_collection)) },
                                     leadingIcon = { Icon(Icons.Default.CreateNewFolder, null) },
@@ -508,12 +535,9 @@ fun LibraryScreen(
                 if (!inOnline) {
                     LibraryToolbar(
                         activeFilters = activeFilters,
-                        sort = sort,
-                        ascending = ascending,
+                        sortLabel = stringResource(sort.label()),
                         grid = grid,
-                        onFilters = { showFilters = true },
-                        onSort = viewModel::setSort,
-                        onToggleGrid = { viewModel.setGrid(!grid) },
+                        onDisplay = { showDisplay = true },
                     )
                     if (activeFilters > 0) ActiveFilters(filter, types, viewModel)
                 }
@@ -619,6 +643,7 @@ fun LibraryScreen(
                             columns = columns,
                             selection = selection,
                             selectionMode = selecting,
+                            onlineSelection = typedSelection.keys.filterIsInstance<LibraryItemKey.OnlineEntry>().mapTo(mutableSetOf()) { it.id },
                             onlineTiles = onlineTiles,
                             header = {
                                 if (continueRow) ContinueReading(continueItems, onOpenBook, viewModel::continueOnline)
@@ -643,9 +668,14 @@ fun LibraryScreen(
                                 }
                             },
                             sectionLabels = onlineTiles.isNotEmpty() && bookCount > 0,
-                            onOpenTitle = onOpenTitle,
+                            // While selecting, an online tile toggles its own key: the same controller serves local
+                            // books and online entries, so both can be selected at once.
+                            onOpenTitle = { id -> if (selecting) { haptic.tick(); viewModel.toggleSelectOnline(id) } else onOpenTitle(id) },
                             onOnlineLongPress = { onlineMenu = it },
-                            onClick = { book -> if (selecting) { haptic.tick(); viewModel.toggleSelect(book.id) } else onOpenBook(book) },
+                            // A tile tap opens the card, like the online tiles: the reader is reached by the explicit
+                            // read action (the wheel, the card's main button or a swipe), so one tap never starts
+                            // reading a book the user only meant to look at.
+                            onClick = { book -> if (selecting) { haptic.tick(); viewModel.toggleSelect(book.id) } else onOpenDetails(book) },
                             onLongClick = { book ->
                                 if (selecting) {
                                     onOpenDetails(book)
@@ -670,10 +700,18 @@ fun LibraryScreen(
                                     },
                                     onEnd = {
                                         val w = wheel
-                                        val picked = w?.active?.let { i -> w.actions.getOrNull(i) }
-                                        if (picked != null) {
-                                            wheel = null
-                                            picked.onClick()
+                                        val sector = w?.active
+                                        if (w != null && sector != null) {
+                                            if (WheelLayout.isMore(w.actions.size, sector)) {
+                                                // The ring stays open and swaps itself for the list of the rest.
+                                                w.overflow = true
+                                                w.dragging = false
+                                            } else {
+                                                val index = WheelLayout.ringIndices(w.actions.size).getOrNull(sector)
+                                                val picked = index?.let(w.actions::getOrNull)
+                                                wheel = null
+                                                picked?.onClick()
+                                            }
                                         } else {
                                             // Lifted in the middle: nothing runs, but the ring stays for a tap.
                                             w?.dragging = false
@@ -743,6 +781,17 @@ fun LibraryScreen(
             onPick = viewModel::addYouTubeResult,
             onRetry = { viewModel.searchYouTube(state.query) },
             onDismiss = viewModel::closeAudioSearch,
+        )
+    }
+    if (showDisplay) {
+        DisplaySheet(
+            viewModel = viewModel,
+            sort = sort,
+            ascending = ascending,
+            grid = grid,
+            activeFilters = activeFilters,
+            onFilters = { showFilters = true },
+            onDismiss = { showDisplay = false },
         )
     }
     if (showFilters) {
@@ -854,7 +903,6 @@ fun LibraryScreen(
 private fun LibraryHeader(
     subtitle: String?,
     onSearch: () -> Unit,
-    onSelect: () -> Unit,
     downloads: StateFlow<DownloadSummary>,
     onDownloads: () -> Unit,
     menu: @Composable () -> Unit,
@@ -872,12 +920,12 @@ private fun LibraryHeader(
                     Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+            // At most two visible commands: search and the overflow menu. Selection, downloads, refresh, shelves and
+            // settings live in the menu, and the download button still appears while a queue is active.
             if (summary.visible) {
                 DownloadsButton(summary, onDownloads)
                 Spacer(Modifier.width(Dimens.s))
             }
-            CircleIconButton(Icons.Outlined.Checklist, stringResource(R.string.library_select_mode), onClick = onSelect)
-            Spacer(Modifier.width(Dimens.s))
             CircleIconButton(Icons.Default.Search, stringResource(CoreR.string.search), onClick = onSearch)
             Spacer(Modifier.width(Dimens.s))
             menu()
@@ -930,44 +978,84 @@ private fun DownloadsButton(s: DownloadSummary, onClick: () -> Unit) {
     }
 }
 
-/** Filter (with the number of active filters), sort and the grid/list switch. */
+/**
+ * The single entry to display options: filters, sorting and the view.
+ *
+ * The old header had three separate controls for the same subject; one pill leads to one sheet that keeps all three,
+ * so nothing is lost and the header stays to one compact line.
+ */
 @Composable
 private fun LibraryToolbar(
     activeFilters: Int,
-    sort: LibrarySort,
-    ascending: Boolean,
+    sortLabel: String,
     grid: Boolean,
-    onFilters: () -> Unit,
-    onSort: (LibrarySort) -> Unit,
-    onToggleGrid: () -> Unit,
+    onDisplay: () -> Unit,
 ) {
-    var sortMenu by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().padding(start = Dimens.l, end = Dimens.l, top = Dimens.xs, bottom = Dimens.s),
         horizontalArrangement = Arrangement.spacedBy(Dimens.s),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ToolbarPill(Icons.Default.FilterList, stringResource(R.string.library_filter), onClick = onFilters, badge = activeFilters)
-        Box {
-            ToolbarPill(if (ascending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, stringResource(sort.label()), onClick = { sortMenu = true })
-            DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
-                LibrarySort.entries.forEach { s ->
-                    DropdownMenuItem(
-                        text = { Text(stringResource(s.label())) },
-                        onClick = { onSort(s); sortMenu = false },
-                        trailingIcon = {
-                            if (s == sort) Icon(if (ascending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, null, tint = MaterialTheme.colorScheme.primary)
-                        },
-                    )
-                }
-            }
-        }
+        ToolbarPill(
+            Icons.Default.SwapVert,
+            stringResource(R.string.library_display),
+            onClick = onDisplay,
+            badge = activeFilters,
+        )
+        Text(
+            sortLabel,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
         Spacer(Modifier.weight(1f))
-        CircleIconButton(
+        Icon(
+            if (grid) Icons.Default.GridView else Icons.AutoMirrored.Filled.ViewList,
+            null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+/** Filters, sort order and the view in one place; each group is a small set of obvious choices. */
+@Composable
+private fun DisplaySheet(
+    viewModel: LibraryViewModel,
+    sort: LibrarySort,
+    ascending: Boolean,
+    grid: Boolean,
+    activeFilters: Int,
+    onFilters: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    YomuSheet(onDismiss = onDismiss) {
+        SheetTitle(stringResource(R.string.library_display))
+        SheetAction(Icons.Default.FilterList, stringResource(R.string.library_filter)) {
+            onDismiss()
+            onFilters()
+        }
+        SheetAction(
+            if (ascending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+            stringResource(R.string.library_sort_direction),
+        ) { viewModel.setAscending(!ascending) }
+        // The chosen sort is first and marked, so the sheet shows the current state without a second control.
+        val ordered = listOf(sort) + LibrarySort.entries.filter { it != sort }
+        ordered.forEach { s ->
+            SheetAction(
+                if (s == sort) Icons.Default.Check else Icons.Default.SwapVert,
+                stringResource(s.label()),
+            ) { viewModel.chooseSort(s); onDismiss() }
+        }
+        SheetAction(
             if (grid) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
             stringResource(if (grid) R.string.library_view_list else R.string.library_view_grid),
-            onClick = onToggleGrid,
-        )
+        ) { viewModel.setGrid(!grid) }
+        if (activeFilters > 0) {
+            SheetAction(Icons.Default.FilterList, stringResource(R.string.library_clear_filters)) { viewModel.clearFilters() }
+        }
     }
 }
 
@@ -1117,13 +1205,22 @@ private fun OnlineShelf(
 }
 
 @Composable
-private fun OnlineTile(e: CatalogEntry, modifier: Modifier, onOpen: (Long) -> Unit, onLongPress: (CatalogEntry) -> Unit) {
+private fun OnlineTile(
+    e: CatalogEntry,
+    modifier: Modifier,
+    onOpen: (Long) -> Unit,
+    onLongPress: (CatalogEntry) -> Unit,
+    selected: Boolean = false,
+    selectionMode: Boolean = false,
+) {
     BookGridItem(
         title = e.title,
         subtitle = e.author,
         cover = e.coverUrl,
         progress = 0f,
         badge = if (e.unread > 0) e.unread.toString() else null,
+        selected = selected,
+        selectionMode = selectionMode,
         modifier = modifier,
         onClick = { onOpen(e.id) },
         onLongClick = { onLongPress(e) },
@@ -1215,6 +1312,8 @@ private fun LibraryGrid(
     columns: Int,
     selection: Set<Long>,
     selectionMode: Boolean,
+    /** Selected online entries; a separate key space from [selection], which holds local book ids. */
+    onlineSelection: Set<Long> = emptySet(),
     onlineTiles: List<CatalogEntry>,
     header: @Composable () -> Unit,
     footer: @Composable () -> Unit = {},
@@ -1260,7 +1359,11 @@ private fun LibraryGrid(
                     }
                     items(onlineTiles.size, key = { "o${onlineTiles.getOrNull(it)?.id ?: it}" }, contentType = { "online" }) { i ->
                         val item = onlineTiles.getOrNull(i) ?: return@items
-                        OnlineTile(item, motionItem(), onOpenTitle, onOnlineLongPress)
+                        OnlineTile(
+                            item, motionItem(), onOpenTitle, onOnlineLongPress,
+                            selected = selectionMode && item.id in onlineSelection,
+                            selectionMode = selectionMode,
+                        )
                     }
                 }
                 if (sectionLabels && bookCount > 0) {
@@ -1312,6 +1415,8 @@ private fun LibraryGrid(
                             cover = e.coverUrl,
                             progress = e.readFraction().takeIf { e.lastReadAt > 0 } ?: 0f,
                             meta = if (e.unread > 0) pluralStringResource(R.plurals.library_unread_chapters, e.unread, e.unread) else null,
+                            selected = selectionMode && e.id in onlineSelection,
+                            selectionMode = selectionMode,
                             onClick = { onOpenTitle(e.id) },
                             onLongClick = { onOnlineLongPress(e) },
                             modifier = motionItem(),

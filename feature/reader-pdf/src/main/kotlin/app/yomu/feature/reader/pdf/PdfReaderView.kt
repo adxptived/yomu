@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
@@ -64,6 +65,7 @@ import app.yomu.domain.model.Highlight
 import app.yomu.domain.model.HighlightStyle
 import app.yomu.domain.model.PdfMode
 import app.yomu.domain.model.TextReaderSettings
+import app.yomu.domain.reader.ReaderInput
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -72,31 +74,53 @@ import me.saket.telephoto.zoomable.ZoomSpec
 import me.saket.telephoto.zoomable.rememberZoomableState
 import me.saket.telephoto.zoomable.zoomable
 
-/** Callbacks of the PDF engine. Rectangles are in root coordinates (px). */
+/** Callbacks of the PDF engine. Rects are in root coordinates (px); [onTap] is in viewport fractions. */
 interface PdfListener {
+    /**
+     * A tap at [x], [y] as fractions 0..1 of the reader viewport. The page converts its own gesture
+     * position and only calls this for a point inside the viewport, so the zone resolver never sees pixels.
+     */
     fun onTap(x: Float, y: Float) {}
+    /**
+     * A long press that did not land on a text glyph — a scan, a margin or an empty area of a page. [page] is the
+     * physical page, [windowPosition] the anchor in window coordinates for the page menu.
+     */
+    fun onPageLongPress(page: Int, windowPosition: Offset) {}
     fun onSelection(selection: PdfSelection?, bounds: Rect?) {}
     fun onHighlightTap(highlight: Highlight, bounds: Rect) {}
     fun onLink(uri: String) {}
     fun onPageChanged(page: Int) {}
 }
 
+/**
+ * Calls [onTap] with the fractions of a root point inside [viewport]; a point outside, or a viewport that
+ * was not measured yet, is ignored instead of being clamped into a zone.
+ */
+private fun tapListener(viewport: Rect, onTap: (Float, Float) -> Unit): (Offset) -> Unit = { root ->
+    ReaderInput.normalize(root.x, root.y, viewport.left, viewport.top, viewport.width, viewport.height)
+        ?.let { onTap(it.x, it.y) }
+}
+
 @Composable
 fun PdfReaderView(controller: PdfController, listener: PdfListener, textSettings: TextReaderSettings, landscape: Boolean, modifier: Modifier = Modifier) {
     val settings = controller.settings
     LaunchedEffect(settings) { controller.invalidateBitmaps() }
-    Box(modifier.fillMaxSize().background(if (settings.night) Color.Black else Color(0xFF2B2B2B))) {
+    // The viewport is this whole reader area: page, scroll and reflow taps are measured against it, not
+    // against the activity or a single page, so margins, crop, zoom and dual pages keep the same zones.
+    var viewport by remember { mutableStateOf(Rect.Zero) }
+    val onTap = tapListener(viewport, listener::onTap)
+    Box(modifier.fillMaxSize().onGloballyPositioned { viewport = it.boundsInRoot() }.background(if (settings.night) Color.Black else Color(0xFF2B2B2B))) {
         when {
-            settings.reflow -> ReflowView(controller, listener, textSettings)
-            settings.mode == PdfMode.SCROLL -> ScrollView(controller, listener)
-            settings.mode == PdfMode.DUAL && landscape -> PagedView(controller, listener, dual = true)
-            else -> PagedView(controller, listener, dual = false)
+            settings.reflow -> ReflowView(controller, listener, textSettings, onTap)
+            settings.mode == PdfMode.SCROLL -> ScrollView(controller, listener, onTap)
+            settings.mode == PdfMode.DUAL && landscape -> PagedView(controller, listener, onTap, dual = true)
+            else -> PagedView(controller, listener, onTap, dual = false)
         }
     }
 }
 
 @Composable
-private fun ScrollView(controller: PdfController, listener: PdfListener) {
+private fun ScrollView(controller: PdfController, listener: PdfListener, onTap: (Offset) -> Unit) {
     val state = rememberLazyListState(initialFirstVisibleItemIndex = controller.page)
     var zoom by remember { mutableFloatStateOf(1f) }
     val hScroll = rememberScrollState()
@@ -115,14 +139,14 @@ private fun ScrollView(controller: PdfController, listener: PdfListener) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             items(controller.pageCount, key = { it }) { index ->
-                PdfPage(controller, index, listener, Modifier.fillMaxWidth(), renderScale = 1f)
+                PdfPage(controller, index, listener, onTap, Modifier.fillMaxWidth(), renderScale = 1f)
             }
         }
     }
 }
 
 @Composable
-private fun PagedView(controller: PdfController, listener: PdfListener, dual: Boolean) {
+private fun PagedView(controller: PdfController, listener: PdfListener, onTap: (Offset) -> Unit, dual: Boolean) {
     val count = if (dual) (controller.pageCount + 1) / 2 else controller.pageCount
     val pager = rememberPagerState(initialPage = if (dual) controller.page / 2 else controller.page) { count }
     LaunchedEffect(Unit) { controller.pageRequests.collect { pager.scrollToPage(if (dual) it / 2 else it) } }
@@ -153,11 +177,11 @@ private fun PagedView(controller: PdfController, listener: PdfListener, dual: Bo
         Box(Modifier.fillMaxSize().zoomable(zoomState), contentAlignment = Alignment.Center) {
             if (dual) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    PdfPage(controller, p * 2, listener, Modifier.weight(1f), renderScale = 1.5f)
-                    if (p * 2 + 1 < controller.pageCount) PdfPage(controller, p * 2 + 1, listener, Modifier.weight(1f), renderScale = 1.5f)
+                    PdfPage(controller, p * 2, listener, onTap, Modifier.weight(1f), renderScale = 1.5f)
+                    if (p * 2 + 1 < controller.pageCount) PdfPage(controller, p * 2 + 1, listener, onTap, Modifier.weight(1f), renderScale = 1.5f)
                 }
             } else {
-                PdfPage(controller, p, listener, Modifier.fillMaxWidth(), renderScale = 2f, fitHeight = true)
+                PdfPage(controller, p, listener, onTap, Modifier.fillMaxWidth(), renderScale = 2f, fitHeight = true)
             }
         }
     }
@@ -165,7 +189,7 @@ private fun PagedView(controller: PdfController, listener: PdfListener, dual: Bo
 
 /** One rendered page with highlight, search and selection overlays. */
 @Composable
-private fun PdfPage(controller: PdfController, index: Int, listener: PdfListener, modifier: Modifier, renderScale: Float, fitHeight: Boolean = false) {
+private fun PdfPage(controller: PdfController, index: Int, listener: PdfListener, onTap: (Offset) -> Unit, modifier: Modifier, renderScale: Float, fitHeight: Boolean = false) {
     val scope = rememberCoroutineScope()
     var ratio by remember(index) { mutableFloatStateOf(1.414f) }
     var bitmap by remember(index) { mutableStateOf<ImageBitmap?>(null) }
@@ -250,25 +274,41 @@ private fun PdfPage(controller: PdfController, index: Int, listener: PdfListener
                             listener.onSelection(null, null)
                             return@launch
                         }
-                        val root = coords?.boundsInRoot()
-                        val rx = (root?.left ?: 0f) + pos.x
-                        val ry = (root?.top ?: 0f) + pos.y
-                        listener.onTap(rx, ry)
+                        // Only the viewport fractions go to the zone resolver: the gesture position here is
+                        // local to the page, which is not the navigation area once the page is zoomed, cropped
+                        // or shown beside another page. A drag or pinch never reaches this tap handler.
+                        val root = coords?.boundsInRoot() ?: return@launch
+                        onTap(Offset(root.left + pos.x, root.top + pos.y))
                     }
                 }
             }
             .pointerInput(index) {
                 var anchor = -1
+                // A long press on empty space or a scan opens the page menu; on a glyph it starts a selection.
+                // The hit test is asynchronous, so a page that changed while it ran must not open the old page's menu.
+                var pressPage = -1
+                var pressRoot = Offset.Unspecified
+                var dragged = false
+                var menuRequested = false
                 detectDragGesturesAfterLongPress(
                     onDragStart = { pos ->
+                        pressPage = index
+                        dragged = false
+                        menuRequested = false
+                        val root = coords?.boundsInRoot()
+                        pressRoot = if (root != null) Offset(root.left + pos.x, root.top + pos.y) else Offset.Unspecified
+                        val w = size.width.toFloat()
+                        val h = size.height.toFloat()
                         scope.launch(QuietErrors) {
-                            val (px, py) = controller.toPage(index, pos.x, pos.y, size.width.toFloat(), size.height.toFloat())
-                            val ci = controller.pdf.charIndexAt(index, px, py, 12f)
-                            anchor = ci
-                            if (ci >= 0) controller.selectWord(index, ci)
+                            val (px, py) = controller.toPage(index, pos.x, pos.y, w, h)
+                            // A miss selects nothing and leaves the press to the page menu after the gesture ends.
+                            anchor = controller.pdf.charIndexAt(index, px, py, 12f)
+                            if (anchor >= 0) controller.selectWord(index, anchor)
                         }
                     },
-                    onDrag = { change, _ ->
+                    onDrag = { change, dragAmount ->
+                        val moved = kotlin.math.abs(dragAmount.x) + kotlin.math.abs(dragAmount.y)
+                        if (moved > 0f) dragged = true
                         val pos = change.position
                         scope.launch(QuietErrors) {
                             if (anchor < 0) return@launch
@@ -279,15 +319,24 @@ private fun PdfPage(controller: PdfController, index: Int, listener: PdfListener
                     },
                     onDragEnd = {
                         scope.launch(QuietErrors) {
-                            val sel = controller.selection ?: return@launch
-                            val w = size.width.toFloat()
-                            val h = size.height.toFloat()
-                            val rects = sel.rects.map { controller.toView(index, it, w, h) }
-                            val root = coords?.boundsInRoot() ?: Rect.Zero
-                            val union = rects.fold<RectF, RectF?>(null) { acc, r -> acc?.apply { union(r) } ?: RectF(r) } ?: RectF()
-                            listener.onSelection(sel, Rect(root.left + union.left, root.top + union.top, root.left + union.right, root.top + union.bottom))
+                            val sel = controller.selection
+                            if (sel != null && sel.page == index) {
+                                val w = size.width.toFloat()
+                                val h = size.height.toFloat()
+                                val rects = sel.rects.map { controller.toView(index, it, w, h) }
+                                val root = coords?.boundsInRoot() ?: Rect.Zero
+                                val union = rects.fold<RectF, RectF?>(null) { acc, r -> acc?.apply { union(r) } ?: RectF(r) } ?: RectF()
+                                listener.onSelection(sel, Rect(root.left + union.left, root.top + union.top, root.left + union.right, root.top + union.bottom))
+                                return@launch
+                            }
+                            // Nothing was selected under the finger: a scan or an empty margin. Only a stationary
+                            // press opens the menu — a drag that simply ended on blank space is not a menu gesture.
+                            if (dragged || menuRequested || pressPage != index || !pressRoot.isSpecified) return@launch
+                            menuRequested = true
+                            listener.onPageLongPress(index, pressRoot)
                         }
                     },
+                    onDragCancel = { anchor = -1 },
                 )
             },
     ) {
@@ -312,8 +361,9 @@ private fun PdfPage(controller: PdfController, index: Int, listener: PdfListener
 }
 
 @Composable
-private fun ReflowView(controller: PdfController, listener: PdfListener, s: TextReaderSettings) {
+private fun ReflowView(controller: PdfController, listener: PdfListener, s: TextReaderSettings, onTap: (Offset) -> Unit) {
     val state = rememberLazyListState(initialFirstVisibleItemIndex = controller.page)
+    var reflowCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     LaunchedEffect(Unit) { controller.pageRequests.collect { state.scrollToItem(it) } }
     LaunchedEffect(state) {
         snapshotFlow { state.firstVisibleItemIndex }.distinctUntilChanged().collect { controller.page = it; listener.onPageChanged(it) }
@@ -327,7 +377,14 @@ private fun ReflowView(controller: PdfController, listener: PdfListener, s: Text
     }
     LazyColumn(
         state = state,
-        modifier = Modifier.fillMaxSize().background(bg).pointerInput(Unit) { detectTapGestures { listener.onTap(it.x, it.y) } },
+        modifier = Modifier.fillMaxSize().background(bg)
+            .onGloballyPositioned { reflowCoords = it }
+            .pointerInput(Unit) {
+                detectTapGestures { pos ->
+                    val root = reflowCoords?.localToRoot(pos) ?: pos
+                    onTap(root)
+                }
+            },
     ) {
         items(controller.pageCount, key = { it }) { index ->
             var paragraphs by remember(index) { mutableStateOf<List<String>?>(null) }
@@ -361,12 +418,12 @@ private fun ReflowView(controller: PdfController, listener: PdfListener, s: Text
                 if (paragraphs != null) {
                     if (paragraphs.orEmpty().isEmpty()) {
                         Text(stringResource(if (textError) R.string.pdf_reflow_text_error else R.string.pdf_reflow_no_text), color = fg.copy(alpha = 0.7f), style = MaterialTheme.typography.labelMedium)
-                        PdfPage(controller, index, listener, Modifier.fillMaxWidth(), renderScale = 1f)
+                        PdfPage(controller, index, listener, onTap, Modifier.fillMaxWidth(), renderScale = 1f)
                     } else {
                         TextButton(onClick = { showPage = !showPage }) {
                             Text(stringResource(if (showPage) R.string.pdf_reflow_hide_page else R.string.pdf_reflow_show_page))
                         }
-                        if (showPage) PdfPage(controller, index, listener, Modifier.fillMaxWidth(), renderScale = 1f)
+                        if (showPage) PdfPage(controller, index, listener, onTap, Modifier.fillMaxWidth(), renderScale = 1f)
                     }
                 }
             }

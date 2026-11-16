@@ -7,6 +7,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -116,7 +117,10 @@ class NavigationUxScreensTest {
         assertTrue("import failed: $outcome", outcome is ImportOutcome.Added)
         awaitText("Zones")
         compose.mainClock.advanceTimeBy(1_000)
+        // A tile opens the card; the card's read action opens the reader with the first-run tap zones.
         compose.onAllNodesWithText("Zones")[0].performClick()
+        awaitText("Read")
+        compose.onAllNodes(hasContentDescription("Read"))[0].performClick()
         awaitText("Next page")
         shot("324_reader_tap_zones")
         compose.onAllNodesWithText("Got it")[0].performClick()

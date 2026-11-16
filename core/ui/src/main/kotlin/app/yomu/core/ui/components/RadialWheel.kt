@@ -8,20 +8,26 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -85,6 +91,9 @@ data class RadialAction(
 class RadialState(val anchor: Offset, val actions: List<RadialAction>, val title: String? = null) {
     var active by mutableStateOf<Int?>(null)
     var dragging by mutableStateOf(false)
+
+    /** True while the actions that did not fit on the ring are shown as a list instead of the wheel. */
+    var overflow by mutableStateOf(false)
 }
 
 /** The popup covers the whole window; the wheel is placed in window coordinates. */
@@ -155,7 +164,16 @@ fun RadialMenu(
     val density = LocalDensity.current
     val title = state.title
     val actions = state.actions
-    val count = actions.size.coerceAtLeast(1)
+    val moreLabel = stringResource(R.string.more)
+    // Past the sector cap the ring keeps the first actions and adds one "More" that opens the rest as a list:
+    // twenty sectors cannot be hit with a thumb or described by TalkBack, and shrinking the buttons is not a fix.
+    val ring = remember(actions.size) { WheelLayout.ringIndices(actions.size) }
+    val ringActions = remember(actions, ring, moreLabel) {
+        ring.map { index ->
+            if (index < actions.size) actions[index] else RadialAction(Icons.Default.MoreHoriz, moreLabel) { state.overflow = true }
+        }
+    }
+    val count = ring.count().coerceAtLeast(1)
     val item = 88.dp
     val base = radialRadiusDp(count)
     // While the finger that opened the wheel is still down nothing can be tapped; once it lifts, everything can.
@@ -203,7 +221,7 @@ fun RadialMenu(
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.62f), CircleShape)
                         .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), CircleShape),
                 )
-                actions.forEachIndexed { index, action ->
+                ringActions.forEachIndexed { index, action ->
                     val angle = -PI / 2 + 2 * PI * index / count
                     val x = center.x + radiusPx * cos(angle).toFloat()
                     val y = center.y + radiusPx * sin(angle).toFloat()
@@ -219,8 +237,13 @@ fun RadialMenu(
                             .then(
                                 if (tappable) {
                                     Modifier.clickable(role = Role.Button) {
-                                        onDismiss()
-                                        action.onClick()
+                                        // "More" does not close the menu: it swaps the ring for the list of the rest.
+                                        if (WheelLayout.isMore(actions.size, index)) {
+                                            state.overflow = true
+                                        } else {
+                                            onDismiss()
+                                            action.onClick()
+                                        }
                                     }
                                 } else {
                                     Modifier.semantics(mergeDescendants = true) { contentDescription = action.label }
@@ -242,7 +265,7 @@ fun RadialMenu(
                     }
                 }
                 // The central button: "cancel", or the icon of the action the finger is over.
-                val over = state.active?.let(actions::getOrNull)
+                val over = state.active?.let(ringActions::getOrNull)
                 Surface(
                     shape = CircleShape,
                     color = if (over == null) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.primary,
@@ -306,6 +329,53 @@ fun RadialMenu(
                             .width(220.dp)
                             .alpha(progress),
                     )
+                }
+                // "More" replaces the ring with a scrollable list of the same buttons, so every action stays one
+                // tap away and TalkBack can walk them linearly. The list uses the wheel's own tokens.
+                if (state.overflow) {
+                    val rest = remember(actions, ring) {
+                        WheelLayout.overflowIndices(actions.size).mapNotNull { actions.getOrNull(it) }
+                    }
+                    Surface(
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        shadowElevation = 12.dp,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .widthIn(max = 300.dp)
+                            .heightIn(max = 420.dp)
+                            .padding(horizontal = 16.dp),
+                    ) {
+                        Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
+                            if (title != null) {
+                                Text(
+                                    title,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                )
+                            }
+                            rest.forEach { action ->
+                                Surface(onClick = { onDismiss(); action.onClick() }, color = Color.Transparent) {
+                                    Row(
+                                        Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    ) {
+                                        Icon(
+                                            action.icon,
+                                            null,
+                                            tint = action.tint ?: if (action.destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Text(action.label, style = MaterialTheme.typography.bodyLarge)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

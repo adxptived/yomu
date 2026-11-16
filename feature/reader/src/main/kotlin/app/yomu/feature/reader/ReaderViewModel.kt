@@ -56,6 +56,12 @@ import app.yomu.domain.model.TapZoneLayout
 import app.yomu.domain.model.TextPreset
 import app.yomu.domain.model.TextReaderSettings
 import app.yomu.domain.model.TocItem
+import app.yomu.domain.reader.PageCapabilitiesOf
+import app.yomu.domain.reader.PageContext
+import app.yomu.domain.reader.PageEngine
+import app.yomu.domain.reader.ReaderInput
+import app.yomu.domain.reader.ReaderPoint
+import app.yomu.domain.reader.ReaderTapAction
 import app.yomu.domain.text.TextTools
 import app.yomu.feature.reader.epub.BookHtml
 import app.yomu.feature.reader.epub.ChapterText
@@ -70,8 +76,6 @@ import app.yomu.feature.reader.epub.EpubWord
 import app.yomu.feature.reader.manga.MangaController
 import app.yomu.feature.reader.manga.MangaListener
 import app.yomu.feature.reader.manga.OverlayBlock
-import app.yomu.feature.reader.manga.TapAction
-import app.yomu.feature.reader.manga.TapZones
 import app.yomu.feature.reader.pdf.PdfController
 import app.yomu.feature.reader.pdf.PdfListener
 import app.yomu.feature.reader.pdf.PdfSelection
@@ -168,8 +172,10 @@ sealed interface ReaderEvent {
     data class SavePageAs(val file: java.io.File, val name: String, val mime: String) : ReaderEvent
 }
 
-/** The long-press menu of a manga or comic page, opened at [anchor] (window coordinates). */
-data class PageMenuRequest(val page: Int, val anchor: Offset)
+/** A page menu: the physical page with its engine capabilities, and the window-space anchor of the gesture. */
+data class PageMenuRequest(val context: PageContext, val anchor: Offset) {
+    val page: Int get() = context.page
+}
 
 enum class SleepTimer(val minutes: Int) { OFF(0), MIN_5(5), MIN_15(15), MIN_30(30), MIN_60(60), END_OF_CHAPTER(-1) }
 
@@ -763,19 +769,24 @@ class ReaderViewModel(
         scheduleSave(Locator(chapter = chapter, progression = progress.progression, totalProgression = total, offset = progress.offset, chapterTitle = title))
     }
 
+    /**
+     * A tap from any engine, at fractions 0..1 of the reader viewport. EPUB already sends fractions from its
+     * script; the PDF view normalizes its gesture against the reader viewport before calling here.
+     */
     override fun onTap(x: Float, y: Float) {
         markActivity()
         if (selection.value != null) return
+        val point = ReaderPoint(x, y)
         when (current()) {
             is ReaderContent.Text -> {
                 val c = (current() as ReaderContent.Text).controller
                 val turn = common.value.tapToTurn
                 val rtl = textSettings.value.rtl || c.document.rtl
-                val action = if (turn) TapZones.action(common.value.textTapZones, false, rtl, x, y, sideFraction = 0.25f) else TapAction.MENU
+                val action = if (turn) ReaderInput.action(common.value.textTapZones, false, rtl, point, sideFraction = 0.25f) else ReaderTapAction.MENU
                 when (action) {
-                    TapAction.PREV -> c.prev()
-                    TapAction.NEXT -> c.next()
-                    TapAction.MENU -> toggleChrome()
+                    ReaderTapAction.PREV -> c.prev()
+                    ReaderTapAction.NEXT -> c.next()
+                    ReaderTapAction.MENU -> toggleChrome()
                 }
             }
             is ReaderContent.Pdf -> {
@@ -783,11 +794,11 @@ class ReaderViewModel(
                 if (!common.value.tapToTurn) {
                     toggleChrome()
                 } else {
-                    val action = TapZones.action(common.value.textTapZones, false, false, x, y, sideFraction = 0.25f)
+                    val action = ReaderInput.action(common.value.textTapZones, false, false, point, sideFraction = 0.25f)
                     when (action) {
-                        TapAction.PREV -> if (c.controller.page > 0) c.controller.goTo(c.controller.page - 1)
-                        TapAction.NEXT -> if (c.controller.page < c.controller.pageCount - 1) c.controller.goTo(c.controller.page + 1)
-                        TapAction.MENU -> toggleChrome()
+                        ReaderTapAction.PREV -> if (c.controller.page > 0) c.controller.goTo(c.controller.page - 1)
+                        ReaderTapAction.NEXT -> if (c.controller.page < c.controller.pageCount - 1) c.controller.goTo(c.controller.page + 1)
+                        ReaderTapAction.MENU -> toggleChrome()
                     }
                 }
             }
@@ -909,24 +920,119 @@ class ReaderViewModel(
 
     /** A long press on a manga page opens the long-press menu; with the menu off, its first action runs at once. */
     override fun onLongPressAt(page: Int, windowPosition: Offset) {
-        if (pageMenuStyle.value == QuickMenuStyle.OFF || !windowPosition.isSpecified) {
-            runPageAction(QuickActions.normalize(pageActions.value).firstOrNull { it.enabled }?.action ?: PageAction.TRANSLATE, page)
-        } else {
-            pageMenu.value = PageMenuRequest(page, windowPosition)
+        viewModelScope.launch(ScreenErrors) {
+            val context = pageContext(PageEngine.MANGA, page) ?: return@launch
+            openPageMenu(context, windowPosition)
         }
     }
 
-    fun runPageAction(action: PageAction, page: Int) {
-        pageMenu.value = null
-        when (action) {
-            PageAction.TRANSLATE -> translateMangaPage(page)
-            PageAction.SAVE -> savePage(page)
-            PageAction.SHARE -> sharePage(page)
-            PageAction.COPY_TEXT -> copyPageText(page)
-            PageAction.BOOKMARK -> bookmarkPage()
-            PageAction.SET_COVER -> setPageAsCover(page)
-            PageAction.NOTE -> if (args.bookId > 0) events.trySend(ReaderEvent.PageNote) else events.trySend(ReaderEvent.Message(R.string.reader_online_no_annotations))
+    /**
+     * A long press on a PDF page that did not land on a glyph. A scanned page has no text to select, so this is how
+     * its page menu is reached; a page with a text layer still opens it from the empty margins.
+     */
+    override fun onPageLongPress(page: Int, windowPosition: Offset) {
+        viewModelScope.launch(ScreenErrors) {
+            val context = pageContext(PageEngine.PDF, page) ?: return@launch
+            openPageMenu(context, windowPosition)
         }
+    }
+
+    private fun openPageMenu(context: PageContext, windowPosition: Offset) {
+        if (pageMenuStyle.value == QuickMenuStyle.OFF || !windowPosition.isSpecified) {
+            runPageAction(context, defaultPageAction(context))
+        } else {
+            pageMenu.value = PageMenuRequest(context, windowPosition)
+        }
+    }
+
+    /** The configured first action, restricted to what the engine can actually do. */
+    private fun defaultPageAction(context: PageContext): PageAction {
+        val enabled = QuickActions.normalize(pageActions.value).filter { it.enabled }.map { it.action }
+        return enabled.firstOrNull { isPageActionSupported(it, context) }
+            ?: if (context.capabilities.translatable) PageAction.TRANSLATE else PageAction.BOOKMARK
+    }
+
+    /**
+     * Identity and available actions of a page of the currently open content. The page number is the physical page
+     * of the engine; a PDF is never described as a manga.
+     */
+    private suspend fun pageContext(engine: PageEngine, page: Int): PageContext? = when (val c = current()) {
+        is ReaderContent.Manga -> {
+            val count = c.controller.count
+            PageContext(
+                engine = PageEngine.MANGA,
+                bookId = args.bookId,
+                entryId = 0,
+                chapterId = _chapterId.value,
+                page = page,
+                pageCount = count,
+                capabilities = PageCapabilitiesOf.manga(args.bookId),
+            ).takeIf { it.isValid }
+        }
+        is ReaderContent.Pdf -> {
+            val count = c.controller.pageCount
+            PageContext(
+                engine = PageEngine.PDF,
+                bookId = args.bookId,
+                entryId = 0,
+                chapterId = _chapterId.value,
+                page = page,
+                pageCount = count,
+                capabilities = PageCapabilitiesOf.pdf(args.bookId, hasTextLayer = pdfHasText(c.controller, page)),
+            ).takeIf { it.isValid }
+        }
+        is ReaderContent.Text -> null
+        null -> null
+    }
+
+    /**
+     * True when the page carries selectable text, so export uses the text layer instead of OCR. A scanned page
+     * reports an empty string here; a damaged page that cannot be read is treated the same way.
+     */
+    private suspend fun pdfHasText(controller: PdfController, page: Int): Boolean =
+        withContext(Dispatchers.IO) { runCatching { controller.pdf.text(page) }.getOrDefault("").isNotBlank() }
+
+    /** Runs an action against an explicit page identity; an action the engine does not support is not run. */
+    fun runPageAction(context: PageContext, action: PageAction) {
+        pageMenu.value = null
+        if (!isPageActionSupported(action, context)) {
+            events.trySend(ReaderEvent.Message(R.string.reader_action_unavailable))
+            return
+        }
+        when (action) {
+            PageAction.TRANSLATE -> if (context.engine == PageEngine.MANGA) translateMangaPage(context.page) else translatePdfPage(context)
+            PageAction.SAVE -> savePage(context)
+            PageAction.SHARE -> sharePage(context)
+            PageAction.COPY_TEXT -> copyPageText(context)
+            PageAction.BOOKMARK -> bookmarkPage()
+            PageAction.SET_COVER -> setPageAsCover(context)
+            PageAction.NOTE -> if (context.acceptsNote) events.trySend(ReaderEvent.PageNote) else events.trySend(ReaderEvent.Message(R.string.reader_online_no_annotations))
+        }
+    }
+
+    fun isPageActionSupported(action: PageAction, context: PageContext): Boolean = when (action) {
+        PageAction.TRANSLATE -> context.capabilities.translatable
+        PageAction.SAVE, PageAction.SHARE -> context.capabilities.exportable
+        PageAction.SET_COVER -> context.capabilities.coverable
+        PageAction.COPY_TEXT -> context.capabilities.hasTextLayer || context.capabilities.ocr
+        PageAction.BOOKMARK -> context.capabilities.bookmarkable
+        PageAction.NOTE -> context.acceptsNote
+    }
+
+    /**
+     * The bitmap of a manga page from its cached file. For a PDF there is no stored page image: it is rendered on
+     * demand within the same pixel budget used by OCR, and the original document is never modified.
+     */
+    private suspend fun pageImage(context: PageContext): android.graphics.Bitmap? = when (context.engine) {
+        PageEngine.MANGA -> {
+            val file = pageFile(context.page)
+            file?.let { withContext(Dispatchers.IO) { decodeForOcr(it) } }
+        }
+        PageEngine.PDF -> {
+            val c = current() as? ReaderContent.Pdf ?: return null
+            withContext(Dispatchers.IO) { runCatching { c.controller.pdf.render(context.page, PDF_EXPORT_WIDTH, annotations = false) }.getOrNull() }
+        }
+        PageEngine.TEXT -> null
     }
 
     private suspend fun pageFile(page: Int): java.io.File? = (current() as? ReaderContent.Manga)?.controller?.let { c -> withContext(Dispatchers.IO) { c.file(page) } }
@@ -961,23 +1067,51 @@ class ReaderViewModel(
         }
     }
 
+    /**
+     * The bytes of a page for saving or sharing. Manga copies the cached page file as-is; a PDF page is rendered
+     * into a PNG under the share/cache directory, so nothing writes into the opened document.
+     */
+    private suspend fun pageBytes(context: PageContext, ext: String): Pair<java.io.File, String>? = when (context.engine) {
+        PageEngine.MANGA -> {
+            val file = pageFile(context.page) ?: return null
+            val mime = withContext(Dispatchers.IO) { imageType(file) }.first
+            file to mime
+        }
+        PageEngine.PDF -> {
+            val c = current() as? ReaderContent.Pdf ?: return null
+            val out = withContext(Dispatchers.IO) {
+                val dir = app.yomu.core.common.Share.shareDir(this@ReaderViewModel.context)
+                val target = java.io.File(dir, "pdf-" + pageName(context.page, ext))
+                val bmp = runCatching { c.controller.pdf.render(context.page, PDF_EXPORT_WIDTH, annotations = false) }.getOrNull()
+                    ?: error("Cannot render the page")
+                try {
+                    target.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                } finally {
+                    bmp.recycle()
+                }
+                target
+            }
+            out to "image/png"
+        }
+        PageEngine.TEXT -> null
+    }
+
     private fun pageName(page: Int, ext: String): String {
         val base = listOf(_title.value, chapterOf).filter { !it.isNullOrBlank() }.joinToString(" - ").ifBlank { "Yomu" }
         return app.yomu.core.common.Files.sanitize("$base - ${page + 1}.$ext")
     }
 
     /** Saves the page to the gallery (Pictures/Yomu). */
-    private fun savePage(page: Int) = viewModelScope.launch(ScreenErrors) {
+    private fun savePage(context: PageContext) = viewModelScope.launch(ScreenErrors) {
         runCatching {
-            val file = pageFile(page) ?: return@launch
-            val (mime, ext) = withContext(Dispatchers.IO) { imageType(file) }
-            val name = pageName(page, ext)
+            val (file, mime) = pageBytes(context, "png") ?: return@launch
+            val name = pageName(context.page, if (mime == "image/png") "png" else "jpg")
             if (android.os.Build.VERSION.SDK_INT < 29) {
                 events.send(ReaderEvent.SavePageAs(file, name, mime))
                 return@launch
             }
             withContext(Dispatchers.IO) {
-                val resolver = context.contentResolver
+                val resolver = this@ReaderViewModel.context.contentResolver
                 val values = android.content.ContentValues().apply {
                     put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name)
                     put(android.provider.MediaStore.Images.Media.MIME_TYPE, mime)
@@ -1005,38 +1139,48 @@ class ReaderViewModel(
         }.onFailure { events.send(ReaderEvent.Error(it)) }
     }
 
-    private fun sharePage(page: Int) = viewModelScope.launch(ScreenErrors) {
+    private fun sharePage(context: PageContext) = viewModelScope.launch(ScreenErrors) {
         runCatching {
-            val file = pageFile(page) ?: return@launch
+            val (file, mime) = pageBytes(context, "png") ?: return@launch
             val shared = withContext(Dispatchers.IO) {
-                val (mime, ext) = imageType(file)
-                val out = java.io.File(app.yomu.core.common.Share.shareDir(context), pageName(page, ext))
-                file.copyTo(out, overwrite = true)
+                val ext = if (mime == "image/png") "png" else "jpg"
+                val out = java.io.File(app.yomu.core.common.Share.shareDir(this@ReaderViewModel.context), pageName(context.page, ext))
+                if (file.absolutePath != out.absolutePath) file.copyTo(out, overwrite = true)
                 out to mime
             }
-            app.yomu.core.common.Share.shareFile(context, shared.first, shared.second)
+            app.yomu.core.common.Share.shareFile(this@ReaderViewModel.context, shared.first, shared.second)
         }.onFailure { events.send(ReaderEvent.Error(it)) }
     }
 
-    /** Recognises the text of the page and puts it on the clipboard. */
-    private fun copyPageText(page: Int) = viewModelScope.launch(ScreenErrors) {
+    /** Text of a page: the PDF text layer when present, otherwise OCR of the rendered page. */
+    private fun copyPageText(context: PageContext) = viewModelScope.launch(ScreenErrors) {
         ocrRunning.value = true
         try {
             runCatching {
-                val file = pageFile(page) ?: return@runCatching
-                val text = ocrMutex.withLock {
-                    val bmp = withContext(Dispatchers.IO) { decodeForOcr(file) } ?: error("Cannot decode page")
-                    try {
-                        ocr.recognize(bmp, settings.ocrLanguage.get(), cacheKey = "${args.bookId}_${_chapterId.value}_$page")
-                            .joinToString("\n\n") { it.text.trim() }.trim()
-                    } finally {
-                        bmp.recycle()
+                val text = when (context.engine) {
+                    PageEngine.PDF -> {
+                        val c = current() as? ReaderContent.Pdf ?: return@runCatching
+                        runCatching { c.controller.pdf.text(context.page) }.getOrDefault("").trim()
+                            .ifEmpty { ocrPdfPage(c.controller.pdf, context.page) }
                     }
+                    PageEngine.MANGA -> {
+                        val file = pageFile(context.page) ?: return@runCatching
+                        ocrMutex.withLock {
+                            val bmp = withContext(Dispatchers.IO) { decodeForOcr(file) } ?: error("Cannot decode page")
+                            try {
+                                ocr.recognize(bmp, settings.ocrLanguage.get(), cacheKey = "${args.bookId}_${_chapterId.value}_${context.page}")
+                                    .joinToString("\n\n") { it.text.trim() }.trim()
+                            } finally {
+                                bmp.recycle()
+                            }
+                        }
+                    }
+                    PageEngine.TEXT -> return@runCatching
                 }
                 if (text.isEmpty()) {
                     events.send(ReaderEvent.Message(R.string.reader_ocr_nothing))
                 } else {
-                    val cm = context.getSystemService(android.content.ClipboardManager::class.java)
+                    val cm = this@ReaderViewModel.context.getSystemService(android.content.ClipboardManager::class.java)
                     cm.setPrimaryClip(android.content.ClipData.newPlainText("yomu", text))
                     events.send(ReaderEvent.Message(R.string.reader_page_text_copied))
                 }
@@ -1060,19 +1204,30 @@ class ReaderViewModel(
         }
     }
 
-    private fun setPageAsCover(page: Int) {
+    private fun setPageAsCover(context: PageContext) {
         if (args.bookId <= 0) {
             events.trySend(ReaderEvent.Message(R.string.reader_cover_books_only))
             return
         }
         viewModelScope.launch(ScreenErrors) {
             runCatching {
-                val file = pageFile(page) ?: return@launch
+                val file = when (context.engine) {
+                    PageEngine.MANGA -> pageFile(context.page) ?: return@launch
+                    else -> pageBytes(context, "png")?.first ?: return@launch
+                }
                 val bytes = withContext(Dispatchers.IO) { file.readBytes() }
                 books.setCover(args.bookId, bytes) ?: error("Cannot save the cover")
                 events.send(ReaderEvent.Message(R.string.reader_cover_set))
             }.onFailure { events.send(ReaderEvent.Error(it)) }
         }
+    }
+
+    /** Translates a PDF page through its text layer, or OCR when the page is a scan. */
+    private fun translatePdfPage(context: PageContext) = viewModelScope.launch(ScreenErrors) {
+        val c = current() as? ReaderContent.Pdf ?: return@launch
+        val text = runCatching { c.controller.pdf.text(context.page) }.getOrDefault("").trim()
+            .ifEmpty { ocrPdfPage(c.controller.pdf, context.page) }
+        if (text.isNotEmpty()) translateText.value = text.take(4000) else events.send(ReaderEvent.Message(R.string.reader_no_text))
     }
 
     override fun onChapterEdge(next: Boolean) {
@@ -2193,6 +2348,9 @@ private const val UNDO_LIMIT = 20
 
 /** Largest page bitmap decoded for OCR (~32 MiB as ARGB); bigger pages are downsampled first. */
 private const val MAX_OCR_PIXELS = 8_000_000L
+
+/** Width used to render one PDF page for export, sharing and OCR; the budget in `PdfSource` caps the height. */
+private const val PDF_EXPORT_WIDTH = 1600
 
 /** Reading time credited after the last activity when a session is closed for being idle. */
 private const val IDLE_TAIL_MS = 60_000L

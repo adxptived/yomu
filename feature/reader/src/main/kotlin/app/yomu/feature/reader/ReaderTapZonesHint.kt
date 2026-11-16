@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.dp
 import app.yomu.core.ui.components.LocalHintStore
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.domain.model.TapZoneLayout
-import app.yomu.feature.reader.manga.TapAction
+import app.yomu.domain.reader.ReaderTapAction
 import app.yomu.feature.reader.manga.TapZonesOverlay
 import kotlinx.coroutines.launch
 import app.yomu.core.ui.R as CoreR
@@ -74,9 +74,9 @@ internal fun ReaderTapZonesHint(
             label = {
                 stringResource(
                     when (it) {
-                        TapAction.PREV -> R.string.tapzones_prev
-                        TapAction.NEXT -> R.string.tapzones_next
-                        TapAction.MENU -> R.string.tapzones_menu
+                        ReaderTapAction.PREV -> R.string.tapzones_prev
+                        ReaderTapAction.NEXT -> R.string.tapzones_next
+                        ReaderTapAction.MENU -> R.string.tapzones_menu
                     },
                 )
             },

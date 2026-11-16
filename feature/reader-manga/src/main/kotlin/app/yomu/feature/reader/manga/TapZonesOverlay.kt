@@ -22,24 +22,27 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.yomu.domain.model.TapZoneLayout
+import app.yomu.domain.reader.ReaderInput
+import app.yomu.domain.reader.ReaderPoint
+import app.yomu.domain.reader.ReaderTapAction
 import kotlin.math.roundToInt
 
 /** Colours of the zones; fixed (not theme) colours because they are drawn over pages. */
 internal val PrevZoneColor = Color(0xFFE5793F)
 internal val NextZoneColor = Color(0xFF5468E0)
 
-/** Samples [TapZones.action] on a grid, so the drawing always matches what a tap does. */
+/** Samples [ReaderInput.action] on a grid, so the drawing always matches what a tap does. */
 private class ZoneGrid(val cols: Int, val rows: Int, layout: TapZoneLayout, inverted: Boolean, rtl: Boolean, sideFraction: Float = 0.4f) {
-    val cells: Array<TapAction> = Array(cols * rows) { i ->
-        TapZones.action(layout, inverted, rtl, (i % cols + 0.5f) / cols, (i / cols + 0.5f) / rows, sideFraction)
+    val cells: Array<ReaderTapAction> = Array(cols * rows) { i ->
+        ReaderInput.action(layout, inverted, rtl, ReaderPoint((i % cols + 0.5f) / cols, (i / cols + 0.5f) / rows), sideFraction)
     }
 
     operator fun get(c: Int, r: Int) = cells[r * cols + c]
 
     /** One label position per connected zone (the cell of the zone nearest to its centre), as fractions. */
-    fun labels(): List<Triple<TapAction, Float, Float>> {
+    fun labels(): List<Triple<ReaderTapAction, Float, Float>> {
         val seen = BooleanArray(cells.size)
-        val out = mutableListOf<Triple<TapAction, Float, Float>>()
+        val out = mutableListOf<Triple<ReaderTapAction, Float, Float>>()
         for (start in cells.indices) {
             if (seen[start]) continue
             val action = cells[start]
@@ -79,12 +82,12 @@ fun TapZonesOverlay(
     rtl: Boolean,
     modifier: Modifier = Modifier,
     sideFraction: Float = 0.4f,
-    label: @Composable (TapAction) -> String = {
+    label: @Composable (ReaderTapAction) -> String = {
         stringResource(
             when (it) {
-                TapAction.PREV -> R.string.manga_tap_prev
-                TapAction.NEXT -> R.string.manga_tap_next
-                TapAction.MENU -> R.string.manga_tap_menu
+                ReaderTapAction.PREV -> R.string.manga_tap_prev
+                ReaderTapAction.NEXT -> R.string.manga_tap_next
+                ReaderTapAction.MENU -> R.string.manga_tap_menu
             },
         )
     },
@@ -102,9 +105,9 @@ fun TapZonesOverlay(
                     var end = c
                     while (end + 1 < grid.cols && grid[end + 1, r] == action) end++
                     val color = when (action) {
-                        TapAction.PREV -> PrevZoneColor.copy(alpha = 0.38f)
-                        TapAction.NEXT -> NextZoneColor.copy(alpha = 0.38f)
-                        TapAction.MENU -> Color.Black.copy(alpha = 0.12f)
+                        ReaderTapAction.PREV -> PrevZoneColor.copy(alpha = 0.38f)
+                        ReaderTapAction.NEXT -> NextZoneColor.copy(alpha = 0.38f)
+                        ReaderTapAction.MENU -> Color.Black.copy(alpha = 0.12f)
                     }
                     drawRect(color, Offset(c * cw, r * ch), Size((end - c + 1) * cw + 0.5f, ch + 0.5f))
                     c = end + 1
@@ -134,9 +137,9 @@ fun TapZonesDiagram(layout: TapZoneLayout, inverted: Boolean, rtl: Boolean, modi
         val ch = size.height / grid.rows
         for (r in 0 until grid.rows) for (c in 0 until grid.cols) {
             val color = when (grid[c, r]) {
-                TapAction.PREV -> PrevZoneColor
-                TapAction.NEXT -> NextZoneColor
-                TapAction.MENU -> null
+                ReaderTapAction.PREV -> PrevZoneColor
+                ReaderTapAction.NEXT -> NextZoneColor
+                ReaderTapAction.MENU -> null
             } ?: continue
             drawRect(color, Offset(c * cw, r * ch), Size(cw + 0.5f, ch + 0.5f))
         }

@@ -39,6 +39,9 @@ object AudioMeta {
     /**
      * Library metadata of an audiobook whose first track is [first]: a single file is named by its title tag, a
      * folder by the album tag (the tracks' own titles name the chapters).
+     *
+     * A description is read from the file's own tags when it has one ([AudioTags]); the platform retriever has no
+     * universal description, so a file without such a tag simply has none — nothing is invented for it.
      */
     fun extract(context: Context, first: Uri?, fallbackTitle: String, multiTrack: Boolean, cover: ByteArray? = null): ExtractedMeta {
         val tags = first?.let { read(context, it) }
@@ -46,6 +49,7 @@ object AudioMeta {
         return ExtractedMeta(
             title = title,
             authors = listOfNotNull(tags?.artist).flatMap { it.split(';', '/') }.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
+            description = first?.let { uri -> runCatching { AudioTags.description(context, uri) }.getOrNull() },
             cover = tags?.picture ?: cover,
         )
     }

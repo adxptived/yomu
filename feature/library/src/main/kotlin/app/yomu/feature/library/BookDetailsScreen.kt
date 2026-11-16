@@ -290,14 +290,45 @@ private fun BookDetailsContent(
                 }
             }
             Column(Modifier.padding(horizontal = Dimens.l), verticalArrangement = Arrangement.spacedBy(Dimens.m)) {
+                // Content first, personal data after it: what the book is, then what the reader marked on it.
                 if (current.progress > 0f) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         LinearProgressIndicator(progress = { current.progress }, modifier = Modifier.weight(1f))
                         Text("  ${(current.progress * 100).toInt()}%", style = MaterialTheme.typography.labelLarge)
                     }
                 }
+                // An audio book's length and track count come from its own manifest; an unknown length says so
+                // instead of showing a zero.
+                if (current.format.isAudio) {
+                    Text(
+                        listOfNotNull(
+                            if (extras.audioDurationMs > 0) formatDuration(extras.audioDurationMs) else stringResource(R.string.details_duration_unknown),
+                            extras.audioTracks.takeIf { it > 1 }?.let { pluralStringResource(R.plurals.details_tracks, it, it) },
+                        ).joinToString(" · "),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                // A description that is null, blank or HTML without text is no description: the section stays out
+                // instead of showing an empty gap. The text keeps its paragraphs and is never fetched on open.
+                plainDescription(current.description)?.let { d ->
+                    var overflows by remember(d) { mutableStateOf(false) }
+                    Text(
+                        d,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = if (descriptionExpanded) Int.MAX_VALUE else DESCRIPTION_COLLAPSED_LINES,
+                        overflow = TextOverflow.Ellipsis,
+                        onTextLayout = { overflows = it.hasVisualOverflow || descriptionExpanded },
+                        modifier = Modifier.animateContentSize(),
+                    )
+                    if (overflows || descriptionExpanded) {
+                        TextButton(onClick = { descriptionExpanded = !descriptionExpanded }) {
+                            Text(stringResource(if (descriptionExpanded) R.string.details_description_collapse else R.string.details_description_expand))
+                        }
+                    }
+                }
+                Text(stringResource(R.string.library_status), style = MaterialTheme.typography.titleSmall)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
-                    Text(stringResource(R.string.library_status), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                     Box {
                         AssistChip(
                             onClick = { statusMenu = true },
@@ -316,8 +347,8 @@ private fun BookDetailsContent(
                             }
                         }
                     }
+                    TrackingButton(tracks.size) { showTracking = true }
                 }
-                TrackingButton(tracks.size) { showTracking = true }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.library_action_rate), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                     for (star in 1..5) {
@@ -333,15 +364,6 @@ private fun BookDetailsContent(
                 }
                 if (extras.readingMs > 0) {
                     Text(stringResource(R.string.details_reading_time, formatDuration(extras.readingMs)), style = MaterialTheme.typography.bodyMedium)
-                }
-                current.description?.takeIf { it.isNotBlank() }?.let { d ->
-                    Text(
-                        android.text.Html.fromHtml(d, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = if (descriptionExpanded) Int.MAX_VALUE else 5,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.animateContentSize().clickable { descriptionExpanded = !descriptionExpanded },
-                    )
                 }
                 Text(stringResource(R.string.library_tags), style = MaterialTheme.typography.titleSmall)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
@@ -538,3 +560,51 @@ internal fun formatDuration(ms: Long): String {
     val minutes = (ms / 60_000).toInt()
     return if (minutes >= 60) stringResource(R.string.duration_hm, minutes / 60, minutes % 60) else stringResource(R.string.duration_m, minutes)
 }
+
+/** Lines of a description shown before it is expanded. */
+internal const val DESCRIPTION_COLLAPSED_LINES = 5
+
+/**
+ * The readable text of a book description, or null when there is nothing to show.
+ *
+ * Sources send plain text or HTML. HTML is converted with its block elements kept as line breaks, so paragraphs
+ * survive; markup that contains no text at all (`<p></p>`, `&nbsp;`) counts as no description, which keeps an empty
+ * section off the details screen.
+ */
+internal fun plainDescription(raw: String?): String? {
+    val source = raw?.trim().orEmpty()
+    if (source.isEmpty()) return null
+    val text = if (source.contains('<') || source.contains("&")) {
+        // The platform parser turns blocks into line breaks. A platform that cannot parse markup returns null,
+        // and raw markup must not be shown as text: the tags and entities are stripped in that case.
+        runCatching { android.text.Html.fromHtml(source, android.text.Html.FROM_HTML_MODE_COMPACT)?.toString() }.getOrNull()
+            ?: stripMarkup(source)
+    } else {
+        source
+    }
+    return normalizeDescription(text)
+}
+
+/** Removes tags and the common entities without a parser; block ends become line breaks so paragraphs survive. */
+internal fun stripMarkup(source: String): String =
+    source.replace(Regex("(?i)<br\\s*/?>"), "\n")
+        .replace(Regex("(?i)</(p|div|h[1-6]|li|tr|blockquote)\\s*>"), "\n\n")
+        .replace(Regex("<[^>]{1,500}>"), "")
+        .replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
+
+/**
+ * Collapses runs of spaces and blank lines while keeping the paragraph breaks. Pure text, so it is testable without
+ * the platform and is the single rule applied to every description that reaches the screen.
+ */
+internal fun normalizeDescription(text: String): String? =
+    text.replace(Regex("[ \\t\\u00A0]+"), " ")
+        .split('\n')
+        .joinToString("\n") { it.trim() }
+        .replace(Regex("\n{3,}"), "\n\n")
+        .trim()
+        .takeIf { it.isNotEmpty() }

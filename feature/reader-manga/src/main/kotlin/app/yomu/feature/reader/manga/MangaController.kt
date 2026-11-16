@@ -11,6 +11,9 @@ import androidx.compose.ui.graphics.ColorMatrix
 import app.yomu.data.book.PageSource
 import app.yomu.domain.model.MangaSettings
 import app.yomu.domain.model.TapZoneLayout
+import app.yomu.domain.reader.ReaderInput
+import app.yomu.domain.reader.ReaderPoint
+import app.yomu.domain.reader.ReaderTapAction
 import coil3.size.Size
 import coil3.transform.Transformation
 import kotlinx.coroutines.channels.Channel
@@ -60,36 +63,18 @@ class MangaController(val pages: PageSource) {
 
 enum class TapAction { PREV, NEXT, MENU }
 
+/**
+ * Manga-facing adapter over [ReaderInput]: the zone logic itself lives in `domain` so the PDF and text
+ * readers resolve taps exactly like this one. New code should call [ReaderInput] directly.
+ */
 object TapZones {
     /** Action for a tap at fractions [x], [y] of the reader. */
-    fun action(layout: TapZoneLayout, inverted: Boolean, rtl: Boolean, x: Float, y: Float, sideFraction: Float = 0.4f): TapAction {
-        val raw = when (layout) {
-            TapZoneLayout.DISABLED -> TapAction.MENU
-            TapZoneLayout.LEFT_RIGHT -> when {
-                x < sideFraction -> TapAction.PREV
-                x > 1f - sideFraction -> TapAction.NEXT
-                else -> TapAction.MENU
-            }
-            TapZoneLayout.EDGES -> when {
-                x < 0.2f || x > 0.8f -> TapAction.NEXT
-                y < 0.2f -> TapAction.PREV
-                else -> TapAction.MENU
-            }
-            TapZoneLayout.KINDLE -> when {
-                y < 0.2f -> TapAction.MENU
-                x < 0.33f -> TapAction.PREV
-                else -> TapAction.NEXT
-            }
-            TapZoneLayout.L_SHAPE -> when {
-                y < 0.33f && x < 0.66f -> TapAction.PREV
-                x < 0.33f && y < 0.66f -> TapAction.PREV
-                y > 0.66f || x > 0.66f -> TapAction.NEXT
-                else -> TapAction.MENU
-            }
+    fun action(layout: TapZoneLayout, inverted: Boolean, rtl: Boolean, x: Float, y: Float, sideFraction: Float = 0.4f): TapAction =
+        when (ReaderInput.action(layout, inverted, rtl, ReaderPoint(x, y), sideFraction)) {
+            ReaderTapAction.PREV -> TapAction.PREV
+            ReaderTapAction.NEXT -> TapAction.NEXT
+            ReaderTapAction.MENU -> TapAction.MENU
         }
-        val flipped = (inverted xor (rtl && layout != TapZoneLayout.EDGES))
-        return if (!flipped || raw == TapAction.MENU) raw else if (raw == TapAction.NEXT) TapAction.PREV else TapAction.NEXT
-    }
 }
 
 object ImageFilters {

@@ -23,6 +23,11 @@ import app.yomu.data.library.LibraryTabs
 import app.yomu.data.repository.BookRepositoryImpl
 import app.yomu.data.work.LibraryScanWorker
 import app.yomu.domain.catalog.NaturalOrder
+import app.yomu.domain.library.BulkAction
+import app.yomu.domain.library.BulkExecutor
+import app.yomu.domain.library.BulkOutcome
+import app.yomu.domain.library.LibraryItemKey
+import app.yomu.domain.library.LibrarySelection
 import app.yomu.domain.model.BatchMetadata
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookFormat
@@ -125,6 +130,9 @@ internal fun CatalogEntry.readFraction(): Float = if (chapterCount <= 0) 0f else
 sealed interface LibraryEvent {
     data class Imported(val added: Int, val duplicates: Int, val failed: Int, val firstError: Throwable?, val singleBookId: Long?) : LibraryEvent
     data class Deleted(val ids: Set<Long>) : LibraryEvent
+
+    /** A bulk command reached only part of the selection; the UI names both numbers instead of saying "done". */
+    data class BulkPartial(val action: String, val succeeded: Int, val failed: Int, val unsupported: Int) : LibraryEvent
     data class Message(val text: Int) : LibraryEvent
     data class OpenBook(val book: app.yomu.domain.model.Book) : LibraryEvent
     data class ReadChapter(val chapterId: Long) : LibraryEvent
@@ -249,8 +257,14 @@ class LibraryViewModel(
         if (settings.librarySort.get() == value) settings.libraryAscending.update { !it } else settings.librarySort.set(value)
     }
 
+    /** Selects the sort without touching the direction: the display sheet has its own direction row. */
+    fun chooseSort(value: LibrarySort) = viewModelScope.launch(ScreenErrors) { settings.librarySort.set(value) }
+
     fun setGrid(value: Boolean) = viewModelScope.launch(ScreenErrors) { settings.libraryGrid.set(value) }
     fun setColumns(value: Int) = viewModelScope.launch(ScreenErrors) { settings.gridColumns.set(value) }
+
+    /** Explicit order direction, for the display sheet's own control (not tied to re-picking the sort). */
+    fun setAscending(value: Boolean) = viewModelScope.launch(ScreenErrors) { settings.libraryAscending.set(value) }
 
     fun toggleGroup(group: FormatGroup) {
         val next = types.updateAndGet { if (group in it) it - group else it + group }
@@ -271,12 +285,45 @@ class LibraryViewModel(
     }
 
     // ---- selection ----
-    fun toggleSelect(id: Long) = _selection.update { if (id in it) it - id else it + id }
-    fun clearSelection() { _selection.value = emptySet() }
+    /**
+     * The selection in the shared typed form: a local book and an online entry with the same numeric id are separate
+     * items, so a bulk action over a mixed set can never reach the wrong record.
+     */
+    private val _typedSelection = MutableStateFlow(LibrarySelection())
+
+    /** The same selection, for the UI and for actions that need to know which kind each item is. */
+    val typedSelection: StateFlow<LibrarySelection> = _typedSelection
+
+    /** Local book ids of the selection (kept as the shape the existing bulk actions use). */
+    fun toggleSelect(id: Long) {
+        _typedSelection.update { it.toggle(LibraryItemKey.LocalBook(id)) }
+        syncLegacySelection()
+    }
+
+    /** Toggles an online entry of the selection; the online grid uses this while selecting. */
+    fun toggleSelectOnline(id: Long) {
+        _typedSelection.update { it.toggle(LibraryItemKey.OnlineEntry(id)) }
+        syncLegacySelection()
+    }
+
+    fun clearSelection() {
+        _typedSelection.value = LibrarySelection()
+        _selection.value = emptySet()
+    }
+
+    /** True when [id] of an online entry is selected. */
+    fun isOnlineSelected(id: Long): Boolean = _typedSelection.value.contains(LibraryItemKey.OnlineEntry(id))
+
+    /** Keeps [_selection] (the local ids the existing actions consume) aligned with the typed state. */
+    private fun syncLegacySelection() {
+        _selection.value = _typedSelection.value.keys.filterIsInstance<LibraryItemKey.LocalBook>().mapTo(mutableSetOf()) { it.id }
+    }
 
     fun selectAll() = viewModelScope.launch(ScreenErrors) {
-        val q = LibraryQuery(search.value, settings.librarySort.get(), settings.libraryAscending.get(), filter.value)
+        val q = query.first()
         _selection.value = books.observeBooks(q).first().map { it.id }.filter { it !in pendingDelete.value }.toSet()
+        // "Select all" is a snapshot of the query, not of the loaded tiles: the same set feeds the typed state.
+        _typedSelection.value = LibrarySelection().replaceAll(_selection.value.mapTo(mutableSetOf()) { LibraryItemKey.LocalBook(it) }, q.toString())
     }
 
     /** "Continue" on an online title opens the chapter to read next; the title page only when it has no chapters. */
@@ -393,6 +440,26 @@ class LibraryViewModel(
     }
 
     // ---- bulk actions ----
+    /**
+     * Runs one bulk command over the current typed selection.
+     *
+     * Local books and online titles go to their own repositories, and the report keeps a result per key: a mixed
+     * selection reports "applied to 8 of 12" instead of claiming success, and an item the command cannot reach is
+     * recorded as unsupported rather than silently dropped.
+     */
+    fun runBulk(action: BulkAction, run: suspend (LibraryItemKey) -> BulkOutcome) = viewModelScope.launch(ScreenErrors) {
+        val keys = _typedSelection.value.keys
+        if (keys.isEmpty()) return@launch
+        val report = BulkExecutor.run(action, keys, run)
+        if (report.isPartial) {
+            _events.send(LibraryEvent.BulkPartial(action.name, report.succeeded, report.failed, report.unsupported))
+        }
+        clearSelection()
+    }
+
+    /** The numbers shown before a bulk command runs ("apply to 8 of 12"). */
+    fun bulkPreview(action: BulkAction): String = BulkExecutor.preview(action, _typedSelection.value.keys)
+
     fun setStatus(ids: Set<Long>, status: ReadingStatus) = viewModelScope.launch(ScreenErrors) { books.setStatus(ids, status); clearSelection() }
 
     fun setFavorite(ids: Set<Long>, favorite: Boolean) = viewModelScope.launch(ScreenErrors) { books.setFavorite(ids, favorite); clearSelection() }

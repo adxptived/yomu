@@ -805,9 +805,15 @@ fun ReaderScreen(
             )
         }
         pageMenu?.let { req ->
-            val items = QuickActions.normalize(pageActions).filter { it.enabled }.map { cfg ->
-                QuickMenuItem(cfg.action.name, cfg.action.icon(), stringResource(cfg.action.label())) { haptic.perform(); viewModel.runPageAction(cfg.action, req.page) }
-            }
+            // Only actions this engine can really perform are listed: a command that would silently do
+            // nothing (a PDF page that cannot be rendered, a cover for an online entry) is not offered.
+            val items = QuickActions.normalize(pageActions)
+                .filter { it.enabled && viewModel.isPageActionSupported(it.action, req.context) }
+                .map { cfg ->
+                    QuickMenuItem(cfg.action.name, cfg.action.icon(), stringResource(cfg.action.label())) {
+                        haptic.perform(); viewModel.runPageAction(req.context, cfg.action)
+                    }
+                }
             QuickActionMenu(
                 radial = pageMenuStyle == QuickMenuStyle.RADIAL,
                 anchor = req.anchor,

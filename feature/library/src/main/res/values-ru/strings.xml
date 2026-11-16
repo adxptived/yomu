@@ -42,6 +42,9 @@
     <string name="library_columns">Колонок в сетке</string>
     <string name="library_columns_auto">Авто</string>
     <string name="library_clear_filters">Сбросить фильтры</string>
+    <string name="library_display">Отображение</string>
+    <string name="library_downloads">Загрузки</string>
+    <string name="library_sort_direction">Направление сортировки</string>
     <string name="library_delete_files">Удалить файлы с устройства</string>
     <string name="library_delete_files_text">Выбранные книги и их файлы будут удалены с устройства. Это действие нельзя отменить.</string>
     <string name="library_import">Импорт</string>
@@ -88,6 +91,10 @@
     <string name="details_continue">Продолжить</string>
     <string name="details_read">Читать</string>
     <string name="details_reading_time">Время чтения: %s</string>
+    <string name="details_description_expand">Развернуть</string>
+    <string name="details_description_collapse">Свернуть</string>
+    <string name="details_duration_unknown">Длительность неизвестна</string>
+    <string name="library_bulk_partial">Применено к %1$d из %2$d</string>
     <string name="details_collections">Вкладки</string>
     <string name="details_annotations">Выделения, заметки и закладки</string>
     <string name="details_annotations_summary">Выделений: %1$d · заметок: %2$d · закладок: %3$d</string>
@@ -185,6 +192,12 @@
     <string name="details_translate_what">Что переводить</string>
     <string name="details_translate_some">Выбранные главы</string>
     <string name="details_translate_pick">Главы для перевода</string>
+    <plurals name="details_tracks">
+        <item quantity="one">%1$d дорожка</item>
+        <item quantity="few">%1$d дорожки</item>
+        <item quantity="many">%1$d дорожек</item>
+        <item quantity="other">%1$d дорожки</item>
+    </plurals>
     <plurals name="details_translate_all">
         <item quantity="one">Всю книгу (%1$d глава)</item>
         <item quantity="few">Всю книгу (%1$d главы)</item>

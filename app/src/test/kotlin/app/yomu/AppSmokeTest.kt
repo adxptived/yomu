@@ -406,7 +406,11 @@ class AppSmokeTest {
         assertTrue("import failed: $outcome", outcome is ImportOutcome.Added)
         clickTab("Library")
         awaitText("Smoke Manga")
-        compose.onAllNodes(hasContentDescription("Smoke Manga", substring = true))[0].performClick()
+        // A tile opens the card; the card's read action starts the reader (LibraryOpenResolver).
+        // The extended FAB hides its label from semantics, so its icon's content description is the handle.
+        compose.onAllNodesWithText("Smoke Manga")[0].performClick()
+        compose.waitUntilAtLeastOneExists(hasContentDescription("Read"), 20_000)
+        compose.onAllNodes(hasContentDescription("Read"))[0].performClick()
         // The page number shows once the pages are in; the tap zones ("Back / Menu / Forward") are not shown.
         awaitText("1 / 4")
         compose.mainClock.advanceTimeBy(1_000)

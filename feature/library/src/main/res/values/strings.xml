@@ -36,6 +36,9 @@
     <string name="library_columns">Grid columns</string>
     <string name="library_columns_auto">Auto</string>
     <string name="library_clear_filters">Clear filters</string>
+    <string name="library_display">Display</string>
+    <string name="library_downloads">Downloads</string>
+    <string name="library_sort_direction">Sort direction</string>
     <string name="library_delete_files">Delete files from device</string>
     <string name="library_delete_files_text">The selected books and their files will be deleted from the device. This cannot be undone.</string>
     <string name="library_import">Import</string>
@@ -82,6 +85,10 @@
     <string name="details_continue">Continue</string>
     <string name="details_read">Read</string>
     <string name="details_reading_time">Time spent reading: %s</string>
+    <string name="details_description_expand">Expand</string>
+    <string name="details_description_collapse">Collapse</string>
+    <string name="details_duration_unknown">Length unknown</string>
+    <string name="library_bulk_partial">Applied to %1$d of %2$d</string>
     <string name="details_collections">Tabs</string>
     <string name="details_annotations">Highlights, notes and bookmarks</string>
     <string name="details_annotations_summary">%1$d highlights · %2$d notes · %3$d bookmarks</string>
@@ -171,6 +178,10 @@
     <string name="details_translate_what">What to translate</string>
     <string name="details_translate_some">Chosen chapters</string>
     <string name="details_translate_pick">Chapters to translate</string>
+    <plurals name="details_tracks">
+        <item quantity="one">%1$d track</item>
+        <item quantity="other">%1$d tracks</item>
+    </plurals>
     <plurals name="details_translate_all">
         <item quantity="one">The whole book (%1$d chapter)</item>
         <item quantity="other">The whole book (%1$d chapters)</item>

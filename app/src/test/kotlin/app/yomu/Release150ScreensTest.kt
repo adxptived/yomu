@@ -149,7 +149,11 @@ class Release150ScreensTest {
         seed()
         compose.setContent { YomuTheme(dark) { Library() } }
         awaitText("Solo Leveling")
-        compose.onAllNodesWithText("Filter")[0].performClick()
+        // Filters live in the one "Display" sheet now: open it, then the filter section.
+        compose.onAllNodesWithText("Display")[0].performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        // The pill and the sheet row both read "Filter"; the sheet row comes last.
+        compose.onAllNodesWithText("Filter").let { nodes -> nodes[nodes.fetchSemanticsNodes().size - 1].performClick() }
         compose.mainClock.advanceTimeBy(1_000)
         awaitText("Status")
         shotScreen("52_library_filters")
