@@ -46,6 +46,28 @@
     <string name="library_import_folder_book">Folder as one book (comic images or audiobook tracks)</string>
     <string name="library_add_scan_folder">Watch a folder (auto import)</string>
     <string name="library_find_online">Find books online</string>
+    <string name="library_add_source">Add a source</string>
+    <string name="details_subscription">Feed subscription</string>
+    <string name="details_subscription_check">Check now</string>
+    <string name="details_subscription_stop">Stop updating</string>
+
+    <!-- Import report (N01) -->
+    <string name="import_report_title">Import report</string>
+    <string name="import_report_summary">%1$d added · %2$d already in the library · %3$d failed</string>
+    <string name="import_report_added">Added</string>
+    <string name="import_report_duplicate">Already in the library</string>
+    <string name="import_report_open">Open</string>
+    <string name="import_report_retry">Retry failed (%1$d)</string>
+    <string name="import_report_choose_again">Choose files again</string>
+    <string name="import_failure_unsupported">This format is not supported</string>
+    <string name="import_failure_password">The file is password-protected</string>
+    <string name="import_failure_corrupt">The file is damaged</string>
+    <string name="import_failure_no_permission">The folder permission was revoked</string>
+    <string name="import_failure_missing">The file is not there any more</string>
+    <string name="import_failure_no_space">No space left on the device</string>
+    <string name="import_failure_timeout">The file took too long to read</string>
+    <string name="import_failure_network">The network failed during the import</string>
+    <string name="import_failure_unknown">The import failed</string>
     <string name="library_all">All</string>
     <string name="library_continue">Continue reading</string>
     <string name="library_empty_title">Your library is empty</string>

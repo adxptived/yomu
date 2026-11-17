@@ -185,6 +185,7 @@ import app.yomu.core.ui.components.wheelCenter
 import app.yomu.core.ui.components.wheelGesture
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.download.DownloadSummary
+import app.yomu.data.library.LibraryProjectionKey
 import app.yomu.domain.library.LibraryItemKey
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookCollection
@@ -220,6 +221,8 @@ fun LibraryScreen(
     onOpenTitle: (Long) -> Unit = {},
     onReadChapter: (Long) -> Unit = {},
     onOpenDownloads: () -> Unit = {},
+    /** The connection wizard: a catalogue, a feed or a folder, explained and checked before it is saved (S01). */
+    onAddSource: () -> Unit = {},
     online: OnlineLibrary? = null,
 ) {
     val context = LocalContext.current
@@ -249,6 +252,7 @@ fun LibraryScreen(
     val incognito by viewModel.incognito.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val audioSearch by viewModel.audioSearch.collectAsStateWithLifecycle()
+    val importReport by viewModel.importReport.collectAsStateWithLifecycle()
 
     val snackbar = remember { SnackbarHostState() }
     val haptic = rememberHaptic()
@@ -761,6 +765,10 @@ fun LibraryScreen(
                 showAudioLink = true
             }
             HorizontalDivider()
+            SheetAction(Icons.Default.Add, stringResource(R.string.library_add_source)) {
+                showImport = false
+                onAddSource()
+            }
             SheetAction(Icons.Default.TravelExplore, stringResource(R.string.library_find_online)) {
                 showImport = false
                 onFindBooksOnline()
@@ -773,6 +781,19 @@ fun LibraryScreen(
             label = stringResource(R.string.library_audio_link_hint),
             onConfirm = { viewModel.addAudioLink(it) },
             onDismiss = { showAudioLink = false },
+        )
+    }
+    // The batch report stays available after a restart: the files that failed are named, and the ones whose cause can
+    // change are offered for a retry that imports only them.
+    var showReport by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(importReport?.id) { if (importReport != null) showReport = true }
+    if (showReport && importReport != null) {
+        ImportReportSheet(
+            report = importReport!!,
+            onRetry = viewModel::retryFailedImport,
+            onChooseAgain = { showReport = false; openDocs.launch(arrayOf("*/*")) },
+            onOpenBook = { id -> showReport = false; viewModel.dismissImportReport(); onOpenTitle(id) },
+            onDismiss = { showReport = false; viewModel.dismissImportReport() },
         )
     }
     audioSearch?.let { state ->
@@ -1197,7 +1218,7 @@ private fun OnlineShelf(
             }
         }
         LazyRow(contentPadding = PaddingValues(horizontal = Dimens.s), horizontalArrangement = Arrangement.spacedBy(Dimens.xs)) {
-            items(entries.take(SHELF_MAX), key = { "o${it.id}" }) { e ->
+            items(entries.take(SHELF_MAX), key = { LibraryProjectionKey.Online(it.id).key }) { e ->
                 OnlineTile(e, Modifier.width(Dimens.coverWidth), onOpen, onLongPress)
             }
         }
@@ -1301,7 +1322,7 @@ private fun FormatGroup.label(): Int = when (this) {
  * snapshot without a bounds check.
  */
 private fun LazyPagingItems<Book>.stableKey(index: Int): Any =
-    if (index in 0 until itemCount) peek(index)?.id?.let { "book-$it" } ?: "empty-$index" else "empty-$index"
+    if (index in 0 until itemCount) peek(index)?.let { LibraryProjectionKey.Book(it.id).key } ?: "empty-$index" else "empty-$index"
 
 /** Books (paged) after the [header] and the online titles of the tab, as a grid or a list. */
 @Composable
@@ -1357,7 +1378,7 @@ private fun LibraryGrid(
                             SectionLabel(stringResource(R.string.library_section_online), onlineTiles.size, Icons.Outlined.Public)
                         }
                     }
-                    items(onlineTiles.size, key = { "o${onlineTiles.getOrNull(it)?.id ?: it}" }, contentType = { "online" }) { i ->
+                    items(onlineTiles.size, key = { onlineTiles.getOrNull(it)?.let { e -> LibraryProjectionKey.Online(e.id).key } ?: "empty-online-$it" }, contentType = { "online" }) { i ->
                         val item = onlineTiles.getOrNull(i) ?: return@items
                         OnlineTile(
                             item, motionItem(), onOpenTitle, onOnlineLongPress,
@@ -1408,7 +1429,7 @@ private fun LibraryGrid(
                     if (sectionLabels) {
                         item(key = "online-label") { SectionLabel(stringResource(R.string.library_section_online), onlineTiles.size, Icons.Outlined.Public) }
                     }
-                    items(onlineTiles, key = { "o${it.id}" }, contentType = { "online" }) { e ->
+                    items(onlineTiles, key = { LibraryProjectionKey.Online(it.id).key }, contentType = { "online" }) { e ->
                         BookListItem(
                             title = e.title,
                             subtitle = e.author,
@@ -1470,6 +1491,75 @@ private fun LibraryGrid(
         }
     }
 }
+
+/** The batch report: every file by name, the retry of the ones that can succeed, and a way to choose again. */
+@Composable
+private fun ImportReportSheet(
+    report: app.yomu.domain.library.ImportReport,
+    onRetry: () -> Unit,
+    onChooseAgain: () -> Unit,
+    onOpenBook: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    YomuSheet(onDismiss = onDismiss) {
+        SheetTitle(stringResource(R.string.import_report_title))
+        Text(
+            stringResource(R.string.import_report_summary, report.added, report.duplicates, report.failed),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = Dimens.l),
+        )
+        Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
+            report.entries.forEach { entry ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(entry.displayName, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            when (entry.result) {
+                                app.yomu.domain.library.ImportEntryResult.ADDED -> stringResource(R.string.import_report_added)
+                                app.yomu.domain.library.ImportEntryResult.DUPLICATE -> stringResource(R.string.import_report_duplicate)
+                                app.yomu.domain.library.ImportEntryResult.FAILED -> importFailureLabel(entry.failure)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = when (entry.result) {
+                                app.yomu.domain.library.ImportEntryResult.FAILED -> MaterialTheme.colorScheme.error
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                    val bookId = entry.bookId
+                    if (entry.result == app.yomu.domain.library.ImportEntryResult.DUPLICATE && bookId != null) {
+                        TextButton(onClick = { onOpenBook(bookId) }) { Text(stringResource(R.string.import_report_open)) }
+                    }
+                }
+                HorizontalDivider()
+            }
+        }
+        if (report.retryable.isNotEmpty()) {
+            Button(onClick = onRetry, modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s).heightIn(min = Dimens.touch)) {
+                Text(stringResource(R.string.import_report_retry, report.retryable.size))
+            }
+        }
+        SheetAction(Icons.Default.UploadFile, stringResource(R.string.import_report_choose_again)) { onChooseAgain() }
+        TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(stringResource(CoreR.string.done)) }
+    }
+}
+
+/** Why one file failed, in words that suggest the next step. */
+@Composable
+private fun importFailureLabel(failure: app.yomu.domain.library.ImportFailure?): String = stringResource(
+    when (failure) {
+        app.yomu.domain.library.ImportFailure.UNSUPPORTED -> R.string.import_failure_unsupported
+        app.yomu.domain.library.ImportFailure.PASSWORD -> R.string.import_failure_password
+        app.yomu.domain.library.ImportFailure.CORRUPT -> R.string.import_failure_corrupt
+        app.yomu.domain.library.ImportFailure.NO_PERMISSION -> R.string.import_failure_no_permission
+        app.yomu.domain.library.ImportFailure.MISSING -> R.string.import_failure_missing
+        app.yomu.domain.library.ImportFailure.NO_SPACE -> R.string.import_failure_no_space
+        app.yomu.domain.library.ImportFailure.TIMEOUT -> R.string.import_failure_timeout
+        app.yomu.domain.library.ImportFailure.NETWORK -> R.string.import_failure_network
+        else -> R.string.import_failure_unknown
+    },
+)
 
 /** Type, status, tags, language, sort and view of the library in one sheet. */
 @Composable

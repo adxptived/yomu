@@ -19,10 +19,10 @@ import app.yomu.data.download.DownloadOverview
 import app.yomu.data.download.DownloadSummary
 import app.yomu.data.library.ImportOutcome
 import app.yomu.data.library.ImportService
+import app.yomu.data.library.LibraryProjection
 import app.yomu.data.library.LibraryTabs
 import app.yomu.data.repository.BookRepositoryImpl
 import app.yomu.data.work.LibraryScanWorker
-import app.yomu.domain.catalog.NaturalOrder
 import app.yomu.domain.library.BulkAction
 import app.yomu.domain.library.BulkExecutor
 import app.yomu.domain.library.BulkOutcome
@@ -38,6 +38,7 @@ import app.yomu.domain.model.LibrarySort
 import app.yomu.domain.model.ReadingStatus
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,6 +48,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -113,15 +115,9 @@ internal fun List<CatalogEntry>.forLibrary(
             (filter.statuses.isEmpty() || e.readingStatus() in filter.statuses) &&
             (filter.tag == null || e.genres.any { it.equals(filter.tag, ignoreCase = true) })
     }
-    val byTitle = compareBy(NaturalOrder) { e: CatalogEntry -> e.title }
-    val primary: Comparator<CatalogEntry> = when (sort) {
-        LibrarySort.TITLE -> byTitle
-        LibrarySort.AUTHOR -> compareBy(NaturalOrder) { e: CatalogEntry -> e.author.orEmpty() }
-        LibrarySort.ADDED -> compareBy { it.addedAt }
-        LibrarySort.LAST_READ -> compareBy { it.lastReadAt }
-        LibrarySort.PROGRESS -> compareBy { it.readFraction() }
-    }
-    return shown.sortedWith((if (ascending) primary else primary.reversed()).then(byTitle))
+    // The same comparator the local books use: one sort definition for both kinds, with the namespace as the
+    // tie-breaker, so a reload cannot swap two titles with equal keys.
+    return LibraryProjection.orderOnline(shown, sort, ascending)
 }
 
 /** Share of the known chapters that are read. */
@@ -150,6 +146,7 @@ class LibraryViewModel(
     private val audiobooks: AudiobookStore,
     private val history: app.yomu.data.repository.ReadingHistoryRepository,
     downloads: DownloadOverview,
+    private val reports: app.yomu.data.library.ImportReportStore,
 ) : ViewModel() {
     private val search = MutableStateFlow("")
     private val filter = MutableStateFlow(LibraryFilter())
@@ -239,6 +236,9 @@ class LibraryViewModel(
         onlineAll, onlineTabs, filter, types,
         combine(search.debounce(200), settings.librarySort.flow, settings.libraryAscending.flow) { q, so, asc -> Triple(q, so, asc) },
     ) { list, tabsOf, f, t, (q, so, asc) -> list.forLibrary(f, t, q, tabsOf, so, asc) }
+        // Filtering and ordering are a pass over the user's online library: it runs on a worker, never on the thread
+        // that composes the grid.
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Books and online titles in progress, the most recent first. */
@@ -321,9 +321,14 @@ class LibraryViewModel(
 
     fun selectAll() = viewModelScope.launch(ScreenErrors) {
         val q = query.first()
-        _selection.value = books.observeBooks(q).first().map { it.id }.filter { it !in pendingDelete.value }.toSet()
+        // One predicate for "select all", the page and the count: the ids come from the same query the grid reads.
+        val pending = pendingDelete.value
+        val (ids, snapshot) = kotlinx.coroutines.withContext(Dispatchers.IO) {
+            books.observeBooks(q).first().map { it.id }.filter { it !in pending } to q.toString()
+        }
+        _selection.value = ids.toSet()
         // "Select all" is a snapshot of the query, not of the loaded tiles: the same set feeds the typed state.
-        _typedSelection.value = LibrarySelection().replaceAll(_selection.value.mapTo(mutableSetOf()) { LibraryItemKey.LocalBook(it) }, q.toString())
+        _typedSelection.value = LibrarySelection().replaceAll(ids.mapTo(mutableSetOf()) { LibraryItemKey.LocalBook(it) }, snapshot)
     }
 
     /** "Continue" on an online title opens the chapter to read next; the title page only when it has no chapters. */
@@ -333,9 +338,53 @@ class LibraryViewModel(
     }
 
     // ---- import ----
+    /** The last batch: its per-file result, kept after a restart, and the retry of the files that can succeed. */
+    val importReport = reports.latest
+
     fun import(uris: List<Uri>, link: Boolean? = null) = viewModelScope.launch(ScreenErrors) {
         if (uris.isEmpty()) return@launch
-        report(importer.import(uris, link))
+        val started = System.currentTimeMillis()
+        // The picker may grant a persisted read permission; taking it is what makes a retry after a restart possible.
+        uris.forEach { persistRead(it) }
+        val outcomes = importer.import(uris, link)
+        val asLink = link ?: (runCatching { settings.importMode.get() }.getOrDefault("COPY") == "LINK")
+        reports.save(
+            app.yomu.data.library.ImportReportStore.report(
+                id = app.yomu.data.library.ImportReportStore.newId(),
+                startedAt = started,
+                finishedAt = System.currentTimeMillis(),
+                link = asLink,
+                uris = uris.map { it.toString() },
+                outcomes = outcomes,
+            ),
+        )
+        report(outcomes)
+    }
+
+    /** Retries only the files of the last batch that failed for a reason that can change. */
+    fun retryFailedImport() = viewModelScope.launch(ScreenErrors) {
+        val retry = reports.latest.value?.retryable?.mapNotNull { runCatching { Uri.parse(it.uri) }.getOrNull() }.orEmpty()
+        if (retry.isEmpty()) return@launch
+        val started = System.currentTimeMillis()
+        retry.forEach { persistRead(it) }
+        val outcomes = importer.import(retry)
+        reports.save(
+            app.yomu.data.library.ImportReportStore.report(
+                id = app.yomu.data.library.ImportReportStore.newId(),
+                startedAt = started,
+                finishedAt = System.currentTimeMillis(),
+                link = false,
+                uris = retry.map { it.toString() },
+                outcomes = outcomes,
+            ),
+        )
+        report(outcomes)
+    }
+
+    fun dismissImportReport() = reports.dismiss()
+
+    private fun persistRead(uri: Uri) {
+        runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
     }
 
     /** A YouTube video or playlist, a podcast feed or an audio link becomes an audiobook, opened right away; words search YouTube. */
@@ -387,8 +436,21 @@ class LibraryViewModel(
 
     fun importFolderAsBook(tree: Uri) = viewModelScope.launch(ScreenErrors) {
         persist(tree)
+        persistRead(tree)
         val name = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, tree)?.name ?: "Folder"
-        report(listOf(importer.importFolder(tree, name)))
+        val started = System.currentTimeMillis()
+        val outcome = importer.importFolder(tree, name)
+        reports.save(
+            app.yomu.data.library.ImportReportStore.report(
+                id = app.yomu.data.library.ImportReportStore.newId(),
+                startedAt = started,
+                finishedAt = System.currentTimeMillis(),
+                link = true,
+                uris = listOf(tree.toString()),
+                outcomes = listOf(outcome),
+            ),
+        )
+        report(listOf(outcome))
     }
 
     fun addScanFolder(tree: Uri) = viewModelScope.launch(ScreenErrors) {

@@ -52,6 +52,28 @@
     <string name="library_import_folder_book">Папка как одна книга (комикс из картинок или треки аудиокниги)</string>
     <string name="library_add_scan_folder">Следить за папкой (автоимпорт)</string>
     <string name="library_find_online">Найти книги в сети</string>
+    <string name="library_add_source">Добавить источник</string>
+    <string name="details_subscription">Подписка на ленту</string>
+    <string name="details_subscription_check">Проверить сейчас</string>
+    <string name="details_subscription_stop">Не обновлять</string>
+
+    <!-- Import report (N01) -->
+    <string name="import_report_title">Отчёт импорта</string>
+    <string name="import_report_summary">Добавлено: %1$d · уже в библиотеке: %2$d · с ошибкой: %3$d</string>
+    <string name="import_report_added">Добавлено</string>
+    <string name="import_report_duplicate">Уже в библиотеке</string>
+    <string name="import_report_open">Открыть</string>
+    <string name="import_report_retry">Повторить ошибки (%1$d)</string>
+    <string name="import_report_choose_again">Выбрать файлы заново</string>
+    <string name="import_failure_unsupported">Этот формат не поддерживается</string>
+    <string name="import_failure_password">Файл защищён паролем</string>
+    <string name="import_failure_corrupt">Файл повреждён</string>
+    <string name="import_failure_no_permission">Доступ к папке отозван</string>
+    <string name="import_failure_missing">Файла больше нет</string>
+    <string name="import_failure_no_space">На устройстве нет места</string>
+    <string name="import_failure_timeout">Файл читался слишком долго</string>
+    <string name="import_failure_network">Сеть подвела во время импорта</string>
+    <string name="import_failure_unknown">Импорт не удался</string>
     <string name="library_all">Все</string>
     <string name="library_continue">Продолжить чтение</string>
     <string name="library_empty_title">Библиотека пуста</string>

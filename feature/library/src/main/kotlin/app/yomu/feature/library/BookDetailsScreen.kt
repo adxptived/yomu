@@ -60,6 +60,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -145,6 +146,7 @@ private fun BookDetailsContent(
     val extras by viewModel.extras.collectAsStateWithLifecycle()
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
     val collections by viewModel.collections.collectAsStateWithLifecycle()
+    val subscription by viewModel.subscription.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var menu by rememberSaveable { mutableStateOf(false) }
@@ -308,6 +310,30 @@ private fun BookDetailsContent(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                // A feed subscription is a property of the book, not a second library: it says where new episodes come
+                // from and offers the two actions that belong to it.
+                subscription?.let { sub ->
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(Dimens.m), verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
+                            Text(stringResource(R.string.details_subscription), style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                sub.feedUrl,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
+                                TextButton(onClick = viewModel::refreshSubscription) { Text(stringResource(R.string.details_subscription_check)) }
+                                TextButton(onClick = viewModel::unsubscribe) { Text(stringResource(R.string.details_subscription_stop)) }
+                            }
+                        }
+                    }
                 }
                 // A description that is null, blank or HTML without text is no description: the section stays out
                 // instead of showing an empty gap. The text keeps its paragraphs and is never fetched on open.

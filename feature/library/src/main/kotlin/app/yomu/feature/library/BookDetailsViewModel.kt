@@ -61,6 +61,7 @@ class BookDetailsViewModel(
     private val bookTranslator: BookTranslator,
     private val trackers: TrackerManager,
     private val audiobooks: app.yomu.data.audio.AudiobookStore,
+    private val subscriptions: app.yomu.data.audio.AudioSubscriptionRepository,
 ) : ViewModel(), TrackingViewModel {
     /** null while loading; a deleted book emits [Missing]. */
     val book: StateFlow<Book?> = books.observeBook(bookId).map { it ?: MISSING }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -90,6 +91,22 @@ class BookDetailsViewModel(
     override val localFile: Boolean = true
     override val tracks = trackers.observeBook(bookId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     override val trackerVersion = trackers.store.version
+
+    /** The feed this audiobook is filled from; null when it was added by hand. */
+    val subscription: StateFlow<app.yomu.domain.audio.AudioSubscription?> =
+        subscriptions.observe().map { list -> list.firstOrNull { it.bookId == bookId } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** "Check now": the manual path around the daily worker. */
+    fun refreshSubscription() = viewModelScope.launch(app.yomu.core.common.ScreenErrors) {
+        subscription.value?.let { subscriptions.refresh(it.id) }
+        refresh.update { it + 1 }
+    }
+
+    /** Stops updating the feed; the audiobook and its downloaded episodes stay in the library. */
+    fun unsubscribe() = viewModelScope.launch(app.yomu.core.common.ScreenErrors) {
+        subscription.value?.let { subscriptions.remove(it.id, deleteBook = false) }
+    }
     override val trackSearch = MutableStateFlow<TrackSearchState?>(null)
     private var trackSearchJob: Job? = null
     override fun trackerSignedIn(service: TrackService) = trackers.tracker(service).loggedIn()
