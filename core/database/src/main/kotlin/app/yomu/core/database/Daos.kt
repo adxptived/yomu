@@ -492,6 +492,17 @@ data class CatalogItemWithUnread(
     val chapterCount: Int,
 )
 
+/** A favourite as the update policy sees it: its unread count, newest upload and last read time. */
+data class TitleCheckRow(
+    @Embedded val item: CatalogItemEntity,
+    val unread: Int,
+    val lastUploadAt: Long,
+    val lastReadAt: Long?,
+)
+
+/** One chapter's upload date, for the rhythm prediction of one title. */
+data class ChapterDateRow(val itemId: Long, val uploadDate: Long)
+
 data class HistoryRow(
     @Embedded val chapter: ChapterEntity,
     val itemTitle: String,
@@ -557,6 +568,24 @@ interface CatalogDao {
 
     @Update
     suspend fun update(item: CatalogItemEntity)
+
+    @Query(
+        "SELECT i.*, (SELECT COUNT(*) FROM chapters c WHERE c.itemId = i.id AND c.read = 0) AS unread, " +
+            "(SELECT MAX(c.uploadDate) FROM chapters c WHERE c.itemId = i.id) AS lastUploadAt, " +
+            "(SELECT MAX(c.lastReadAt) FROM chapters c WHERE c.itemId = i.id) AS lastReadAt " +
+            "FROM catalog_items i WHERE i.favorite = 1 ORDER BY i.title",
+    )
+    suspend fun checkRows(): List<TitleCheckRow>
+
+    /** Newest upload dates of [ids]: the title's own rhythm, used to predict its next chapter. */
+    @Query("SELECT itemId, uploadDate FROM chapters WHERE itemId IN (:ids) AND uploadDate > 0 ORDER BY itemId, uploadDate DESC")
+    suspend fun uploadDates(ids: Collection<Long>): List<ChapterDateRow>
+
+    @Query("UPDATE catalog_items SET lastCheckAt = :at, lastCheckSuccessAt = CASE WHEN :success = 1 THEN :at ELSE lastCheckSuccessAt END WHERE id = :id")
+    suspend fun recordCheck(id: Long, at: Long, success: Boolean)
+
+    @Query("UPDATE catalog_items SET lastCheckAt = 0, lastCheckSuccessAt = 0 WHERE id = :id")
+    suspend fun resetCheck(id: Long)
 
     @Query("SELECT * FROM catalog_items WHERE id = :id")
     fun observe(id: Long): Flow<CatalogItemEntity?>

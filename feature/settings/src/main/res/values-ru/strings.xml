@@ -236,6 +236,12 @@
     <string name="set_catalog">Каталоги</string>
     <string name="set_catalog_sum">Обновления, расширения, контент 18+</string>
     <string name="set_update_interval">Проверять новые главы</string>
+    <string name="set_update_restrictions">Проверять автоматически</string>
+    <string name="set_update_restrictions_all">Все тайтлы библиотеки, с выбранным интервалом</string>
+    <string name="set_update_restrictions_some">Только тайтлы, подходящие хотя бы под один пункт</string>
+    <string name="set_update_restriction_started">Начатые тайтлы</string>
+    <string name="set_update_restriction_unread">Тайтлы с непрочитанными главами</string>
+    <string name="set_update_restriction_completed">Завершённые тайтлы</string>
     <string name="set_update_wifi">Проверять только по Wi‑Fi</string>
     <string name="set_show_nsfw">Показывать источники 18+</string>
     <string name="set_user_agent">User-Agent</string>

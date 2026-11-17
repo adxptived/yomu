@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DownloadTaskEntity::class, ReadingSessionEntity::class, ExtensionRepoEntity::class, OcrCacheEntity::class, TrackEntity::class,
         FolderSyncBaseEntity::class, AudioSubscriptionEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = true,
 )
 abstract class YomuDatabase : RoomDatabase() {
@@ -214,10 +214,22 @@ abstract class YomuDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * 13 → 14: when each title was last asked for new chapters (U01). The attempt is recorded separately from a
+         * successful answer: a failed check does not look like a successful one, and both are kept for the decision.
+         */
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE catalog_items ADD COLUMN lastCheckAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE catalog_items ADD COLUMN lastCheckSuccessAt INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         val MIGRATIONS: Array<Migration> =
             arrayOf(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                 MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
+                MIGRATION_13_14,
             )
     }
 }

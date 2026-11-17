@@ -265,6 +265,10 @@ data class CatalogItemEntity(
     val memo: String? = null,
     /** Sort and filters of the chapter list (JSON of domain ChapterDisplay); null = app default. Added in schema 3. */
     val chapterFlags: String? = null,
+    /** Last automatic check of this title; 0 = never. The attempt is recorded even when it failed. Added in schema 14. */
+    @ColumnInfo(defaultValue = "0") val lastCheckAt: Long = 0,
+    /** Last check that actually reached the source; 0 = never successful. Added in schema 14. */
+    @ColumnInfo(defaultValue = "0") val lastCheckSuccessAt: Long = 0,
 )
 
 @Entity(

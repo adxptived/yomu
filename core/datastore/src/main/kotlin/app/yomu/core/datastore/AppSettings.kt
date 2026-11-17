@@ -206,6 +206,12 @@ class AppSettings(context: Context) {
     // Catalog
     val updateIntervalHours = int("update_interval_hours", 6)
     val updateWifiOnly = bool("update_wifi_only", true)
+
+    /** UpdateRestriction names: only titles that match one of them are checked automatically. Empty = all. */
+    val updateRestrictions = stringSet("update_restrictions")
+
+    /** Library shelf ids excluded from automatic updates (stored as strings; long sets do not exist in DataStore). */
+    val updateExcludedShelves = stringSet("update_excluded_shelves")
     val showNsfw = bool("show_nsfw", false)
 
     /** Safe / mixed / adult content; [showNsfw] is the old switch this replaces. */

@@ -234,6 +234,12 @@
     <string name="set_catalog">Catalogs</string>
     <string name="set_catalog_sum">Updates, extensions, 18+ content</string>
     <string name="set_update_interval">Check for new chapters</string>
+    <string name="set_update_restrictions">Check automatically</string>
+    <string name="set_update_restrictions_all">Every library title, at the interval above</string>
+    <string name="set_update_restrictions_some">Only titles matching one of these</string>
+    <string name="set_update_restriction_started">Started titles</string>
+    <string name="set_update_restriction_unread">Titles with unread chapters</string>
+    <string name="set_update_restriction_completed">Finished titles</string>
     <string name="set_update_wifi">Check only over Wi‑Fi</string>
     <string name="set_show_nsfw">Show 18+ sources</string>
     <string name="set_user_agent">User-Agent</string>

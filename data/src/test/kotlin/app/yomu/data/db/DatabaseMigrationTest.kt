@@ -416,8 +416,42 @@ class DatabaseMigrationTest {
         }
     }
 
+    /** 13 → 14 adds the per-title check times; an existing title starts as never checked. */
+    @Test
+    fun migrates13To14AddingCheckTimes() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val file = context.getDatabasePath("migration-test-13.db").apply { parentFile?.mkdirs(); delete() }
+        createFromSchema(file, 13)
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use { sql ->
+            sql.execSQL(
+                "INSERT INTO catalog_items (sourceId, url, title, genres, status, type, favorite, addedAt, lastUpdateAt, initialized) " +
+                    "VALUES (1, '/title/1', 'Title', '', 0, 'MANGA', 1, 1, 1, 1)",
+            )
+        }
+        val room = Room.databaseBuilder(context, YomuDatabase::class.java, file.path).addMigrations(*YomuDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val db = room.openHelper.writableDatabase
+            assertEquals(CURRENT_VERSION, db.version)
+            db.query("SELECT title, lastCheckAt, lastCheckSuccessAt FROM catalog_items").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("Title", c.getString(0))
+                assertEquals(0L, c.getLong(1))
+                assertEquals(0L, c.getLong(2))
+            }
+            db.execSQL("UPDATE catalog_items SET lastCheckAt = 100, lastCheckSuccessAt = 50")
+            db.query("SELECT lastCheckAt, lastCheckSuccessAt FROM catalog_items").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals(100L, c.getLong(0))
+                assertEquals(50L, c.getLong(1))
+            }
+        } finally {
+            room.close()
+            file.delete()
+        }
+    }
+
     private companion object {
-        const val CURRENT_VERSION = 13
+        const val CURRENT_VERSION = 14
     }
 }
 

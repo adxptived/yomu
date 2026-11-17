@@ -807,6 +807,41 @@ internal fun ColumnScope.CatalogSection(vm: SettingsViewModel, links: SettingsLi
     var revoke by remember { mutableStateOf(false) }
     ChoicePref(vm, s.updateIntervalHours, R.string.set_update_interval, listOf(0, 3, 6, 12, 24, 48).map { it to hoursLabel(context, it) }, after = { vm.rescheduleUpdates() })
     SwitchPref(vm, s.updateWifiOnly, R.string.set_update_wifi, after = { vm.rescheduleUpdates() })
+    // What the automatic check is allowed to look at. Nothing selected means every title, which is the old behaviour.
+    val restrictions by s.updateRestrictions.state()
+    Text(
+        stringResource(R.string.set_update_restrictions),
+        style = MaterialTheme.typography.titleSmall,
+        modifier = Modifier.padding(start = Dimens.l, top = Dimens.s, end = Dimens.l),
+    )
+    Text(
+        stringResource(if (restrictions.isEmpty()) R.string.set_update_restrictions_all else R.string.set_update_restrictions_some),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+    )
+    app.yomu.domain.catalog.UpdateRestriction.entries.forEach { restriction ->
+        val checked = restriction.name in restrictions
+        Row(
+            Modifier.fillMaxWidth().clickable {
+                val next = if (checked) restrictions - restriction.name else restrictions + restriction.name
+                vm.set(s.updateRestrictions, next)
+            }.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(checked = checked, onCheckedChange = null)
+            Text(
+                stringResource(
+                    when (restriction) {
+                        app.yomu.domain.catalog.UpdateRestriction.STARTED -> R.string.set_update_restriction_started
+                        app.yomu.domain.catalog.UpdateRestriction.UNREAD -> R.string.set_update_restriction_unread
+                        app.yomu.domain.catalog.UpdateRestriction.COMPLETED -> R.string.set_update_restriction_completed
+                    },
+                ),
+                modifier = Modifier.padding(start = Dimens.s),
+            )
+        }
+    }
     TextPref(vm, s.userAgent, R.string.set_user_agent, summaryWhenEmpty = R.string.set_user_agent_default)
     ChoicePref(
         vm, s.contentPreference, R.string.set_content_preference,

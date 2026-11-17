@@ -24,6 +24,7 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import app.yomu.core.datastore.AppSettings
 import app.yomu.data.R
 import app.yomu.data.backup.BackupManager
@@ -321,7 +322,8 @@ class UpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
     override suspend fun doWork(): Result {
         val ctx = applicationContext
-        val result = catalog.checkUpdates()
+        // The manual "check now" bypasses the interval, the prediction and the restrictions — not a broken source.
+        val result = catalog.checkUpdates(force = inputData.getBoolean(KEY_FORCE, false))
         val queued = runCatching { downloads.autoDownloadNew(result) }.onFailure { Timber.w(it, "Auto download failed") }.getOrDefault(0)
         if (result.updated.isNotEmpty()) {
             val total = result.newChapters
@@ -343,8 +345,16 @@ class UpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
     companion object {
         const val NAME = "catalog_updates"
+        const val KEY_FORCE = "force"
+
         fun runNow(context: Context) = WorkManager.getInstance(context)
-            .enqueueUniqueWork("${NAME}_now", ExistingWorkPolicy.KEEP, OneTimeWorkRequestBuilder<UpdateWorker>().setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build())
+            .enqueueUniqueWork(
+                "${NAME}_now", ExistingWorkPolicy.KEEP,
+                OneTimeWorkRequestBuilder<UpdateWorker>()
+                    .setInputData(workDataOf(KEY_FORCE to true))
+                    .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                    .build(),
+            )
     }
 }
 

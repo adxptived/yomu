@@ -19,6 +19,9 @@ import app.yomu.data.source.SourceManager
 import app.yomu.domain.catalog.ChapterDisplay
 import app.yomu.domain.catalog.ChapterNavigation
 import app.yomu.domain.catalog.ChapterOrder
+import app.yomu.domain.catalog.UpdatePolicy
+import app.yomu.domain.catalog.UpdateRestriction
+import app.yomu.domain.catalog.UpdateTitleState
 import app.yomu.domain.model.CatalogEntry
 import app.yomu.domain.model.ChapterInfo
 import app.yomu.domain.model.ContentType
@@ -58,8 +61,13 @@ data class HistoryEntry(val chapter: ChapterInfo, val entryTitle: String, val co
 /** New chapters of one title found by the update check. */
 data class TitleUpdate(val entryId: Long, val title: String, val newChapterIds: List<Long>)
 
-/** Outcome of [CatalogRepository.checkUpdates]. */
-data class UpdateCheckResult(val updated: List<TitleUpdate>, val failed: List<Pair<String, Throwable>>, val checked: Int) {
+/** Outcome of [CatalogRepository.checkUpdates]. [skipped] titles were not due (interval, shelf, restrictions). */
+data class UpdateCheckResult(
+    val updated: List<TitleUpdate>,
+    val failed: List<Pair<String, Throwable>>,
+    val checked: Int,
+    val skipped: Int = 0,
+) {
     val newChapters: Int get() = updated.sumOf { it.newChapterIds.size }
 }
 
@@ -322,33 +330,70 @@ class CatalogRepository(
      * Checks all favourites for new chapters. Sources are checked in parallel, the titles of one source one after another
      * (with a short pause) so that a big library does not hit a single site with dozens of parallel requests.
      */
-    suspend fun checkUpdates(onProgress: (Int, Int) -> Unit = { _, _ -> }): UpdateCheckResult = withContext(Dispatchers.IO) {
-        val favorites = dao.favorites().filter { it.type != ContentType.BOOK.name && it.type != ContentType.AUDIO.name && sources.get(it.sourceId) != null }
+    suspend fun checkUpdates(onProgress: (Int, Int) -> Unit = { _, _ -> }, force: Boolean = false): UpdateCheckResult = withContext(Dispatchers.IO) {
+        val rows = dao.checkRows().filter { it.item.type != ContentType.BOOK.name && it.item.type != ContentType.AUDIO.name && sources.get(it.item.sourceId) != null }
+        // One policy decides for every title: the interval, the title's own upload rhythm, the chosen restrictions and
+        // the shelves the user excluded. The decision is pure (UpdatePolicy), this method only feeds it.
+        val interval = runCatching { settings.updateIntervalHours.get() }.getOrDefault(6)
+        val restrictions = runCatching { settings.updateRestrictions.get() }.getOrDefault(emptySet())
+            .mapNotNull { name -> UpdateRestriction.entries.firstOrNull { it.name == name } }
+            .toSet()
+        val excluded = runCatching { settings.updateExcludedShelves.get() }.getOrDefault(emptySet())
+            .mapNotNull { it.toLongOrNull() }
+            .toSet()
+        val shelves = db.collections().allItemRefs().groupBy({ it.itemId }, { it.collectionId })
+        val dates = if (rows.isEmpty()) emptyMap() else dao.uploadDates(rows.map { it.item.id }).groupBy({ it.itemId }, { it.uploadDate })
+        val now = System.currentTimeMillis()
+        val due = rows.filter { row ->
+            val status = when {
+                row.lastReadAt == null -> "NEW"
+                row.unread > 0 -> "READING"
+                else -> "FINISHED"
+            }
+            UpdatePolicy.decide(
+                title = UpdateTitleState(
+                    status = status,
+                    unreadChapters = row.unread,
+                    chapterCount = 0,
+                    shelfIds = shelves[row.item.id].orEmpty().toSet(),
+                    lastAttemptAt = row.item.lastCheckAt,
+                    lastSuccessAt = row.item.lastCheckSuccessAt,
+                ),
+                now = now,
+                intervalHours = interval,
+                restrictions = restrictions,
+                excludedShelves = excluded,
+                uploadDates = dates[row.item.id].orEmpty(),
+                force = force,
+            ).eligible
+        }
         val updated = mutableListOf<TitleUpdate>()
         val failed = mutableListOf<Pair<String, Throwable>>()
         val parallelSources = Semaphore(4)
         var done = 0
         coroutineScope {
-            favorites.groupBy { it.sourceId }.values.map { group ->
+            due.groupBy { it.item.sourceId }.values.map { group ->
                 async {
                     parallelSources.withPermit {
                         group.forEachIndexed { i, f ->
                             if (i > 0) delay(UPDATE_PAUSE_MS)
-                            val r = runCatching { refreshNew(f.id, SourceCalls.UPDATE_TIMEOUT_MS) }
+                            val r = runCatching { refreshNew(f.item.id, SourceCalls.UPDATE_TIMEOUT_MS) }
                             // A cancelled check stops here; a CancellationException thrown by a source itself is just a failed title.
                             ensureActive()
                             synchronized(updated) {
-                                r.onSuccess { ids -> if (ids.isNotEmpty()) updated += TitleUpdate(f.id, f.title, ids) }
-                                r.exceptionOrNull()?.let { failed += f.title to it }
+                                r.onSuccess { ids -> if (ids.isNotEmpty()) updated += TitleUpdate(f.item.id, f.item.title, ids) }
+                                r.exceptionOrNull()?.let { failed += f.item.title to it }
                                 done++
-                                onProgress(done, favorites.size)
+                                onProgress(done, due.size)
                             }
+                            // The attempt is recorded even when it failed; the success time only moves on a real answer.
+                            dao.recordCheck(f.item.id, now, success = r.isSuccess)
                         }
                     }
                 }
             }.forEach { it.await() }
         }
-        UpdateCheckResult(updated.sortedBy { it.title.lowercase() }, failed, favorites.size)
+        UpdateCheckResult(updated.sortedBy { it.title.lowercase() }, failed, due.size, skipped = rows.size - due.size)
     }
 
     /** Sources asked by global search, in the order of the source list: pinned, recently used, then by name. */
