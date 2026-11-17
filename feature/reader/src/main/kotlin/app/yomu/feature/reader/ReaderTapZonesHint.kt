@@ -49,12 +49,14 @@ internal fun ReaderTapZonesHint(
     edgeGestures: Boolean,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Shows the diagram again on request, even though the one-time hint is already stored as shown. */
+    force: Boolean = false,
 ) {
     val store = LocalHintStore.current
     var visible by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(store) {
-        if (store == null || store.isShown(TAP_ZONES_HINT_KEY)) onDone() else visible = true
+    LaunchedEffect(store, force) {
+        if (!force && (store == null || store.isShown(TAP_ZONES_HINT_KEY))) onDone() else visible = true
     }
     if (!visible || store == null) return
     fun dismiss() {

@@ -33,6 +33,7 @@ import app.yomu.domain.model.MangaBackground
 import app.yomu.domain.model.MangaDirection
 import app.yomu.domain.model.MangaSettings
 import app.yomu.domain.model.ScaleType
+import app.yomu.domain.model.StartZoomAnchor
 import app.yomu.domain.model.TapZoneLayout
 import app.yomu.domain.reader.PageSplit
 import kotlin.math.roundToInt
@@ -177,6 +178,47 @@ fun MangaPageSettings(s: MangaSettings, update: MangaSettingsUpdate, query: Stri
             summary = stringResource(R.string.mr_animation_sum),
         )
         PreferenceSwitch(stringResource(R.string.mr_crop), s.cropBorders, { v -> update { it.copy(cropBorders = v) } }, summary = stringResource(R.string.mr_crop_sum))
+        if (s.direction != MangaDirection.WEBTOON) {
+            PreferenceSwitch(
+                stringResource(R.string.mr_rotate_wide),
+                s.rotateWidePages,
+                { v -> update { it.copy(rotateWidePages = v) } },
+                summary = stringResource(R.string.mr_rotate_wide_sum),
+            )
+        }
+        PreferenceSwitch(
+            stringResource(R.string.mr_smart_fit),
+            s.smartFit,
+            { v -> update { it.copy(smartFit = v) } },
+            summary = stringResource(R.string.mr_smart_fit_sum),
+        )
+        if (!s.smartFit) {
+            PreferenceSlider(
+                stringResource(R.string.mr_start_zoom),
+                s.startZoom,
+                1f..3f,
+                { v -> update { it.copy(startZoom = (v * 4).roundToInt() / 4f) } },
+                { "%.2f×".format(it) },
+                steps = 7,
+                summary = stringResource(R.string.mr_start_zoom_sum),
+            )
+        }
+        if (s.smartFit || s.startZoom > 1.01f) {
+            Text(
+                stringResource(R.string.mr_zoom_anchor),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+            )
+            OptionTiles(
+                listOf(
+                    TileOption(StartZoomAnchor.CENTER, stringResource(R.string.mr_zoom_anchor_center), Icons.Filled.FitScreen),
+                    TileOption(StartZoomAnchor.START, stringResource(R.string.mr_zoom_anchor_start), Icons.Filled.West),
+                    TileOption(StartZoomAnchor.END, stringResource(R.string.mr_zoom_anchor_end), Icons.Filled.East),
+                ),
+                s.startZoomAnchor,
+                { v -> update { it.copy(startZoomAnchor = v) } },
+            )
+        }
         PreferenceSwitch(stringResource(R.string.mr_page_number), s.showPageNumber, { v -> update { it.copy(showPageNumber = v) } }, summary = stringResource(R.string.mr_page_number_sum))
         PreferenceSwitch(stringResource(R.string.mr_zoom_lock), s.zoomLock, { v -> update { it.copy(zoomLock = v) } }, summary = stringResource(R.string.mr_zoom_lock_summary))
         PreferenceSlider(

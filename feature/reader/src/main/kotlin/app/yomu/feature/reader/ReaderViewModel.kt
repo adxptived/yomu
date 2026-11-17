@@ -570,6 +570,7 @@ class ReaderViewModel(
         c.columns = textColumns(effectiveText.value, landscape.value)
         c.updateSettings(effectiveText.value, relayout = false)
         c.footerSpace = common.value.footer
+        c.updateAnimationSpeed(common.value.animationSpeed)
         c.prevLabel = context.getString(R.string.reader_prev_chapter)
         c.nextLabel = context.getString(R.string.reader_next_chapter)
         viewModelScope.launch(ScreenErrors) {
@@ -1901,6 +1902,9 @@ class ReaderViewModel(
         if (after == before) return@launch
         push(SettingsChange.Common(before))
         settings.commonReader.set(after)
+        if (after.animationSpeed != before.animationSpeed) {
+            (current() as? ReaderContent.Text)?.controller?.updateAnimationSpeed(after.animationSpeed)
+        }
     }
 
     /** Switches between global settings and settings stored only for this book. */

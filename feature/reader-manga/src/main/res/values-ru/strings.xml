@@ -39,6 +39,16 @@
     <string name="mr_animation">Анимация перелистывания</string>
     <string name="mr_animation_sum">Если выключить, тапы и кнопки листают мгновенно</string>
     <string name="mr_crop">Обрезать белые поля</string>
+    <string name="mr_rotate_wide">Поворачивать широкие страницы</string>
+    <string name="mr_rotate_wide_sum">Альбомный скан поворачивается на четверть оборота и заполняет экран</string>
+    <string name="mr_smart_fit">Умное заполнение</string>
+    <string name="mr_smart_fit_sum">Высокая страница открывается с увеличением по ширине, а не по экрану</string>
+    <string name="mr_start_zoom">Начальное увеличение</string>
+    <string name="mr_start_zoom_sum">Каждая страница открывается с этим увеличением; щипок по-прежнему его меняет</string>
+    <string name="mr_zoom_anchor">Начальная часть страницы</string>
+    <string name="mr_zoom_anchor_center">Центр</string>
+    <string name="mr_zoom_anchor_start">Начало чтения</string>
+    <string name="mr_zoom_anchor_end">Конец чтения</string>
     <string name="mr_page_number">Номер страницы</string>
     <string name="mr_zoom_lock">Зафиксировать просмотр</string>
     <string name="mr_zoom_lock_summary">Оставить это увеличение и отключить листание: страница только прокручивается</string>

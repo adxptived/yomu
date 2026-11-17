@@ -145,6 +145,13 @@
     <string name="rs_or_portrait">Portrait</string>
     <string name="rs_or_landscape">Landscape</string>
     <string name="rs_or_locked">Lock current</string>
+    <string name="rs_navigator">Vertical page slider</string>
+    <string name="rs_navigator_off">Off</string>
+    <string name="rs_navigator_left">Left side</string>
+    <string name="rs_navigator_right">Right side</string>
+    <string name="rs_animation_speed">Animation speed</string>
+    <string name="rs_animation_speed_summary">1× is the normal duration; higher is faster</string>
+    <string name="reader_navigator_position">Page %1$d of %2$d</string>
     <string name="rs_fullscreen">Full screen</string>
     <string name="rs_cutout">Draw under the camera cutout</string>
     <string name="rs_autohide">Hide menu after, seconds</string>

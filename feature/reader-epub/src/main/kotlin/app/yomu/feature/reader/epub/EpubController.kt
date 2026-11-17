@@ -160,6 +160,10 @@ class EpubController(
     var accent: Long = 0xFF6750A4
     var reduceMotion = false
 
+    /** Multiplier for page-turn animations (1 = the normal duration). */
+    var animationSpeed = 1f
+        private set
+
     /** Keeps the bottom margin free for the reader's status line (page, clock). */
     var footerSpace = false
     var prevLabel = "‹"
@@ -242,6 +246,7 @@ class EpubController(
         put("lang", document.language ?: "")
         put("reduceMotion", reduceMotion)
         put("pageAnimation", settings.pageAnimation.name)
+        put("animationSpeed", animationSpeed.coerceIn(0.25f, 3f))
         put("chapterButtons", settings.chapterButtons)
         put("chapter", index)
         put("chapterCount", document.chapterCount)
@@ -316,6 +321,14 @@ class EpubController(
     }
 
     fun refreshConfig() = js("yomu.setConfig(${config(null)}, ${JsonPrimitive(css())})")
+
+    /** Changes the page-turn animation speed and applies it to the open document without a reload. */
+    fun updateAnimationSpeed(value: Float) {
+        val v = value.coerceIn(0.25f, 3f)
+        if (v == animationSpeed) return
+        animationSpeed = v
+        refreshConfig()
+    }
 
     /** Number of text columns (2 for a landscape spread); reflows the current chapter at the same offset. */
     fun updateColumns(value: Int) {

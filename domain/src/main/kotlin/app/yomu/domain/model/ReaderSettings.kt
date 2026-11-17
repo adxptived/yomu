@@ -76,6 +76,9 @@ enum class TapZoneLayout { L_SHAPE, KINDLE, EDGES, LEFT_RIGHT, DISABLED }
 /** Colour around and between manga pages. */
 enum class MangaBackground(val argb: Long) { BLACK(0xFF000000), GRAY(0xFF2B2B2E), WHITE(0xFFFFFFFF) }
 
+/** Where a page sits after the start zoom. START is the side reading begins at (right for a right-to-left book). */
+enum class StartZoomAnchor { CENTER, START, END }
+
 @Serializable
 data class MangaSettings(
     val direction: MangaDirection = MangaDirection.LTR,
@@ -92,6 +95,14 @@ data class MangaSettings(
      */
     val splitPages: app.yomu.domain.reader.PageSplit = app.yomu.domain.reader.PageSplit.OFF,
     val cropBorders: Boolean = false,
+    /** Turns a landscape scan a quarter turn so it fills a portrait screen. Off by default. */
+    val rotateWidePages: Boolean = false,
+    /** A page opens at this zoom (1 = fit). Applied once when the page appears; a pinch still overrides it. */
+    val startZoom: Float = 1f,
+    /** A page opens at the zoom that fills the width when the fitted one leaves wide margins. */
+    val smartFit: Boolean = false,
+    /** Which part of the page a start zoom shows. */
+    val startZoomAnchor: StartZoomAnchor = StartZoomAnchor.CENTER,
     val tapZones: TapZoneLayout = TapZoneLayout.L_SHAPE,
     /**
      * The old single inversion switch. It swapped the resolved action; the per-axis switches mirror the tap instead.
@@ -185,6 +196,10 @@ data class CommonReaderSettings(
     val textTapZones: TapZoneLayout = TapZoneLayout.LEFT_RIGHT,
     /** PDF tap zones; null keeps the text scheme, which is what every existing installation meant. */
     val pdfTapZones: TapZoneLayout? = null,
+    /** Optional vertical page slider on one side; off by default. */
+    val navigator: app.yomu.domain.reader.NavigatorSide = app.yomu.domain.reader.NavigatorSide.OFF,
+    /** Multiplier for page-turn animations: 1 = the normal duration, 2 = twice as fast, 0.5 = half speed. */
+    val animationSpeed: Float = 1f,
 ) {
     /** The scheme a PDF tap uses: its own, or the text one. */
     fun pdfZones(): TapZoneLayout = pdfTapZones ?: textTapZones

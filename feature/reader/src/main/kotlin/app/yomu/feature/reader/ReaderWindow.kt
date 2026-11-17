@@ -1,13 +1,17 @@
 package app.yomu.feature.reader
 
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.os.Build
 import android.view.WindowManager
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.core.util.Consumer
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -62,13 +66,31 @@ fun ReaderWindowEffects(common: CommonReaderSettings, chromeVisible: Boolean, la
         onDispose { controller.show(WindowInsetsCompat.Type.systemBars()) }
     }
 
-    DisposableEffect(common.orientation) {
-        activity.requestedOrientation = when (common.orientation) {
-            ReaderOrientation.AUTO -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            ReaderOrientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-            ReaderOrientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            ReaderOrientation.LOCKED -> ActivityInfo.SCREEN_ORIENTATION_LOCKED
+    // Split-screen and freeform windows own their size: the platform refuses a requested orientation there and a
+    // rotation would resize the other app too. The reader therefore keeps the window's orientation and only applies
+    // the setting when it owns the whole screen. The listener keeps this true when the window mode changes mid-read.
+    val multiWindow = remember { mutableStateOf(activity.isInMultiWindowMode) }
+    DisposableEffect(activity) {
+        val owner = activity as? ComponentActivity
+        val listener = Consumer<Configuration> { multiWindow.value = owner?.isInMultiWindowMode == true }
+        owner?.addOnConfigurationChangedListener(listener)
+        onDispose {
+            owner?.removeOnConfigurationChangedListener(listener)
+            multiWindow.value = activity.isInMultiWindowMode
         }
+    }
+    DisposableEffect(common.orientation, multiWindow.value) {
+        val requested = if (multiWindow.value) {
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        } else {
+            when (common.orientation) {
+                ReaderOrientation.AUTO -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                ReaderOrientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                ReaderOrientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                ReaderOrientation.LOCKED -> ActivityInfo.SCREEN_ORIENTATION_LOCKED
+            }
+        }
+        activity.requestedOrientation = requested
         onDispose { activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
     }
 

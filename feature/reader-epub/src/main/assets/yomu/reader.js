@@ -302,28 +302,44 @@
     return Math.max(1, Math.round((se.scrollWidth - 1) / pageW));
   }
   function currentPage() { return cfg.fixed ? 0 : Math.round(Math.abs(se.scrollLeft) / pageStep()); }
+  // The setting multiplies the speed: 2 = half the duration, 0.5 = twice as long. Native smooth scrolling cannot be
+  // given a duration, so a page turn is animated here frame by frame.
+  function animSpeed() { return Math.max(0.25, Math.min(3, cfg.animationSpeed || 1)); }
+  function animateScrollLeft(target, duration) {
+    var start = se.scrollLeft;
+    var delta = target - start;
+    var t0 = performance.now();
+    function step(now) {
+      var k = Math.min(1, (now - t0) / Math.max(1, duration));
+      se.scrollLeft = start + delta * (0.5 - Math.cos(Math.PI * k) / 2);
+      if (k < 1) requestAnimationFrame(step); else report();
+    }
+    requestAnimationFrame(step);
+  }
   function setPage(i, smooth) {
     var n = pageCount();
     var step = pageStep();
     i = Math.max(0, Math.min(n - 1, i));
     var x = i * step * (isRtlDoc() ? -1 : 1);
     var anim = cfg.reduceMotion ? 'NONE' : (cfg.pageAnimation || 'SLIDE');
+    var speed = animSpeed();
     if (smooth && anim === 'FADE') {
       var el = document.documentElement;
-      el.style.transition = 'opacity 110ms ease-out';
+      el.style.transition = 'opacity ' + Math.round(110 / speed) + 'ms ease-out';
       el.style.opacity = '0';
       setTimeout(function () {
         se.scrollLeft = x;
-        el.style.transition = 'opacity 150ms ease-in';
+        el.style.transition = 'opacity ' + Math.round(150 / speed) + 'ms ease-in';
         el.style.opacity = '1';
         report();
-      }, 120);
-      setTimeout(report, 300);
+      }, Math.round(120 / speed));
+      setTimeout(report, Math.round(300 / speed));
       return;
     }
-    if (smooth && anim === 'SLIDE' && Math.abs(Math.abs(se.scrollLeft) - i * step) <= step * 1.5) se.scrollTo({ left: x, behavior: 'smooth' });
-    else se.scrollLeft = x;
-    setTimeout(report, smooth && anim === 'SLIDE' ? 350 : 30);
+    if (smooth && anim === 'SLIDE' && Math.abs(Math.abs(se.scrollLeft) - i * step) <= step * 1.5) {
+      animateScrollLeft(x, Math.round(320 / speed));
+    } else se.scrollLeft = x;
+    setTimeout(report, smooth && anim === 'SLIDE' ? Math.round(350 / speed) : 30);
   }
   function progression() {
     if (cfg.vertical) { var mx = se.scrollWidth - pageW; return mx <= 0 ? 1 : Math.min(1, Math.abs(se.scrollLeft) / mx); }

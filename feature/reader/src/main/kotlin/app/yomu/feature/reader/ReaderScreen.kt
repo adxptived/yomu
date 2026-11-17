@@ -250,6 +250,8 @@ fun ReaderScreen(
     var seekDrag by remember { mutableStateOf<Float?>(null) }
     var quickPanel by rememberSaveable { mutableStateOf(false) }
     var tapZonesDone by rememberSaveable { mutableStateOf(false) }
+    /** The reader asked for the zone diagram again from the menu; it bypasses the stored one-time flag. */
+    var tapZonesForced by rememberSaveable { mutableStateOf(false) }
     var goToPage by rememberSaveable { mutableStateOf(false) }
     var readyTimedOut by remember { mutableStateOf(false) }
     var lastInteraction by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -523,7 +525,14 @@ fun ReaderScreen(
                     EpubReaderView(c.controller, onAttached = { viewModel.onWebViewAttached(c.controller) })
                 }
                 is ReaderContent.Pdf -> PdfReaderView(c.controller, viewModel, readerText, landscape)
-                is ReaderContent.Manga -> MangaReaderView(c.controller, viewModel, landscape, hasPrev, hasNext)
+                is ReaderContent.Manga -> MangaReaderView(
+                    c.controller,
+                    viewModel,
+                    landscape,
+                    hasPrev,
+                    hasNext,
+                    animationSpeed = common.animationSpeed,
+                )
             }
         }
 
@@ -600,7 +609,8 @@ fun ReaderScreen(
                     layout = if (data is ReaderContent.Text && common.tapToTurn) common.textTapZones else TapZoneLayout.DISABLED,
                     rtl = textSettings.rtl || (data as? ReaderContent.Text)?.controller?.document?.rtl == true,
                     edgeGestures = common.edgeGestures,
-                    onDone = { tapZonesDone = true },
+                    onDone = { tapZonesDone = true; tapZonesForced = false },
+                    force = tapZonesForced,
                 )
             } else {
                 OneTimeHint(
@@ -638,6 +648,21 @@ fun ReaderScreen(
                     },
                 )
             }
+        }
+
+        // Optional vertical page slider. It commits only on release, so a slow page cannot pull the thumb back.
+        if (data != null && sheet == ReaderSheet.NONE && common.navigator != app.yomu.domain.reader.NavigatorSide.OFF) {
+            val pages = position.bookPages.coerceAtLeast(1)
+            VerticalNavigator(
+                side = common.navigator,
+                progress = position.total,
+                current = position.bookPage,
+                total = pages,
+                onCommit = { fraction -> viewModel.goToPage(navigatorPage(fraction, pages)) },
+                modifier = Modifier
+                    .align(navigatorAlignment(common.navigator))
+                    .padding(horizontal = 2.dp),
+            )
         }
 
         seekDrag?.let { v ->
@@ -694,6 +719,7 @@ fun ReaderScreen(
                         onClick = {
                             dismiss()
                             tapZonesDone = false
+                            tapZonesForced = true
                             if (data is ReaderContent.Manga) viewModel.previewTapZones() else viewModel.chromeVisible.value = false
                         })
                     if (onOpenPageLayout != null && viewModel.bookId > 0 && viewModel.book?.format == BookFormat.DOCX) {

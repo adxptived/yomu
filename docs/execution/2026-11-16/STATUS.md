@@ -990,5 +990,57 @@ Baseline at B00 and this run differ only in the changes listed per package. The 
 plan documents (untracked before this pass), this journal, and the source and test edits described above. No commit,
 push or release was made.
 
+---
+
+## M02 (remainder) — rotate-to-fit, start zoom and a decode budget
+
+**Status:** `CODE_VERIFIED` (split render and the new page behaviour still need a device; `DEVICE_PENDING`).
+
+| File | Change |
+|---|---|
+| `domain/.../reader/MangaFit.kt` | NEW. `WidePageRotation`, `StartZoomAnchor`, `ImageSize`, and pure decisions: `widePageRotation` (a wide scan turns a quarter turn, direction follows the book), `smartZoom` (fills the width of a tall page, capped at 3×), `decodeSize` (follows the scale, never upscales, always within 12 MP). |
+| `domain/src/test/.../MangaFitTest.kt` | NEW. 12 tests: both turn directions, portrait/no-option/no-size, smart zoom and its cap, viewport fit, fit width/height, a 30 000 px strip inside the budget, an original page still bounded, no upscale, unknown size. |
+| `domain/.../model/ReaderSettings.kt` | `MangaSettings.rotateWidePages`, `startZoom`, `smartFit`, `startZoomAnchor` (all default to the old behaviour). |
+| `feature/reader-manga/.../MangaController.kt` | `RotateWideTransformation` rotates a wide bitmap once and keeps a cache key per direction. |
+| `feature/reader-manga/.../MangaReaderView.kt` | Reads a page's real pixel size from its header, computes rotation and a decode target, opens a page at the start/smart zoom once (`zoomTo` + `panBy` to the chosen part), and preloads under the same budget. Webtoon items use the same budget with fit-width. Start zoom never fights the zoom lock or a pinch. |
+| `feature/reader-manga/.../MangaSettingsPanel.kt` | Rotate wide pages, smart fit, start zoom slider and the start position choice. |
+| `feature/reader-manga/res/values{,-ru}/strings.xml` | New settings and summaries. |
+
+**Commands:**
+
+| Command | Result |
+|---|---|
+| `.\gradlew.bat :domain:test --tests "app.yomu.domain.reader.MangaFitTest"` | `BUILD SUCCESSFUL`, 12 tests |
+| `.\gradlew.bat :feature:reader-manga:compileDebugKotlin :app:compileDebugKotlin` | `BUILD SUCCESSFUL` |
+
+**Device/live:** `DEVICE_PENDING` — a wide scan rotated in portrait and landscape, a webtoon page taller than 20 000 px, and the start zoom after rotation/restore.
+
+## M04 (remainder) — navigator, animation speed, orientation fallback, zone hint
+
+**Status:** `CODE_VERIFIED` (V01/V18 device passes open).
+
+| File | Change |
+|---|---|
+| `domain/.../reader/ReaderNavigator.kt` | NEW. `NavigatorSide`, `NavigatorSeek` (the thumb follows the finger while dragging; incoming progress cannot pull it back; release commits once; cancel keeps the reading place) and `ReaderNavigator.pageAt/fractionOf`. |
+| `domain/src/test/.../ReaderNavigatorTest.kt` | NEW. 9 tests: idle thumb, old progress during a drag, commit on release, release without a drag, cancel, moves outside a drag, fractional↔page mapping, NaN. |
+| `domain/.../model/ReaderSettings.kt` | `CommonReaderSettings.navigator` (off by default) and `animationSpeed` (1 = normal). |
+| `feature/reader/.../VerticalNavigator.kt` | NEW. Optional vertical slider: local drag state, commit on release, haptic on commit, TalkBack progress semantics and `setProgress`. |
+| `feature/reader/.../ReaderScreen.kt` | Shows the navigator on the chosen side while a book is open; passes the animation speed to manga; the "how to control" menu now forces the zone diagram even though the stored one-time hint says it was shown. |
+| `feature/reader/.../ReaderTapZonesHint.kt` | `force` bypasses the one-time hint store on request. |
+| `feature/reader/.../ReaderWindow.kt` | Orientation is not requested in split-screen/freeform windows; a configuration listener keeps that true when the window mode changes mid-read. |
+| `feature/reader/.../ReaderSettingsSheet.kt` | Navigator side choice and animation-speed slider in Display. |
+| `feature/reader-manga/.../MangaReaderView.kt` | Pager and webtoon animations use the speed (duration clamped to 60–1200 ms). |
+| `feature/reader-epub/.../EpubController.kt`, `assets/yomu/reader.js` | Animation speed reaches the text reader; page turns are animated frame by frame with the requested duration, fade timings scale too. |
+| `feature/reader/res/values{,-ru}/strings.xml` | Navigator, speed and position strings. |
+
+**Commands:**
+
+| Command | Result |
+|---|---|
+| `.\gradlew.bat :domain:test --tests "app.yomu.domain.reader.*"` | `BUILD SUCCESSFUL` |
+| `.\gradlew.bat :feature:reader:compileDebugKotlin :feature:reader-epub:compileDebugKotlin :feature:reader-manga:compileDebugKotlin :app:compileDebugKotlin` | `BUILD SUCCESSFUL` |
+
+**Device/live:** `DEVICE_PENDING` — navigator drag with slow pages, TalkBack setProgress, animation speed in text/manga, split-screen orientation.
+
 
 

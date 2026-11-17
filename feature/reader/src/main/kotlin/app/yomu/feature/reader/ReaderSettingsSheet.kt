@@ -100,6 +100,7 @@ import app.yomu.domain.model.TextAlignment
 import app.yomu.domain.model.TextPreset
 import app.yomu.domain.model.TextReaderSettings
 import app.yomu.domain.model.WordTapGesture
+import app.yomu.domain.reader.NavigatorSide
 import app.yomu.feature.reader.manga.MangaControlSettings
 import app.yomu.feature.reader.manga.MangaPageSettings
 import app.yomu.feature.reader.manga.TapZonesDiagram
@@ -898,6 +899,25 @@ private fun DisplaySettings(c: CommonReaderSettings, vm: ReaderViewModel, showFo
             ),
             c.orientation,
             { v -> vm.updateCommon { it.copy(orientation = v) } },
+        )
+        PreferenceChoice(
+            stringResource(R.string.rs_navigator),
+            listOf(
+                NavigatorSide.OFF to stringResource(R.string.rs_navigator_off),
+                NavigatorSide.LEFT to stringResource(R.string.rs_navigator_left),
+                NavigatorSide.RIGHT to stringResource(R.string.rs_navigator_right),
+            ),
+            c.navigator,
+            { v -> vm.updateCommon { it.copy(navigator = v) } },
+        )
+        PreferenceSlider(
+            stringResource(R.string.rs_animation_speed),
+            c.animationSpeed,
+            0.5f..2f,
+            { v -> vm.updateCommon { it.copy(animationSpeed = (v * 10).toInt() / 10f) } },
+            { "%.1f×".format(it) },
+            steps = 5,
+            summary = stringResource(R.string.rs_animation_speed_summary),
         )
         PreferenceSwitch(stringResource(R.string.rs_fullscreen), c.fullscreen, { v -> vm.updateCommon { it.copy(fullscreen = v) } }, summary = stringResource(R.string.rs_fullscreen_summary))
         PreferenceSwitch(stringResource(R.string.rs_cutout), c.drawUnderCutout, { v -> vm.updateCommon { it.copy(drawUnderCutout = v) } }, summary = stringResource(R.string.rs_cutout_summary))

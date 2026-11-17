@@ -1,6 +1,8 @@
 package app.yomu.feature.reader.manga
 
+import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -58,6 +60,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -78,19 +81,29 @@ import app.yomu.domain.model.MangaBackground
 import app.yomu.domain.model.MangaDirection
 import app.yomu.domain.model.MangaSettings
 import app.yomu.domain.model.ScaleType
+import app.yomu.domain.model.StartZoomAnchor
 import app.yomu.domain.model.TapZoneLayout
+import app.yomu.domain.reader.ImageSize
+import app.yomu.domain.reader.MangaFit
+import app.yomu.domain.reader.MangaPage
 import app.yomu.domain.reader.ReaderInput
 import app.yomu.domain.reader.ReaderPoint
 import app.yomu.domain.reader.ReaderTapAction
+import app.yomu.domain.reader.WidePageRotation
 import coil3.compose.AsyncImage
 import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.transformations
+import coil3.size.Size
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import me.saket.telephoto.ExperimentalTelephotoApi
+import me.saket.telephoto.zoomable.ZoomFocalPoint
 import me.saket.telephoto.zoomable.ZoomLimit
 import me.saket.telephoto.zoomable.ZoomSpec
 import me.saket.telephoto.zoomable.coil3.ZoomableAsyncImage
@@ -150,9 +163,12 @@ fun MangaReaderView(
     hasPrevChapter: Boolean,
     hasNextChapter: Boolean,
     modifier: Modifier = Modifier,
+    /** Multiplier for page-turn animations from the common reader settings. */
+    animationSpeed: Float = 1f,
 ) {
     val s = controller.settings
     val context = LocalContext.current
+    val metrics = context.resources.displayMetrics
     // Preloads the next pages, a few at a time and nearest first. Turning a page does not restart fetches in flight;
     // pages left far behind are skipped, failed ones are tried again when the reader gets near them.
     LaunchedEffect(controller) {
@@ -166,7 +182,12 @@ fun MangaReaderView(
                     val ok = gate.withPermit {
                         val now = controller.page
                         if (i <= now || i > now + controller.preloadAhead + PRELOAD_SLACK) return@withPermit false
-                        runCatching { loader.enqueue(request(context, controller.file(i), controller.settings.cropBorders)) }.isSuccess
+                        val file = controller.file(i)
+                        // A tall page is preloaded under the same decode budget as the one on screen.
+                        val target = readPageSize(file)?.let {
+                            MangaFit.decodeSize(it.width, it.height, metrics.widthPixels, metrics.heightPixels, controller.settings.scale)
+                        }
+                        runCatching { loader.enqueue(request(context, file, controller.settings.cropBorders, target = target)) }.isSuccess
                     }
                     if (!ok) started.remove(i)
                 }
@@ -183,7 +204,7 @@ fun MangaReaderView(
     }
     Box(modifier.fillMaxSize().background(Color(s.background.argb))) {
         if (s.direction == MangaDirection.WEBTOON) {
-            Webtoon(controller, listener, hasPrevChapter, hasNextChapter)
+            Webtoon(controller, listener, hasPrevChapter, hasNextChapter, animationSpeed)
         } else {
             val useSpreads = landscape && s.dualPageLandscape && s.direction != MangaDirection.VERTICAL
             val spreads = if (useSpreads) app.yomu.domain.reader.MangaPaging.spreads(controller.count, s.coverAlone) else null
@@ -195,7 +216,7 @@ fun MangaReaderView(
             } else {
                 null
             }
-            Paged(controller, listener, Layout(controller.count, hasPrevChapter, spreads, virtual, split), hasNextChapter)
+            Paged(controller, listener, Layout(controller.count, hasPrevChapter, spreads, virtual, split), hasNextChapter, animationSpeed)
         }
         AnimatedVisibility(zonesVisible && s.tapZones != TapZoneLayout.DISABLED, enter = fadeIn(), exit = fadeOut()) {
             TapZonesOverlay(s.tapZones, s.zonesInvertedX, s.zonesInvertedY, rtl = s.direction == MangaDirection.RTL)
@@ -215,23 +236,35 @@ fun MangaReaderView(
 /** Text colour that stays readable on the chosen page background. */
 private fun onBackground(s: MangaSettings): Color = if (s.background == MangaBackground.WHITE) Color(0xFF202020) else Color.White
 
-internal fun request(context: android.content.Context, file: File, crop: Boolean, half: app.yomu.domain.reader.MangaPage? = null): ImageRequest =
+internal fun request(
+    context: android.content.Context,
+    file: File,
+    crop: Boolean,
+    half: MangaPage? = null,
+    rotation: WidePageRotation = WidePageRotation.NONE,
+    target: ImageSize? = null,
+): ImageRequest =
     ImageRequest.Builder(context).data(file).apply {
         val transforms = buildList {
             if (crop) add(CropBordersTransformation())
             if (half != null) add(SplitPageTransformation(secondHalf = half.isSecondHalf))
+            if (half == null && rotation != WidePageRotation.NONE) add(RotateWideTransformation(rotation))
         }
         if (transforms.isNotEmpty()) transformations(transforms)
+        // A very tall strip is subsampled to the budget; without a known image size Coil keeps its own sizing.
+        if (target != null) size(Size(target.width, target.height))
     }.build()
 
 @Composable
-private fun Paged(controller: MangaController, listener: MangaListener, layout: Layout, hasNext: Boolean) {
+private fun Paged(controller: MangaController, listener: MangaListener, layout: Layout, hasNext: Boolean, animationSpeed: Float) {
     val s = controller.settings
     val rtl = s.direction == MangaDirection.RTL
     val pager = rememberPagerState(initialPage = layout.slotOf(controller.page)) { layout.total }
     val scope = rememberCoroutineScope()
     val animate by rememberUpdatedState(s.pageAnimation)
-    suspend fun go(slot: Int) = if (animate) pager.animateScrollToPage(slot) else pager.scrollToPage(slot)
+    val speed by rememberUpdatedState(animationSpeed.coerceIn(0.25f, 3f))
+    val tween = tween<Float>((320 / speed).toInt().coerceIn(60, 1_200))
+    suspend fun go(slot: Int) = if (animate) pager.animateScrollToPage(slot, animationSpec = tween) else pager.scrollToPage(slot)
     LaunchedEffect(layout.spreads?.size, layout.virtual?.size, layout.hasPrev) { pager.scrollToPage(layout.slotOf(controller.page)) }
     LaunchedEffect(Unit) {
         controller.pageRequests.collect { target ->
@@ -321,6 +354,7 @@ private fun Paged(controller: MangaController, listener: MangaListener, layout: 
     }
 }
 
+@OptIn(ExperimentalTelephotoApi::class)
 @Composable
 private fun PageImage(
     controller: MangaController,
@@ -333,11 +367,12 @@ private fun PageImage(
     val s = controller.settings
     val context = LocalContext.current
     var file by remember(index) { mutableStateOf<File?>(null) }
+    var pageSize by remember(index) { mutableStateOf<ImageSize?>(null) }
     var error by remember(index) { mutableStateOf<Throwable?>(null) }
     var attempt by remember(index) { mutableIntStateOf(0) }
     LaunchedEffect(index, attempt) {
         error = null
-        loadPage(controller, index, onFile = { file = it }, onError = { error = it })
+        loadPage(controller, index, onFile = { file = it; pageSize = readPageSize(it) }, onError = { error = it })
     }
     var size by remember { mutableStateOf(IntSize(1, 1)) }
     var coords by remember { mutableStateOf<LayoutCoordinates?>(null) }
@@ -349,6 +384,17 @@ private fun PageImage(
             error != null -> PageError(error, onBackground(s), onRetry = { attempt++ }, onMenu = listener::onMenu)
             f == null -> CircularProgressIndicator(color = onBackground(s).copy(alpha = 0.7f))
             else -> {
+                val rtl = s.direction == MangaDirection.RTL
+                val rotation = MangaFit.widePageRotation(
+                    pageSize?.width ?: 0,
+                    pageSize?.height ?: 0,
+                    s.rotateWidePages,
+                    rtl,
+                )
+                // A split page is half as wide, and the decode budget follows the viewport the rotated page occupies.
+                val image = pageSize?.let { if (half != null) ImageSize(it.width / 2, it.height) else it }
+                val viewport = if (rotation == WidePageRotation.NONE) boxSize else IntSize(boxSize.height, boxSize.width)
+                val target = image?.let { MangaFit.decodeSize(it.width, it.height, viewport.width, viewport.height, s.scale) }
                 val zoomable = rememberZoomableState(zoomSpec = ZoomSpec(maximum = ZoomLimit(factor = 6f)))
                 val zoomState = rememberZoomableImageState(zoomable)
                 if (s.zoomLock) {
@@ -363,10 +409,36 @@ private fun PageImage(
                         val current = zoomable.contentTransformation.scale.scaleX
                         if (target > 1.01f && current < target - 0.01f) zoomable.zoomBy(target / current)
                     }
+                } else {
+                    // The start zoom is applied once when the page appears. A pinch, a pan or turning the page and
+                    // coming back never has the setting fight the reader's own gesture.
+                    var opened by remember(index, half) { mutableStateOf(false) }
+                    LaunchedEffect(zoomable, image, boxSize, s.startZoom, s.smartFit, s.startZoomAnchor) {
+                        if (opened || image == null) return@LaunchedEffect
+                        val smart = if (s.smartFit && s.scale == ScaleType.FIT_SCREEN) {
+                            MangaFit.smartZoom(image.width, image.height, boxSize.width, boxSize.height)
+                        } else {
+                            1f
+                        }
+                        val zoom = maxOf(s.startZoom, smart).coerceIn(1f, MangaFit.MAX_SMART_ZOOM)
+                        if (zoom > 1.01f) {
+                            // Wait one frame so the image is laid out and the zoom has a size to work with.
+                            withFrameNanos { }
+                            zoomable.zoomTo(zoom, ZoomFocalPoint.viewportCenter())
+                            val travel = boxSize.width * (zoom - 1f) / 2f
+                            val startSign = if (rtl) -1f else 1f
+                            when (s.startZoomAnchor) {
+                                StartZoomAnchor.START -> zoomable.panBy(Offset(startSign * travel, 0f))
+                                StartZoomAnchor.END -> zoomable.panBy(Offset(-startSign * travel, 0f))
+                                StartZoomAnchor.CENTER -> Unit
+                            }
+                        }
+                        opened = true
+                    }
                 }
                 val filter = ImageFilters.matrix(s)?.let { ColorFilter.colorMatrix(it) }
                 ZoomableAsyncImage(
-                    model = request(context, f, s.cropBorders, half),
+                    model = request(context, f, s.cropBorders, half, rotation, target),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     state = zoomState,
@@ -427,8 +499,15 @@ private fun fitFont(text: String, w: Float, h: Float, density: Float): Float {
     return size.coerceIn(7f, 18f)
 }
 
+/** Real pixel size of a page, read from its header without decoding the bitmap. */
+private suspend fun readPageSize(file: File): ImageSize? = withContext(Dispatchers.IO) {
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.path, options)
+    if (options.outWidth > 0 && options.outHeight > 0) ImageSize(options.outWidth, options.outHeight) else null
+}
+
 /** Loads the file of page [index]; leaving the page (cancellation) is not reported as a page error. */
-private suspend fun loadPage(controller: MangaController, index: Int, onFile: (File) -> Unit, onError: (Throwable) -> Unit) {
+private suspend fun loadPage(controller: MangaController, index: Int, onFile: suspend (File) -> Unit, onError: (Throwable) -> Unit) {
     try {
         onFile(controller.file(index))
     } catch (e: kotlinx.coroutines.CancellationException) {
@@ -492,7 +571,7 @@ private fun EdgePage(next: Boolean, available: Boolean, onGo: () -> Unit, onMenu
 }
 
 @Composable
-private fun Webtoon(controller: MangaController, listener: MangaListener, hasPrev: Boolean, hasNext: Boolean) {
+private fun Webtoon(controller: MangaController, listener: MangaListener, hasPrev: Boolean, hasNext: Boolean, animationSpeed: Float) {
     val s = controller.settings
     val context = LocalContext.current
     val offset = if (hasPrev) 1 else 0
@@ -502,8 +581,9 @@ private fun Webtoon(controller: MangaController, listener: MangaListener, hasPre
     val hScroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val animate by rememberUpdatedState(s.pageAnimation)
+    val speed by rememberUpdatedState(animationSpeed.coerceIn(0.25f, 3f))
     suspend fun scrollBy(px: Float) {
-        if (animate) state.animateScrollBy(px) else state.scrollBy(px)
+        if (animate) state.animateScrollBy(px, tween((300 / speed).toInt().coerceIn(60, 1_200))) else state.scrollBy(px)
     }
     LaunchedEffect(Unit) {
         controller.pageRequests.collect { target ->
@@ -583,11 +663,12 @@ private fun Webtoon(controller: MangaController, listener: MangaListener, hasPre
             if (hasPrev) item(key = "prev") { Box(Modifier.fillMaxWidth().heightIn(min = 240.dp)) { EdgePage(false, true, { listener.onChapterEdge(false) }, listener::onMenu) } }
             items(controller.count, key = { it }) { index ->
                 var file by remember(index) { mutableStateOf<File?>(null) }
+                var pageSize by remember(index) { mutableStateOf<ImageSize?>(null) }
                 var error by remember(index) { mutableStateOf<Throwable?>(null) }
                 var attempt by remember(index) { mutableIntStateOf(0) }
                 LaunchedEffect(index, attempt) {
                     error = null
-                    loadPage(controller, index, onFile = { file = it }, onError = { error = it })
+                    loadPage(controller, index, onFile = { file = it; pageSize = readPageSize(it) }, onError = { error = it })
                 }
                 val f = file
                 if (error != null) {
@@ -600,8 +681,12 @@ private fun Webtoon(controller: MangaController, listener: MangaListener, hasPre
                         CircularProgressIndicator(color = onBackground(s).copy(alpha = 0.7f))
                     }
                 } else {
+                    val widthPx = with(LocalDensity.current) { maxWidth.roundToPx() }
+                    val target = pageSize?.let {
+                        MangaFit.decodeSize(it.width, it.height, widthPx, 0, ScaleType.FIT_WIDTH)
+                    }
                     AsyncImage(
-                        model = request(context, f, s.cropBorders),
+                        model = request(context, f, s.cropBorders, target = target),
                         contentDescription = null,
                         contentScale = ContentScale.FillWidth,
                         colorFilter = filter,

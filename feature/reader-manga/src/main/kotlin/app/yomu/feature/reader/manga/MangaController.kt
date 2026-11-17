@@ -1,6 +1,7 @@
 package app.yomu.feature.reader.manga
 
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -14,6 +15,7 @@ import app.yomu.domain.model.TapZoneLayout
 import app.yomu.domain.reader.ReaderInput
 import app.yomu.domain.reader.ReaderPoint
 import app.yomu.domain.reader.ReaderTapAction
+import app.yomu.domain.reader.WidePageRotation
 import coil3.size.Size
 import coil3.transform.Transformation
 import kotlinx.coroutines.channels.Channel
@@ -119,6 +121,22 @@ class CropBordersTransformation(private val threshold: Int = 28) : Transformatio
         val ch = bottom - top + 1
         if (cw < w / 3 || ch < h / 3 || (cw >= w - 2 && ch >= h - 2)) return input
         return Bitmap.createBitmap(input, left, top, cw, ch)
+    }
+}
+
+/**
+ * Turns a landscape scan a quarter turn so it fills a portrait screen. Portrait pages and an option turned off
+ * return the bitmap untouched, so the same cached request can be reused when the page is not wide.
+ */
+class RotateWideTransformation(private val rotation: WidePageRotation) : Transformation() {
+    override val cacheKey: String = "rotate-wide-${rotation.name.lowercase()}"
+
+    override suspend fun transform(input: Bitmap, size: Size): Bitmap {
+        if (rotation == WidePageRotation.NONE) return input
+        if (input.width <= input.height * 1.15f) return input
+        val degrees = if (rotation == WidePageRotation.LEFT) -90f else 90f
+        val matrix = Matrix().apply { postRotate(degrees) }
+        return Bitmap.createBitmap(input, 0, 0, input.width, input.height, matrix, true)
     }
 }
 
