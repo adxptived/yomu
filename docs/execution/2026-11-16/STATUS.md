@@ -1242,5 +1242,41 @@ push or release was made.
 
 **Device/live:** `DEVICE_PENDING` — a real LAN server while DoH is on, and a WebView site cleared by host vs all sites.
 
+---
+
+## N02 (part) — an explicit settings scope
+
+**Status:** `IN_PROGRESS` — the scope is real; the remaining N02 items are listed below.
+
+| File | Change |
+|---|---|
+| `feature/reader/.../ReaderSettingsSheet.kt` | The hidden per-book switch becomes two chips, "All books" / "This book", with the current consequence written under them. Choosing "All books" calls `setPerBook(false)`, which drops the saved override, so the title inherits the app defaults instead of keeping a copy. |
+| `feature/reader/res/values{,-ru}/strings.xml` | Scope labels and both summaries. |
+
+**Still open in N02:** a registry of options by engine/mode, a real PDF crop/spread preview, the TTS sample voice, and the book/global, process-restore and fontScale-2 UI tests.
+
+## N03 — E-ink/accessible preset
+
+**Status:** `CODE_VERIFIED` (an E-ink device pass is `DEVICE_PENDING`).
+
+| File | Change |
+|---|---|
+| `domain/.../reader/EinkPreset.kt` | NEW. Larger text and spacing, no page animation, a small manga contrast lift, and the flash cadence. It is a normal settings value, not a second reader engine. |
+| `domain/src/test/.../EinkPresetTest.kt` | NEW. 4 tests: the readable change keeps page mode/direction, applying twice does not shrink a larger choice, manga loses the animation, the flash follows the cadence. |
+| `domain/.../model/ReaderSettings.kt` | `CommonReaderSettings.flashEveryPages` (0 = off, default). |
+| `feature/reader/.../ReaderViewModel.kt` | One `SettingsChange.Eink` composite, so a single "Undo the last change" restores text, manga and common settings. |
+| `feature/reader/.../ReaderSettingsSheet.kt` | An "E-ink" chip in presets and a flash choice (off / 5 / 10 / 20 pages) with an honest note: a software overlay, not a vendor panel refresh. |
+| `feature/reader/.../ReaderScreen.kt` | The flash runs only on the cadence, never on the first page and never over a sheet. |
+| `feature/reader/res/values{,-ru}/strings.xml` | Preset, flash and note strings. |
+
+**Commands:**
+
+| Command | Result |
+|---|---|
+| `.\gradlew.bat :domain:test --tests "app.yomu.domain.reader.EinkPresetTest"` | `BUILD SUCCESSFUL` |
+| `.\gradlew.bat :feature:reader:compileDebugKotlin :app:compileDebugKotlin` | `BUILD SUCCESSFUL` |
+
+**Device/live:** `DEVICE_PENDING` — ghosting and flash cadence on a real E-ink panel, night mode, TalkBack, and a hardware page-turner.
+
 
 

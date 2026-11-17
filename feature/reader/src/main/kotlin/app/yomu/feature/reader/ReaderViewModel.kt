@@ -1791,6 +1791,14 @@ class ReaderViewModel(
         data class Manga(val value: MangaSettings, val perBook: Boolean) : SettingsChange
         data class Pdf(val value: PdfSettings, val perBook: Boolean) : SettingsChange
         data class Common(val value: CommonReaderSettings) : SettingsChange
+
+        /** The E-ink preset changes three groups at once; one Undo takes all of it back. */
+        data class Eink(
+            val text: TextReaderSettings,
+            val manga: MangaSettings,
+            val common: CommonReaderSettings,
+            val perBook: Boolean,
+        ) : SettingsChange
     }
 
     private val undo = ArrayDeque<SettingsChange>()
@@ -1854,9 +1862,30 @@ class ReaderViewModel(
             is SettingsChange.Manga -> writeManga(change.value, change.perBook)
             is SettingsChange.Pdf -> writePdf(change.value, change.perBook)
             is SettingsChange.Common -> settings.commonReader.set(change.value)
+            is SettingsChange.Eink -> {
+                writeText(change.text, change.perBook)
+                writeManga(change.manga, change.perBook)
+                settings.commonReader.set(change.common)
+            }
             null -> Unit
         }
         _canUndo.value = undo.isNotEmpty()
+    }
+
+    /**
+     * N03: the E-ink/accessible preset as one ordinary settings change (not a second engine). Everything it touches
+     * is undone with a single "Undo the last change".
+     */
+    fun applyEinkPreset() = viewModelScope.launch(ScreenErrors) {
+        val beforeText = textSettings.value
+        val beforeManga = mangaSettings.value
+        val beforeCommon = common.value
+        val afterText = app.yomu.domain.reader.EinkPreset.text(beforeText)
+        val afterManga = app.yomu.domain.reader.EinkPreset.manga(beforeManga)
+        if (afterText == beforeText && afterManga == beforeManga) return@launch
+        push(SettingsChange.Eink(beforeText, beforeManga, beforeCommon, perBook.value))
+        writeText(afterText, perBook.value)
+        writeManga(afterManga, perBook.value)
     }
 
     /** Removes an imported font; the current font and saved presets that use it fall back to the serif face. */

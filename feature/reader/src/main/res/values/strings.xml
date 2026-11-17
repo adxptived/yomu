@@ -151,6 +151,16 @@
     <string name="rs_navigator_right">Right side</string>
     <string name="rs_animation_speed">Animation speed</string>
     <string name="rs_animation_speed_summary">1× is the normal duration; higher is faster</string>
+    <string name="rs_scope_title">These settings apply to</string>
+    <string name="rs_scope_global">All books</string>
+    <string name="rs_scope_book">This book</string>
+    <string name="rs_scope_global_summary">Every title follows these values; a title with its own settings keeps them until you choose it here.</string>
+    <string name="rs_scope_book_summary">Only this title. Switching back to “All books” removes the saved override, so it inherits the app defaults again.</string>
+    <string name="rs_preset_eink">E-ink</string>
+    <string name="rs_flash_pages">E-ink flash</string>
+    <string name="rs_flash_off">Off</string>
+    <string name="rs_flash_every">Every %1$d pages</string>
+    <string name="rs_flash_note">A short software flash between pages can clear ghosting on an E-ink screen. It is a plain overlay, not a vendor panel refresh, and it is off by default.</string>
     <string name="reader_navigator_position">Page %1$d of %2$d</string>
     <string name="rs_fullscreen">Full screen</string>
     <string name="rs_cutout">Draw under the camera cutout</string>

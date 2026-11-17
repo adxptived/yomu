@@ -200,6 +200,8 @@ data class CommonReaderSettings(
     val navigator: app.yomu.domain.reader.NavigatorSide = app.yomu.domain.reader.NavigatorSide.OFF,
     /** Multiplier for page-turn animations: 1 = the normal duration, 2 = twice as fast, 0.5 = half speed. */
     val animationSpeed: Float = 1f,
+    /** Software flash after every N physical pages for an E-ink screen; 0 = off. Vendor refresh is never assumed. */
+    val flashEveryPages: Int = 0,
 ) {
     /** The scheme a PDF tap uses: its own, or the text one. */
     fun pdfZones(): TapZoneLayout = pdfTapZones ?: textTapZones

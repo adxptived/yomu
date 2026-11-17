@@ -85,6 +85,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -254,6 +255,8 @@ fun ReaderScreen(
     var tapZonesForced by rememberSaveable { mutableStateOf(false) }
     var goToPage by rememberSaveable { mutableStateOf(false) }
     var readyTimedOut by remember { mutableStateOf(false) }
+    var einkFlash by remember { mutableStateOf(false) }
+    var lastFlashPage by remember { mutableIntStateOf(-1) }
     var lastInteraction by remember { mutableLongStateOf(System.currentTimeMillis()) }
     // Written on every pointer event without recomposing the reader (35 state reads) for each finger movement.
     val interactionClock = remember { java.util.concurrent.atomic.AtomicLong(0L) }
@@ -648,6 +651,23 @@ fun ReaderScreen(
                     },
                 )
             }
+        }
+
+        // N03: an optional software flash, only on the configured cadence and never on the first page or over a sheet.
+        LaunchedEffect(position.bookPage, common.flashEveryPages) {
+            val every = common.flashEveryPages
+            val page = position.bookPage
+            if (every > 0 && lastFlashPage > 0 && page != lastFlashPage &&
+                app.yomu.domain.reader.EinkPreset.flashDue(page, every) && sheet == ReaderSheet.NONE
+            ) {
+                einkFlash = true
+                delay(app.yomu.domain.reader.EinkPreset.FLASH_MS)
+                einkFlash = false
+            }
+            lastFlashPage = page
+        }
+        if (einkFlash && sheet == ReaderSheet.NONE) {
+            Box(Modifier.fillMaxSize().background(Color.Black))
         }
 
         // Optional vertical page slider. It commits only on release, so a slow page cannot pull the thumb back.

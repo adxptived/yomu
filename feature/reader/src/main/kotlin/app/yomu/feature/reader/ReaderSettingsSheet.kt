@@ -167,7 +167,31 @@ fun ReaderSettingsSheet(
                     PresetsRow(text, presets, viewModel)
                 }
                 if (viewModel.bookId > 0 || viewModel.isOnline) {
-                    PreferenceSwitch(stringResource(R.string.rs_per_book), perBook, viewModel::setPerBook, summary = stringResource(R.string.rs_per_book_summary))
+                    // N02: the scope is a visible choice, not a hidden switch. "All books" drops the saved override,
+                    // so the title inherits the app defaults again instead of keeping a copy of its old values.
+                    Text(
+                        stringResource(R.string.rs_scope_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(start = Dimens.l, top = Dimens.m),
+                    )
+                    Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = Dimens.l), horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
+                        FilterChip(
+                            selected = !perBook,
+                            onClick = { if (perBook) viewModel.setPerBook(false) },
+                            label = { Text(stringResource(R.string.rs_scope_global)) },
+                        )
+                        FilterChip(
+                            selected = perBook,
+                            onClick = { if (!perBook) viewModel.setPerBook(true) },
+                            label = { Text(stringResource(R.string.rs_scope_book)) },
+                        )
+                    }
+                    Text(
+                        stringResource(if (perBook) R.string.rs_scope_book_summary else R.string.rs_scope_global_summary),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+                    )
                 }
                 if (searching) {
                     // A query searches all three tabs: a setting in another tab must not look absent.
@@ -669,6 +693,10 @@ private fun PresetsRow(s: TextReaderSettings, saved: List<TextPreset>, vm: Reade
             )
         }
         AssistChip(onClick = { saving = true }, label = { Text(stringResource(R.string.rs_preset_save)) }, leadingIcon = { Icon(Icons.Default.Add, null) })
+        AssistChip(
+            onClick = vm::applyEinkPreset,
+            label = { Text(stringResource(R.string.rs_preset_eink)) },
+        )
     }
     if (saving) {
         var name by rememberSaveable { mutableStateOf("") }
@@ -918,6 +946,23 @@ private fun DisplaySettings(c: CommonReaderSettings, vm: ReaderViewModel, showFo
             { "%.1f×".format(it) },
             steps = 5,
             summary = stringResource(R.string.rs_animation_speed_summary),
+        )
+        PreferenceChoice(
+            stringResource(R.string.rs_flash_pages),
+            listOf(
+                0 to stringResource(R.string.rs_flash_off),
+                5 to stringResource(R.string.rs_flash_every, 5),
+                10 to stringResource(R.string.rs_flash_every, 10),
+                20 to stringResource(R.string.rs_flash_every, 20),
+            ),
+            c.flashEveryPages,
+            { v -> vm.updateCommon { it.copy(flashEveryPages = v) } },
+        )
+        Text(
+            stringResource(R.string.rs_flash_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
         )
         PreferenceSwitch(stringResource(R.string.rs_fullscreen), c.fullscreen, { v -> vm.updateCommon { it.copy(fullscreen = v) } }, summary = stringResource(R.string.rs_fullscreen_summary))
         PreferenceSwitch(stringResource(R.string.rs_cutout), c.drawUnderCutout, { v -> vm.updateCommon { it.copy(drawUnderCutout = v) } }, summary = stringResource(R.string.rs_cutout_summary))

@@ -145,16 +145,15 @@
 - [ ] двусторонний progress с loop prevention; offline adapter через A02.
 - Без тестового сервера — live gate, не конструировать «совместимый JSON».
 
-### N02 — настройки внутри читалки
-- [ ] реестр options по engine/mode и текущий scope (book/global); preview/search/presets/undo сохранить.
-- [ ] явный scope control, reset override = наследовать; quick first, advanced collapsed.
-- [ ] реальные preview text/PDF crop/spread, Cancel/Undo не сохраняют draft.
-- [ ] TTS sample voice, ограничения text-layer/OCR PDF; тесты book/global, process restore, fontScale2.
+### N02 — настройки внутри читалки (`IN_PROGRESS`)
+- [x] явный scope control (чипы «Все книги / Эта книга»; возврат к «Все книги» удаляет override = наследовать).
+- [ ] реестр options по engine/mode, preview/search/presets/undo и TTS sample; тесты book/global/process restore/fontScale2.
 
-### N03 — E-ink/доступный пресет
-- [ ] пресет без анимации/контраст/размер с Undo, не отдельный engine.
-- [ ] optional software flash каждые N физических страниц (не на каждый slider tick), off по умолчанию.
-- [ ] vendor refresh только по подтверждённому API, иначе fallback; тесты transition counts, night mode, TalkBack.
+### N03 — E-ink/доступный пресет (`CODE_VERIFIED`, device open)
+- [x] пресет без анимации/контраст/размер с Undo, не отдельный engine (`EinkPreset`, один composite undo).
+- [x] optional software flash каждые N физических страниц (не на каждый slider tick), off по умолчанию.
+- [x] vendor refresh не используется: подтверждённого API нет, остаётся программный fallback.
+- [ ] тесты transition counts/night mode/TalkBack на реальном E-ink (`DEVICE_PENDING`).
 
 ### N04 — слова, контекст, глоссарий, индекс
 - [ ] найти существующие catalog/annotations/translator; не писать второй SRS.

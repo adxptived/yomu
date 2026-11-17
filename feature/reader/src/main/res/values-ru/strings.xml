@@ -147,6 +147,16 @@
     <string name="rs_navigator_right">Справа</string>
     <string name="rs_animation_speed">Скорость анимации</string>
     <string name="rs_animation_speed_summary">1× — обычная длительность; больше — быстрее</string>
+    <string name="rs_scope_title">Настройки применяются к</string>
+    <string name="rs_scope_global">Всем книгам</string>
+    <string name="rs_scope_book">Этой книге</string>
+    <string name="rs_scope_global_summary">Все тайтлы используют эти значения; у книги со своими настройками они сохраняются, пока вы не выберете её здесь.</string>
+    <string name="rs_scope_book_summary">Только эта книга. Возврат к «Всем книгам» удаляет сохранённое переопределение — книга снова наследует настройки приложения.</string>
+    <string name="rs_preset_eink">E-ink</string>
+    <string name="rs_flash_pages">Вспышка для E-ink</string>
+    <string name="rs_flash_off">Выкл.</string>
+    <string name="rs_flash_every">Каждые %1$d страниц</string>
+    <string name="rs_flash_note">Короткая программная вспышка между страницами убирает «призраки» на E-ink. Это обычный оверлей, а не аппаратное обновление панели; по умолчанию выключено.</string>
     <string name="reader_navigator_position">Страница %1$d из %2$d</string>
     <string name="rs_fullscreen">Полноэкранный режим</string>
     <string name="rs_cutout">Использовать область выреза камеры</string>
