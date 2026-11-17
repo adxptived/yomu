@@ -670,7 +670,9 @@ class DownloadRepository(
     suspend fun deleteReadDownloads(entryId: Long? = null): Int {
         val chapters = if (entryId == null) db.catalog().downloadedChapters().map { it.toDomain() } else catalog.chapters(entryId).filter { it.downloaded }
         val items = chapters.mapNotNull { retentionItem(it) }
-        val plan = DownloadRetention.plan(items, retentionSettings())
+        // An explicit "delete read downloads" means read chapters, whatever the automatic rule is set to; protections
+        // and the storage cap still apply.
+        val plan = DownloadRetention.plan(items, retentionSettings().copy(deleteRead = true))
         deleteChapterFiles(plan.delete)
         return plan.delete.size
     }

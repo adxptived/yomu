@@ -927,7 +927,7 @@ on-demand way to re-open the tap-zone hint (the one-time hint itself already exi
 
 ## Progress summary
 
-**Eighteen packages are `CODE_VERIFIED`; S06, M02 and M04 are `IN_PROGRESS`.** Every one has an automated test that would
+**Eighteen packages are `CODE_VERIFIED`; S06, M02, M04, U01, DL02 and Q04 are `IN_PROGRESS`.** Every one has an automated test that would
 fail if the behaviour regressed, and the full tree builds: `assembleDebug` + `testDebugUnitTest` + `:domain:test` +
 `:source-api:test` + `:sources:opds:test`.
 
@@ -960,9 +960,11 @@ fail if the behaviour regressed, and the full tree builds: `assembleDebug` + `te
   This environment has no Android device or emulator, so native PDFium gestures, TalkBack, E-ink, real audio tags, real
   feeds and real accounts are not verified. Every one of them is listed per package above rather than being counted as
   done.
-- **Packages not started:** M03, M05, U01–U03, DL01–DL03, A01–A03, MG01, B01–B03, T01–T02, S04,
-  N02–N05, Q01–Q05. `IN_PROGRESS`: S06 (DoH, cookie scope, Shizuku), M02 (rotate-to-fit, start zoom, tiled decode),
-  M04 (page navigator, animation speed, orientation fallback, on-demand zone hint). The two packages marked "contract only" (L05, S02) delivered their model and tests;
+- **Packages not started:** M03, M05, U02–U03, DL01, DL03, A01–A03, MG01, B01–B03, T01–T02, S04,
+  N02–N05, Q01–Q03, Q05. `IN_PROGRESS`: S06 (DoH, cookie scope, Shizuku), M02 (rotate-to-fit, start zoom, tiled
+  decode), M04 (page navigator, animation speed, orientation fallback, on-demand zone hint), U01 (per-title overrides,
+  excluded-shelf picker, persisted result), DL02 (preview UI, per-shelf picker, auto-download rules), Q04 (remaining
+  entry-point audit, typed diagnostics, notification privacy). The two packages marked "contract only" (L05, S02) delivered their model and tests;
   S02's UI wiring is now done as part of S01.
 - **P3 items** (M05 renderer, A03, N03–N04) are unfinished by design in this pass and remain open.
 

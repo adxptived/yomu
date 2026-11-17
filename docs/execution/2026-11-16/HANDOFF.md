@@ -7,7 +7,7 @@
 
 ## 1. Текущее состояние
 
-**18 пакетов `CODE_VERIFIED`, 3 в работе (S06, M02, M04).** Полный прогон был зелёным после S01/M01:
+**18 пакетов `CODE_VERIFIED`, 6 в работе (S06, M02, M04, U01, DL02, Q04).** Полный прогон был зелёным после S01/M01:
 
 ```
 .\gradlew.bat assembleDebug testDebugUnitTest :domain:test :source-api:test :sources:opds:test --console=plain
@@ -45,7 +45,7 @@
 | Шаг | Пакеты |
 |---|---|
 | Чтение глав | **M03** (M02 доделать: rotate-to-fit, start zoom, tiled decode; M04 доделать: навигатор, скорость анимации) |
-| Обновления и офлайн | U01 → U02 → U03 → DL01 → DL02 → DL03 → A02 |
+| Обновления и офлайн | U02 → U03 → DL01 → DL03 → A02 (U01 и DL02 начаты) |
 | Перенос и сервисы | MG01 → B01 → T01 → S04 → T02 → B02 → B03 |
 | Комфорт и качество | A01 → A03 → N02 → N03 → N04 → N05 → M05 → Q01 → Q02 → Q03 → Q04 → Q05 |
 | Источники (доделать) | S06 (DoH, cookie/WebView scope, Shizuku) |
