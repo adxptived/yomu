@@ -85,6 +85,11 @@
 
     <string name="updates_empty">No new chapters</string>
     <string name="history_empty">Chapters you read from online sources show up here</string>
+    <string name="hist_filter_all">All</string>
+    <string name="hist_filter_read">Read</string>
+    <string name="hist_filter_unread">Unread</string>
+    <string name="hist_filter_downloaded">Downloaded</string>
+    <string name="hist_filter_bookmarked">Bookmarked</string>
     <string name="history_clear">Clear list</string>
     <string name="history_clear_confirm">Clear the list of recently read chapters? Read marks and progress stay.</string>
     <string name="chapter_downloaded">downloaded</string>

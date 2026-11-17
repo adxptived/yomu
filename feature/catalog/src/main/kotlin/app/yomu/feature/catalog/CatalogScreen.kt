@@ -5,6 +5,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,7 +24,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -69,6 +70,7 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -317,24 +319,31 @@ fun CatalogScreen(
                     editing = editingSources,
                 )
                 HomeTab.LIBRARY -> LibraryTab(favorites, libraryTotal, libraryDisplay, tabs, tabMembers, viewModel, onOpenTitle, onBrowse = { tab = 0 })
-                HomeTab.UPDATES -> FeedTab(
-                    entries = updates,
-                    emptyTitle = stringResource(R.string.updates_empty),
-                    emptyIcon = Icons.Outlined.NewReleases,
-                    header = {
-                        OutlinedButton(onClick = viewModel::checkUpdates, modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s)) {
-                            Icon(Icons.Filled.Refresh, null)
-                            Text(stringResource(R.string.catalog_check_updates), Modifier.padding(start = Dimens.s))
-                        }
-                    },
-                    onClick = { onReadChapter(it.chapter.id) },
-                    onOpenTitle = { onOpenTitle(it.chapter.entryId) },
-                    onRemove = null,
-                )
+                HomeTab.UPDATES -> {
+                    var filter by remember { mutableStateOf(app.yomu.domain.catalog.HistoryFilter()) }
+                    val shown = remember(updates, filter) { updates.filter { filter.matches(it.toViewItem()) } }
+                    FeedTab(
+                        entries = shown,
+                        emptyTitle = stringResource(R.string.updates_empty),
+                        emptyIcon = Icons.Outlined.NewReleases,
+                        header = {
+                            OutlinedButton(onClick = viewModel::checkUpdates, modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s)) {
+                                Icon(Icons.Filled.Refresh, null)
+                                Text(stringResource(R.string.catalog_check_updates), Modifier.padding(start = Dimens.s))
+                            }
+                            HistoryFilterRow(filter) { filter = it }
+                        },
+                        onClick = { onReadChapter(it.chapter.id) },
+                        onOpenTitle = { onOpenTitle(it.chapter.entryId) },
+                        onRemove = null,
+                    )
+                }
                 HomeTab.HISTORY -> {
                     var confirmClear by remember { mutableStateOf(false) }
+                    var filter by remember { mutableStateOf(app.yomu.domain.catalog.HistoryFilter()) }
+                    val shown = remember(history, filter) { history.filter { filter.matches(it.toViewItem()) } }
                     FeedTab(
-                        entries = history,
+                        entries = shown,
                         emptyTitle = stringResource(R.string.history_empty),
                         emptyIcon = Icons.Outlined.History,
                         header = {
@@ -344,6 +353,7 @@ fun CatalogScreen(
                                     Text(stringResource(R.string.history_clear), Modifier.padding(start = Dimens.s))
                                 }
                             }
+                            HistoryFilterRow(filter) { filter = it }
                         },
                         onClick = { onReadChapter(it.chapter.id) },
                         onOpenTitle = { onOpenTitle(it.chapter.entryId) },
@@ -1001,5 +1011,49 @@ private fun FeedTab(
                 },
             )
         }
+    }
+}
+
+/** One feed row in the filters' terms: read state, download and bookmark are independent questions. */
+private fun app.yomu.data.catalog.HistoryEntry.toViewItem() = app.yomu.domain.catalog.HistoryViewItem(
+    chapterId = chapter.id,
+    titleId = chapter.entryId,
+    title = entryTitle,
+    chapter = chapter.name,
+    at = readAt,
+    read = chapter.read,
+    downloaded = chapter.downloaded,
+    bookmarked = chapter.bookmarked,
+)
+
+/** Read/unread, downloaded and bookmarked filters of the updates and history feeds. */
+@Composable
+private fun HistoryFilterRow(filter: app.yomu.domain.catalog.HistoryFilter, onChange: (app.yomu.domain.catalog.HistoryFilter) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Dimens.l, vertical = Dimens.xs),
+        horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        listOf(
+            app.yomu.domain.catalog.HistoryReadFilter.ALL to R.string.hist_filter_all,
+            app.yomu.domain.catalog.HistoryReadFilter.READ to R.string.hist_filter_read,
+            app.yomu.domain.catalog.HistoryReadFilter.UNREAD to R.string.hist_filter_unread,
+        ).forEach { (value, label) ->
+            FilterChip(
+                selected = filter.read == value,
+                onClick = { onChange(filter.copy(read = value)) },
+                label = { Text(stringResource(label)) },
+            )
+        }
+        FilterChip(
+            selected = filter.downloadedOnly,
+            onClick = { onChange(filter.copy(downloadedOnly = !filter.downloadedOnly)) },
+            label = { Text(stringResource(R.string.hist_filter_downloaded)) },
+        )
+        FilterChip(
+            selected = filter.bookmarkedOnly,
+            onClick = { onChange(filter.copy(bookmarkedOnly = !filter.bookmarkedOnly)) },
+            label = { Text(stringResource(R.string.hist_filter_bookmarked)) },
+        )
     }
 }
