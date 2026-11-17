@@ -52,8 +52,9 @@ object ErrorLog {
         screen?.let { appendLine("Screen: $it") }
         val steps = synchronized(trail) { trail.toList() }
         if (steps.isNotEmpty()) appendLine("Recent: ${steps.joinToString(" → ")}")
-        message?.let { appendLine(it) }
-        t?.let { appendLine(Log.getStackTraceString(it)) }
+        // Everything below may quote a request, an answer or user text: secrets are masked before the file exists.
+        message?.let { appendLine(ErrorRedaction.redact(it)) }
+        t?.let { appendLine(ErrorRedaction.redact(Log.getStackTraceString(it))) }
     }
 
     /**

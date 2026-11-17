@@ -51,6 +51,7 @@ None observed for `:app:assembleDebug`. Profile-specific baselines are recorded 
 | M04 | IN_PROGRESS | Per-mode tap schemes, per-axis inversion and one hardware-key resolver; the optional page navigator and animation-speed setting are not done. |
 | U01 | IN_PROGRESS | One update policy with per-title check times, restrictions and upload-rhythm prediction; per-title overrides and the excluded-shelf picker are not done. |
 | DL02 | IN_PROGRESS | Retention policy with bookmark/shelf/ownership protection and a storage cap; the preview UI and per-shelf pickers are not done. |
+| Q04 | IN_PROGRESS | Secrets are masked before the error journal is written; incognito no longer persists automatic progress/read; the remaining entry-point audit and typed diagnostics are open. |
 
 ---
 

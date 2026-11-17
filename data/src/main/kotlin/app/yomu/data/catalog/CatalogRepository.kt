@@ -306,11 +306,9 @@ class CatalogRepository(
     suspend fun readerSettings(entryId: Long): String? = dao.get(entryId)?.readerSettingsJson
 
     suspend fun saveProgress(chapterId: Long, page: Int, finished: Boolean) {
-        val incognito = settings.incognito.get()
-        if (incognito) {
-            if (finished) dao.setRead(listOf(chapterId), true)
-            return
-        }
+        // Incognito: no automatic persistent progress and no automatic read mark — the position lives in the open
+        // session only. An explicit "mark read" by the user is a different call and is still honoured.
+        if (settings.incognito.get()) return
         dao.saveProgress(chapterId, page, System.currentTimeMillis(), finished)
         if (finished) {
             // One chapter, not one release: when the numbering is reliable, other groups' releases of this chapter
