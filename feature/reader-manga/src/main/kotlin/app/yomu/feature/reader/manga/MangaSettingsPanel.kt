@@ -34,6 +34,7 @@ import app.yomu.domain.model.MangaDirection
 import app.yomu.domain.model.MangaSettings
 import app.yomu.domain.model.ScaleType
 import app.yomu.domain.model.TapZoneLayout
+import app.yomu.domain.reader.PageSplit
 import kotlin.math.roundToInt
 
 /** Changes the settings: receives a transformation of the current value. */
@@ -146,6 +147,28 @@ fun MangaPageSettings(s: MangaSettings, update: MangaSettingsUpdate, query: Stri
                     summary = stringResource(R.string.mr_cover_alone_sum),
                 )
             }
+            // Split pages: a wide scan shown as its two halves, one after another. A view transform only — the saved
+            // position, a bookmark and the tracker still use the physical page.
+            Text(
+                stringResource(R.string.mr_split),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+            )
+            OptionTiles(
+                listOf(
+                    TileOption(PageSplit.OFF, stringResource(R.string.mr_split_off), Icons.Filled.ViewDay),
+                    TileOption(PageSplit.LEFT_TO_RIGHT, stringResource(R.string.mr_split_ltr), Icons.Filled.East),
+                    TileOption(PageSplit.RIGHT_TO_LEFT, stringResource(R.string.mr_split_rtl), Icons.Filled.West),
+                ),
+                s.splitPages,
+                { v -> update { it.copy(splitPages = v) } },
+            )
+            Text(
+                stringResource(R.string.mr_split_sum),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+            )
         }
         PreferenceSwitch(
             stringResource(R.string.mr_animation),

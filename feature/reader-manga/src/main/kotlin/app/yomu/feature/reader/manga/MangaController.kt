@@ -121,3 +121,18 @@ class CropBordersTransformation(private val threshold: Int = 28) : Transformatio
         return Bitmap.createBitmap(input, left, top, cw, ch)
     }
 }
+
+/**
+ * One half of a wide scan, for split pages. The bitmap is cut, not scaled: each half then fits the screen as a whole
+ * page would, and the physical page identity stays with the reader (see MangaPaging).
+ */
+class SplitPageTransformation(private val secondHalf: Boolean) : Transformation() {
+    override val cacheKey: String = if (secondHalf) "split-right" else "split-left"
+
+    override suspend fun transform(input: Bitmap, size: Size): Bitmap {
+        val half = input.width / 2
+        if (half < 2) return input
+        val x = if (secondHalf) input.width - half else 0
+        return Bitmap.createBitmap(input, x, 0, half, input.height)
+    }
+}

@@ -116,17 +116,30 @@ private const val PRELOAD_PARALLEL = 3
 /** Queued preloads this far behind the reading position are dropped (the reader jumped elsewhere). */
 private const val PRELOAD_SLACK = 2
 
-/** Pages shown by the pager: optional previous-chapter page, the images, then an end page. */
-private class Layout(val count: Int, val hasPrev: Boolean, val spreads: List<IntArray>?) {
+/** Pages shown by the pager: optional previous-chapter page, the images (or their halves), then an end page. */
+private class Layout(
+    val count: Int,
+    val hasPrev: Boolean,
+    val spreads: List<IntArray>?,
+    val virtual: List<app.yomu.domain.reader.MangaPage>? = null,
+    val split: app.yomu.domain.reader.PageSplit = app.yomu.domain.reader.PageSplit.OFF,
+) {
     val offset = if (hasPrev) 1 else 0
-    val imageSlots = spreads?.size ?: count
+    val imageSlots = spreads?.size ?: virtual?.size ?: count
     val total = offset + imageSlots + 1
-    fun slotOf(page: Int): Int = offset + (spreads?.indexOfFirst { page in it }?.coerceAtLeast(0) ?: page)
+    fun slotOf(page: Int): Int = offset + (
+        spreads?.indexOfFirst { page in it }?.coerceAtLeast(0)
+            ?: virtual?.let { app.yomu.domain.reader.MangaPaging.virtualIndexOf(it, page, split) }
+            ?: page
+        )
     fun pageOf(slot: Int): Int? {
         val i = slot - offset
         if (i < 0 || i >= imageSlots) return null
-        return spreads?.get(i)?.first() ?: i
+        return spreads?.get(i)?.first() ?: virtual?.getOrNull(i)?.physical ?: i
     }
+
+    /** The half shown at [slot], or null when the slot is a whole page. */
+    fun halfOf(slot: Int): app.yomu.domain.reader.MangaPage? = virtual?.getOrNull(slot - offset)
 }
 
 @Composable
@@ -172,12 +185,17 @@ fun MangaReaderView(
         if (s.direction == MangaDirection.WEBTOON) {
             Webtoon(controller, listener, hasPrevChapter, hasNextChapter)
         } else {
-            val spreads = if (landscape && s.dualPageLandscape && s.direction != MangaDirection.VERTICAL) {
-                app.yomu.domain.reader.MangaPaging.spreads(controller.count, s.coverAlone)
+            val useSpreads = landscape && s.dualPageLandscape && s.direction != MangaDirection.VERTICAL
+            val spreads = if (useSpreads) app.yomu.domain.reader.MangaPaging.spreads(controller.count, s.coverAlone) else null
+            // Split pages and spreads are alternatives: a spread already divides the screen, and a half of a page
+            // inside a spread would be unreadable.
+            val split = if (!useSpreads) s.splitPages else app.yomu.domain.reader.PageSplit.OFF
+            val virtual = if (split != app.yomu.domain.reader.PageSplit.OFF) {
+                app.yomu.domain.reader.MangaPaging.virtualPages(controller.count, split)
             } else {
                 null
             }
-            Paged(controller, listener, Layout(controller.count, hasPrevChapter, spreads), hasNextChapter)
+            Paged(controller, listener, Layout(controller.count, hasPrevChapter, spreads, virtual, split), hasNextChapter)
         }
         AnimatedVisibility(zonesVisible && s.tapZones != TapZoneLayout.DISABLED, enter = fadeIn(), exit = fadeOut()) {
             TapZonesOverlay(s.tapZones, s.invertTapZones, rtl = s.direction == MangaDirection.RTL)
@@ -197,8 +215,14 @@ fun MangaReaderView(
 /** Text colour that stays readable on the chosen page background. */
 private fun onBackground(s: MangaSettings): Color = if (s.background == MangaBackground.WHITE) Color(0xFF202020) else Color.White
 
-internal fun request(context: android.content.Context, file: File, crop: Boolean): ImageRequest =
-    ImageRequest.Builder(context).data(file).apply { if (crop) transformations(CropBordersTransformation()) }.build()
+internal fun request(context: android.content.Context, file: File, crop: Boolean, half: app.yomu.domain.reader.MangaPage? = null): ImageRequest =
+    ImageRequest.Builder(context).data(file).apply {
+        val transforms = buildList {
+            if (crop) add(CropBordersTransformation())
+            if (half != null) add(SplitPageTransformation(secondHalf = half.isSecondHalf))
+        }
+        if (transforms.isNotEmpty()) transformations(transforms)
+    }.build()
 
 @Composable
 private fun Paged(controller: MangaController, listener: MangaListener, layout: Layout, hasNext: Boolean) {
@@ -208,7 +232,7 @@ private fun Paged(controller: MangaController, listener: MangaListener, layout: 
     val scope = rememberCoroutineScope()
     val animate by rememberUpdatedState(s.pageAnimation)
     suspend fun go(slot: Int) = if (animate) pager.animateScrollToPage(slot) else pager.scrollToPage(slot)
-    LaunchedEffect(layout.spreads?.size, layout.hasPrev) { pager.scrollToPage(layout.slotOf(controller.page)) }
+    LaunchedEffect(layout.spreads?.size, layout.virtual?.size, layout.hasPrev) { pager.scrollToPage(layout.slotOf(controller.page)) }
     LaunchedEffect(Unit) {
         controller.pageRequests.collect { target ->
             when {
@@ -267,14 +291,17 @@ private fun Paged(controller: MangaController, listener: MangaListener, layout: 
             slot == layout.total - 1 -> EdgePage(next = true, available = hasNext, onGo = { listener.onChapterEdge(true) }, onMenu = listener::onMenu)
             else -> {
                 val i = slot - layout.offset
+                val half = layout.halfOf(slot)
                 val group = layout.spreads?.get(i) ?: intArrayOf(i)
-                if (group.size == 2) {
-                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                        val order = if (rtl) group.reversedArray() else group
-                        order.forEach { p -> PageImage(controller, listener, p, Modifier.weight(1f).fillMaxHeight(), onTap) }
+                when {
+                    half != null -> PageImage(controller, listener, half.physical, Modifier.fillMaxSize(), onTap, half = half)
+                    group.size == 2 -> {
+                        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                            val order = if (rtl) group.reversedArray() else group
+                            order.forEach { p -> PageImage(controller, listener, p, Modifier.weight(1f).fillMaxHeight(), onTap) }
+                        }
                     }
-                } else {
-                    PageImage(controller, listener, group[0], Modifier.fillMaxSize(), onTap)
+                    else -> PageImage(controller, listener, group[0], Modifier.fillMaxSize(), onTap)
                 }
             }
         }
@@ -295,7 +322,14 @@ private fun Paged(controller: MangaController, listener: MangaListener, layout: 
 }
 
 @Composable
-private fun PageImage(controller: MangaController, listener: MangaListener, index: Int, modifier: Modifier, onTap: (Offset, IntSize) -> Unit) {
+private fun PageImage(
+    controller: MangaController,
+    listener: MangaListener,
+    index: Int,
+    modifier: Modifier,
+    onTap: (Offset, IntSize) -> Unit,
+    half: app.yomu.domain.reader.MangaPage? = null,
+) {
     val s = controller.settings
     val context = LocalContext.current
     var file by remember(index) { mutableStateOf<File?>(null) }
@@ -332,7 +366,7 @@ private fun PageImage(controller: MangaController, listener: MangaListener, inde
                 }
                 val filter = ImageFilters.matrix(s)?.let { ColorFilter.colorMatrix(it) }
                 ZoomableAsyncImage(
-                    model = request(context, f, s.cropBorders),
+                    model = request(context, f, s.cropBorders, half),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     state = zoomState,

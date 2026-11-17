@@ -47,7 +47,7 @@ None observed for `:app:assembleDebug`. Profile-specific baselines are recorded 
 | S05 | CODE_VERIFIED | Batch update report, revocable trust; lifecycle checks read and covered where possible. |
 | S06 | IN_PROGRESS | Content preference Safe/Mixed/18+ with migration and one shared User-Agent; DoH, cookie scope UI and the Shizuku backend are not done. |
 | M01 | CODE_VERIFIED | One chapter-navigation resolver; alternatives and gaps only with reliable numbering. |
-| M02 | IN_PROGRESS | Shared spread/virtual-page model and a separate "cover alone" setting; split rendering, rotate-to-fit, start zoom and tiled decode are not done. |
+| M02 | IN_PROGRESS | Spread/virtual-page model, split render and a separate "cover alone" setting; rotate-to-fit, start zoom and tiled decode are not done. |
 
 ---
 
@@ -873,13 +873,17 @@ page everywhere, which is right, but the split transform had no model.
 | `domain/src/test/.../MangaPagingTest.kt` | NEW. 9 tests: cover alone, pairs without a cover, odd last page, every page in exactly one group for 1..20 both modes, group lookups, split order in both directions, no-split mapping, restored-position half, unknown page. |
 | `domain/.../model/ReaderSettings.kt` | `MangaSettings.coverAlone` (default true, so existing readers see no change) — separate from `dualPageLandscape`. |
 | `feature/reader-manga/.../MangaReaderView.kt` | The view uses `MangaPaging.spreads(count, coverAlone)`; the private copy is gone. |
+| `feature/reader-manga/.../MangaReaderView.kt` (split) | `Layout` maps slots to physical pages for spreads *or* halves; `PageImage` takes the half and requests `SplitPageTransformation`; the pager keeps physical pages for progress and the listener; preloads and chapter edges are unchanged. |
+| `feature/reader-manga/.../MangaController.kt` | `SplitPageTransformation` cuts (does not scale) the decoded bitmap into the left or right half. |
+| `domain/.../model/ReaderSettings.kt` | `MangaSettings.splitPages` (off by default), serialized with the rest of the settings. |
+| `feature/reader-manga/.../MangaSettingsPanel.kt` + strings | "Split pages" (off / left→right / right→left) with an explanation that the position still counts physical pages. |
 | `feature/reader-manga/.../MangaSettingsPanel.kt` + strings | "Cover alone" with an explanation, shown only while dual pages are on. |
 
 **Commands:** `.\gradlew.bat :domain:test --tests "app.yomu.domain.reader.MangaPagingTest" :feature:reader-manga:compileDebugKotlin :app:compileDebugKotlin` → `BUILD SUCCESSFUL`.
 
-**Still open in M02:** rendering a split page (two halves of one bitmap) in the pager, rotate-to-fit for wide scans,
-a start-zoom/smart-fit setting, and a budgeted tiled decode for very tall images. The virtual-page model those need is
-in place and tested; the view work is not.
+**Still open in M02:** rotate-to-fit for wide scans, a start-zoom/smart-fit setting, and a budgeted tiled decode for
+very tall images. Coil already subsamples by view size; a tiled zoom decode is not implemented. Split rendering is
+implemented but could not be checked on a device here (`DEVICE_PENDING`).
 
 **Next:** M04 (in the plan); not started in this pass.
 

@@ -1,9 +1,12 @@
 package app.yomu.domain.reader
 
+import kotlinx.serialization.Serializable
+
 /**
  * How a tall or wide scan is divided into what the screen shows. The split is a *view* transform: the physical page a
  * position belongs to never changes, so a saved position and a tracker page stay correct whatever the split does.
  */
+@Serializable
 enum class PageSplit { OFF, LEFT_TO_RIGHT, RIGHT_TO_LEFT }
 
 /** One thing on screen: a whole physical page, or one half of it (0 = the first half in reading order). */

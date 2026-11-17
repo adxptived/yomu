@@ -86,6 +86,11 @@ data class MangaSettings(
      * whether spreads are shown at all and whether the first one starts at the cover are different questions.
      */
     val coverAlone: Boolean = true,
+    /**
+     * Shows a wide scan as two halves, one after the other. The physical page never changes: progress, a bookmark and
+     * a tracker page still refer to it. Off by default; it is for pages scanned as one wide image.
+     */
+    val splitPages: app.yomu.domain.reader.PageSplit = app.yomu.domain.reader.PageSplit.OFF,
     val cropBorders: Boolean = false,
     val tapZones: TapZoneLayout = TapZoneLayout.L_SHAPE,
     val invertTapZones: Boolean = false,

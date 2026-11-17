@@ -28,6 +28,11 @@
     <string name="mr_bg_black">Чёрный</string>
     <string name="mr_bg_gray">Серый</string>
     <string name="mr_bg_white">Белый</string>
+    <string name="mr_split">Разрез страниц</string>
+    <string name="mr_split_off">Выкл.</string>
+    <string name="mr_split_ltr">Слева → направо</string>
+    <string name="mr_split_rtl">Справа → налево</string>
+    <string name="mr_split_sum">Широкая страница показывается двумя половинами; сохранённая позиция по-прежнему считает физические страницы</string>
     <string name="mr_cover_alone">Обложка отдельно</string>
     <string name="mr_cover_alone_sum">Первая страница не соединяется со второй; выключите, если в книге нет обложки</string>
     <string name="mr_dual">Две страницы в альбомной ориентации</string>
