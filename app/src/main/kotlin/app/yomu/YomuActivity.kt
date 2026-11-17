@@ -59,16 +59,23 @@ class YomuActivity : AppCompatActivity() {
         viewModel.handleIntent(intent)
     }
 
-    /** Volume keys turn pages while the reader asks for it (see [KeyBus]). */
+    /** Volume keys turn pages while the reader asks for it; page-turner and D-pad keys follow the same bus. */
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
             if (KeyBus.onVolume(up = keyCode == KeyEvent.KEYCODE_VOLUME_UP)) return true
+        }
+        when (app.yomu.domain.reader.ReaderKeys.action(keyCode, KeyBus.rtl)) {
+            app.yomu.domain.reader.ReaderKeyAction.NEXT -> if (KeyBus.onPage(forward = true)) return true
+            app.yomu.domain.reader.ReaderKeyAction.PREVIOUS -> if (KeyBus.onPage(forward = false)) return true
+            app.yomu.domain.reader.ReaderKeyAction.IGNORE -> Unit
         }
         return super.onKeyDown(keyCode, event)
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         if ((keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) && KeyBus.volumeHandler != null) return true
+        // A page key that was consumed on the way down must not also reach the platform on the way up.
+        if (KeyBus.pageHandler != null && app.yomu.domain.reader.ReaderKeys.action(keyCode, KeyBus.rtl) != app.yomu.domain.reader.ReaderKeyAction.IGNORE) return true
         return super.onKeyUp(keyCode, event)
     }
 }

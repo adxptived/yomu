@@ -59,6 +59,8 @@
     <string name="mr_zone_edges">Края</string>
     <string name="mr_zone_lr">Лево / право</string>
     <string name="mr_zone_off">Выкл.</string>
+    <string name="mr_invert_zones_x">Поменять лево и право</string>
+    <string name="mr_invert_zones_y">Поменять верх и низ</string>
     <string name="mr_invert_zones">Поменять зоны местами</string>
     <string name="mr_show_zones">Показывать зоны при открытии</string>
     <string name="mr_preview_zones">Показать зоны сейчас</string>

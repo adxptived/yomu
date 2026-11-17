@@ -198,7 +198,7 @@ fun MangaReaderView(
             Paged(controller, listener, Layout(controller.count, hasPrevChapter, spreads, virtual, split), hasNextChapter)
         }
         AnimatedVisibility(zonesVisible && s.tapZones != TapZoneLayout.DISABLED, enter = fadeIn(), exit = fadeOut()) {
-            TapZonesOverlay(s.tapZones, s.invertTapZones, rtl = s.direction == MangaDirection.RTL)
+            TapZonesOverlay(s.tapZones, s.zonesInvertedX, s.zonesInvertedY, rtl = s.direction == MangaDirection.RTL)
         }
         if (s.showPageNumber && controller.count > 0) {
             Text(
@@ -275,7 +275,7 @@ private fun Paged(controller: MangaController, listener: MangaListener, layout: 
     }
     val onTap: (Offset, IntSize) -> Unit = { pos, size ->
         val point = ReaderPoint(pos.x / size.width, pos.y / size.height)
-        val action = ReaderInput.action(s.tapZones, s.invertTapZones, rtl, point)
+        val action = ReaderInput.action(s.tapZones, s.zonesInvertedX, s.zonesInvertedY, rtl, point)
         // A locked page is view-only: taps open the menu instead of leaving it, and the pager below does not swipe.
         when (if (s.zoomLock) ReaderTapAction.MENU else action) {
             ReaderTapAction.MENU -> listener.onMenu()
@@ -554,11 +554,11 @@ private fun Webtoon(controller: MangaController, listener: MangaListener, hasPre
                     }
                 }
             }
-            .pointerInput(s.tapZones, s.invertTapZones, s.webtoonDoubleTapZoom, zoom > 1.01f, s.zoomLock) {
+            .pointerInput(s.tapZones, s.zonesInvertedX, s.zonesInvertedY, s.webtoonDoubleTapZoom, zoom > 1.01f, s.zoomLock) {
                 detectTapGestures(
                     onTap = { pos ->
                         val point = ReaderPoint(pos.x / size.width, pos.y / size.height)
-                        val action = ReaderInput.action(s.tapZones, s.invertTapZones, false, point)
+                        val action = ReaderInput.action(s.tapZones, s.zonesInvertedX, s.zonesInvertedY, false, point)
                         // Locked, the strip only scrolls: a tap opens the menu instead of jumping a screen.
                         when (if (s.zoomLock) ReaderTapAction.MENU else action) {
                             ReaderTapAction.MENU -> listener.onMenu()

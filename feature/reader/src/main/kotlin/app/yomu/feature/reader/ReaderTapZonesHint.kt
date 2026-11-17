@@ -70,7 +70,7 @@ internal fun ReaderTapZonesHint(
             .clickable(onClickLabel = stringResource(CoreR.string.got_it), onClick = ::dismiss),
     ) {
         TapZonesOverlay(
-            layout, inverted = false, rtl = rtl, sideFraction = 0.25f,
+            layout, invertX = false, invertY = false, rtl = rtl, sideFraction = 0.25f,
             label = {
                 stringResource(
                     when (it) {

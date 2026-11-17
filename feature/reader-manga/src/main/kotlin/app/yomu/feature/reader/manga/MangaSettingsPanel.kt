@@ -241,13 +241,14 @@ fun MangaControlSettings(s: MangaSettings, update: MangaSettingsUpdate, onPrevie
         val rtl = s.direction == MangaDirection.RTL
         OptionTiles(
             TapZoneLayout.entries.map { layout ->
-                TileOption(layout, zoneLabel(layout), preview = { _ -> TapZonesDiagram(layout, s.invertTapZones, rtl) })
+                TileOption(layout, zoneLabel(layout), preview = { _ -> TapZonesDiagram(layout, s.zonesInvertedX, s.zonesInvertedY, rtl) })
             },
             s.tapZones,
             { v -> update { it.copy(tapZones = v) } },
         )
         val zones = s.tapZones != TapZoneLayout.DISABLED
-        PreferenceSwitch(stringResource(R.string.mr_invert_zones), s.invertTapZones, { v -> update { it.copy(invertTapZones = v) } }, enabled = zones)
+        PreferenceSwitch(stringResource(R.string.mr_invert_zones_x), s.zonesInvertedX, { v -> update { it.copy(invertTapZonesX = v, invertTapZones = false) } }, enabled = zones)
+        PreferenceSwitch(stringResource(R.string.mr_invert_zones_y), s.zonesInvertedY, { v -> update { it.copy(invertTapZonesY = v) } }, enabled = zones)
         PreferenceSwitch(stringResource(R.string.mr_show_zones), s.showTapZonesOnOpen, { v -> update { it.copy(showTapZonesOnOpen = v) } }, enabled = zones)
         if (onPreviewZones != null && zones && s.direction != MangaDirection.WEBTOON) {
             TextButton(onClick = onPreviewZones, modifier = Modifier.padding(horizontal = Dimens.s)) {

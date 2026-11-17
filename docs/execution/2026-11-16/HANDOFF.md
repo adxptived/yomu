@@ -7,7 +7,7 @@
 
 ## 1. Текущее состояние
 
-**18 пакетов `CODE_VERIFIED`, 2 в работе (S06, M02).** Полный прогон был зелёным после S01/M01:
+**18 пакетов `CODE_VERIFIED`, 3 в работе (S06, M02, M04).** Полный прогон был зелёным после S01/M01:
 
 ```
 .\gradlew.bat assembleDebug testDebugUnitTest :domain:test :source-api:test :sources:opds:test --console=plain
@@ -20,7 +20,7 @@
 | Библиотека | L02, L03, L04, L01, L05, D02, L06 | CODE_VERIFIED |
 | Источники | S02, S01, S03, N01, S05 | CODE_VERIFIED |
 | Комфорт | M01 | CODE_VERIFIED |
-| Не закончено | **S06** (DoH, cookie scope, Shizuku), **M02** (split render, rotate-to-fit, zoom, tiled decode) | IN_PROGRESS |
+| Не закончено | **S06** (DoH, cookie scope, Shizuku), **M02** (rotate-to-fit, zoom, tiled decode), **M04** (навигатор, скорость анимации, fallback ориентации) | IN_PROGRESS |
 
 Крупные изменения этого прохода, которые нужно знать до правок:
 
@@ -35,7 +35,8 @@
 - **Главы:** `ChapterNavigation` — единый resolver; `saveProgress(finished)` помечает альтернативные релизы
   прочитанными только при надёжной нумерации; экран тайтла показывает пропуски в нумерации.
 - **Подкасты:** `AudioSubscriptionRepository`, `AudioSubscriptionWorker` (раз в сутки), `PodcastFeed` читает `guid`.
-- **Manga:** `MangaPaging` (spreads/virtual pages) и настройка `coverAlone`; приватная копия `spreads()` удалена.
+- **Manga:** `MangaPaging` (spreads/virtual pages, split render через `SplitPageTransformation`) и настройки `coverAlone`/`splitPages`; приватная копия `spreads()` удалена.
+- **Управление читалкой:** `ReaderKeys` + `KeyBus.pageHandler` для page-turner/D-pad (медиа-клавиши не перехватываются), поосевые инверсии зон X/Y с миграцией старого bool, `pdfTapZones` (null = как в тексте).
 
 ## 2. Что делать дальше: канонический порядок
 
@@ -43,7 +44,7 @@
 
 | Шаг | Пакеты |
 |---|---|
-| Чтение глав | **M04** → M03 (M02 доделать: split render, rotate-to-fit, start zoom, tiled decode) |
+| Чтение глав | **M03** (M02 доделать: rotate-to-fit, start zoom, tiled decode; M04 доделать: навигатор, скорость анимации) |
 | Обновления и офлайн | U01 → U02 → U03 → DL01 → DL02 → DL03 → A02 |
 | Перенос и сервисы | MG01 → B01 → T01 → S04 → T02 → B02 → B03 |
 | Комфорт и качество | A01 → A03 → N02 → N03 → N04 → N05 → M05 → Q01 → Q02 → Q03 → Q04 → Q05 |
@@ -131,8 +132,8 @@ C-RELEASE). Во время работы ограничивать одним к�
 > Работай в репозитории Yomu, HEAD `3b44efc` (рабочее дерево содержит незакоммиченные результаты прошлого прохода).
 > Прочитай `docs/AGENT_EXECUTION_PLAN_2026-11-16.md` (разделы 1–7), `docs/execution/2026-11-16/STATUS.md` и файл
 > передачи рядом с ним. Уже приняты 18 пакетов: B00, R01–R03, D01, L01–L06, D02, S01–S05, N01, M01 (см. журнал — не
-> переделывай их). S06 и M02 начаты: у них есть тестируемое ядро и явно перечисленный остаток. Продолжай по разделу 7
-> с M04 (и добей M02), затем M03, U01–U03, DL01–DL03, A02, MG01, B01, T01, S04, T02, B02, B03, A01, A03, N02–N05,
+> переделывай их). S06, M02 и M04 начаты: у них есть тестируемое ядро и явно перечисленный остаток. Продолжай по разделу 7
+> с M03 (и добей M02/M04), затем U01–U03, DL01–DL03, A02, MG01, B01, T01, S04, T02, B02, B03, A01, A03, N02–N05,
 > M05, Q01–Q05. Перед правкой читай текущий код; различай EXISTING/NEW/HYPOTHESIS/EXTERNAL; не придумывай API, файлы и
 > успешные тесты. После каждого пакета дописывай запись в журнал с реальными командами и результатами. Аппаратные
 > проверки V01–V06, V08, V09, V10, V18 недоступны без устройства — оставляй их `DEVICE_PENDING`, не засчитывай как

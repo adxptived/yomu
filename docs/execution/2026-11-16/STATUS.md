@@ -48,6 +48,7 @@ None observed for `:app:assembleDebug`. Profile-specific baselines are recorded 
 | S06 | IN_PROGRESS | Content preference Safe/Mixed/18+ with migration and one shared User-Agent; DoH, cookie scope UI and the Shizuku backend are not done. |
 | M01 | CODE_VERIFIED | One chapter-navigation resolver; alternatives and gaps only with reliable numbering. |
 | M02 | IN_PROGRESS | Spread/virtual-page model, split render and a separate "cover alone" setting; rotate-to-fit, start zoom and tiled decode are not done. |
+| M04 | IN_PROGRESS | Per-mode tap schemes, per-axis inversion and one hardware-key resolver; the optional page navigator and animation-speed setting are not done. |
 
 ---
 
@@ -889,9 +890,41 @@ implemented but could not be checked on a device here (`DEVICE_PENDING`).
 
 ---
 
+## M04 — reader controls (partial)
+
+**Status:** `IN_PROGRESS`.
+
+**What was wrong:** text and PDF shared one tap scheme, the manga inversion was a single boolean that swapped the
+resolved action, and the only physical keys the reader understood were the volume keys. A hardware page-turner or a
+D-pad therefore scrolled the page instead of turning it.
+
+| File | Change |
+|---|---|
+| `domain/.../reader/ReaderInput.kt` | New overload `action(layout, invertX, invertY, rtl, point)`: inversion mirrors the coordinate on each axis before the zone is resolved. The old boolean overload keeps its exact behaviour (resolve, then swap) for settings written before the axes. |
+| `domain/.../reader/ReaderKeys.kt` | NEW. `ReaderKeyAction` and `ReaderKeys.action(keyCode, rtl)` for page-up/page-down and D-pad arrows; media keys are deliberately not mapped, so the reader never takes them from whatever is playing. |
+| `domain/.../model/ReaderSettings.kt` | `MangaSettings.invertTapZonesX`/`invertTapZonesY` plus effective getters (the old boolean counts as X); `CommonReaderSettings.pdfTapZones` (null = the text scheme, which preserves every existing installation) with `pdfZones()`. |
+| `core/ui/.../KeyBus.kt` | A page handler next to the volume one, with the reader's direction; no handler outside the reader. |
+| `app/.../YomuActivity.kt` | Page-turner and D-pad keys go through `ReaderKeys` and the bus; a consumed key is not passed to the platform on key-up either. |
+| `feature/reader/.../ReaderScreen.kt` | Registers the page handler and the direction while a book is open. |
+| `feature/reader/.../ReaderViewModel.kt` | The PDF tap branch uses `pdfZones()`. |
+| `feature/reader/.../ReaderSettingsSheet.kt` | "PDF tap zones" with "Same as text" plus the four schemes; previews read the same resolver. |
+| `feature/reader-manga/.../MangaReaderView.kt`, `TapZonesOverlay.kt`, `MangaSettingsPanel.kt` | Tap handling, the overlay and the diagrams use the axis resolver; two separate X/Y switches replace the one inversion switch (turning X off also clears the legacy value). |
+| `domain/src/test/.../ReaderInputAxesTest.kt` | NEW. 6 tests: X mirror, Y mirror, both axes on a corner, RTL after mirroring, legacy equivalence, non-finite tap. |
+| `domain/src/test/.../ReaderKeysTest.kt` | NEW. 4 tests: page-up/left, page-down/right, RTL reversal, media/other keys ignored. |
+
+**Commands:** `.\gradlew.bat :domain:test --tests "app.yomu.domain.reader.*" :feature:reader:compileDebugKotlin :feature:reader-manga:compileDebugKotlin :app:compileDebugKotlin` → `BUILD SUCCESSFUL`.
+
+**Still open in M04:** the optional vertical page navigator (seek slider with release-commit and no backward jumps
+from incoming progress), an animation-speed setting, explicit orientation fallback documentation in split-screen, and an
+on-demand way to re-open the tap-zone hint (the one-time hint itself already exists and is stored).
+
+**Next:** M03.
+
+---
+
 ## Progress summary
 
-**Eighteen packages are `CODE_VERIFIED`; S06 and M02 are `IN_PROGRESS`.** Every one has an automated test that would
+**Eighteen packages are `CODE_VERIFIED`; S06, M02 and M04 are `IN_PROGRESS`.** Every one has an automated test that would
 fail if the behaviour regressed, and the full tree builds: `assembleDebug` + `testDebugUnitTest` + `:domain:test` +
 `:source-api:test` + `:sources:opds:test`.
 
@@ -924,9 +957,9 @@ fail if the behaviour regressed, and the full tree builds: `assembleDebug` + `te
   This environment has no Android device or emulator, so native PDFium gestures, TalkBack, E-ink, real audio tags, real
   feeds and real accounts are not verified. Every one of them is listed per package above rather than being counted as
   done.
-- **Packages not started:** M03, M04, M05, U01–U03, DL01–DL03, A01–A03, MG01, B01–B03, T01–T02, S04, N02–N05,
-  Q01–Q05. S06 is `IN_PROGRESS` (DoH, cookie scope, Shizuku); M02 is `IN_PROGRESS` (split rendering, rotate-to-fit,
-  start zoom, tiled decode). The two packages marked "contract only" (L05, S02) delivered their model and tests;
+- **Packages not started:** M03, M05, U01–U03, DL01–DL03, A01–A03, MG01, B01–B03, T01–T02, S04,
+  N02–N05, Q01–Q05. `IN_PROGRESS`: S06 (DoH, cookie scope, Shizuku), M02 (rotate-to-fit, start zoom, tiled decode),
+  M04 (page navigator, animation speed, orientation fallback, on-demand zone hint). The two packages marked "contract only" (L05, S02) delivered their model and tests;
   S02's UI wiring is now done as part of S01.
 - **P3 items** (M05 renderer, A03, N03–N04) are unfinished by design in this pass and remain open.
 

@@ -50,6 +50,9 @@ object ReaderInput {
      * [inverted] swaps the previous and next zones by the user's request; [rtl] additionally swaps them
      * for right-to-left reading. Both are ignored by [TapZoneLayout.EDGES], which is not a left/right
      * layout. A non-finite point is not a tap: it resolves to [ReaderTapAction.MENU].
+     *
+     * Kept for settings written before the per-axis switches: it resolves the zone first and then swaps the
+     * action, which is exactly what the old single switch did. New code uses the axis overload below.
      */
     fun action(
         layout: TapZoneLayout,
@@ -58,6 +61,34 @@ object ReaderInput {
         point: ReaderPoint,
         sideFraction: Float = 0.4f,
     ): ReaderTapAction {
+        val raw = resolve(layout, rtl, point, sideFraction)
+        if (!inverted || raw == ReaderTapAction.MENU) return raw
+        return if (raw == ReaderTapAction.NEXT) ReaderTapAction.PREV else ReaderTapAction.NEXT
+    }
+
+    /**
+     * Action of a tap with independent axis inversion.
+     *
+     * Inversion mirrors the coordinate on that axis (x → 1−x, y → 1−y) before the zone is resolved, so a
+     * left/right layout swaps its sides and a top/bottom zone moves to the other edge without inventing a
+     * second geometry. This is what the per-mode settings mean; the old boolean is a special case of it.
+     */
+    fun action(
+        layout: TapZoneLayout,
+        invertX: Boolean,
+        invertY: Boolean,
+        rtl: Boolean,
+        point: ReaderPoint,
+        sideFraction: Float = 0.4f,
+    ): ReaderTapAction {
+        val mirrored = ReaderPoint(
+            if (invertX) 1f - point.x else point.x,
+            if (invertY) 1f - point.y else point.y,
+        )
+        return resolve(layout, rtl, mirrored, sideFraction)
+    }
+
+    private fun resolve(layout: TapZoneLayout, rtl: Boolean, point: ReaderPoint, sideFraction: Float): ReaderTapAction {
         val x = point.x
         val y = point.y
         if (!x.isFinite() || !y.isFinite()) return ReaderTapAction.MENU
@@ -85,8 +116,7 @@ object ReaderInput {
                 else -> ReaderTapAction.MENU
             }
         }
-        val flipped = inverted xor (rtl && layout != TapZoneLayout.EDGES)
-        if (!flipped || raw == ReaderTapAction.MENU) return raw
+        if (!(rtl && layout != TapZoneLayout.EDGES) || raw == ReaderTapAction.MENU) return raw
         return if (raw == ReaderTapAction.NEXT) ReaderTapAction.PREV else ReaderTapAction.NEXT
     }
 }

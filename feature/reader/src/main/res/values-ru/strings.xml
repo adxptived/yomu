@@ -151,6 +151,8 @@
     <string name="rs_word_single">Одиночный тап</string>
     <string name="rs_word_double">Двойной тап по центру</string>
     <string name="rs_autoscroll_speed">Скорость автопрокрутки</string>
+    <string name="rs_tap_zones_pdf">Зоны нажатий в PDF</string>
+    <string name="rs_zones_same_as_text">Как в тексте</string>
     <string name="rs_tap_zones">Зоны тапа</string>
     <string name="rs_zone_l">Г-образные</string>
     <string name="rs_zone_kindle">Как в Kindle</string>

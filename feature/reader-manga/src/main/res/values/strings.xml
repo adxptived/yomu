@@ -60,6 +60,8 @@
     <string name="mr_zone_edges">Edges</string>
     <string name="mr_zone_lr">Left / right</string>
     <string name="mr_zone_off">Off</string>
+    <string name="mr_invert_zones_x">Invert left and right</string>
+    <string name="mr_invert_zones_y">Invert top and bottom</string>
     <string name="mr_invert_zones">Invert tap zones</string>
     <string name="mr_show_zones">Show tap zones on opening</string>
     <string name="mr_preview_zones">Show tap zones now</string>

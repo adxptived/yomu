@@ -155,6 +155,8 @@
     <string name="rs_word_single">Single tap</string>
     <string name="rs_word_double">Double tap in the middle</string>
     <string name="rs_autoscroll_speed">Auto-scroll speed</string>
+    <string name="rs_tap_zones_pdf">PDF tap zones</string>
+    <string name="rs_zones_same_as_text">Same as text</string>
     <string name="rs_tap_zones">Tap zones</string>
     <string name="rs_zone_l">L-shape</string>
     <string name="rs_zone_kindle">Kindle</string>

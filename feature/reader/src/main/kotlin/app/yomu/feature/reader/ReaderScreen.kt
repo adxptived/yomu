@@ -321,6 +321,18 @@ fun ReaderScreen(
         KeyBus.volumeHandler = if (volumeKeys) { up -> if (up != volumeForward) viewModel.prevPage() else viewModel.nextPage(); true } else null
         onDispose { KeyBus.volumeHandler = null }
     }
+    // Hardware page-turners and D-pad arrows page through the same bus; the direction comes from the book, so a
+    // right-to-left manga turns the other way. Outside the reader nobody is registered, so the keys stay with the
+    // platform and with whatever is playing.
+    val readerRtl = isManga && mangaSettings.direction == MangaDirection.RTL
+    DisposableEffect(data != null, readerRtl) {
+        KeyBus.pageHandler = { forward -> if (forward) viewModel.nextPage() else viewModel.prevPage(); true }
+        KeyBus.rtl = readerRtl
+        onDispose {
+            KeyBus.pageHandler = null
+            KeyBus.rtl = false
+        }
+    }
     LaunchedEffect(wordTap) {
         val w = wordTap ?: return@LaunchedEffect
         lookup = LookupRequest(w.word, w.sentence, bookLang, viewModel.bookId.takeIf { it > 0 }, title, w.locator)

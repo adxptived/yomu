@@ -949,10 +949,23 @@ private fun ControlSettings(content: ReaderContent, c: CommonReaderSettings, m: 
             Text(stringResource(R.string.rs_tap_zones), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = Dimens.l, top = Dimens.s))
             OptionTiles(
                 TapZoneLayout.entries.map { layout ->
-                    TileOption(layout, zoneLabel(layout), preview = { _ -> TapZonesDiagram(layout, false, false, sideFraction = 0.25f) })
+                    TileOption(layout, zoneLabel(layout), preview = { _ -> TapZonesDiagram(layout, invertX = false, invertY = false, rtl = false, sideFraction = 0.25f) })
                 },
                 c.textTapZones,
                 { v -> vm.updateCommon { it.copy(textTapZones = v) } },
+            )
+        }
+        if (content is ReaderContent.Pdf) {
+            // A PDF can keep the text scheme (null) or have its own: scanned pages and reflowed text are used
+            // differently, and the old behaviour is kept for every existing installation.
+            Text(stringResource(R.string.rs_tap_zones_pdf), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = Dimens.l, top = Dimens.s))
+            OptionTiles(
+                listOf(TileOption<TapZoneLayout?>(null, stringResource(R.string.rs_zones_same_as_text))) +
+                    TapZoneLayout.entries.map { layout ->
+                        TileOption<TapZoneLayout?>(layout, zoneLabel(layout), preview = { _ -> TapZonesDiagram(layout, invertX = false, invertY = false, rtl = false, sideFraction = 0.25f) })
+                    },
+                c.pdfTapZones,
+                { v -> vm.updateCommon { it.copy(pdfTapZones = v) } },
             )
         }
     }

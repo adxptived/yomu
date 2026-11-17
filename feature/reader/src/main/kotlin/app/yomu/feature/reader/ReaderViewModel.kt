@@ -798,7 +798,8 @@ class ReaderViewModel(
                 if (!common.value.tapToTurn) {
                     toggleChrome()
                 } else {
-                    val action = ReaderInput.action(common.value.textTapZones, false, false, point, sideFraction = 0.25f)
+                    // A PDF has its own scheme or, by default, the text one.
+                    val action = ReaderInput.action(common.value.pdfZones(), false, false, point, sideFraction = 0.25f)
                     when (action) {
                         ReaderTapAction.PREV -> if (c.controller.page > 0) c.controller.goTo(c.controller.page - 1)
                         ReaderTapAction.NEXT -> if (c.controller.page < c.controller.pageCount - 1) c.controller.goTo(c.controller.page + 1)

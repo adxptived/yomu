@@ -93,7 +93,13 @@ data class MangaSettings(
     val splitPages: app.yomu.domain.reader.PageSplit = app.yomu.domain.reader.PageSplit.OFF,
     val cropBorders: Boolean = false,
     val tapZones: TapZoneLayout = TapZoneLayout.L_SHAPE,
+    /**
+     * The old single inversion switch. It swapped the resolved action; the per-axis switches mirror the tap instead.
+     * Kept so settings written before them still mean what they meant: a true value counts as [invertTapZonesX].
+     */
     val invertTapZones: Boolean = false,
+    val invertTapZonesX: Boolean = false,
+    val invertTapZonesY: Boolean = false,
     val volumeKeys: Boolean = false,
     val brightness: Float = 0f,
     val contrast: Float = 1f,
@@ -122,6 +128,10 @@ data class MangaSettings(
     val showTapZonesOnOpen: Boolean = false,
 ) {
     val hasImageFilters: Boolean get() = brightness != 0f || contrast != 1f || grayscale || invert
+
+    /** The effective axes: the old switch counts as an X inversion, as it did for a left/right layout. */
+    val zonesInvertedX: Boolean get() = invertTapZonesX || invertTapZones
+    val zonesInvertedY: Boolean get() = invertTapZonesY
 }
 
 enum class PdfMode { PAGED, SCROLL, DUAL }
@@ -173,7 +183,12 @@ data class CommonReaderSettings(
     val edgeBrightness: Boolean = true,
     val edgeWarm: Boolean = true,
     val textTapZones: TapZoneLayout = TapZoneLayout.LEFT_RIGHT,
-)
+    /** PDF tap zones; null keeps the text scheme, which is what every existing installation meant. */
+    val pdfTapZones: TapZoneLayout? = null,
+) {
+    /** The scheme a PDF tap uses: its own, or the text one. */
+    fun pdfZones(): TapZoneLayout = pdfTapZones ?: textTapZones
+}
 
 /** A named set of text settings (built-in or saved by the user). */
 @Serializable
