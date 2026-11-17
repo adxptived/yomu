@@ -3,6 +3,11 @@
 Дата: 17 ноября 2026. Основано на [STATUS.md](./STATUS.md) (журнал пакетов) и разделе 7
 [AGENT_EXECUTION_PLAN_2026-11-16.md](../../AGENT_EXECUTION_PLAN_2026-11-16.md). Полный канонический порядок — в плане.
 
+> Срез 17 ноября (вечер): закрыты S06 (кроме Shizuku — `BLOCKED`), M02, M04, U01–U03, DL01–DL03, Q04, N03;
+> N02 закрыт частично (явный scope и сброс override есть, остаток ниже). Все перечисленные пакеты закоммичены
+> отдельными коммитами. `:app:testDebugUnitTest`, `:data:testDebugUnitTest`, `:domain:test`, `:source-api:test`,
+> `:core:common:testDebugUnitTest`, `:core:network:testDebugUnitTest` — зелёные. Ниже — всё ещё открытые пакеты.
+
 ## Файлы
 
 - [План исполнения](../../AGENT_EXECUTION_PLAN_2026-11-16.md)
