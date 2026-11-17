@@ -35,6 +35,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -87,13 +88,15 @@ class DownloadRepository(
 ) {
     private val dao = db.downloads()
     private val claim = Mutex()
+    /** Retention and "download ahead" after a read event, away from the caller that saved the reading progress. */
+    private val readScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Running downloads per source id (guarded by [claim]). */
     private val runningBySource = HashMap<Long, Int>()
     private val headersSerializer = MapSerializer(String.serializer(), String.serializer())
 
-    val booksDir: File get() = File(context.filesDir, "downloads/books").also { it.mkdirs() }
-    val chaptersDir: File get() = File(context.filesDir, "downloads/chapters").also { it.mkdirs() }
+    val booksDir: File get() = File(context.filesDir, "downloads/books").also { it.mkdirs(); Files.ensureNomedia(it) }
+    val chaptersDir: File get() = File(context.filesDir, "downloads/chapters").also { it.mkdirs(); Files.ensureNomedia(it) }
 
     fun observe(): Flow<List<DownloadItem>> = dao.observeAll().map { l -> l.map { it.toDomain() } }
 
@@ -189,6 +192,7 @@ class DownloadRepository(
         var total = 0
         result.updated.forEach { update ->
             runCatching {
+                if (!autoDownloadShelfAllows(update.entryId)) return@forEach
                 val excluded = catalog.chapterDisplay(update.entryId).excludedScanlators
                 val all = catalog.chapters(update.entryId).filter { it.scanlator.isNullOrBlank() || it.scanlator !in excluded }
                 val reading = ChapterOrder.reading(all)
@@ -201,6 +205,17 @@ class DownloadRepository(
             }.onFailure { Timber.w(it, "Auto download of ${update.title} failed") }
         }
         return total
+    }
+
+    /**
+     * The shelf scope of automatic downloads: an empty set means every shelf, otherwise the title must be in one of
+     * the chosen shelves. A title outside the scope is not touched even when the global rule is on.
+     */
+    private suspend fun autoDownloadShelfAllows(entryId: Long): Boolean {
+        val chosen = runCatching { settings.autoDownloadShelves.get() }.getOrDefault(emptySet())
+            .mapNotNull { it.toLongOrNull() }.toSet()
+        if (chosen.isEmpty()) return true
+        return runCatching { db.collections().collectionsOfItem(entryId).any { it in chosen } }.getOrDefault(false)
     }
 
     /**
@@ -313,7 +328,7 @@ class DownloadRepository(
                 val parallel = settings.maxParallelDownloads.get().coerceIn(1, 5)
                 List(parallel) { launch(Dispatchers.IO) { work(onProgress, done, failed, offline, noSpace, stop) } }.joinAll()
                 // Tasks queued while the last jobs were finishing are picked up here instead of waiting for the next start.
-            } while (isActive && !stop() && dao.nextQueued(1).isNotEmpty())
+            } while (isActive && !stop() && dao.nextQueued(1, System.currentTimeMillis()).isNotEmpty())
         } finally {
             withContext(NonCancellable) {
                 // A full storage would fail every next task the same way: the queue is paused with the reason and kept for "Resume all".
@@ -339,8 +354,15 @@ class DownloadRepository(
         while (isActive && !stop()) {
             val task = claimNext()
             if (task == null) {
-                // Nothing to start: finished when the queue is empty, otherwise every waiting task belongs to a busy source.
-                if (dao.nextQueued(1).isEmpty()) return
+                // Nothing to start: finished when the queue has neither a ready task nor a delayed retry, otherwise
+                // every waiting task belongs to a busy source or to a server's Retry-After.
+                val now = System.currentTimeMillis()
+                if (dao.nextQueued(1, now).isEmpty()) {
+                    val next = dao.nextRetryAt(now)
+                    if (next == null) return
+                    delay((next - now).coerceIn(50L, RETRY_WAIT_MAX_MS))
+                    continue
+                }
                 delay(SLOT_WAIT_MS)
                 continue
             }
@@ -379,9 +401,14 @@ class DownloadRepository(
     }
 
     private suspend fun claimNext(): DownloadTaskEntity? = claim.withLock {
+        val now = System.currentTimeMillis()
+        val active = runningBySource.filterValues { it > 0 }.keys
         val busy = runningBySource.filterValues { it >= PER_SOURCE_LIMIT }.keys
-        val task = dao.nextQueuedExcluding(busy) ?: return@withLock null
-        dao.setStatus(listOf(task.id), DownloadStatus.RUNNING.name, null, System.currentTimeMillis())
+        // A source with spare capacity never waits behind a source that already has a worker running.
+        val task = dao.nextQueuedFromOtherSources(active, now)
+            ?: dao.nextQueuedExcluding(busy, now)
+            ?: return@withLock null
+        dao.setStatus(listOf(task.id), DownloadStatus.RUNNING.name, null, now)
         task.sourceId?.let { runningBySource[it] = (runningBySource[it] ?: 0) + 1 }
         task
     }
@@ -410,10 +437,9 @@ class DownloadRepository(
                 offline.set(true)
             }
             RetryPolicy.shouldRetry(kind, current.attempts, settings.downloadRetries.get().coerceIn(0, 10)) -> {
-                // The reason stays visible in the queue while the task waits for its next attempt.
-                dao.setStatus(listOf(task.id), DownloadStatus.RUNNING.name, message, now)
-                delay(RetryPolicy.delayMs(RETRY_BASE_MS, current.attempts, Random.nextDouble()))
-                if (dao.get(task.id)?.status == DownloadStatus.RUNNING.name) dao.requeue(task.id, current.attempts + 1, message, System.currentTimeMillis())
+                // The wait is persisted: a server's Retry-After survives the worker (and the process) being stopped.
+                val wait = RetryPolicy.waitBeforeRetryMs(RETRY_BASE_MS, current.attempts, Random.nextDouble(), e)
+                dao.requeueAt(task.id, current.attempts + 1, message, now, now + wait)
             }
             else -> {
                 dao.setStatus(listOf(task.id), DownloadStatus.FAILED.name, message, now)
@@ -459,6 +485,7 @@ class DownloadRepository(
     }
 
     private fun chapterFolder(entry: app.yomu.domain.model.CatalogEntry) = File(chaptersDir, "${entry.sourceId}/${Files.sanitize(entry.title)}")
+        .also { Files.ensureNomedia(it.parentFile ?: chaptersDir) }
 
     /** Stable file name of a chapter (the chapter id keeps releases with the same name apart, also after list changes). */
     private fun chapterBaseName(chapter: app.yomu.domain.model.ChapterInfo) = Files.sanitize("${chapter.name.take(80)} [${chapter.id}]")
@@ -490,7 +517,7 @@ class DownloadRepository(
                 validatorFile.delete()
                 throw java.io.IOException("Range not satisfiable, restarting")
             }
-            if (!r.isSuccessful) throw HttpStatusException(r.code, t.url)
+            if (!r.isSuccessful) throw HttpStatusException(r.code, t.url, app.yomu.source.RetryAfter.parse(r.header("Retry-After"), System.currentTimeMillis()))
             val append = RangeResume.canAppend(start, r.code, r.header("Content-Range"))
             if (r.code == 206 && !append) {
                 part.delete()
@@ -633,7 +660,7 @@ class DownloadRepository(
                         zip.closeEntry()
                     }
                     zip.putNextEntry(ZipEntry("ComicInfo.xml"))
-                    zip.write(comicInfo(entry.title, chapter.name, chapter.number, entry.author, entry.description, pages.size).toByteArray())
+                    zip.write(comicInfo(entry.title, chapter.name, chapter.number, entry.author, entry.description, pages.size, chapter.uploadDate).toByteArray())
                     zip.closeEntry()
                 }
             } catch (e: Throwable) {
@@ -658,14 +685,27 @@ class DownloadRepository(
         db.catalog().setDownloaded(chapterId, true, path)
     }
 
-    private fun comicInfo(series: String, title: String, number: Float, writer: String?, summary: String?, pages: Int): String = buildString {
-        append("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<ComicInfo xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n")
-        append("<Title>${Xhtml.escape(title)}</Title>\n<Series>${Xhtml.escape(series)}</Series>\n")
-        if (number >= 0) append("<Number>${if (number % 1f == 0f) number.toInt().toString() else number.toString()}</Number>\n")
-        writer?.let { append("<Writer>${Xhtml.escape(it)}</Writer>\n") }
-        summary?.let { append("<Summary>${Xhtml.escape(it)}</Summary>\n") }
-        append("<PageCount>$pages</PageCount>\n<Manga>YesAndRightToLeft</Manga>\n</ComicInfo>\n")
-    }
+    /** One writer shared with the importer, so a downloaded chapter and its later import mean the same fields. */
+    private fun comicInfo(
+        series: String,
+        title: String,
+        number: Float,
+        writer: String?,
+        summary: String?,
+        pages: Int,
+        uploadDate: Long,
+    ): String = app.yomu.data.library.ComicInfoXml.write(
+        app.yomu.data.library.ComicInfo(
+            title = title,
+            series = series,
+            number = if (number >= 0) (if (number % 1f == 0f) number.toInt().toString() else number.toString()) else "",
+            writer = writer.orEmpty(),
+            summary = summary.orEmpty(),
+            manga = true,
+            uploadDate = uploadDate,
+        ),
+        pageCount = pages,
+    )
 
     /** Deletes the downloaded files of read chapters of [entryId] (all titles when null). Returns how many were deleted. */
     suspend fun deleteReadDownloads(entryId: Long? = null): Int {
@@ -676,6 +716,52 @@ class DownloadRepository(
         val plan = DownloadRetention.plan(items, retentionSettings().copy(deleteRead = true))
         deleteChapterFiles(plan.delete)
         return plan.delete.size
+    }
+
+    /** What a retention run would delete now, with names, bytes and the reasons the rest is kept. Nothing is deleted. */
+    suspend fun retentionPreview(entryId: Long? = null): RetentionPreview = withContext(Dispatchers.IO) {
+        val chapters = if (entryId == null) {
+            db.catalog().downloadedChapters().map { it.toDomain() }
+        } else {
+            catalog.chapters(entryId).filter { it.downloaded }
+        }
+        val paired = chapters.mapNotNull { chapter -> retentionItem(chapter)?.let { chapter to it } }
+        val plan = DownloadRetention.plan(paired.map { it.second }, retentionSettings())
+        val byId = paired.associateBy({ it.second.chapterId }, { it })
+        val delete = plan.delete.mapNotNull { id ->
+            byId[id]?.let { (chapter, item) ->
+                RetentionPreviewItem(
+                    chapterId = id,
+                    title = runCatching { catalog.entry(chapter.entryId)?.title }.getOrNull().orEmpty(),
+                    chapter = chapter.name,
+                    bytes = item.bytes,
+                )
+            }
+        }
+        RetentionPreview(
+            plan = plan,
+            delete = delete,
+            keptReasons = plan.kept.values.groupingBy { it }.eachCount(),
+        )
+    }
+
+    /**
+     * Applies a previously previewed retention plan, re-checking every protection against the current database:
+     * a chapter bookmarked, moved to a protected shelf or no longer owned after the preview is skipped.
+     */
+    suspend fun applyRetention(chapterIds: Collection<Long>): Int = withContext(Dispatchers.IO) {
+        val settingsNow = retentionSettings()
+        var deleted = 0
+        chapterIds.forEach { id ->
+            val chapter = catalog.chapter(id) ?: return@forEach
+            if (!chapter.downloaded) return@forEach
+            val item = retentionItem(chapter) ?: return@forEach
+            val protectedNow = !item.owned || item.bookmarked || item.shelfIds.any { it in settingsNow.protectedShelves }
+            if (protectedNow) return@forEach
+            deleteChapterFiles(listOf(id))
+            deleted++
+        }
+        deleted
     }
 
     private suspend fun retentionSettings(): RetentionSettings {
@@ -726,13 +812,78 @@ class DownloadRepository(
         }
     }
 
+    /** Runs [onChapterRead] away from the caller: marking a chapter read must not wait for retention or a download. */
+    fun onChapterReadAsync(chapterId: Long) {
+        readScope.launch { runCatching { onChapterRead(chapterId) } }
+    }
+
     suspend fun onChapterRead(chapterId: Long) {
         // The same protections as the batch plan: a bookmarked chapter, a protected shelf and a file the app does not
         // own survive the moment the chapter is marked read.
         val chapter = catalog.chapter(chapterId) ?: return
-        if (!chapter.downloaded) return
-        val item = retentionItem(chapter) ?: return
-        if (DownloadRetention.shouldDeleteNow(item, retentionSettings())) deleteChapterFiles(listOf(chapterId))
+        if (chapter.downloaded) {
+            retentionItem(chapter)?.let { item ->
+                if (DownloadRetention.shouldDeleteNow(item, retentionSettings())) deleteChapterFiles(listOf(chapterId))
+            }
+        }
+        // After a chapter is finished, "download ahead" keeps the next ones ready. Incognito and the data saver are
+        // respected, and the same shelf scope as automatic downloads applies.
+        val ahead = runCatching { settings.downloadAhead.get() }.getOrDefault(0)
+        if (ahead <= 0 || savingData() || runCatching { settings.incognito.get() }.getOrDefault(false)) return
+        if (!autoDownloadShelfAllows(chapter.entryId)) return
+        runCatching { ensureAhead(chapter.entryId, chapterId, ahead) }
+            .onFailure { Timber.w(it, "Download ahead after reading $chapterId failed") }
+    }
+
+    /**
+     * Reconciles the downloaded-chapter index with the files on disk (DL03). The name of a chapter file or folder
+     * carries its id in `[id]`, which is stable across renames of the title and of the source; a matching file is
+     * re-attached, a missing one is marked as not downloaded, and a file with no chapter is only reported as an orphan
+     * (never deleted, it may belong to a book the database no longer knows).
+     */
+    suspend fun repairIndex(): DownloadRepairReport = withContext(Dispatchers.IO) {
+        val chapters = db.catalog().allChapters().map { it.toDomain() }
+        val known = chapters.associateBy { it.id }
+        val pattern = Regex("""\[(\d+)]""")
+        val found = HashMap<Long, File>()
+        val orphanIds = HashSet<Long>()
+        chaptersDir.walkTopDown().onEnter { it.name != "tmp" && !it.name.endsWith(".tmp") }.forEach { file ->
+            val name = file.name
+            if (name.endsWith(".part") || name.endsWith(".tmp") || name == ".nomedia") return@forEach
+            val id = pattern.find(name)?.groupValues?.getOrNull(1)?.toLongOrNull() ?: return@forEach
+            if (id !in known) {
+                orphanIds += id
+                return@forEach
+            }
+            // Prefer the archive over a directory that may be a leftover of an interrupted unpack.
+            val previous = found[id]
+            if (previous == null || (previous.isDirectory && file.isFile)) found[id] = file
+        }
+        var restored = 0
+        var missing = 0
+        chapters.forEach { chapter ->
+            val existing = chapter.localPath?.let { File(it) }?.takeIf { it.exists() }
+            if (chapter.downloaded) {
+                if (existing == null) {
+                    val disk = found[chapter.id]
+                    if (disk != null) {
+                        db.catalog().setDownloaded(chapter.id, true, disk.path)
+                    } else {
+                        db.catalog().setDownloaded(chapter.id, false, null)
+                        missing++
+                    }
+                } else if (existing.path != chapter.localPath) {
+                    db.catalog().setDownloaded(chapter.id, true, existing.path)
+                }
+            } else {
+                val disk = found[chapter.id]
+                if (disk != null) {
+                    db.catalog().setDownloaded(chapter.id, true, disk.path)
+                    restored++
+                }
+            }
+        }
+        DownloadRepairReport(restored = restored, missing = missing, orphans = orphanIds.size)
     }
 
     fun storageUsage(): StorageUsage = StorageUsage(
@@ -778,6 +929,9 @@ class DownloadRepository(
 
         /** First pause before an automatic retry (doubled for every further attempt). */
         const val RETRY_BASE_MS = 5_000L
+
+        /** A single wait for a Retry-After is re-checked at least this often, so the worker stays responsive. */
+        const val RETRY_WAIT_MAX_MS = 10 * 60_000L
 
         /** [name] in [dir], or "name (1).ext", "name (2).ext"… when taken. Long names are shortened (255-byte limit). */
         fun uniqueFile(dir: File, name: String): File {

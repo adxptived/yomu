@@ -6,5 +6,5 @@ import org.koin.dsl.module
 
 val settingsModule = module {
     single { AppUpdates(androidContext(), get(), background = WorkUpdateBackground(androidContext())) }
-    viewModel { SettingsViewModel(androidContext(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { SettingsViewModel(androidContext(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 }

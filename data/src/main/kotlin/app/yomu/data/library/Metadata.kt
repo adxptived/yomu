@@ -27,6 +27,8 @@ data class ExtractedMeta(
     val authors: List<String> = emptyList(),
     val series: String? = null,
     val seriesIndex: Float? = null,
+    /** Upload date from ComicInfo, milliseconds; 0 when the file does not say. */
+    val uploadDate: Long = 0,
     val language: String? = null,
     val description: String? = null,
     val publisher: String? = null,
@@ -119,23 +121,27 @@ object MetadataExtractor {
     fun comicMeta(c: ResourceContainer, fallbackTitle: String): ExtractedMeta {
         val images = Containers.imageEntries(c)
         val info = c.entries.firstOrNull { it.substringAfterLast('/').equals("ComicInfo.xml", true) }?.let { c.read(it) }
-            ?.let { runCatching { EpubParser.parseXml(it) }.getOrNull() }
-        fun field(name: String) = info?.firstLocal(name)?.text()?.trim()?.takeIf { it.isNotEmpty() }
-        val series = field("Series")
-        val number = field("Number")
-        val title = field("Title") ?: series?.let { s -> number?.let { "$s #$it" } ?: s } ?: fallbackTitle
+            ?.let { runCatching { String(it, Charsets.UTF_8) }.getOrNull() }
+            ?.let { ComicInfoXml.parse(it) }
+        fun field(value: String) = value.trim().takeIf { it.isNotEmpty() }
+        val series = field(info?.series.orEmpty())
+        val number = field(info?.number.orEmpty())
+        val title = field(info?.title.orEmpty()) ?: series?.let { s -> number?.let { "$s #$it" } ?: s } ?: fallbackTitle
         return ExtractedMeta(
             title = title,
-            authors = listOfNotNull(field("Writer"), field("Penciller")).flatMap { it.split(',') }.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
+            authors = listOfNotNull(field(info?.writer.orEmpty()), field(info?.penciller.orEmpty()))
+                .flatMap { it.split(',') }.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
             series = series,
             seriesIndex = number?.toFloatOrNull(),
-            language = field("LanguageISO"),
-            description = field("Summary"),
-            publisher = field("Publisher"),
-            subjects = (field("Genre")?.split(',').orEmpty() + field("Tags")?.split(',').orEmpty()).map { it.trim() }.filter { it.isNotEmpty() },
+            uploadDate = info?.uploadDate ?: 0,
+            language = field(info?.languageIso.orEmpty()),
+            description = field(info?.summary.orEmpty()),
+            publisher = field(info?.extra?.get("Publisher").orEmpty()),
+            subjects = (info?.genre?.split(',').orEmpty() + info?.extra?.get("Tags")?.split(',').orEmpty())
+                .map { it.trim() }.filter { it.isNotEmpty() },
             cover = images.firstOrNull()?.let { c.read(it) },
             isManga = true,
-            rtl = field("Manga") == "YesAndRightToLeft",
+            rtl = info?.manga == true,
         )
     }
 

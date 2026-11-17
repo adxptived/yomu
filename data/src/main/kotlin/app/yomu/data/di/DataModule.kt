@@ -62,6 +62,7 @@ val dataModule = module {
     single { AudiobookDownloader(androidContext(), get()) { get<NetworkClients>().downloadClient } }
     single { ImportService(androidContext(), get(), get(), get(), get()) }
     single { app.yomu.data.library.ImportReportStore(androidContext()) }
+    single { app.yomu.data.library.ScanReportStore(get()) }
     single { app.yomu.data.work.UpdateRunStore(get()) }
     single { MlKitEngine(androidContext()) }
     single { TranslationService(get(), get(), get(), get(), get()) }
@@ -83,8 +84,12 @@ val dataModule = module {
     single { TrackerStore(androidContext()) }
     // TrackerKeys come from the app module (its BuildConfig). Created at start: reading a chapter moves the trackers.
     single(createdAtStart = true) {
+        val catalog = get<CatalogRepository>()
+        val retention = get<DownloadRepository>()
         TrackerManager(androidContext(), get(), get(), get(), get(), get()).also { m ->
-            get<CatalogRepository>().chaptersReadListener = m::onChaptersRead
+            catalog.chaptersReadListeners += { id -> m.onChaptersRead(id) }
+            // Retention and "download ahead" share the same event; they run off the caller's thread.
+            catalog.chaptersReadListeners += { id -> retention.onChapterReadAsync(id) }
         }
     }
     single { OcrService(get()) }

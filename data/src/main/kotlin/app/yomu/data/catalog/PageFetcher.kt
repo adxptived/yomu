@@ -95,7 +95,7 @@ object PageFetcher {
                 client.newCall(req).await()
             }
             return response.use { r ->
-                if (!r.isSuccessful) throw HttpStatusException(r.code, url)
+                if (!r.isSuccessful) throw HttpStatusException(r.code, url, app.yomu.source.RetryAfter.parse(r.header("Retry-After"), System.currentTimeMillis()))
                 tmp.outputStream().use { r.body.byteStream().copyTo(it) }
                 finish(tmp, out, r.body.contentType()?.let { "${it.type}/${it.subtype}" })
             }

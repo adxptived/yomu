@@ -535,6 +535,27 @@ internal fun ColumnScope.LibrarySection(vm: SettingsViewModel) {
     val context = LocalContext.current
     ChoicePref(vm, s.autoScanHours, R.string.set_scan_interval, listOf(1, 6, 12, 24, 48).map { it to hoursLabel(context, it) }, after = { vm.rescheduleScan() })
     PreferenceItem(stringResource(R.string.set_scan_now), onClick = vm::scanNow, icon = settingIcon(R.string.set_scan_now))
+    // A missing SAF root is "temporarily unavailable", not "the library is empty": report it and keep every entry.
+    val lastScan by vm.lastScan.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { vm.loadLastScan() }
+    lastScan?.let { report ->
+        Text(
+            stringResource(R.string.set_scan_last, report.added),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+        )
+        report.unavailable.forEach { folder ->
+            val reason = folder.reason
+            Text(
+                if (reason.isNullOrBlank()) stringResource(R.string.set_scan_unavailable, folder.name)
+                else stringResource(R.string.set_scan_unavailable_reason, folder.name, reason),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+            )
+        }
+    }
     removeFolder?.let { f ->
         ConfirmDialog(stringResource(R.string.set_remove_folder), android.net.Uri.decode(f), stringResource(CoreR.string.delete), onConfirm = { vm.removeScanFolder(f) }, onDismiss = { removeFolder = null })
     }
@@ -955,9 +976,161 @@ internal fun ColumnScope.DownloadsSection(vm: SettingsViewModel, links: Settings
         vm, s.downloadMaxMb, R.string.set_download_max,
         listOf(0, 500, 1000, 2000, 5000, 10_000).map { mb -> mb to if (mb == 0) off else "$mb MB" },
     )
+    // Protected shelves: a download there is never removed automatically, and "delete read" on the shelf still honours it.
+    val shelves by vm.shelves.collectAsStateWithLifecycle()
+    val protectedShelves by s.downloadProtectedShelves.state()
+    val autoShelves by s.autoDownloadShelves.state()
+    var pickProtected by remember { mutableStateOf(false) }
+    var pickAuto by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { vm.loadShelves() }
+    fun shelfNames(ids: Set<String>) = shelves.filter { it.id.toString() in ids }.joinToString(", ") { it.name }
+    PreferenceItem(
+        stringResource(R.string.set_download_protected),
+        shelfNames(protectedShelves).ifEmpty { stringResource(R.string.set_download_protected_none) },
+        onClick = { pickProtected = true },
+        icon = settingIcon(R.string.set_download_protected),
+    )
+    PreferenceItem(
+        stringResource(R.string.set_auto_download_shelves),
+        shelfNames(autoShelves).ifEmpty { stringResource(R.string.set_auto_download_shelves_all) },
+        onClick = { pickAuto = true },
+        icon = settingIcon(R.string.set_auto_download_shelves),
+    )
+    PreferenceItem(
+        stringResource(R.string.set_retention_preview),
+        stringResource(R.string.set_retention_preview_sum),
+        onClick = vm::loadRetentionPreview,
+        icon = settingIcon(R.string.set_retention_preview),
+    )
+    PreferenceItem(
+        stringResource(R.string.set_repair_downloads),
+        stringResource(R.string.set_repair_downloads_sum),
+        onClick = vm::repairDownloads,
+        icon = settingIcon(R.string.set_repair_downloads),
+    )
+    if (pickProtected) {
+        ShelfChoiceDialog(
+            title = stringResource(R.string.set_download_protected),
+            hint = stringResource(R.string.set_download_protected_hint),
+            emptyText = stringResource(R.string.set_shelf_pick_empty),
+            shelves = shelves,
+            selected = protectedShelves,
+            onSave = { vm.set(s.downloadProtectedShelves, it); pickProtected = false },
+            onDismiss = { pickProtected = false },
+        )
+    }
+    if (pickAuto) {
+        ShelfChoiceDialog(
+            title = stringResource(R.string.set_auto_download_shelves),
+            hint = stringResource(R.string.set_auto_download_shelves_hint),
+            emptyText = stringResource(R.string.set_shelf_pick_empty),
+            shelves = shelves,
+            selected = autoShelves,
+            onSave = { vm.set(s.autoDownloadShelves, it); pickAuto = false },
+            onDismiss = { pickAuto = false },
+        )
+    }
+    val preview by vm.retentionPreview.collectAsStateWithLifecycle()
+    preview?.let { p ->
+        AlertDialog(
+            onDismissRequest = vm::dismissRetentionPreview,
+            title = { Text(stringResource(R.string.set_retention_title)) },
+            text = {
+                Column {
+                    if (p.isEmpty) {
+                        Text(stringResource(R.string.set_retention_empty))
+                    } else {
+                        Text(stringResource(R.string.set_retention_summary, p.delete.size, Files.humanSize(p.plan.bytesFreed)))
+                        p.delete.take(8).forEach { item ->
+                            Text(
+                                "${item.title} — ${item.chapter}",
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (p.delete.size > 8) {
+                            Text(
+                                stringResource(R.string.set_retention_more, p.delete.size - 8),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (p.keptReasons.isNotEmpty()) {
+                        val labels = p.keptReasons.entries.mapNotNull { (reason, count) ->
+                            val res = when (reason) {
+                                app.yomu.domain.download.RetentionKeep.BOOKMARKED -> R.string.set_retention_kept_bookmarked
+                                app.yomu.domain.download.RetentionKeep.PROTECTED_SHELF -> R.string.set_retention_kept_shelf
+                                app.yomu.domain.download.RetentionKeep.RECENT -> R.string.set_retention_kept_recent
+                                app.yomu.domain.download.RetentionKeep.UNREAD -> R.string.set_retention_kept_unread
+                                app.yomu.domain.download.RetentionKeep.NOT_OWNED -> R.string.set_retention_kept_not_owned
+                            }
+                            stringResource(res, count)
+                        }
+                        Text(
+                            stringResource(R.string.set_retention_kept, labels.joinToString(", ")),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = Dimens.s),
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = vm::applyRetention, enabled = !p.isEmpty) {
+                    Text(stringResource(R.string.set_retention_delete, p.delete.size))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = vm::dismissRetentionPreview) { Text(stringResource(app.yomu.core.ui.R.string.close)) }
+            },
+        )
+    }
     SwitchPref(vm, s.packCbz, R.string.set_pack_cbz, R.string.set_pack_cbz_sum)
     PreferenceItem(stringResource(R.string.set_open_downloads), onClick = links.onOpenDownloads, icon = settingIcon(R.string.set_open_downloads))
     PreferenceItem(stringResource(R.string.set_storage), stringResource(R.string.set_storage_sum), onClick = onOpenStorage, icon = settingIcon(R.string.set_storage))
+}
+
+@Composable
+private fun ShelfChoiceDialog(
+    title: String,
+    hint: String,
+    emptyText: String,
+    shelves: List<app.yomu.domain.model.BookCollection>,
+    selected: Set<String>,
+    onSave: (Set<String>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var chosen by remember { mutableStateOf(selected) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = Dimens.s))
+                if (shelves.isEmpty()) {
+                    Text(emptyText)
+                }
+                shelves.forEach { shelf ->
+                    val id = shelf.id.toString()
+                    Row(
+                        Modifier.fillMaxWidth().clickable { chosen = if (id in chosen) chosen - id else chosen + id }.padding(vertical = Dimens.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = id in chosen, onCheckedChange = null)
+                        Text(shelf.name, Modifier.padding(start = Dimens.s))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(chosen) }) { Text(stringResource(app.yomu.core.ui.R.string.save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(app.yomu.core.ui.R.string.cancel)) }
+        },
+    )
 }
 
 @Composable

@@ -55,9 +55,10 @@ abstract class HttpSource : CatalogSource {
         if (!response.isSuccessful) {
             val code = response.code
             val server = response.header("Server").orEmpty()
+            val retryAfter = app.yomu.source.RetryAfter.parse(response.header("Retry-After"), System.currentTimeMillis())
             response.close()
             if ((code == 403 || code == 503) && server.contains("cloudflare", ignoreCase = true)) throw WebViewRequiredException(url)
-            throw HttpStatusException(code, url)
+            throw HttpStatusException(code, url, retryAfter)
         }
         return response
     }

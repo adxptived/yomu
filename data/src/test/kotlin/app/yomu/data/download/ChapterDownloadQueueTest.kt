@@ -3,12 +3,16 @@ package app.yomu.data.download
 import android.content.Context
 import androidx.work.Configuration
 import androidx.work.WorkManager
+import app.yomu.core.database.CatalogCollectionCrossRef
+import app.yomu.core.database.CollectionEntity
 import app.yomu.core.database.DownloadTaskEntity
 import app.yomu.core.database.YomuDatabase
 import app.yomu.core.datastore.AppSettings
 import app.yomu.core.network.NetworkClients
 import app.yomu.data.R
 import app.yomu.data.catalog.CatalogRepository
+import app.yomu.data.catalog.TitleUpdate
+import app.yomu.data.catalog.UpdateCheckResult
 import app.yomu.data.library.ImportService
 import app.yomu.data.source.SourceManager
 import app.yomu.domain.model.ChapterInfo
@@ -58,6 +62,7 @@ class ChapterDownloadQueueTest {
     private lateinit var catalog: CatalogRepository
     private lateinit var downloads: DownloadRepository
     private lateinit var source: FakeSource
+    private lateinit var sources: SourceManager
     private val requests: MutableList<String> = Collections.synchronizedList(mutableListOf())
     private val flaky = HashSet<String>()
 
@@ -90,8 +95,13 @@ class ChapterDownloadQueueTest {
             downloadRetries.set(0)
         }
         source = FakeSource(server.url("/").toString().trimEnd('/'))
-        val sources = mockk<SourceManager>(relaxed = true)
-        every { sources.get(any()) } answers { if (firstArg<Long>() == FakeSource.ID) source else null }
+        sources = mockk<SourceManager>(relaxed = true)
+        every { sources.get(any()) } answers {
+            when (firstArg<Long>()) {
+                FakeSource.ID -> source
+                else -> null
+            }
+        }
         val net = NetworkClients(context)
         catalog = CatalogRepository(context, db, sources, settings, { net.client })
         downloads = DownloadRepository(context, db, settings, net, catalog, mockk<ImportService>(relaxed = true))
@@ -214,6 +224,85 @@ class ChapterDownloadQueueTest {
         assertEquals(DownloadStatus.QUEUED.name, task(c3.id)!!.status)
     }
 
+    @Test
+    fun aBusySourceDoesNotStarveAnother() = runBlocking {
+        // One source with six chapters and one with a single chapter, two workers, two per source: the single task
+        // must not wait for the whole other source.
+        settings.maxParallelDownloads.set(2)
+        source.chapters = (1..6).map { SChapter("/many$it", "Many $it", it.toFloat()) }
+        val other = FakeSource(server.url("/").toString().trimEnd('/'), id = SECOND_SOURCE)
+        other.chapters = listOf(SChapter("/one", "Only one", 1f))
+        every { sources.get(SECOND_SOURCE) } returns other
+
+        val busy = catalog.upsert(FakeSource.ID, SItem(url = "/many", title = "Many"))
+        catalog.refresh(busy)
+        val single = catalog.upsert(SECOND_SOURCE, SItem(url = "/one-title", title = "One"))
+        catalog.refresh(single)
+        assertEquals(6, downloads.enqueueUnread(busy))
+        assertEquals(1, downloads.enqueueUnread(single))
+
+        downloads.runQueue { }
+
+        val otherAt = requests.indexOfFirst { it.startsWith("/img/one/") }
+        val lastManyAt = requests.indexOfLast { it.startsWith("/img/many") }
+        assertTrue("the single chapter of the second source never ran", otherAt >= 0)
+        assertTrue("it only ran after the busy source finished", otherAt < lastManyAt)
+        // Both sources finished: fairness delayed nothing permanently.
+        assertEquals(0, db.downloads().withStatus(listOf(DownloadStatus.QUEUED.name, DownloadStatus.RUNNING.name, DownloadStatus.FAILED.name)).size)
+    }
+
+    @Test
+    fun retentionPreviewNamesFilesAndRechecksProtection() = runBlocking {
+        val entryId = addTitle()
+        val c1 = chapter(entryId, "/c1")
+        val file = File(context.filesDir, "retention-c1.cbz").apply { writeBytes(ByteArray(1_024)) }
+        db.catalog().setDownloaded(c1.id, true, file.path)
+        // DAO directly: the repository listener would delete the file before the preview exists.
+        db.catalog().setRead(listOf(c1.id), true)
+        settings.autoDeleteRead.set(true)
+
+        val preview = downloads.retentionPreview()
+        assertEquals(listOf(c1.id), preview.plan.delete)
+        assertEquals("Test Manga", preview.delete.single().title)
+        assertEquals(1_024L, preview.plan.bytesFreed)
+
+        // A bookmark added after the preview protects the file when the plan is applied.
+        db.catalog().setBookmarked(listOf(c1.id), true)
+        assertEquals(0, downloads.applyRetention(preview.plan.delete))
+        assertTrue(file.exists())
+
+        db.catalog().setBookmarked(listOf(c1.id), false)
+        assertEquals(1, downloads.applyRetention(preview.plan.delete))
+        assertFalse(file.exists())
+        assertFalse(catalog.chapter(c1.id)!!.downloaded)
+    }
+
+    @Test
+    fun autoDownloadHonoursItsShelfScopeAndDownloadAheadAfterReading() = runBlocking {
+        val entryId = addTitle()
+        catalog.setFavorite(entryId, true)
+        val shelf = db.collections().insert(CollectionEntity(name = "Auto", sortOrder = 1))
+        val other = db.collections().insert(CollectionEntity(name = "Other", sortOrder = 2))
+        db.collections().addItems(listOf(CatalogCollectionCrossRef(entryId, shelf)))
+        settings.autoDownloadNew.set(true)
+        val newChapter = chapter(entryId, "/c1")
+        val result = UpdateCheckResult(listOf(TitleUpdate(entryId, "Test Manga", listOf(newChapter.id))), emptyList(), checked = 1)
+
+        settings.autoDownloadShelves.set(setOf(other.toString()))
+        assertEquals(0, downloads.autoDownloadNew(result))
+        settings.autoDownloadShelves.set(setOf(shelf.toString()))
+        assertEquals(1, downloads.autoDownloadNew(result))
+        downloads.clearQueue()
+
+        // "Download ahead" after finishing a chapter uses the same event and the same scope.
+        settings.autoDownloadShelves.set(emptySet())
+        settings.downloadAhead.set(2)
+        db.catalog().setRead(listOf(newChapter.id), true)
+        downloads.onChapterRead(newChapter.id)
+        val queued = db.downloads().withStatus(listOf(DownloadStatus.QUEUED.name)).mapNotNull { it.chapterId }.toSet()
+        assertEquals(setOf("/c2", "/c3").map { chapter(entryId, it).id }.toSet(), queued)
+    }
+
     private suspend fun addTitle(): Long {
         val id = catalog.upsert(FakeSource.ID, SItem(url = "/title", title = "Test Manga"))
         catalog.refresh(id)
@@ -226,8 +315,7 @@ class ChapterDownloadQueueTest {
     private suspend fun task(chapterId: Long): DownloadTaskEntity? =
         db.downloads().withStatus(DownloadStatus.entries.map { it.name }).filter { it.chapterId == chapterId }.maxByOrNull { it.id }
 
-    private class FakeSource(private val base: String) : CatalogSource {
-        override val id = ID
+    private class FakeSource(private val base: String, override val id: Long = ID) : CatalogSource {
         override val name = "Fake"
         override val lang = "en"
         override val content = SourceContent.MANGA
@@ -259,6 +347,8 @@ class ChapterDownloadQueueTest {
     }
 
     private companion object {
+        const val SECOND_SOURCE = 4343L
+
         /** Newest first, like Mihon extensions; chapter 2 also has a release by a second group. */
         val INITIAL = listOf(
             SChapter("/c3", "Chapter 3", 3f, scanlator = "Alpha"),

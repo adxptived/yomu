@@ -133,6 +133,9 @@ class AppSettings(context: Context) {
     val scanFolders = stringSet("scan_folders")
     val autoScan = bool("auto_scan", true)
     val autoScanHours = int("auto_scan_hours", 12)
+
+    /** The last library scan (JSON of domain `ScanReport`); empty = never recorded. */
+    val scanLastReport = string("scan_last_report", "")
     val askDeleteFiles = bool("ask_delete_files", true)
 
     // Reader defaults
@@ -285,6 +288,8 @@ class AppSettings(context: Context) {
 
     /** Queue new chapters of library titles found by the update check. */
     val autoDownloadNew = bool("auto_download_new", false)
+    /** Shelf ids automatic downloads are limited to (stored as strings); empty = every shelf. */
+    val autoDownloadShelves = stringSet("auto_download_shelves")
 
     /** While reading a library title, keep this many next chapters downloaded (0 = off). */
     val downloadAhead = int("download_ahead", 0)

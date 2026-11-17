@@ -484,8 +484,73 @@ class DatabaseMigrationTest {
         }
     }
 
+    /** 15 → 16 adds a persisted retry time; an existing queued task is immediately ready. */
+    @Test
+    fun migrates15To16AddingDownloadRetryTime() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val file = context.getDatabasePath("migration-test-15.db").apply { parentFile?.mkdirs(); delete() }
+        createFromSchema(file, 15)
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use { sql ->
+            sql.execSQL(
+                "INSERT INTO downloads (kind, title, url, status, bytesDownloaded, bytesTotal, pagesDone, pagesTotal, createdAt, updatedAt) " +
+                    "VALUES ('BOOK', 'Book', 'https://example.org/book.epub', 'QUEUED', 0, 0, 0, 0, 1, 1)",
+            )
+        }
+        val room = Room.databaseBuilder(context, YomuDatabase::class.java, file.path).addMigrations(*YomuDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val db = room.openHelper.writableDatabase
+            assertEquals(CURRENT_VERSION, db.version)
+            db.query("SELECT title, retryAt, status FROM downloads").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("Book", c.getString(0))
+                assertEquals(0L, c.getLong(1))
+                assertEquals("QUEUED", c.getString(2))
+            }
+            db.execSQL("UPDATE downloads SET retryAt = 1234")
+            db.query("SELECT retryAt FROM downloads").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals(1234L, c.getLong(0))
+            }
+        } finally {
+            room.close()
+            file.delete()
+        }
+    }
+
+    /** 16 → 17 adds the ComicInfo upload date to a book; existing books say "unknown". */
+    @Test
+    fun migrates16To17AddingComicInfoUploadDate() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val file = context.getDatabasePath("migration-test-16.db").apply { parentFile?.mkdirs(); delete() }
+        createFromSchema(file, 16)
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use { sql ->
+            sql.execSQL(
+                "INSERT INTO books (title, sortTitle, authorsText, format, uri, isLinked, fileSize, status, isManga, addedAt, progress, favorite, rating) " +
+                    "VALUES ('Book', 'Book', '', 'EPUB', 'file:///book.epub', 0, 10, 'READING', 0, 1, 0.5, 0, 0)",
+            )
+        }
+        val room = Room.databaseBuilder(context, YomuDatabase::class.java, file.path).addMigrations(*YomuDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val db = room.openHelper.writableDatabase
+            assertEquals(CURRENT_VERSION, db.version)
+            db.query("SELECT title, uploadDate FROM books").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("Book", c.getString(0))
+                assertEquals(0L, c.getLong(1))
+            }
+            db.execSQL("UPDATE books SET uploadDate = 1700000000000")
+            db.query("SELECT uploadDate FROM books").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals(1_700_000_000_000L, c.getLong(0))
+            }
+        } finally {
+            room.close()
+            file.delete()
+        }
+    }
+
     private companion object {
-        const val CURRENT_VERSION = 15
+        const val CURRENT_VERSION = 17
     }
 }
 

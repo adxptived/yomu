@@ -108,7 +108,7 @@ class Release200Test {
         val koin = GlobalContext.get()
         val vm = SettingsViewModel(
             context, settings, koin.get(), koin.get(), koin.get(), koin.get(), AppUpdates(context, settings, fetch = { null }),
-            koin.get(), koin.get(), koin.get(), koin.get(),
+            koin.get(), koin.get(), koin.get(), koin.get(), koin.get(),
         )
         compose.setContent {
             YomuTheme(dark) { SettingsScreen(viewModel = vm, links = SettingsLinks(), initialSection = section) }

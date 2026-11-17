@@ -45,6 +45,8 @@ data class BookEntity(
     val favorite: Boolean = false,
     /** The reader's own score, 0 (not rated) to 5. */
     val rating: Int = 0,
+    /** Upload date carried by ComicInfo (milliseconds), 0 when unknown. Added in schema 17. */
+    @ColumnInfo(defaultValue = "0") val uploadDate: Long = 0,
 )
 
 /** Reading position inside one chapter of a text book; restored when the reader comes back to that chapter. */
@@ -325,6 +327,8 @@ data class DownloadTaskEntity(
     @ColumnInfo(defaultValue = "0") val attempts: Int = 0,
     /** Higher runs first ("move to top"); ties by [createdAt] (schema 3). */
     @ColumnInfo(defaultValue = "0") val priority: Int = 0,
+    /** Earliest time this queued task may run after a server's Retry-After; 0 = immediately (schema 16). */
+    @ColumnInfo(defaultValue = "0") val retryAt: Long = 0,
 )
 
 @Entity(tableName = "reading_sessions", indices = [Index("startedAt"), Index("bookId")])

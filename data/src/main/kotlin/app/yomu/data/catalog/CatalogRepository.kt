@@ -296,12 +296,16 @@ class CatalogRepository(
         if (favorite && dao.chapters(entryId).isEmpty()) runCatching { refresh(entryId) }
     }
 
-    /** Told the title id after its chapters were read or marked as read (tracking, 2.0.0). */
-    var chaptersReadListener: ((Long) -> Unit)? = null
+    /** Called after a chapter is explicitly marked read or finished, once per title: trackers and retention both listen. */
+    val chaptersReadListeners = mutableListOf<suspend (Long) -> Unit>()
 
     suspend fun setRead(ids: Collection<Long>, read: Boolean) {
         dao.setRead(ids, read)
-        if (read) chaptersReadListener?.let { listener -> ids.mapNotNullTo(HashSet()) { dao.chapter(it)?.itemId }.forEach(listener) }
+        if (read) {
+            ids.mapNotNullTo(HashSet()) { dao.chapter(it)?.itemId }.forEach { itemId ->
+                chaptersReadListeners.forEach { it(itemId) }
+            }
+        }
     }
     suspend fun setBookmarked(ids: Collection<Long>, bookmarked: Boolean) = dao.setBookmarked(ids, bookmarked)
     suspend fun clearNew(entryId: Long) = dao.clearNew(entryId)
@@ -322,8 +326,8 @@ class CatalogRepository(
                 val reading = ChapterOrder.reading(dao.chapters(itemId).map { it.toDomain() })
                 val alternatives = ChapterNavigation.alternativeReleases(reading, chapterId)
                 if (alternatives.isNotEmpty()) dao.setRead(alternatives, true)
+                chaptersReadListeners.forEach { it(itemId) }
             }
-            chaptersReadListener?.let { listener -> dao.chapter(chapterId)?.itemId?.let(listener) }
         }
     }
 

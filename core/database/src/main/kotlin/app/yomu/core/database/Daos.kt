@@ -724,13 +724,30 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads ORDER BY CASE status WHEN 'RUNNING' THEN 0 WHEN 'QUEUED' THEN 1 WHEN 'PAUSED' THEN 2 WHEN 'FAILED' THEN 3 ELSE 4 END, priority DESC, createdAt, id")
     fun observeAll(): Flow<List<DownloadTaskEntity>>
 
-    /** Queued tasks in the order they should run. */
-    @Query("SELECT * FROM downloads WHERE status = 'QUEUED' ORDER BY priority DESC, createdAt, id LIMIT :limit")
-    suspend fun nextQueued(limit: Int): List<DownloadTaskEntity>
+    /** Queued tasks in the order they should run, whose retry time has passed. */
+    @Query("SELECT * FROM downloads WHERE status = 'QUEUED' AND retryAt <= :now ORDER BY priority DESC, createdAt, id LIMIT :limit")
+    suspend fun nextQueued(limit: Int, now: Long): List<DownloadTaskEntity>
 
-    /** Next queued task whose source is not busy ([busy] may be empty). */
-    @Query("SELECT * FROM downloads WHERE status = 'QUEUED' AND (sourceId IS NULL OR sourceId NOT IN (:busy)) ORDER BY priority DESC, createdAt, id LIMIT 1")
-    suspend fun nextQueuedExcluding(busy: Collection<Long>): DownloadTaskEntity?
+    /** Next queued task whose source is not busy ([busy] may be empty) and whose retry time has passed. */
+    @Query(
+        "SELECT * FROM downloads WHERE status = 'QUEUED' AND retryAt <= :now AND (sourceId IS NULL OR sourceId NOT IN (:busy)) " +
+            "ORDER BY priority DESC, createdAt, id LIMIT 1",
+    )
+    suspend fun nextQueuedExcluding(busy: Collection<Long>, now: Long): DownloadTaskEntity?
+
+    /**
+     * Next queued task from a source that has nothing running. Used first, so one source cannot take every worker
+     * slot while another source waits; the busy-source query above remains the fallback.
+     */
+    @Query(
+        "SELECT * FROM downloads WHERE status = 'QUEUED' AND retryAt <= :now AND (sourceId IS NULL OR sourceId NOT IN (:active)) " +
+            "ORDER BY priority DESC, createdAt, id LIMIT 1",
+    )
+    suspend fun nextQueuedFromOtherSources(active: Collection<Long>, now: Long): DownloadTaskEntity?
+
+    /** When the next delayed retry becomes ready, or null when nothing is waiting for a server's Retry-After. */
+    @Query("SELECT MIN(retryAt) FROM downloads WHERE status = 'QUEUED' AND retryAt > :now")
+    suspend fun nextRetryAt(now: Long): Long?
 
     @Query("SELECT * FROM downloads WHERE status IN (:statuses)")
     suspend fun withStatus(statuses: Collection<String>): List<DownloadTaskEntity>
@@ -748,11 +765,15 @@ interface DownloadDao {
     suspend fun setPriority(ids: Collection<Long>, priority: Int, at: Long)
 
     /** Back to the queue after a transient error, counting the attempt. */
-    @Query("UPDATE downloads SET status = 'QUEUED', attempts = :attempts, error = :error, updatedAt = :at WHERE id = :id")
+    @Query("UPDATE downloads SET status = 'QUEUED', attempts = :attempts, error = :error, updatedAt = :at, retryAt = 0 WHERE id = :id")
     suspend fun requeue(id: Long, attempts: Int, error: String?, at: Long)
 
+    /** Back to the queue no earlier than [retryAt] (a server's Retry-After, or an exponential wait). */
+    @Query("UPDATE downloads SET status = 'QUEUED', attempts = :attempts, error = :error, updatedAt = :at, retryAt = :retryAt WHERE id = :id")
+    suspend fun requeueAt(id: Long, attempts: Int, error: String?, at: Long, retryAt: Long)
+
     /** Manual retry: failed or paused tasks go back to the queue with a fresh retry budget. */
-    @Query("UPDATE downloads SET status = 'QUEUED', attempts = 0, error = NULL, updatedAt = :at WHERE id IN (:ids)")
+    @Query("UPDATE downloads SET status = 'QUEUED', attempts = 0, error = NULL, updatedAt = :at, retryAt = 0 WHERE id IN (:ids)")
     suspend fun restart(ids: Collection<Long>, at: Long)
 
     @Query("SELECT id FROM downloads WHERE status = :status")

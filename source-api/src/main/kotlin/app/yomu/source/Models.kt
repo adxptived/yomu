@@ -89,7 +89,29 @@ class SourceException(message: String, cause: Throwable? = null) : Exception(mes
 /** Thrown when a site requires a browser check (Cloudflare and similar). The app opens a WebView for [url]. */
 class WebViewRequiredException(val url: String) : Exception("Browser verification required for $url")
 
-class HttpStatusException(val code: Int, val url: String) : Exception("HTTP $code for $url")
+/**
+ * A non-success HTTP answer. [retryAfterMs] carries a server's `Retry-After` when the response had one, so a queue can
+ * wait exactly as long as the server asked instead of guessing from an exponential backoff.
+ */
+class HttpStatusException(val code: Int, val url: String, val retryAfterMs: Long? = null) : Exception("HTTP $code for $url")
+
+/** Parses a `Retry-After` header: delay-seconds or an HTTP-date. A bad value is "no advice", not an error. */
+object RetryAfter {
+    /** Upper bound for a server-provided wait; a malformed or absurd value must not park a task for days. */
+    const val MAX_MS: Long = 24 * 60 * 60_000L
+
+    fun parse(value: String?, now: Long): Long? {
+        val text = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        text.toLongOrNull()?.let { seconds ->
+            if (seconds < 0) return null
+            return (seconds * 1_000L).coerceAtMost(MAX_MS)
+        }
+        return runCatching {
+            val at = java.time.ZonedDateTime.parse(text, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli()
+            (at - now).coerceIn(0L, MAX_MS)
+        }.getOrNull()
+    }
+}
 
 /** [SBookLink.mimeType] of a feed of audio chapters (RSS with enclosures, as podcasts and LibriVox publish). */
 const val MIME_AUDIO_FEED = "application/rss+xml"

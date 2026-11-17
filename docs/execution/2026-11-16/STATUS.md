@@ -1115,5 +1115,71 @@ push or release was made.
 
 **Device/live:** `DEVICE_PENDING` — adding the widget to a launcher, resizing it, incognito/lock behaviour, and a tap opening the chapter after the process was killed.
 
+---
+
+## DL01 (remainder) — a server's Retry-After and source fairness
+
+**Status:** `CODE_VERIFIED`.
+
+| File | Change |
+|---|---|
+| `source-api/.../Models.kt` | `HttpStatusException.retryAfterMs`; `RetryAfter.parse` accepts delay-seconds or an HTTP date, rejects nonsense and caps the wait at 24 h. |
+| `source-api/src/test/.../RetryAfterTest.kt` | NEW. 4 tests. |
+| `source-api/.../HttpSource.kt`, `data/.../catalog/PageFetcher.kt`, `data/.../download/DownloadRepository.kt` | The header is read where the non-success response exists. |
+| `data/.../download/DownloadPolicy.kt` | `retryAfterMs` and `waitBeforeRetryMs`: the server's advice wins when it is longer, never shortens the normal backoff. |
+| `data/src/test/.../DownloadPolicyTest.kt` | A Retry-After inside a 429 is honoured; short advice does not shorten backoff; no advice uses the exponential wait. |
+| `core/database/.../Entities.kt`, `Daos.kt`, `YomuDatabase.kt` | `downloads.retryAt`, schema 16/migration; queued queries only return a task whose time has come; `nextRetryAt`. |
+| `data/.../download/DownloadRepository.kt` | A retry is persisted (`requeueAt`) instead of sleeping in a worker; the worker wakes for the next scheduled retry. `claimNext` first takes a task from a source with nothing running, so one source cannot hold every slot. |
+| `data/src/test/.../ChapterDownloadQueueTest.kt` | NEW fairness test: a second source with one chapter runs before a six-chapter source finishes; `DownloadRepairTest` and the existing notification tests stay green. |
+| `data/src/test/.../DatabaseMigrationTest.kt` | `CURRENT_VERSION = 16`; a 15 → 16 migration test. |
+
+**Commands:** `:source-api:test --tests RetryAfterTest`, `:data:testDebugUnitTest --tests ChapterDownloadQueueTest --tests DownloadPolicyTest --tests DatabaseMigrationTest` → `BUILD SUCCESSFUL` (the fairness test failed once until the source-first claim was added; recorded, not hidden).
+
+## DL02 (remainder) — preview, protected shelves, auto-download scope
+
+**Status:** `CODE_VERIFIED`.
+
+| File | Change |
+|---|---|
+| `data/.../download/RetentionPreview.kt` | NEW. Named chapters, bytes and the count per keep reason; nothing is deleted by a preview. |
+| `data/.../download/DownloadRepository.kt` | `retentionPreview`, `applyRetention` (re-checks ownership/bookmark/protected shelf at apply time), `autoDownloadShelfAllows`, and `onChapterRead` now also performs download-ahead. |
+| `data/.../catalog/CatalogRepository.kt` | `chaptersReadListeners` list instead of a single listener; retention and tracking both receive the event. |
+| `data/.../di/DataModule.kt` | Both listeners are registered; retention runs off the caller's thread. |
+| `core/datastore/.../AppSettings.kt` | `auto_download_shelves`. |
+| `feature/settings/.../SettingsViewModel.kt`, `SettingsSections.kt` | Protected-shelf and auto-download-shelf pickers, a cleanup preview dialog (names, bytes, protected reasons), and a delete action. |
+| `feature/settings/res/values{,-ru}/strings.xml` | Preview, picker and result strings. |
+| `data/src/test/.../ChapterDownloadQueueTest.kt` | NEW: the preview names a file, a bookmark added after the preview prevents deletion, apply deletes after it is removed; auto-download honours its shelf and download-ahead queues the next two after reading. |
+
+## DL03 (remainder) — index repair, unavailable SAF root, ComicInfo round-trip
+
+**Status:** `CODE_VERIFIED` (a real SAF provider/card removal is `DEVICE_PENDING`).
+
+| File | Change |
+|---|---|
+| `data/.../download/DownloadRepository.kt` | `repairIndex()` matches the stable `[chapterId]` in file/folder names: re-attaches a file the database lost, marks missing files not downloaded, corrects a moved path, reports orphans without deleting them. App-owned download directories now really get `.nomedia`. |
+| `data/.../download/DownloadRepairReport.kt` | NEW. restored/missing/orphans. |
+| `data/src/test/.../DownloadRepairTest.kt` | NEW. A file on disk is re-attached, a deleted one is marked missing with a null path, an orphan is reported and still exists. |
+| `domain/.../library/ScanReport.kt` | NEW. Per-folder added/unavailable/reason; a missing root is "temporarily unavailable", never mass deletion. |
+| `data/.../library/ImportService.kt` | `scanFolder` returns `FolderScan` and turns a revoked grant/unmounted card into `unavailable` with the reason. |
+| `data/.../library/ScanReportStore.kt` | NEW. Persists the last scan. |
+| `data/.../work/Workers.kt` | `LibraryScanWorker` records the report for every folder instead of only logging failures. |
+| `feature/settings/.../SettingsViewModel.kt`, `SettingsSections.kt` | Library section shows the last scan and each unavailable folder; Downloads section has "check download index". |
+| `core/datastore/.../AppSettings.kt` | `scan_last_report`. |
+| `data/.../library/ComicInfo.kt` | NEW. One ComicInfo parser/writer for the download and import paths, unknown elements preserved, `<UploadDate>` carried. |
+| `data/.../library/Metadata.kt`, `.../ImportService.kt` | The importer reads the shared format and stores the upload date. |
+| `data/.../download/DownloadRepository.kt` | The CBZ writer uses the same `ComicInfoXml`. |
+| `core/database/.../Entities.kt`, `YomuDatabase.kt`, schema 17 | `books.uploadDate`, migration 16 → 17. |
+| `data/src/test/.../ComicInfoTest.kt`, `data/src/test/.../DatabaseMigrationTest.kt` | NEW round-trip tests (Unicode, HTML-escaped summary, pages, unknown fields, upload date, corrupt XML); 16 → 17 migration. |
+
+**Commands:**
+
+| Command | Result |
+|---|---|
+| `.\gradlew.bat :source-api:test --tests "app.yomu.source.RetryAfterTest"` | `BUILD SUCCESSFUL` |
+| `.\gradlew.bat :data:testDebugUnitTest --tests "app.yomu.data.download.*" --tests "app.yomu.data.db.DatabaseMigrationTest" --tests "app.yomu.data.library.ComicInfoTest"` | `BUILD SUCCESSFUL` |
+| `.\gradlew.bat :feature:settings:compileDebugKotlin :app:compileDebugKotlin` | `BUILD SUCCESSFUL` |
+
+**Device/live:** `DEVICE_PENDING` — a revoked SAF root in the settings, a real card removal, and a launcher-level widget/notification pass. The index repair is covered by real files in Robolectric.
+
 
 

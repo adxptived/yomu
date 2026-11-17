@@ -58,6 +58,8 @@ class SettingsViewModel(
     private val extensions: ExtensionManager,
     /** Library shelves, for the pickers that exclude one from updates. */
     private val tabs: app.yomu.data.library.LibraryTabs,
+    /** Last library scan: a folder that is temporarily unavailable is reported instead of looking like "nothing new". */
+    private val scans: app.yomu.data.library.ScanReportStore,
     private val appScope: AppScope = AppScope(),
 ) : ViewModel() {
     private val _events = Channel<SettingsEvent>(Channel.BUFFERED)
@@ -67,6 +69,44 @@ class SettingsViewModel(
     val fonts = MutableStateFlow<List<File>>(emptyList())
     val logs = MutableStateFlow<List<File>>(emptyList())
     val shelves = MutableStateFlow<List<app.yomu.domain.model.BookCollection>>(emptyList())
+
+    /** The last library scan, shown in the library section. */
+    val lastScan = MutableStateFlow<app.yomu.domain.library.ScanReport?>(null)
+
+    fun loadLastScan() = viewModelScope.launch(ScreenErrors) {
+        lastScan.value = runCatching { scans.last.first() }.getOrNull()
+    }
+
+    /** What a retention run would delete now; null while the dialog is closed or the preview is loading. */
+    val retentionPreview = MutableStateFlow<app.yomu.data.download.RetentionPreview?>(null)
+
+    fun loadRetentionPreview() = viewModelScope.launch(ScreenErrors) {
+        retentionPreview.value = runCatching { downloads.retentionPreview() }.getOrNull()
+    }
+
+    /** Applies the previewed plan after re-checking protections; the preview is refreshed with what is left. */
+    fun applyRetention() = viewModelScope.launch(ScreenErrors) {
+        val plan = retentionPreview.value ?: return@launch
+        if (plan.plan.delete.isEmpty()) return@launch
+        val deleted = runCatching { downloads.applyRetention(plan.plan.delete) }.getOrDefault(0)
+        retentionPreview.value = runCatching { downloads.retentionPreview() }.getOrNull()
+        _events.send(SettingsEvent.Message(R.string.set_retention_deleted, listOf(deleted)))
+    }
+
+    fun dismissRetentionPreview() {
+        retentionPreview.value = null
+    }
+
+    /** Reconciles downloaded-chapter paths with the files on disk; shared files are re-attached, missing ones marked. */
+    fun repairDownloads() = viewModelScope.launch(ScreenErrors) {
+        val report = runCatching { downloads.repairIndex() }.getOrNull() ?: return@launch
+        _events.send(
+            SettingsEvent.Message(
+                R.string.set_repair_done,
+                listOf(report.restored, report.missing, report.orphans),
+            ),
+        )
+    }
 
     /** Loads the shelves for the excluded-shelf picker; a missing list means the dialog shows an empty state. */
     fun loadShelves() = viewModelScope.launch(ScreenErrors) {

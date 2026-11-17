@@ -40,6 +40,17 @@ object RetryPolicy {
         val d = (baseMs shl attempt.coerceIn(0, 10)).coerceIn(0, MAX_DELAY_MS)
         return d + (d * MAX_JITTER * jitter.coerceIn(0.0, 1.0)).toLong()
     }
+
+    /** A server's Retry-After, bounded; null when the failure did not carry one. */
+    fun retryAfterMs(e: Throwable): Long? =
+        (e as? app.yomu.source.HttpStatusException)?.retryAfterMs?.coerceIn(0L, app.yomu.source.RetryAfter.MAX_MS)
+
+    /**
+     * How long to wait before the next attempt: the exponential backoff, or the server's Retry-After when that is
+     * longer. A 429 with "Retry-After: 120" is not retried after five seconds.
+     */
+    fun waitBeforeRetryMs(baseMs: Long, attempt: Int, jitter: Double, e: Throwable): Long =
+        maxOf(delayMs(baseMs, attempt, jitter), retryAfterMs(e) ?: 0L)
 }
 
 /** Decisions about continuing a partly downloaded file with an HTTP Range request. */

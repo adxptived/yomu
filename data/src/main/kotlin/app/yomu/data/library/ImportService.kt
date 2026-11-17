@@ -27,6 +27,7 @@ import app.yomu.domain.model.AudioFiles
 import app.yomu.domain.model.AudiobookManifest
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookFormat
+import app.yomu.domain.library.ScanFolderResult
 import app.yomu.domain.model.ReadingStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -228,6 +229,7 @@ class ImportService(
                 progress = 0f,
                 readerSettingsJson = if (meta.rtl) RTL_SETTINGS else null,
                 scanFolder = scanFolder,
+                uploadDate = meta.uploadDate,
             )
             val id = if (initialFolderRevision == null) books.insert(entity, meta.authors, meta.subjects.take(5))
             else books.rawDb().withTransaction {
@@ -283,6 +285,34 @@ class ImportService(
             val f = File(file.parentFile, "$base ($i)" + if (ext.isNotEmpty()) ".$ext" else "")
             if (!f.exists()) return f
             i++
+        }
+    }
+
+    /**
+     * Scans one SAF tree and never throws for a folder that is temporarily away: a revoked grant or an unplugged card
+     * comes back as [ScanFolderResult.unavailable] with the outcomes that were possible, so the caller can report it
+     * instead of silently treating it as "nothing new".
+     */
+    suspend fun scanFolder(uri: Uri, name: String? = null): FolderScan {
+        val label = name ?: uri.lastPathSegment?.substringAfterLast('/').orEmpty().ifBlank { uri.toString() }
+        return try {
+            val outcomes = scanTree(uri)
+            FolderScan(
+                ScanFolderResult(uri = uri.toString(), name = label, added = outcomes.count { it is ImportOutcome.Added }),
+                outcomes,
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            FolderScan(
+                ScanFolderResult(
+                    uri = uri.toString(),
+                    name = label,
+                    unavailable = true,
+                    reason = e.message?.take(200) ?: e.javaClass.simpleName,
+                ),
+                emptyList(),
+            )
         }
     }
 

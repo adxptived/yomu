@@ -134,7 +134,7 @@ class Release170ScreensTest {
 
     private fun settingsModel(updates: AppUpdates): SettingsViewModel {
         val koin = GlobalContext.get()
-        return SettingsViewModel(context, settings, koin.get(), koin.get(), koin.get(), koin.get(), updates, koin.get(), koin.get(), koin.get(), koin.get())
+        return SettingsViewModel(context, settings, koin.get(), koin.get(), koin.get(), koin.get(), updates, koin.get(), koin.get(), koin.get(), koin.get(), koin.get())
     }
 
     private fun settingsScreen(vm: SettingsViewModel, section: SettingsSection?, icons: AppLauncherIcons = AppLauncherIcons(context)) {

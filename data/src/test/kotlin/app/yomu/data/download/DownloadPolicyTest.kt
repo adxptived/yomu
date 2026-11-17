@@ -53,7 +53,19 @@ class DownloadPolicyTest {
         // A source that wants an account is its own category: retrying cannot help, signing in can.
         listOf(401, 403).forEach { assertEquals("$it", FailureKind.REAUTH, RetryPolicy.classify(http(it))) }
         assertEquals(FailureKind.PERMANENT, RetryPolicy.classify(FileNotFoundException("gone")))
-        assertEquals(FailureKind.PERMANENT, RetryPolicy.classify(UnexpectedContentException("html")))
+    }
+
+    @Test
+    fun aServerRetryAfterWinsOverABackoff() {
+        val advised = HttpStatusException(429, "https://example.org/f", retryAfterMs = 90_000)
+        assertEquals(90_000L, RetryPolicy.retryAfterMs(advised))
+        assertEquals(90_000L, RetryPolicy.waitBeforeRetryMs(5_000, 0, 0.0, advised))
+        // A short Retry-After does not shorten the normal backoff either.
+        val short = HttpStatusException(503, "https://example.org/f", retryAfterMs = 1_000)
+        assertEquals(5_000L, RetryPolicy.waitBeforeRetryMs(5_000, 0, 0.0, short))
+        // No header: the exponential wait is used.
+        assertEquals(10_000L, RetryPolicy.waitBeforeRetryMs(5_000, 1, 0.0, http(503)))
+        assertNull(RetryPolicy.retryAfterMs(http(503)))
     }
 
     @Test

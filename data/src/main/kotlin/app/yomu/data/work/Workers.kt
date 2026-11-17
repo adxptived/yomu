@@ -275,11 +275,14 @@ class LibraryScanWorker(context: Context, params: WorkerParameters) : CoroutineW
     private val settings: AppSettings by inject()
     private val books: app.yomu.data.repository.BookRepositoryImpl by inject()
     private val covers: app.yomu.data.library.CoverStore by inject()
+    private val scans: app.yomu.data.library.ScanReportStore by inject()
 
     override suspend fun doWork(): Result {
-        settings.scanFolders.get().forEach { folder ->
-            runCatching { importer.scanTree(Uri.parse(folder)) }.onFailure { Timber.w(it, "Scan of $folder failed") }
+        val results = settings.scanFolders.get().map { folder ->
+            importer.scanFolder(Uri.parse(folder)).result
         }
+        runCatching { scans.record(app.yomu.domain.library.ScanReport(System.currentTimeMillis(), results)) }
+            .onFailure { Timber.w(it, "Scan report failed") }
         // Pictures of removed books (or of an import that never finished) stay in filesDir until someone collects
         // them; the scan already reads the whole table, so this is where the orphan set is known.
         runCatching { covers.pruneOrphans(books.rawDb().books().all().mapNotNull { it.coverPath }) }
