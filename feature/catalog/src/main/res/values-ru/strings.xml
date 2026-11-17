@@ -37,6 +37,13 @@
     <string name="upcoming_last_run">Последняя проверка в %1$s: проверено %2$d, новых глав %3$d, ошибок %4$d</string>
     <string name="upcoming_last_run_downloads">%1$d глав поставлено в очередь загрузки</string>
     <string name="upcoming_last_run_failed">Ошибка: %1$s</string>
+    <string name="hist_group_by">Группировать</string>
+    <string name="hist_group_date">По дате</string>
+    <string name="hist_group_title">По тайтлу</string>
+    <string name="feed_selected">Выбрано: %1$d</string>
+    <string name="feed_mark_read">Отметить прочитанным</string>
+    <string name="feed_download">Загрузить</string>
+    <string name="feed_remove_history">Удалить из истории</string>
     <string name="catalog_check_updates">Проверить обновления</string>
     <string name="catalog_incognito_on">Режим инкогнито включён</string>
     <string name="catalog_incognito_off">Режим инкогнито выключен</string>

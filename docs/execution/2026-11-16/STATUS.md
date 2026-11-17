@@ -1087,5 +1087,33 @@ push or release was made.
 
 **Device/live:** `DEVICE_PENDING` — a title excluded from checks stays untouched by the worker, the plan filter with real shelves, and a manual run that finishes while the screen is open.
 
+---
+
+## U03 (remainder) — grouped feeds, multi-select, new-chapters widget
+
+**Status:** `CODE_VERIFIED` (widget rendering is covered by Robolectric; a launcher pass is `DEVICE_PENDING`).
+
+| File | Change |
+|---|---|
+| `feature/catalog/.../CatalogScreen.kt` | The updates and history feeds are grouped by date or title (`HistoryView.group`) with a grouping chip row. Long press starts a selection; while selecting, a bar offers mark-read, download and (history only) remove; the selection is intersected with the visible rows on refresh and uses the chapter id as identity. |
+| `feature/catalog/.../CatalogViewModels.kt` | `setChaptersRead`, `downloadChapters` (grouped by title) and a bulk `removeHistory`. |
+| `core/database/.../Daos.kt` | `NewChapterRow` projection and `observeNewChapterRows(limit)`: new, unread chapters of favourites, newest first, a local query only. |
+| `data/.../catalog/CatalogRepository.kt` | `observeNewChapters(limit)`. |
+| `app/.../widget/NewChaptersWidget.kt` | NEW. Provider plus `NewChaptersWidgets`: collects the projection, hides incognito/locked, renders three rows with covers, opens the chapter on tap, an empty state without any network request, size-aware row count. |
+| `app/src/main/res/layout/widget_new_chapters.xml`, `res/xml/widget_new_chapters_info.xml`, `AndroidManifest.xml` | NEW widget layout/info and receiver. |
+| `app/.../AppModule.kt`, `YomuApp.kt` | Chapter-row intents open the chapter; the widget starts with the app process. |
+| `app/res/values{,-ru}/strings.xml` | Widget label, description and empty state. |
+| `feature/catalog/res/values{,-ru}/strings.xml` | Grouping, selection and action labels. |
+| `app/src/test/.../NewChaptersWidgetTest.kt` | NEW. Robolectric: only new unread chapters are shown in newest-first order, a read chapter and a non-new one are excluded, incognito hides the widget, and clearing the new flags shows the empty state. |
+
+**Commands:**
+
+| Command | Result |
+|---|---|
+| `.\gradlew.bat :feature:catalog:compileDebugKotlin :app:compileDebugKotlin` | `BUILD SUCCESSFUL` |
+| `.\gradlew.bat :app:testDebugUnitTest --tests "app.yomu.NewChaptersWidgetTest"` | `BUILD SUCCESSFUL` |
+
+**Device/live:** `DEVICE_PENDING` — adding the widget to a launcher, resizing it, incognito/lock behaviour, and a tap opening the chapter after the process was killed.
+
 
 

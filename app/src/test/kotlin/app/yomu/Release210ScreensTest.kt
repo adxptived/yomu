@@ -61,7 +61,7 @@ class Release210ScreensTest {
 
     private fun model(): SettingsViewModel {
         val koin = GlobalContext.get()
-        return SettingsViewModel(context, settings, koin.get(), koin.get(), koin.get(), koin.get(), AppUpdates(context, settings, fetch = { null }), koin.get(), koin.get(), koin.get())
+        return SettingsViewModel(context, settings, koin.get(), koin.get(), koin.get(), koin.get(), AppUpdates(context, settings, fetch = { null }), koin.get(), koin.get(), koin.get(), koin.get())
     }
 
     @OptIn(ExperimentalTestApi::class)

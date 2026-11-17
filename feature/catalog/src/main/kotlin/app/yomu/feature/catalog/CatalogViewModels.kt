@@ -296,6 +296,21 @@ class CatalogHomeViewModel(
     fun removeHistory(chapterId: Long) = viewModelScope.launch(ScreenErrors) { catalog.removeHistory(chapterId) }
     fun clearHistory() = viewModelScope.launch(ScreenErrors) { catalog.clearHistory() }
 
+    /** Feed multi-selection: chapter ids are the identity of a record, the same one the reader uses. */
+    fun setChaptersRead(ids: Collection<Long>, read: Boolean) = viewModelScope.launch(ScreenErrors) {
+        if (ids.isNotEmpty()) catalog.setRead(ids, read)
+    }
+
+    fun downloadChapters(ids: Collection<Long>) = viewModelScope.launch(ScreenErrors) {
+        val chapters = ids.mapNotNull { catalog.chapter(it) }
+        chapters.groupBy { it.entryId }.forEach { (entryId, list) -> downloads.enqueueChapters(entryId, list.map { it.id }) }
+    }
+
+    fun removeHistory(ids: Collection<Long>) = viewModelScope.launch(ScreenErrors) {
+        if (ids.isEmpty()) return@launch
+        ids.forEach { catalog.removeHistory(it) }
+    }
+
     /** Creates a library tab; [addEntries] join it right away. */
     fun createTab(name: String, addEntries: Collection<Long> = emptyList()) = viewModelScope.launch(ScreenErrors) {
         if (name.isBlank()) return@launch

@@ -249,6 +249,9 @@
     <string name="widget_continue_label">Продолжить чтение</string>
     <string name="widget_continue_description">Книги и онлайн-тайтлы, которые вы читаете: продолжение в одно касание.</string>
     <string name="widget_continue_empty">Пока ничего не читается. Откройте книгу в Yomu — она появится здесь.</string>
+    <string name="widget_new_chapters_label">Новые главы</string>
+    <string name="widget_new_chapters_description">Новые непрочитанные главы тайтлов из библиотеки по последней проверке.</string>
+    <string name="widget_new_chapters_empty">Новых глав нет. Последняя проверка не нашла непрочитанного.</string>
     <plurals name="widget_unread_chapters">
         <item quantity="one">%1$d непрочитанная глава</item>
         <item quantity="few">%1$d непрочитанные главы</item>

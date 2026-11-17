@@ -503,6 +503,16 @@ data class TitleCheckRow(
 /** One chapter's upload date, for the rhythm prediction of one title. */
 data class ChapterDateRow(val itemId: Long, val uploadDate: Long)
 
+/** A new, unread chapter of a favourite: what the new-chapters widget shows (U03). */
+data class NewChapterRow(
+    val chapterId: Long,
+    val entryId: Long,
+    val title: String,
+    val chapter: String,
+    val coverUrl: String?,
+    val uploadedAt: Long,
+)
+
 data class HistoryRow(
     @Embedded val chapter: ChapterEntity,
     val itemTitle: String,
@@ -668,6 +678,15 @@ interface CatalogDao {
 
     @Query("SELECT COUNT(*) FROM chapters WHERE isNew = 1")
     fun observeNewCount(): Flow<Int>
+
+    /** New unread chapters of favourites, newest first; a local projection, so the widget works without a network. */
+    @Query(
+        "SELECT c.id AS chapterId, c.itemId AS entryId, i.title AS title, c.name AS chapter, i.coverUrl AS coverUrl, " +
+            "CASE WHEN c.uploadDate > 0 THEN c.uploadDate ELSE c.fetchedAt END AS uploadedAt " +
+            "FROM chapters c JOIN catalog_items i ON i.id = c.itemId " +
+            "WHERE c.isNew = 1 AND c.read = 0 AND i.favorite = 1 ORDER BY uploadedAt DESC LIMIT :limit",
+    )
+    fun observeNewChapterRows(limit: Int): Flow<List<NewChapterRow>>
 
     @Query(
         "SELECT c.*, i.title AS itemTitle, i.coverUrl AS coverUrl, i.sourceId AS sourceId FROM chapters c " +

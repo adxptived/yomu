@@ -31,6 +31,7 @@ import app.yomu.profile.ProfileViewModel
 import app.yomu.ui.WhatsNew
 import app.yomu.ui.whatsNewSince
 import app.yomu.widget.ContinueWidgets
+import app.yomu.widget.NewChaptersWidgets
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -280,6 +281,9 @@ class MainViewModel(
             ContinueWidgets.ACTION_OPEN_BOOK -> intent.getLongExtra(ContinueWidgets.EXTRA_ID, -1).takeIf { it > 0 }
                 ?.let { _events.trySend(MainEvent.OpenBook(it)) }
             ContinueWidgets.ACTION_OPEN_ONLINE -> intent.getLongExtra(ContinueWidgets.EXTRA_ID, -1).takeIf { it > 0 }?.let { openOnline(it) }
+            // Rows of the "New chapters" widget open the chapter itself.
+            NewChaptersWidgets.ACTION_OPEN_CHAPTER -> intent.getLongExtra(NewChaptersWidgets.EXTRA_ID, -1).takeIf { it > 0 }
+                ?.let { _events.trySend(MainEvent.OpenChapter(it)) }
         }
     }
 

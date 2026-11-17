@@ -246,6 +246,9 @@
     <string name="widget_continue_label">Continue reading</string>
     <string name="widget_continue_description">The books and online titles you are reading: one tap to go on.</string>
     <string name="widget_continue_empty">Nothing in progress yet. Open a book in Yomu and it shows up here.</string>
+    <string name="widget_new_chapters_label">New chapters</string>
+    <string name="widget_new_chapters_description">New unread chapters of the titles in your library, from the last check.</string>
+    <string name="widget_new_chapters_empty">No new chapters. The last check found nothing unread.</string>
     <plurals name="widget_unread_chapters">
         <item quantity="one">%1$d unread chapter</item>
         <item quantity="other">%1$d unread chapters</item>

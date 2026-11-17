@@ -37,6 +37,13 @@
     <string name="upcoming_last_run">Last check at %1$s: %2$d titles checked, %3$d new chapters, %4$d failed</string>
     <string name="upcoming_last_run_downloads">%1$d chapters queued for download</string>
     <string name="upcoming_last_run_failed">Failed: %1$s</string>
+    <string name="hist_group_by">Group by</string>
+    <string name="hist_group_date">Date</string>
+    <string name="hist_group_title">Title</string>
+    <string name="feed_selected">%1$d selected</string>
+    <string name="feed_mark_read">Mark read</string>
+    <string name="feed_download">Download</string>
+    <string name="feed_remove_history">Remove from history</string>
     <string name="catalog_check_updates">Check for updates</string>
     <string name="catalog_incognito_on">Incognito mode is on</string>
     <string name="catalog_incognito_off">Incognito mode is off</string>

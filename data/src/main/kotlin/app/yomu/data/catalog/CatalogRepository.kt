@@ -144,6 +144,9 @@ class CatalogRepository(
     fun observeEntry(id: Long): Flow<CatalogEntry?> = dao.observe(id).map { it?.toDomain() }
     fun observeChapters(entryId: Long): Flow<List<ChapterInfo>> = dao.observeChapters(entryId).map { l -> l.map { it.toDomain() } }
     fun observeNewCount(): Flow<Int> = dao.observeNewCount()
+
+    /** New unread chapters of favourites for the home-screen widget; a local query, no network. */
+    fun observeNewChapters(limit: Int = 3): Flow<List<app.yomu.core.database.NewChapterRow>> = dao.observeNewChapterRows(limit)
     suspend fun entry(id: Long): CatalogEntry? = dao.get(id)?.toDomain()
     suspend fun chapters(entryId: Long): List<ChapterInfo> = dao.chapters(entryId).map { it.toDomain() }
     suspend fun chapter(id: Long): ChapterInfo? = dao.chapter(id)?.toDomain()

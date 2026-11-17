@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
@@ -336,6 +337,9 @@ fun CatalogScreen(
                         onClick = { onReadChapter(it.chapter.id) },
                         onOpenTitle = { onOpenTitle(it.chapter.entryId) },
                         onRemove = null,
+                        onMarkRead = viewModel::setChaptersRead,
+                        onDownload = viewModel::downloadChapters,
+                        onRemoveSelected = null,
                     )
                 }
                 HomeTab.HISTORY -> {
@@ -358,6 +362,9 @@ fun CatalogScreen(
                         onClick = { onReadChapter(it.chapter.id) },
                         onOpenTitle = { onOpenTitle(it.chapter.entryId) },
                         onRemove = { viewModel.removeHistory(it.chapter.id) },
+                        onMarkRead = viewModel::setChaptersRead,
+                        onDownload = viewModel::downloadChapters,
+                        onRemoveSelected = viewModel::removeHistory,
                     )
                     if (confirmClear) {
                         ConfirmDialog(
@@ -974,6 +981,7 @@ private fun LibraryDisplaySheet(display: LibraryDisplay, viewModel: CatalogHomeV
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FeedTab(
     entries: List<HistoryEntry>,
@@ -983,33 +991,108 @@ private fun FeedTab(
     onClick: (HistoryEntry) -> Unit,
     onOpenTitle: (HistoryEntry) -> Unit,
     onRemove: ((HistoryEntry) -> Unit)?,
+    onMarkRead: (Collection<Long>, Boolean) -> Unit,
+    onDownload: (Collection<Long>) -> Unit,
+    onRemoveSelected: ((Collection<Long>) -> Unit)?,
 ) {
+    // Chapter ids are the record identity: the same chapter read again is a second history row, one selection.
+    var selection by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var grouping by rememberSaveable { mutableStateOf(app.yomu.domain.catalog.HistoryGrouping.DATE) }
+    LaunchedEffect(entries) {
+        val present = entries.map { it.chapter.id }.toSet()
+        selection = selection.intersect(present)
+    }
+    val selecting = selection.isNotEmpty()
+    val sections = remember(entries, grouping) {
+        val byId = entries.associateBy { it.chapter.id }
+        app.yomu.domain.catalog.HistoryView.group(entries.map { it.toViewItem() }, grouping)
+            .map { section -> section.label to section.items.mapNotNull { byId[it.chapterId] } }
+    }
+    fun toggle(id: Long) {
+        selection = if (id in selection) selection - id else selection + id
+    }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
         item(key = "header") { header() }
+        item(key = "grouping") {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Dimens.l, vertical = Dimens.xs),
+                horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.hist_group_by), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                app.yomu.domain.catalog.HistoryGrouping.entries.forEach { mode ->
+                    FilterChip(
+                        selected = grouping == mode,
+                        onClick = { grouping = mode },
+                        label = { Text(stringResource(if (mode == app.yomu.domain.catalog.HistoryGrouping.DATE) R.string.hist_group_date else R.string.hist_group_title)) },
+                    )
+                }
+            }
+        }
+        if (selecting) {
+            item(key = "selection") {
+                Row(
+                    Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = Dimens.s),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = { selection = emptySet() }) { Icon(Icons.Filled.Close, stringResource(CoreR.string.close)) }
+                    Text(
+                        stringResource(R.string.feed_selected, selection.size),
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = { onMarkRead(selection, true); selection = emptySet() }) {
+                        Icon(Icons.Filled.Check, stringResource(R.string.feed_mark_read))
+                    }
+                    IconButton(onClick = { onDownload(selection); selection = emptySet() }) {
+                        Icon(Icons.Filled.Download, stringResource(R.string.feed_download))
+                    }
+                    if (onRemoveSelected != null) {
+                        IconButton(onClick = { onRemoveSelected(selection); selection = emptySet() }) {
+                            Icon(Icons.Filled.Delete, stringResource(R.string.feed_remove_history))
+                        }
+                    }
+                }
+            }
+        }
         if (entries.isEmpty()) {
             item(key = "empty") { EmptyState(title = emptyTitle, icon = emptyIcon, modifier = Modifier.fillMaxWidth().padding(top = Dimens.xl)) }
         }
-        items(entries, key = { "${it.chapter.id}-${it.readAt}" }) { h ->
-            BookListItem(
-                title = h.entryTitle,
-                subtitle = h.chapter.name,
-                cover = h.coverUrl,
-                progress = 0f,
-                modifier = motionItem(),
-                meta = listOfNotNull(
-                    relativeTime(h.readAt).ifBlank { null },
-                    if (h.chapter.downloaded) stringResource(R.string.chapter_downloaded) else null,
-                    if (h.chapter.read) stringResource(R.string.chapter_read) else null,
-                ).joinToString(" · "),
-                onClick = { onClick(h) },
-                onLongClick = { onOpenTitle(h) },
-                trailing = {
-                    Row {
-                        IconButton(onClick = { onOpenTitle(h) }) { Icon(Icons.Outlined.CollectionsBookmark, stringResource(R.string.title_open)) }
-                        if (onRemove != null) IconButton(onClick = { onRemove(h) }) { Icon(Icons.Filled.Delete, stringResource(CoreR.string.delete)) }
-                    }
-                },
-            )
+        sections.forEach { (label, sectionEntries) ->
+            item(key = "section-$label") {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s),
+                )
+            }
+            items(sectionEntries, key = { "${it.chapter.id}-${it.readAt}" }) { h ->
+                BookListItem(
+                    title = h.entryTitle,
+                    subtitle = h.chapter.name,
+                    cover = h.coverUrl,
+                    progress = 0f,
+                    modifier = motionItem(),
+                    selected = h.chapter.id in selection,
+                    selectionMode = selecting,
+                    meta = listOfNotNull(
+                        relativeTime(h.readAt).ifBlank { null },
+                        if (h.chapter.downloaded) stringResource(R.string.chapter_downloaded) else null,
+                        if (h.chapter.read) stringResource(R.string.chapter_read) else null,
+                    ).joinToString(" · "),
+                    onClick = { if (selecting) toggle(h.chapter.id) else onClick(h) },
+                    onLongClick = { toggle(h.chapter.id) },
+                    trailing = if (selecting) null else {
+                        {
+                            Row {
+                                IconButton(onClick = { onOpenTitle(h) }) { Icon(Icons.Outlined.CollectionsBookmark, stringResource(R.string.title_open)) }
+                                if (onRemove != null) IconButton(onClick = { onRemove(h) }) { Icon(Icons.Filled.Delete, stringResource(CoreR.string.delete)) }
+                            }
+                        }
+                    },
+                )
+            }
         }
     }
 }

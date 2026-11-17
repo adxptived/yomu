@@ -63,6 +63,19 @@
                 android:resource="@xml/widget_continue_info" />
         </receiver>
 
+        <!-- "New chapters" home-screen widget (U03): the local projection, no network -->
+        <receiver
+            android:name=".widget.NewChaptersWidget"
+            android:exported="false"
+            android:label="@string/widget_new_chapters_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_new_chapters_info" />
+        </receiver>
+
         <!-- OAuth redirects of the tracking services (2.0.0) -->
         <activity
             android:name=".TrackLoginActivity"

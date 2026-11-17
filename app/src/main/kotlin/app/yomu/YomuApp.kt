@@ -34,6 +34,7 @@ import app.yomu.source.SourceException
 import app.yomu.source.SourceNetwork
 import app.yomu.source.WebViewRequiredException
 import app.yomu.widget.ContinueWidgets
+import app.yomu.widget.NewChaptersWidgets
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -117,6 +118,8 @@ class YomuApp : Application(), SingletonImageLoader.Factory {
         get<AutoSync>().start()
         // The "Continue reading" widget follows the reading progress while the app runs (when it is on the home screen).
         ContinueWidgets.start(this)
+        // The "New chapters" widget follows the local new-chapter projection; no network request is made for it.
+        NewChaptersWidgets.start(this)
         get<PdfAnnotationStore>().start(appScope)
 
         val settings = get<AppSettings>()
