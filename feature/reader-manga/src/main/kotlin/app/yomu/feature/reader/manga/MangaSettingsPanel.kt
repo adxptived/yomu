@@ -138,6 +138,14 @@ fun MangaPageSettings(s: MangaSettings, update: MangaSettingsUpdate, query: Stri
             )
         } else {
             PreferenceSwitch(stringResource(R.string.mr_dual), s.dualPageLandscape, { v -> update { it.copy(dualPageLandscape = v) } }, summary = stringResource(R.string.mr_dual_sum))
+            if (s.dualPageLandscape) {
+                PreferenceSwitch(
+                    stringResource(R.string.mr_cover_alone),
+                    s.coverAlone,
+                    { v -> update { it.copy(coverAlone = v) } },
+                    summary = stringResource(R.string.mr_cover_alone_sum),
+                )
+            }
         }
         PreferenceSwitch(
             stringResource(R.string.mr_animation),

@@ -29,6 +29,8 @@
     <string name="mr_bg_black">Black</string>
     <string name="mr_bg_gray">Gray</string>
     <string name="mr_bg_white">White</string>
+    <string name="mr_cover_alone">Cover alone</string>
+    <string name="mr_cover_alone_sum">The first page is not paired with the second; turn it off when the book has no cover page</string>
     <string name="mr_dual">Two pages in landscape</string>
     <string name="mr_animation">Page turn animation</string>
     <string name="mr_animation_sum">Off: taps and keys turn pages instantly</string>

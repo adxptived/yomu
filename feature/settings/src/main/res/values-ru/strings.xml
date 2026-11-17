@@ -238,6 +238,12 @@
     <string name="set_update_interval">Проверять новые главы</string>
     <string name="set_update_wifi">Проверять только по Wi‑Fi</string>
     <string name="set_show_nsfw">Показывать источники 18+</string>
+    <string name="set_user_agent">User-Agent</string>
+    <string name="set_user_agent_default">По умолчанию (обычный браузер)</string>
+    <string name="set_content_preference">Контент для взрослых</string>
+    <string name="set_content_safe">Безопасный</string>
+    <string name="set_content_mixed">Смешанный</string>
+    <string name="set_content_adult">18+</string>
     <string name="set_incognito">Режим инкогнито</string>
     <string name="set_incognito_sum">Не сохранять историю, прогресс чтения, статистику и поиски</string>
     <string name="set_extensions">Расширения</string>

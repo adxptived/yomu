@@ -236,6 +236,12 @@
     <string name="set_update_interval">Check for new chapters</string>
     <string name="set_update_wifi">Check only over Wi‑Fi</string>
     <string name="set_show_nsfw">Show 18+ sources</string>
+    <string name="set_user_agent">User-Agent</string>
+    <string name="set_user_agent_default">Default (a current browser)</string>
+    <string name="set_content_preference">Adult content</string>
+    <string name="set_content_safe">Safe</string>
+    <string name="set_content_mixed">Mixed</string>
+    <string name="set_content_adult">18+</string>
     <string name="set_incognito">Incognito mode</string>
     <string name="set_incognito_sum">Don’t save reading history, progress, statistics and searches</string>
     <string name="set_extensions">Extensions</string>

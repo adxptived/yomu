@@ -807,7 +807,15 @@ internal fun ColumnScope.CatalogSection(vm: SettingsViewModel, links: SettingsLi
     var revoke by remember { mutableStateOf(false) }
     ChoicePref(vm, s.updateIntervalHours, R.string.set_update_interval, listOf(0, 3, 6, 12, 24, 48).map { it to hoursLabel(context, it) }, after = { vm.rescheduleUpdates() })
     SwitchPref(vm, s.updateWifiOnly, R.string.set_update_wifi, after = { vm.rescheduleUpdates() })
-    SwitchPref(vm, s.showNsfw, R.string.set_show_nsfw)
+    TextPref(vm, s.userAgent, R.string.set_user_agent, summaryWhenEmpty = R.string.set_user_agent_default)
+    ChoicePref(
+        vm, s.contentPreference, R.string.set_content_preference,
+        listOf(
+            app.yomu.domain.catalog.ContentPreference.SAFE to stringResource(R.string.set_content_safe),
+            app.yomu.domain.catalog.ContentPreference.MIXED to stringResource(R.string.set_content_mixed),
+            app.yomu.domain.catalog.ContentPreference.NSFW to stringResource(R.string.set_content_adult),
+        ),
+    )
     SwitchPref(vm, s.incognito, R.string.set_incognito, R.string.set_incognito_sum)
     PreferenceItem(stringResource(R.string.set_extensions), stringResource(R.string.set_extensions_sum), onClick = links.onOpenExtensions, icon = settingIcon(R.string.set_extensions))
     val hiddenSources by s.hiddenSources.state()

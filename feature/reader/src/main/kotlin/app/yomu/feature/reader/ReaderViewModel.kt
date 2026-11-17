@@ -30,6 +30,8 @@ import app.yomu.data.repository.BookRepositoryImpl
 import app.yomu.data.repository.StatsRepositoryImpl
 import app.yomu.data.repository.WordRepositoryImpl
 import app.yomu.data.translation.TranslationService
+import app.yomu.domain.catalog.ChapterIntent
+import app.yomu.domain.catalog.ChapterNavigation
 import app.yomu.domain.catalog.ChapterOrder
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookFormat
@@ -610,8 +612,10 @@ class ReaderViewModel(
         // Reading order shared with the title page; groups hidden there are skipped (except the chapter being opened).
         val excluded = catalog.chapterDisplay(entry.id).excludedScanlators
         chapters = ChapterOrder.reading(catalog.chapters(entry.id).filter { it.id == chapterId || it.scanlator.isNullOrBlank() || it.scanlator !in excluded })
-        hasPrevChapter.value = ChapterOrder.adjacent(chapters, chapterId, forward = false) != null
-        hasNextChapter.value = ChapterOrder.adjacent(chapters, chapterId, forward = true) != null
+        // One resolver for every way to move between chapters; other releases of the same chapter are skipped only
+        // when the numbering can be trusted (see ChapterNavigation).
+        hasPrevChapter.value = ChapterNavigation.resolve(chapters, chapterId, ChapterIntent.PREVIOUS) != null
+        hasNextChapter.value = ChapterNavigation.resolve(chapters, chapterId, ChapterIntent.NEXT) != null
         // "Download ahead": keep the next chapters of library titles downloaded while reading.
         viewModelScope.launch(ScreenErrors) { runCatching { downloads.ensureAhead(entry.id, chapterId) }.onFailure { Timber.w(it, "Download ahead failed") } }
         _title.value = entry.title + " · " + ch.name
@@ -653,7 +657,7 @@ class ReaderViewModel(
     /** Opens the previous/next chapter of an online entry. */
     fun openAdjacentChapter(next: Boolean) {
         // Other groups' releases of the current chapter are skipped; the current group is preferred.
-        val target = ChapterOrder.adjacent(chapters, _chapterId.value, forward = next) ?: return
+        val target = ChapterNavigation.resolve(chapters, _chapterId.value, if (next) ChapterIntent.NEXT else ChapterIntent.PREVIOUS) ?: return
         openChapter(target.id, finished = next)
     }
 

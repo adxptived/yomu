@@ -172,7 +172,11 @@ fun MangaReaderView(
         if (s.direction == MangaDirection.WEBTOON) {
             Webtoon(controller, listener, hasPrevChapter, hasNextChapter)
         } else {
-            val spreads = if (landscape && s.dualPageLandscape && s.direction != MangaDirection.VERTICAL) spreads(controller.count) else null
+            val spreads = if (landscape && s.dualPageLandscape && s.direction != MangaDirection.VERTICAL) {
+                app.yomu.domain.reader.MangaPaging.spreads(controller.count, s.coverAlone)
+            } else {
+                null
+            }
             Paged(controller, listener, Layout(controller.count, hasPrevChapter, spreads), hasNextChapter)
         }
         AnimatedVisibility(zonesVisible && s.tapZones != TapZoneLayout.DISABLED, enter = fadeIn(), exit = fadeOut()) {
@@ -192,17 +196,6 @@ fun MangaReaderView(
 
 /** Text colour that stays readable on the chosen page background. */
 private fun onBackground(s: MangaSettings): Color = if (s.background == MangaBackground.WHITE) Color(0xFF202020) else Color.White
-
-private fun spreads(count: Int): List<IntArray> {
-    val out = mutableListOf<IntArray>()
-    if (count > 0) out += intArrayOf(0)
-    var i = 1
-    while (i < count) {
-        out += if (i + 1 < count) intArrayOf(i, i + 1) else intArrayOf(i)
-        i += 2
-    }
-    return out
-}
 
 internal fun request(context: android.content.Context, file: File, crop: Boolean): ImageRequest =
     ImageRequest.Builder(context).data(file).apply { if (crop) transformations(CropBordersTransformation()) }.build()

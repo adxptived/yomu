@@ -28,6 +28,8 @@
     <string name="mr_bg_black">Чёрный</string>
     <string name="mr_bg_gray">Серый</string>
     <string name="mr_bg_white">Белый</string>
+    <string name="mr_cover_alone">Обложка отдельно</string>
+    <string name="mr_cover_alone_sum">Первая страница не соединяется со второй; выключите, если в книге нет обложки</string>
     <string name="mr_dual">Две страницы в альбомной ориентации</string>
     <string name="mr_animation">Анимация перелистывания</string>
     <string name="mr_animation_sum">Если выключить, тапы и кнопки листают мгновенно</string>
