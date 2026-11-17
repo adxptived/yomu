@@ -54,6 +54,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_9_1">
+        <item>An update check runs on its own schedule: a per-title interval, titles you exclude stay untouched, and the last check is reported with what it found.</item>
+        <item>Downloads retry when the server says to, and the cleanup preview names every file before anything is deleted.</item>
+        <item>The reader gains a vertical navigator, an animation-speed slider, start zoom and rotate-to-fit for wide scans.</item>
+        <item>A new-chapters widget on the home screen, grouped update and history feeds with multi-select, and an E-ink preset.</item>
+    </string-array>
     <string-array name="whats_new_2_8_0">
         <item>Text books read as one continuous book: page turns cross chapters without a reload, page numbers are exact, and the slider matches the real pages.</item>
         <item>A Word document is one document too: Heading 1 stays in the contents instead of splitting the book into tiny chapters.</item>

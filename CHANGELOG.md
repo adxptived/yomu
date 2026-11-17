@@ -1,5 +1,63 @@
 # Changelog
 
+## 2.9.1 — one schedule for updates, and a reader that fits the scan
+
+> **Install.** Installs over 2.8.0 if signed with the same key. The database migrates once (11 → 17) on the first launch; the library itself is untouched.
+
+### Updates and the catalog
+
+- **An update check has its own schedule.** Check automatically on/off, an interval per title (the app default, 3, 6, 12, 24, 48 or 168 hours) and shelves excluded from checking. An excluded title is left alone even by a forced run, and an interval you set is used as written instead of being stretched by the source's upload rhythm.
+- **The last check is reported, not forgotten.** The "Updates" screen keeps the time, how many titles were checked and how many chapters are new, failed or queued, plus the first failures — and a "Check now" button that is disabled while that check is already running and refreshes the screen when it finishes.
+- **The plan can be filtered by shelf**, with an "N of M" counter and an honest empty state.
+- **The updates and history feeds are grouped** by date or by title, and a long press starts a selection: mark read, download (grouped by title) and, in the history, remove. The selection survives a refresh and follows the chapter, not a row number.
+- **A "new chapters" widget for the home screen.** New unread chapters of your favourites, newest first, with covers; tapping one opens it. It asks the network for nothing and hides itself in incognito.
+- **The details card puts reading first:** the description now sits right under the progress instead of below the rating, and an audiobook shows its real total length and track count instead of `0:00`.
+
+### Downloads and offline files
+
+- **A retry waits as long as the server asked.** A `Retry-After` is stored with the task instead of sleeping in a worker, so a restart does not lose the wait, and it never shortens the normal backoff. One source can no longer hold every download slot: a small queue from a second source runs before a six-chapter queue from the first finishes.
+- **Cleanup shows its work before it deletes anything.** The retention preview names the chapters, their bytes and why each would be kept; a bookmark or a protected shelf added after the preview still saves the file, because the rules are re-checked at the moment of deletion. Shelves can be marked protected and chosen for auto-download, and reading an unread chapter queues the next ones.
+- **A broken download index can be repaired.** Files are matched by their stable `[chapterId]` names: a file the database lost is re-attached, a deleted one is marked missing instead of vanishing from the list, a moved path is corrected and an orphan is reported without deleting it.
+- **A library folder that cannot be read says so.** A revoked permission or an unmounted card becomes "temporarily unavailable" with the reason — never a mass deletion. The last scan is kept and shown in the settings.
+- **One ComicInfo parser and writer** for the download and import paths: unknown elements survive a round trip and `<UploadDate>` is carried into the book.
+
+### The reader
+
+- **A vertical navigator**, optional, on either side: the thumb follows the finger, the page cannot pull it back while dragging, and a release commits once. It has a TalkBack path, not only a drag.
+- **Animation speed** for page turns in text and manga, 60–1200 ms.
+- **The scan decides how it is shown.** A wide page is turned a quarter turn (the direction follows the book), "smart fit" fills the width of a tall page up to 3×, start zoom opens a page where you chose, and a decode follows the zoom and never upscales — a 30 000 px webtoon strip stays inside a 12 MP budget instead of exhausting memory.
+- **Split pages render**, and a page opened from a spread keeps its place.
+- **PDF tap zones work.** A centre tap used to be read as "next page" on every screen, because a pixel coordinate was compared against a fraction; every engine now hands the reader viewport fractions, with the same rules for landscape, RTL and the edges.
+- **A PDF long press on a margin opens the page menu.** On a scan — a page without a text layer — the same press opens it too, and Copy/Translate fall back to OCR instead of doing nothing. Saving or sharing a PDF page writes a PNG; it no longer silently refuses because "page files" existed for manga only.
+- **Tap zones can differ per reading mode**, hardware page keys work, and "how to control" shows the zone diagram even if the one-time hint was dismissed.
+- **Orientation is no longer requested in split-screen or free-form windows**, and an E-ink preset (larger text, no animation, a small contrast lift for scans, an optional software flash every N pages) applies as one change, so a single Undo restores all of it. The flash is a software overlay, not a vendor panel refresh.
+- **Chapter navigation is one policy.** Start from the saved chapter, skip what is already read, never jump into an excluded group, skip a duplicate release — and only guess alternatives when the numbering can be trusted. A source that skips numbers now says so on the title page.
+
+### Sources and the network
+
+- **One connection wizard** for adding a source: what it is, how to connect, the address, a real check, a preview and one save. Back returns to the previous question and never saves; a failed check and a failed save are reported as different things. Files and folders go through the existing importer.
+- **Podcast and RSS feeds are subscriptions, not snapshots.** The feed address, its ETag and the book binding are stored, so a refresh picks up new episodes without duplicating the old ones, a downloaded copy and the chapter marks are kept, and a deleted episode is reported with its file instead of being removed. "Stop updating" keeps the book.
+- **DNS-over-HTTPS is optional** (Cloudflare, Google, AdGuard), with the system resolver kept for private and literal names and used as a fallback when the endpoint fails.
+- **"Clear site data" says what it will clear:** one site or every site, and the same scope is passed to the clearer.
+- **Adult content is a three-way choice** (safe, mixed, adult) instead of one switch, and it filters extensions in one place, so the list, global search and language counts agree. The User-Agent is a setting.
+- **Extension updates run as a batch** and report "updated N of M" instead of stopping at the first failure; trust can be revoked without deleting the extension.
+
+### Import and privacy
+
+- **An import ends with a report, not a sentence.** Every file is named with its result; a damaged archive and a revoked permission are different causes, and only the retryable ones offer "Retry failed (N)" — which imports just those files, even after a restart.
+- **One incognito contract** now covers every entry point that would persist something. Reading progress, read marks, history, session time and titled notifications are suppressed; a manual edit never is.
+- **Notifications can hide their content on the lock screen**, and incognito replaces the title and text with a generic line.
+- **The error journal names the stage** — a short code instead of free text — and masks secrets before the file is written. (Doing this uncovered a real defect: two reports written in the same second overwrote each other.)
+- **Reader settings have an explicit scope.** "All books" and "This book" are chips with the consequence written under them, and returning to "All books" drops the per-book copy instead of keeping one.
+
+### Under the hood
+
+- A tile tap opens the card for local books too, exactly like an online title — Resume does the resume. Mixed local and online selection is possible again (it was suppressed by construction), with a typed key instead of a numeric id that could collide.
+- Bulk operations preview how many items they apply to and report "applied to N of M" per item instead of a silent success; deleting owned files stays local-only.
+- The library header is compact and everything display-related is in one "Display" sheet, with no command dropped.
+- `ADDED`, `LAST_READ` and `PROGRESS` sorts read an index instead of sorting every matching row per page, and the online titles are ordered off the main thread. `TITLE` and `AUTHOR` still sort — that needs a table rebuild and is not claimed here.
+- The long-press wheel caps its ring at 8 sectors and offers "More" instead of drawing unhittable slivers.
+
 ## 2.8.0 — the whole book on one page stack, and a bar with no band
 
 > **Install.** Installs over 2.7.0 if signed with the same key. No database migration. Converted Word/TXT/HTML/MOBI books are rebuilt once.
