@@ -352,6 +352,8 @@ class CatalogRepository(
                     shelfIds = shelves[row.item.id].orEmpty().toSet(),
                     lastAttemptAt = row.item.lastCheckAt,
                     lastSuccessAt = row.item.lastCheckSuccessAt,
+                    intervalOverrideHours = row.item.updateIntervalHours,
+                    excludedFromUpdates = row.item.updateExcluded,
                 ),
                 now = now,
                 intervalHours = interval,
@@ -365,8 +367,26 @@ class CatalogRepository(
                 title = row.item.title,
                 nextCheckAt = if (decision.eligible) now else (decision.nextCheckAt ?: 0),
                 reason = decision.reason,
+                shelfIds = shelves[row.item.id].orEmpty().toSet(),
             )
         }.sortedWith(compareBy({ if (it.nextCheckAt <= 0) Long.MAX_VALUE else it.nextCheckAt }, { it.title.lowercase() }))
+    }
+
+    /** Every library shelf, shared by books and online titles; sorted in the user's order. */
+    suspend fun shelves(): List<app.yomu.domain.model.BookCollection> = withContext(Dispatchers.IO) {
+        db.collections().all()
+            .sortedWith(compareBy({ it.sortOrder }, { it.name.lowercase() }))
+            .map { app.yomu.domain.model.BookCollection(it.id, it.name, 0) }
+    }
+
+    /** A title's own check interval; null restores the app-wide one. */
+    suspend fun setUpdateInterval(entryId: Long, hours: Int?) = withContext(Dispatchers.IO) {
+        dao.setUpdateInterval(entryId, hours?.coerceIn(1, 24 * 30))
+    }
+
+    /** Leaves a title out of (or back in) the automatic checks. Its history is untouched. */
+    suspend fun setUpdateExcluded(entryId: Long, excluded: Boolean) = withContext(Dispatchers.IO) {
+        dao.setUpdateExcluded(entryId, excluded)
     }
 
     /**
@@ -401,6 +421,8 @@ class CatalogRepository(
                     shelfIds = shelves[row.item.id].orEmpty().toSet(),
                     lastAttemptAt = row.item.lastCheckAt,
                     lastSuccessAt = row.item.lastCheckSuccessAt,
+                    intervalOverrideHours = row.item.updateIntervalHours,
+                    excludedFromUpdates = row.item.updateExcluded,
                 ),
                 now = now,
                 intervalHours = interval,

@@ -1140,6 +1140,12 @@ class TitleViewModel(
     fun setRead(ids: Collection<Long>, read: Boolean) = viewModelScope.launch(ScreenErrors) { catalog.setRead(ids, read); clearSelection() }
     fun setBookmarked(ids: Collection<Long>, value: Boolean) = viewModelScope.launch(ScreenErrors) { catalog.setBookmarked(ids, value); clearSelection() }
 
+    /** This title's own check interval; null restores the app-wide setting. */
+    fun setUpdateInterval(hours: Int?) = viewModelScope.launch(ScreenErrors) { catalog.setUpdateInterval(entryId, hours) }
+
+    /** Leaves the title out of (or back in) automatic checks. The reading history is untouched. */
+    fun setUpdateExcluded(excluded: Boolean) = viewModelScope.launch(ScreenErrors) { catalog.setUpdateExcluded(entryId, excluded) }
+
     /** Marks every chapter before [chapter] (in reading order, all groups) as read. */
     fun markPreviousRead(chapter: ChapterInfo) = viewModelScope.launch(ScreenErrors) {
         val slots = ChapterOrder.slots(ChapterOrder.reading(catalog.chapters(entryId)))

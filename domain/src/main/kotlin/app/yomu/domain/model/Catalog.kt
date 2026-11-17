@@ -25,6 +25,10 @@ data class CatalogEntry(
     val lastReadAt: Long = 0,
     /** Number of known chapters (library listing only). */
     val chapterCount: Int = 0,
+    /** This title's own check interval in hours; null = the app-wide setting. */
+    val updateIntervalHours: Int? = null,
+    /** The user left this title out of automatic checks. */
+    val updateExcluded: Boolean = false,
 )
 
 data class ChapterInfo(

@@ -17,7 +17,9 @@ class UpdatePolicyTest {
         shelves: Set<Long> = emptySet(),
         lastAttempt: Long = 0,
         lastSuccess: Long = 0,
-    ) = UpdateTitleState(status, unread, 10, shelves, lastAttempt, lastSuccess)
+        intervalOverride: Int? = null,
+        excluded: Boolean = false,
+    ) = UpdateTitleState(status, unread, 10, shelves, lastAttempt, lastSuccess, intervalOverride, excluded)
 
     @Test
     fun `a title never checked is due`() {
@@ -107,5 +109,26 @@ class UpdatePolicyTest {
         // Three weekly uploads and one gap of a month: the median gap stays weekly.
         val dates = listOf(now - 30 * 24 * hour, now - 37 * 24 * hour, now - 44 * 24 * hour, now - 51 * 24 * hour)
         assertEquals(7 * 24 * hour, UpdatePolicy.estimateIntervalMs(dates, now))
+    }
+
+    @Test
+    fun `a title's own interval replaces the app-wide one`() {
+        val title = title(lastSuccess = now - 8 * hour, intervalOverride = 12)
+        val decision = UpdatePolicy.decide(title, now, intervalHours = 6)
+        assertFalse(decision.eligible)
+        assertEquals(now + 4 * hour, decision.nextCheckAt)
+        assertTrue(UpdatePolicy.decide(title(lastSuccess = now - 13 * hour, intervalOverride = 12), now, 6).eligible)
+    }
+
+    @Test
+    fun `an explicit interval is not stretched by a predicted rhythm`() {
+        val weekly = listOf(now - 7 * 24 * hour, now - 14 * 24 * hour, now - 21 * 24 * hour)
+        assertEquals(2 * hour, UpdatePolicy.effectiveIntervalMs(6, weekly, now, overrideHours = 2))
+    }
+
+    @Test
+    fun `a title excluded by the user is never checked automatically`() {
+        val decision = UpdatePolicy.decide(title(excluded = true), now, 6, force = true)
+        assertEquals(UpdateSkip.EXCLUDED_TITLE, decision.reason)
     }
 }

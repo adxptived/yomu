@@ -1042,5 +1042,50 @@ push or release was made.
 
 **Device/live:** `DEVICE_PENDING` — navigator drag with slow pages, TalkBack setProgress, animation speed in text/manga, split-screen orientation.
 
+---
+
+## U01 (remainder) — per-title schedule, excluded shelves, persisted run
+
+**Status:** `CODE_VERIFIED`.
+
+| File | Change |
+|---|---|
+| `domain/.../catalog/UpdatePolicy.kt` | `UpdateSkip.EXCLUDED_TITLE`; `UpdateTitleState.intervalOverrideHours`/`excludedFromUpdates`; an explicit exclusion holds even for a forced run; a title override is used as written and is not stretched by the upload-rhythm prediction. |
+| `domain/src/test/.../UpdatePolicyTest.kt` | 4 new tests: the override interval decides, an explicit interval is not stretched, an excluded title is never checked, plus the existing table. |
+| `core/database/.../Entities.kt`, `Daos.kt`, `YomuDatabase.kt` | `catalog_items.updateIntervalHours` (nullable) and `updateExcluded` (default false); `MIGRATION_14_15`; schema version 15. |
+| `core/database/schemas/.../15.json` | Exported. |
+| `domain/.../model/Catalog.kt`, `data/.../Mappers.kt` | `CatalogEntry` carries the two fields; the mapper keeps them. |
+| `data/.../catalog/CatalogRepository.kt` | Both policy call sites pass the fields; `setUpdateInterval`, `setUpdateExcluded`, `shelves()`. |
+| `domain/.../catalog/UpdateRun.kt` | NEW. Persisted `UpdateRunReport`/`UpdateRunTitle` with counts, partial flag and duration. |
+| `core/datastore/.../AppSettings.kt` | `update_last_run` JSON. |
+| `data/.../work/UpdateRunStore.kt` | NEW. Decodes a tolerant report, records before the notification, can clear it. |
+| `data/.../work/Workers.kt` | `UpdateWorker` records checked/skipped/new/failed/queued counts and per-title lines. |
+| `data/.../di/DataModule.kt`, `feature/catalog/.../CatalogModule.kt`, `feature/settings/.../SettingsModule.kt` | Registration of the store and the new view-model dependency. |
+| `feature/catalog/.../CatalogViewModels.kt`, `TitleScreen.kt` | The title menu opens "Update schedule": check automatically on/off and an interval (app default, 3/6/12/24/48/168 h). |
+| `feature/settings/.../SettingsViewModel.kt`, `SettingsSections.kt` | Excluded-shelf picker with the user's shelves; an empty list says so. |
+| `feature/catalog/res/values{,-ru}/strings.xml`, `feature/settings/res/values{,-ru}/strings.xml` | New strings. |
+| `data/src/test/.../DatabaseMigrationTest.kt` | `CURRENT_VERSION = 15`; a 14 → 15 test proves the row survives, the interval is null and the exclusion false, and both can be written. |
+
+## U02 (remainder) — shelf filter and an awaited manual check
+
+**Status:** `CODE_VERIFIED`.
+
+| File | Change |
+|---|---|
+| `domain/.../catalog/UpdatePlan.kt` | `PlannedCheck.shelfIds`. |
+| `data/.../catalog/CatalogRepository.kt` | The plan carries each title's shelves. |
+| `feature/catalog/.../UpcomingScreen.kt` | Shelf filter chips with an "N of M" indicator and a filtered empty state; the persisted last run (time, checked, new, failed, queued, first failures); "Check now" is disabled while the unique work is enqueued/running, and the screen reloads when it finishes (`getWorkInfosForUniqueWorkFlow`). |
+| `feature/catalog/res/values{,-ru}/strings.xml` | Filter, run summary and reason strings. |
+
+**Commands:**
+
+| Command | Result |
+|---|---|
+| `.\gradlew.bat :domain:test --tests "app.yomu.domain.catalog.UpdatePolicyTest" --rerun-tasks` | `BUILD SUCCESSFUL` |
+| `.\gradlew.bat :data:testDebugUnitTest --tests "app.yomu.data.db.DatabaseMigrationTest"` | `BUILD SUCCESSFUL` |
+| `.\gradlew.bat :feature:catalog:compileDebugKotlin :feature:settings:compileDebugKotlin :app:compileDebugKotlin` | `BUILD SUCCESSFUL` |
+
+**Device/live:** `DEVICE_PENDING` — a title excluded from checks stays untouched by the worker, the plan filter with real shelves, and a manual run that finishes while the screen is open.
+
 
 

@@ -29,6 +29,7 @@ import app.yomu.domain.tracking.TrackService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -55,6 +56,8 @@ class SettingsViewModel(
     /** Accounts of MyAnimeList, AniList and Shikimori (Settings → Tracking). */
     val trackers: TrackerManager,
     private val extensions: ExtensionManager,
+    /** Library shelves, for the pickers that exclude one from updates. */
+    private val tabs: app.yomu.data.library.LibraryTabs,
     private val appScope: AppScope = AppScope(),
 ) : ViewModel() {
     private val _events = Channel<SettingsEvent>(Channel.BUFFERED)
@@ -63,6 +66,12 @@ class SettingsViewModel(
     val usage = MutableStateFlow<StorageUsage?>(null)
     val fonts = MutableStateFlow<List<File>>(emptyList())
     val logs = MutableStateFlow<List<File>>(emptyList())
+    val shelves = MutableStateFlow<List<app.yomu.domain.model.BookCollection>>(emptyList())
+
+    /** Loads the shelves for the excluded-shelf picker; a missing list means the dialog shows an empty state. */
+    fun loadShelves() = viewModelScope.launch(ScreenErrors) {
+        shelves.value = runCatching { tabs.observe().first() }.getOrDefault(emptyList())
+    }
     private val fontsDir get() = File(context.filesDir, "fonts").apply { mkdirs() }
 
     fun <T> set(pref: Pref<*, T>, value: T, after: (suspend () -> Unit)? = null) = viewModelScope.launch(ScreenErrors) {

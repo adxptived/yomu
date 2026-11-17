@@ -240,6 +240,11 @@
     <string name="set_update_restriction_started">Started titles</string>
     <string name="set_update_restriction_unread">Titles with unread chapters</string>
     <string name="set_update_restriction_completed">Finished titles</string>
+    <string name="set_update_excluded_shelves">Shelves excluded from checks</string>
+    <string name="set_update_excluded_none">Every shelf is checked</string>
+    <string name="set_update_excluded_title">Exclude shelves from updates</string>
+    <string name="set_update_excluded_hint">Titles on these shelves are never checked automatically. Their history and downloads stay.</string>
+    <string name="set_update_excluded_empty">No shelves yet</string>
     <string name="set_update_wifi">Check only over Wi‑Fi</string>
     <string name="set_show_nsfw">Show 18+ sources</string>
     <string name="set_user_agent">User-Agent</string>

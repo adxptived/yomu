@@ -212,6 +212,9 @@ class AppSettings(context: Context) {
 
     /** Library shelf ids excluded from automatic updates (stored as strings; long sets do not exist in DataStore). */
     val updateExcludedShelves = stringSet("update_excluded_shelves")
+
+    /** The last finished update run (JSON of domain `UpdateRunReport`); empty = never recorded. */
+    val updateLastRun = string("update_last_run", "")
     val showNsfw = bool("show_nsfw", false)
 
     /** Safe / mixed / adult content; [showNsfw] is the old switch this replaces. */

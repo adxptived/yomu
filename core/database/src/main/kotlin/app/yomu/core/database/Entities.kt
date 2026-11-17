@@ -269,6 +269,10 @@ data class CatalogItemEntity(
     @ColumnInfo(defaultValue = "0") val lastCheckAt: Long = 0,
     /** Last check that actually reached the source; 0 = never successful. Added in schema 14. */
     @ColumnInfo(defaultValue = "0") val lastCheckSuccessAt: Long = 0,
+    /** This title's own check interval in hours; null = the app-wide setting. Added in schema 15. */
+    val updateIntervalHours: Int? = null,
+    /** The user left this title out of automatic checks entirely. Added in schema 15. */
+    @ColumnInfo(defaultValue = "0") val updateExcluded: Boolean = false,
 )
 
 @Entity(

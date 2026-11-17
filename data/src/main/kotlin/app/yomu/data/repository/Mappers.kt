@@ -164,6 +164,8 @@ fun CatalogItemEntity.toDomain(unread: Int = 0, downloaded: Int = 0, lastReadAt:
     downloaded = downloaded,
     lastReadAt = lastReadAt,
     chapterCount = chapterCount,
+    updateIntervalHours = updateIntervalHours,
+    updateExcluded = updateExcluded,
 )
 
 fun ChapterEntity.toDomain() = ChapterInfo(

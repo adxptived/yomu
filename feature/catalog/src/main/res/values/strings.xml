@@ -10,6 +10,12 @@
     <string name="catalog_add_opds">Add OPDS catalog</string>
     <string name="opds_url_placeholder">https://example.org/opds</string>
     <string name="title_open_webview">WebView</string>
+    <string name="title_update_schedule">Update schedule</string>
+    <string name="update_schedule_title">Automatic checks</string>
+    <string name="update_schedule_auto">Check this title automatically</string>
+    <string name="update_schedule_hint">An interval of its own wins over the app-wide one; an explicit interval is not stretched by predictions.</string>
+    <string name="update_schedule_default">App default</string>
+    <string name="update_schedule_hours">Every %1$d h</string>
     <string name="catalog_add_opds_hint">Calibre, Flibusta, Standard Ebooks, your own server…</string>
     <string name="catalog_local_folder">Local folder…</string>
     <string name="upcoming_title">Check plan</string>
@@ -23,6 +29,14 @@
     <string name="upcoming_reason_restriction">Skipped by the chosen restrictions</string>
     <string name="upcoming_reason_shelf">In a shelf excluded from updates</string>
     <string name="upcoming_reason_no_source">Its source is not installed</string>
+    <string name="upcoming_reason_title">Left out of automatic checks</string>
+    <string name="upcoming_filter_all">All shelves</string>
+    <string name="upcoming_filter_count">%1$d of %2$d titles on this shelf</string>
+    <string name="upcoming_filter_empty">No planned checks in this shelf</string>
+    <string name="upcoming_checking">Checking…</string>
+    <string name="upcoming_last_run">Last check at %1$s: %2$d titles checked, %3$d new chapters, %4$d failed</string>
+    <string name="upcoming_last_run_downloads">%1$d chapters queued for download</string>
+    <string name="upcoming_last_run_failed">Failed: %1$s</string>
     <string name="catalog_check_updates">Check for updates</string>
     <string name="catalog_incognito_on">Incognito mode is on</string>
     <string name="catalog_incognito_off">Incognito mode is off</string>

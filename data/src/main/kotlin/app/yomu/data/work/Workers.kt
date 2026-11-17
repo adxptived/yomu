@@ -33,6 +33,8 @@ import app.yomu.data.catalog.CatalogRepository
 import app.yomu.data.download.DownloadRepository
 import app.yomu.data.library.ImportService
 import app.yomu.data.repository.WordRepositoryImpl
+import app.yomu.domain.catalog.UpdateRunReport
+import app.yomu.domain.catalog.UpdateRunTitle
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
@@ -319,12 +321,30 @@ class AudioSubscriptionWorker(context: Context, params: WorkerParameters) : Coro
 class UpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params), KoinComponent {
     private val catalog: CatalogRepository by inject()
     private val downloads: DownloadRepository by inject()
+    private val runs: UpdateRunStore by inject()
 
     override suspend fun doWork(): Result {
         val ctx = applicationContext
+        val startedAt = System.currentTimeMillis()
         // The manual "check now" bypasses the interval, the prediction and the restrictions — not a broken source.
         val result = catalog.checkUpdates(force = inputData.getBoolean(KEY_FORCE, false))
         val queued = runCatching { downloads.autoDownloadNew(result) }.onFailure { Timber.w(it, "Auto download failed") }.getOrDefault(0)
+        // The result is persisted before the notification: a later screen must not depend on the notification surviving.
+        runCatching {
+            runs.record(
+                UpdateRunReport(
+                    startedAt = startedAt,
+                    finishedAt = System.currentTimeMillis(),
+                    checked = result.checked,
+                    skipped = result.skipped,
+                    newChapters = result.newChapters,
+                    failed = result.failed.size,
+                    queuedDownloads = queued,
+                    titles = result.updated.map { UpdateRunTitle(it.title, it.newChapterIds.size) } +
+                        result.failed.map { (title, _) -> UpdateRunTitle(title, failed = true) },
+                ),
+            )
+        }.onFailure { Timber.w(it, "Recording the update run failed") }
         if (result.updated.isNotEmpty()) {
             val total = result.newChapters
             val lines = result.updated.map { u -> ctx.resources.getQuantityString(R.plurals.notif_new_chapters_text, u.newChapterIds.size, u.newChapterIds.size, u.title) } +

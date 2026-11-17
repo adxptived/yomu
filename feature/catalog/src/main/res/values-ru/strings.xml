@@ -10,6 +10,12 @@
     <string name="catalog_add_opds">Добавить OPDS-каталог</string>
     <string name="opds_url_placeholder">https://example.org/opds</string>
     <string name="title_open_webview">Веб-версия</string>
+    <string name="title_update_schedule">Расписание проверок</string>
+    <string name="update_schedule_title">Автоматические проверки</string>
+    <string name="update_schedule_auto">Проверять этот тайтл автоматически</string>
+    <string name="update_schedule_hint">Свой интервал важнее общего; явно заданный интервал не растягивается прогнозом.</string>
+    <string name="update_schedule_default">Как в настройках</string>
+    <string name="update_schedule_hours">Каждые %1$d ч</string>
     <string name="catalog_add_opds_hint">Calibre, Флибуста, Standard Ebooks, свой сервер…</string>
     <string name="catalog_local_folder">Локальная папка…</string>
     <string name="upcoming_title">План проверок</string>
@@ -23,6 +29,14 @@
     <string name="upcoming_reason_restriction">Пропущен по выбранным ограничениям</string>
     <string name="upcoming_reason_shelf">В полке, исключённой из обновлений</string>
     <string name="upcoming_reason_no_source">Источник не установлен</string>
+    <string name="upcoming_reason_title">Исключён из автоматических проверок</string>
+    <string name="upcoming_filter_all">Все полки</string>
+    <string name="upcoming_filter_count">%1$d из %2$d тайтлов на этой полке</string>
+    <string name="upcoming_filter_empty">На этой полке проверок не запланировано</string>
+    <string name="upcoming_checking">Проверяю…</string>
+    <string name="upcoming_last_run">Последняя проверка в %1$s: проверено %2$d, новых глав %3$d, ошибок %4$d</string>
+    <string name="upcoming_last_run_downloads">%1$d глав поставлено в очередь загрузки</string>
+    <string name="upcoming_last_run_failed">Ошибка: %1$s</string>
     <string name="catalog_check_updates">Проверить обновления</string>
     <string name="catalog_incognito_on">Режим инкогнито включён</string>
     <string name="catalog_incognito_off">Режим инкогнито выключен</string>

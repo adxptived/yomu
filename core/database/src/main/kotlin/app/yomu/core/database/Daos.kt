@@ -587,6 +587,13 @@ interface CatalogDao {
     @Query("UPDATE catalog_items SET lastCheckAt = 0, lastCheckSuccessAt = 0 WHERE id = :id")
     suspend fun resetCheck(id: Long)
 
+    /** Per-title schedule; null restores the app-wide interval. */
+    @Query("UPDATE catalog_items SET updateIntervalHours = :hours WHERE id = :id")
+    suspend fun setUpdateInterval(id: Long, hours: Int?)
+
+    @Query("UPDATE catalog_items SET updateExcluded = :excluded WHERE id = :id")
+    suspend fun setUpdateExcluded(id: Long, excluded: Boolean)
+
     @Query("SELECT * FROM catalog_items WHERE id = :id")
     fun observe(id: Long): Flow<CatalogItemEntity?>
 

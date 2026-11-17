@@ -11,6 +11,8 @@ data class PlannedCheck(
     /** UTC milliseconds of the next planned check; 0 when the title is not checked automatically. */
     val nextCheckAt: Long,
     val reason: UpdateSkip? = null,
+    /** Shelves the title is in, so the plan can be filtered by shelf without a second query. */
+    val shelfIds: Set<Long> = emptySet(),
 )
 
 /** A day of the plan, in the display zone. */

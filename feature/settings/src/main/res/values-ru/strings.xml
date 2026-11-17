@@ -242,6 +242,11 @@
     <string name="set_update_restriction_started">Начатые тайтлы</string>
     <string name="set_update_restriction_unread">Тайтлы с непрочитанными главами</string>
     <string name="set_update_restriction_completed">Завершённые тайтлы</string>
+    <string name="set_update_excluded_shelves">Полки без проверок</string>
+    <string name="set_update_excluded_none">Проверяются все полки</string>
+    <string name="set_update_excluded_title">Исключить полки из обновлений</string>
+    <string name="set_update_excluded_hint">Тайтлы с этих полок не проверяются автоматически. История и загрузки остаются.</string>
+    <string name="set_update_excluded_empty">Полок пока нет</string>
     <string name="set_update_wifi">Проверять только по Wi‑Fi</string>
     <string name="set_show_nsfw">Показывать источники 18+</string>
     <string name="set_user_agent">User-Agent</string>

@@ -62,6 +62,7 @@ val dataModule = module {
     single { AudiobookDownloader(androidContext(), get()) { get<NetworkClients>().downloadClient } }
     single { ImportService(androidContext(), get(), get(), get(), get()) }
     single { app.yomu.data.library.ImportReportStore(androidContext()) }
+    single { app.yomu.data.work.UpdateRunStore(get()) }
     single { MlKitEngine(androidContext()) }
     single { TranslationService(get(), get(), get(), get(), get()) }
     single { BookTranslator(androidContext(), get(), get(), get()) }

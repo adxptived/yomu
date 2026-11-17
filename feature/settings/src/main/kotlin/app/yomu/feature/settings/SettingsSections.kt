@@ -842,6 +842,58 @@ internal fun ColumnScope.CatalogSection(vm: SettingsViewModel, links: SettingsLi
             )
         }
     }
+    // A shelf excluded here is never passed to the update worker, even by a manual check of everything.
+    val excludedShelves by s.updateExcludedShelves.state()
+    val shelves by vm.shelves.collectAsStateWithLifecycle()
+    var pickExcludedShelves by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { vm.loadShelves() }
+    val excludedNames = shelves.filter { it.id.toString() in excludedShelves }.joinToString(", ") { it.name }
+    PreferenceItem(
+        stringResource(R.string.set_update_excluded_shelves),
+        excludedNames.ifEmpty { stringResource(R.string.set_update_excluded_none) },
+        icon = settingIcon(R.string.set_update_excluded_shelves),
+        onClick = { pickExcludedShelves = true },
+    )
+    if (pickExcludedShelves) {
+        var chosen by remember { mutableStateOf(excludedShelves) }
+        AlertDialog(
+            onDismissRequest = { pickExcludedShelves = false },
+            title = { Text(stringResource(R.string.set_update_excluded_title)) },
+            text = {
+                Column {
+                    Text(
+                        stringResource(R.string.set_update_excluded_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = Dimens.s),
+                    )
+                    if (shelves.isEmpty()) {
+                        Text(stringResource(R.string.set_update_excluded_empty))
+                    }
+                    shelves.forEach { shelf ->
+                        val id = shelf.id.toString()
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                chosen = if (id in chosen) chosen - id else chosen + id
+                            }.padding(vertical = Dimens.xs),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(checked = id in chosen, onCheckedChange = null)
+                            Text(shelf.name, Modifier.padding(start = Dimens.s))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.set(s.updateExcludedShelves, chosen); pickExcludedShelves = false }) {
+                    Text(stringResource(app.yomu.core.ui.R.string.save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pickExcludedShelves = false }) { Text(stringResource(app.yomu.core.ui.R.string.cancel)) }
+            },
+        )
+    }
     TextPref(vm, s.userAgent, R.string.set_user_agent, summaryWhenEmpty = R.string.set_user_agent_default)
     ChoicePref(
         vm, s.contentPreference, R.string.set_content_preference,

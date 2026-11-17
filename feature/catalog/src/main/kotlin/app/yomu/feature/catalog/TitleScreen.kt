@@ -105,6 +105,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -263,6 +264,7 @@ private fun TitleContent(
     var confirmDeleteAll by remember { mutableStateOf(false) }
     var pickTabs by remember { mutableStateOf(false) }
     var editTabs by remember { mutableStateOf(false) }
+    var updateSchedule by remember { mutableStateOf(false) }
     var showTracking by remember { mutableStateOf(false) }
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
 
@@ -409,6 +411,11 @@ private fun TitleContent(
                                     )
                                 }
                                 if (e?.favorite == true) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.title_update_schedule)) },
+                                        leadingIcon = { Icon(Icons.Filled.Refresh, null) },
+                                        onClick = { showMenu = false; updateSchedule = true },
+                                    )
                                     DropdownMenuItem(
                                         text = { Text(stringResource(R.string.tabs_action)) },
                                         leadingIcon = { Icon(Icons.Filled.Bookmarks, null) },
@@ -691,6 +698,54 @@ private fun TitleContent(
             onToggle = { id -> viewModel.setTab(id, id !in entryTabs) },
             onCreate = { name -> viewModel.createTab(name) { id -> viewModel.setTab(id, true) } },
             onDismiss = { editTabs = false },
+        )
+    }
+    if (updateSchedule && e != null) {
+        // Per-title schedule: the app-wide interval, a title-specific one, or no automatic check at all.
+        val title = e
+        var interval by remember(title.id, title.updateIntervalHours) { mutableStateOf(title.updateIntervalHours) }
+        var excluded by remember(title.id, title.updateExcluded) { mutableStateOf(title.updateExcluded) }
+        AlertDialog(
+            onDismissRequest = { updateSchedule = false },
+            title = { Text(stringResource(R.string.update_schedule_title)) },
+            text = {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Switch(checked = !excluded, onCheckedChange = { excluded = !it })
+                        Text(stringResource(R.string.update_schedule_auto), Modifier.padding(start = Dimens.s))
+                    }
+                    if (!excluded) {
+                        Text(
+                            stringResource(R.string.update_schedule_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = Dimens.s),
+                        )
+                        listOf<Int?>(null, 3, 6, 12, 24, 48, 168).forEach { option ->
+                            Row(
+                                Modifier.fillMaxWidth().heightIn(min = Dimens.touch)
+                                    .selectable(selected = interval == option, role = Role.RadioButton, onClick = { interval = option }),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(selected = interval == option, onClick = null)
+                                Text(
+                                    if (option == null) stringResource(R.string.update_schedule_default)
+                                    else stringResource(R.string.update_schedule_hours, option),
+                                    Modifier.padding(start = Dimens.s),
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.setUpdateExcluded(excluded)
+                    viewModel.setUpdateInterval(if (excluded) title.updateIntervalHours else interval)
+                    updateSchedule = false
+                }) { Text(stringResource(CoreR.string.save)) }
+            },
+            dismissButton = { TextButton(onClick = { updateSchedule = false }) { Text(stringResource(CoreR.string.cancel)) } },
         )
     }
     if (showTracking) TrackingSheet(viewModel, onDismiss = { showTracking = false })

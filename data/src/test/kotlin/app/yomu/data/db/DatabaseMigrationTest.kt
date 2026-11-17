@@ -450,8 +450,42 @@ class DatabaseMigrationTest {
         }
     }
 
+    /** 14 → 15 adds a per-title schedule; an existing title keeps the app-wide interval and stays checked. */
+    @Test
+    fun migrates14To15AddingPerTitleSchedule() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val file = context.getDatabasePath("migration-test-14.db").apply { parentFile?.mkdirs(); delete() }
+        createFromSchema(file, 14)
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use { sql ->
+            sql.execSQL(
+                "INSERT INTO catalog_items (sourceId, url, title, genres, status, type, favorite, addedAt, lastUpdateAt, initialized) " +
+                    "VALUES (1, '/title/1', 'Title', '', 0, 'MANGA', 1, 1, 1, 1)",
+            )
+        }
+        val room = Room.databaseBuilder(context, YomuDatabase::class.java, file.path).addMigrations(*YomuDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val db = room.openHelper.writableDatabase
+            assertEquals(CURRENT_VERSION, db.version)
+            db.query("SELECT title, updateIntervalHours, updateExcluded FROM catalog_items").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("Title", c.getString(0))
+                assertTrue(c.isNull(1))
+                assertEquals(0L, c.getLong(2))
+            }
+            db.execSQL("UPDATE catalog_items SET updateIntervalHours = 12, updateExcluded = 1")
+            db.query("SELECT updateIntervalHours, updateExcluded FROM catalog_items").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals(12, c.getInt(0))
+                assertEquals(1L, c.getLong(1))
+            }
+        } finally {
+            room.close()
+            file.delete()
+        }
+    }
+
     private companion object {
-        const val CURRENT_VERSION = 14
+        const val CURRENT_VERSION = 15
     }
 }
 
