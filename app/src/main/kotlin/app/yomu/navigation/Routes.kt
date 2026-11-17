@@ -46,6 +46,9 @@ import kotlinx.serialization.Serializable
 /** The connection wizard: what the catalog's "Add" and the library's import sheet lead to (S01). */
 @Serializable data object SourceConnectionRoute
 
+/** The plan of the next automatic checks (U02). */
+@Serializable data object UpcomingRoute
+
 @Serializable data class SourceSettingsRoute(val sourceId: Long)
 
 @Serializable data class WebViewRoute(val url: String)

@@ -324,6 +324,51 @@ class CatalogRepository(
         }
     }
 
+    /** The next check of every favourite, decided by the same policy the worker uses. */
+    suspend fun checkPlan(): List<app.yomu.domain.catalog.PlannedCheck> = withContext(Dispatchers.IO) {
+        val rows = dao.checkRows().filter { it.item.type != ContentType.BOOK.name && it.item.type != ContentType.AUDIO.name }
+        val interval = runCatching { settings.updateIntervalHours.get() }.getOrDefault(6)
+        val restrictions = runCatching { settings.updateRestrictions.get() }.getOrDefault(emptySet())
+            .mapNotNull { name -> UpdateRestriction.entries.firstOrNull { it.name == name } }
+            .toSet()
+        val excluded = runCatching { settings.updateExcludedShelves.get() }.getOrDefault(emptySet())
+            .mapNotNull { it.toLongOrNull() }
+            .toSet()
+        val shelves = db.collections().allItemRefs().groupBy({ it.itemId }, { it.collectionId })
+        val dates = if (rows.isEmpty()) emptyMap() else dao.uploadDates(rows.map { it.item.id }).groupBy({ it.itemId }, { it.uploadDate })
+        val now = System.currentTimeMillis()
+        rows.map { row ->
+            val sourceAvailable = sources.get(row.item.sourceId) != null
+            val status = when {
+                row.lastReadAt == null -> "NEW"
+                row.unread > 0 -> "READING"
+                else -> "FINISHED"
+            }
+            val decision = UpdatePolicy.decide(
+                title = UpdateTitleState(
+                    status = status,
+                    unreadChapters = row.unread,
+                    chapterCount = 0,
+                    shelfIds = shelves[row.item.id].orEmpty().toSet(),
+                    lastAttemptAt = row.item.lastCheckAt,
+                    lastSuccessAt = row.item.lastCheckSuccessAt,
+                ),
+                now = now,
+                intervalHours = interval,
+                restrictions = restrictions,
+                excludedShelves = excluded,
+                uploadDates = dates[row.item.id].orEmpty(),
+                sourceAvailable = sourceAvailable,
+            )
+            app.yomu.domain.catalog.PlannedCheck(
+                titleId = row.item.id,
+                title = row.item.title,
+                nextCheckAt = if (decision.eligible) now else (decision.nextCheckAt ?: 0),
+                reason = decision.reason,
+            )
+        }.sortedWith(compareBy({ if (it.nextCheckAt <= 0) Long.MAX_VALUE else it.nextCheckAt }, { it.title.lowercase() }))
+    }
+
     /**
      * Checks all favourites for new chapters. Sources are checked in parallel, the titles of one source one after another
      * (with a short pause) so that a big library does not hit a single site with dozens of parallel requests.

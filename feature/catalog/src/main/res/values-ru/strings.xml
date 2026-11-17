@@ -12,6 +12,17 @@
     <string name="title_open_webview">Веб-версия</string>
     <string name="catalog_add_opds_hint">Calibre, Флибуста, Standard Ebooks, свой сервер…</string>
     <string name="catalog_local_folder">Локальная папка…</string>
+    <string name="upcoming_title">План проверок</string>
+    <string name="upcoming_note">Это план проверок, а не расписание выхода глав: точная минута зависит от системы, а о новых главах сообщает сам источник.</string>
+    <string name="upcoming_check_now">Проверить всё сейчас</string>
+    <string name="upcoming_loading">Загружаю план…</string>
+    <string name="upcoming_empty">Пока нет тайтлов из источников</string>
+    <string name="upcoming_nothing_today">Проверок не запланировано</string>
+    <string name="upcoming_retry">Повторить</string>
+    <string name="upcoming_reason_interval">Ожидает интервала</string>
+    <string name="upcoming_reason_restriction">Пропущен по выбранным ограничениям</string>
+    <string name="upcoming_reason_shelf">В полке, исключённой из обновлений</string>
+    <string name="upcoming_reason_no_source">Источник не установлен</string>
     <string name="catalog_check_updates">Проверить обновления</string>
     <string name="catalog_incognito_on">Режим инкогнито включён</string>
     <string name="catalog_incognito_off">Режим инкогнито выключен</string>

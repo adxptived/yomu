@@ -94,6 +94,7 @@ import app.yomu.feature.catalog.SourceBrowseViewModel
 import app.yomu.feature.catalog.SourceConnectionScreen
 import app.yomu.feature.catalog.SourceSettingsScreen
 import app.yomu.feature.catalog.TitleScreen
+import app.yomu.feature.catalog.UpcomingScreen
 import app.yomu.feature.catalog.WebViewScreen
 import app.yomu.feature.dictionary.DictionariesScreen
 import app.yomu.feature.dictionary.DictionaryScreen
@@ -370,6 +371,7 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                             onOpenWebView = { nav.navigate(WebViewRoute(it)) },
                             onOpenSourceSettings = { nav.navigate(SourceSettingsRoute(it)) },
                             onAddSource = { nav.navigate(SourceConnectionRoute) },
+                            onOpenUpdatesPlan = { nav.navigate(UpcomingRoute) },
                         )
                         TopLevel.DICTIONARY -> DictionaryScreen(
                             viewModel = koinViewModel(),
@@ -579,6 +581,13 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                 viewModel = koinViewModel(),
                 onBack = back,
                 onOpenExtensions = { nav.navigate(ExtensionsRoute()) },
+            )
+        }
+        screen<UpcomingRoute> {
+            UpcomingScreen(
+                viewModel = koinViewModel(),
+                onBack = back,
+                onOpenTitle = { nav.navigate(TitleRoute(it)) },
             )
         }
         screen<SourceSettingsRoute> { entry -> SourceSettingsScreen(entry.toRoute<SourceSettingsRoute>().sourceId, back) }

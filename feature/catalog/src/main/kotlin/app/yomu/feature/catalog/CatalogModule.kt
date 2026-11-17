@@ -17,4 +17,5 @@ val catalogModule = module {
     viewModel { (entryId: Long) -> TitleViewModel(entryId, get(), get(), get(), get(), get(), get()) }
     viewModel { ExtensionsViewModel(androidContext(), get(), get(), get()) }
     viewModel { SourceConnectionViewModel(androidContext(), get(), get(), get(), get(), get()) }
+    viewModel { UpcomingViewModel(androidContext(), get()) }
 }

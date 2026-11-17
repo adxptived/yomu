@@ -164,6 +164,8 @@ fun CatalogScreen(
     onOpenSourceSettings: (Long) -> Unit = {},
     /** The connection wizard: what "Add" leads to (S01). */
     onAddSource: () -> Unit = {},
+    /** The plan of the next automatic checks (U02). */
+    onOpenUpdatesPlan: () -> Unit = {},
 ) {
     val ready by viewModel.ready.collectAsStateWithLifecycle()
     val sources by viewModel.sourceList.collectAsStateWithLifecycle()
@@ -251,6 +253,11 @@ fun CatalogScreen(
                                 text = { Text(stringResource(R.string.catalog_check_updates)) },
                                 leadingIcon = { Icon(Icons.Filled.Refresh, null) },
                                 onClick = { showMenu = false; viewModel.checkUpdates() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.upcoming_title)) },
+                                leadingIcon = { Icon(Icons.Outlined.NewReleases, null) },
+                                onClick = { showMenu = false; onOpenUpdatesPlan() },
                             )
                         }
                     }

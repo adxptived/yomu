@@ -12,6 +12,17 @@
     <string name="title_open_webview">WebView</string>
     <string name="catalog_add_opds_hint">Calibre, Flibusta, Standard Ebooks, your own server…</string>
     <string name="catalog_local_folder">Local folder…</string>
+    <string name="upcoming_title">Check plan</string>
+    <string name="upcoming_note">This is a plan of checks, not a release schedule: the exact minute depends on the system, and a source announces its own chapters.</string>
+    <string name="upcoming_check_now">Check all now</string>
+    <string name="upcoming_loading">Loading the plan…</string>
+    <string name="upcoming_empty">No titles follow a source yet</string>
+    <string name="upcoming_nothing_today">No checks planned</string>
+    <string name="upcoming_retry">Try again</string>
+    <string name="upcoming_reason_interval">Waiting for the interval</string>
+    <string name="upcoming_reason_restriction">Skipped by the chosen restrictions</string>
+    <string name="upcoming_reason_shelf">In a shelf excluded from updates</string>
+    <string name="upcoming_reason_no_source">Its source is not installed</string>
     <string name="catalog_check_updates">Check for updates</string>
     <string name="catalog_incognito_on">Incognito mode is on</string>
     <string name="catalog_incognito_off">Incognito mode is off</string>
