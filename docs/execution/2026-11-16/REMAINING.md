@@ -17,10 +17,10 @@
 
 ## Начато, есть ядро — нужно доделать
 
-### S06 — источники и сеть (`IN_PROGRESS`)
-- [ ] DNS-over-HTTPS (сейчас есть только настраиваемый User-Agent).
-- [ ] UI области действия «очистить cookie / WebView».
-- [ ] Shizuku как опциональный установщик: capability detection, fallback на приватный установщик.
+### S06 — источники и сеть (`CODE_VERIFIED`, Shizuku `BLOCKED`)
+- [x] DNS-over-HTTPS (Cloudflare/Google/AdGuard, per-lookup setting, private names stay on the system resolver, fallback).
+- [x] UI области действия «очистить cookie / WebView» (один хост или все сайты + формы WebView; описание до действия).
+- [ ] Shizuku как опциональный установщик — `BLOCKED`: в публичном Shizuku API 13.1.5 нет install-вызова, а путь через `IPackageManager` требует hidden-стабов; декоративную настройку не добавляю.
 
 ### M02 — развороты, спреды, страницы (`CODE_VERIFIED`, device open)
 - [x] rotate-to-fit для широких сканов.

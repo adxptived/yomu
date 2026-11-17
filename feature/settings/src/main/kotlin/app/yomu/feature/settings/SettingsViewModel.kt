@@ -60,6 +60,8 @@ class SettingsViewModel(
     private val tabs: app.yomu.data.library.LibraryTabs,
     /** Last library scan: a folder that is temporarily unavailable is reported instead of looking like "nothing new". */
     private val scans: app.yomu.data.library.ScanReportStore,
+    /** The shared cookie jar: "clear site data" acts on it and the preview reads it. */
+    private val clients: app.yomu.core.network.NetworkClients,
     private val appScope: AppScope = AppScope(),
 ) : ViewModel() {
     private val _events = Channel<SettingsEvent>(Channel.BUFFERED)
@@ -106,6 +108,26 @@ class SettingsViewModel(
                 listOf(report.restored, report.missing, report.orphans),
             ),
         )
+    }
+
+    /**
+     * Clears cookies for [scope]. The scope is shown before the action and the same one is applied here: one site
+     * keeps every other sign-in, "everything" also clears WebView form data and the stored sessions.
+     */
+    fun clearSiteData(scope: app.yomu.core.network.ClearScope, host: String?) = viewModelScope.launch(ScreenErrors) {
+        val jar = clients.cookieJar
+        when (scope) {
+            app.yomu.core.network.ClearScope.HOST -> {
+                val target = host?.takeIf { it.isNotBlank() } ?: return@launch
+                runCatching { jar.clear("https://$target/") }
+            }
+            app.yomu.core.network.ClearScope.ALL -> {
+                runCatching { jar.clear() }
+                runCatching { android.webkit.WebStorage.getInstance().deleteAllData() }
+                runCatching { android.webkit.WebViewDatabase.getInstance(context).clearFormData() }
+            }
+        }
+        _events.send(SettingsEvent.Message(R.string.set_clear_site_done))
     }
 
     /** Loads the shelves for the excluded-shelf picker; a missing list means the dialog shows an empty state. */

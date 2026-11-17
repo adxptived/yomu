@@ -228,6 +228,9 @@ class AppSettings(context: Context) {
     /** A User-Agent for every request without its own; empty means the built-in browser-like one. */
     val userAgent = string("user_agent", "")
 
+    /** DNS-over-HTTPS provider name (`DohProvider`); empty or unknown = the system resolver. */
+    val dnsProvider = string("dns_provider", "")
+
     /**
      * A settings file written before [contentPreference] existed keeps its meaning: the old switch was off by
      * default, which is [ContentPreference.SAFE], and on meant the content was listed, which is

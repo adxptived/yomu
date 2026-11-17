@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CollectionsBookmark
@@ -43,6 +44,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -75,6 +78,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.os.LocaleListCompat
@@ -917,6 +921,25 @@ internal fun ColumnScope.CatalogSection(vm: SettingsViewModel, links: SettingsLi
     }
     TextPref(vm, s.userAgent, R.string.set_user_agent, summaryWhenEmpty = R.string.set_user_agent_default)
     ChoicePref(
+        vm, s.dnsProvider, R.string.set_dns_provider,
+        app.yomu.core.network.DohProvider.entries.map { provider ->
+            provider.name to stringResource(
+                when (provider) {
+                    app.yomu.core.network.DohProvider.OFF -> R.string.set_dns_system
+                    app.yomu.core.network.DohProvider.CLOUDFLARE -> R.string.set_dns_cloudflare
+                    app.yomu.core.network.DohProvider.GOOGLE -> R.string.set_dns_google
+                    app.yomu.core.network.DohProvider.ADGUARD -> R.string.set_dns_adguard
+                },
+            )
+        },
+    )
+    Text(
+        stringResource(R.string.set_dns_note),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+    )
+    ChoicePref(
         vm, s.contentPreference, R.string.set_content_preference,
         listOf(
             app.yomu.domain.catalog.ContentPreference.SAFE to stringResource(R.string.set_content_safe),
@@ -1144,7 +1167,73 @@ internal fun ColumnScope.NetworkSection(vm: SettingsViewModel) {
     SwitchPref(vm, s.dataSaver, R.string.set_data_saver, R.string.set_data_saver_sum)
     SwitchPref(vm, s.coversOnMobile, R.string.set_covers_mobile, R.string.set_covers_mobile_sum)
     SwitchPref(vm, s.warnMobileReading, R.string.set_warn_mobile, R.string.set_warn_mobile_sum)
+    PreferenceHeader(stringResource(R.string.set_site_data))
+    ClearSiteDataItem(vm)
     TrafficCounter()
+}
+
+/** "Clear site data" with an explicit scope: one host, or every site and every stored session. */
+@Composable
+private fun ClearSiteDataItem(vm: SettingsViewModel) {
+    var scope by remember { mutableStateOf<app.yomu.core.network.ClearScope?>(null) }
+    var host by remember { mutableStateOf("") }
+    PreferenceItem(
+        stringResource(R.string.set_clear_site),
+        stringResource(R.string.set_clear_site_sum),
+        icon = Icons.Filled.Delete,
+        onClick = { scope = app.yomu.core.network.ClearScope.HOST },
+    )
+    scope?.let { chosen ->
+        AlertDialog(
+            onDismissRequest = { scope = null },
+            title = { Text(stringResource(R.string.set_clear_site)) },
+            text = {
+                Column {
+                    Row(
+                        Modifier.fillMaxWidth().selectable(selected = chosen == app.yomu.core.network.ClearScope.HOST, role = Role.RadioButton, onClick = { scope = app.yomu.core.network.ClearScope.HOST }),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = chosen == app.yomu.core.network.ClearScope.HOST, onClick = null)
+                        Text(stringResource(R.string.set_clear_site_one), Modifier.padding(start = Dimens.s))
+                    }
+                    if (chosen == app.yomu.core.network.ClearScope.HOST) {
+                        OutlinedTextField(
+                            value = host,
+                            onValueChange = { host = it.trim() },
+                            label = { Text(stringResource(R.string.set_clear_site_host)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = Dimens.s),
+                        )
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().selectable(selected = chosen == app.yomu.core.network.ClearScope.ALL, role = Role.RadioButton, onClick = { scope = app.yomu.core.network.ClearScope.ALL }),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = chosen == app.yomu.core.network.ClearScope.ALL, onClick = null)
+                        Text(stringResource(R.string.set_clear_site_all), Modifier.padding(start = Dimens.s))
+                    }
+                    // What will actually be removed, before anything is.
+                    Text(
+                        when (chosen) {
+                            app.yomu.core.network.ClearScope.HOST -> stringResource(R.string.set_clear_site_scope_one, host.ifBlank { "…" })
+                            app.yomu.core.network.ClearScope.ALL -> stringResource(R.string.set_clear_site_scope_all)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = Dimens.s),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = chosen == app.yomu.core.network.ClearScope.ALL || host.isNotBlank(),
+                    onClick = { vm.clearSiteData(chosen, host); scope = null },
+                ) { Text(stringResource(R.string.set_clear_site)) }
+            },
+            dismissButton = { TextButton(onClick = { scope = null }) { Text(stringResource(app.yomu.core.ui.R.string.cancel)) } },
+        )
+    }
 }
 
 /** Traffic used by the app since the last reset: total, a mobile/Wi-Fi bar and a reset action. */

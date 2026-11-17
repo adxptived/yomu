@@ -162,6 +162,11 @@ class YomuApp : Application(), SingletonImageLoader.Factory {
                 clients.userAgent = value.ifBlank { app.yomu.core.network.DEFAULT_USER_AGENT }
             }
         }
+        // The same for DNS-over-HTTPS: the resolver is read per lookup, and a private name never leaves the device.
+        appScope.launch {
+            val clients = get<NetworkClients>()
+            settings.dnsProvider.flow.collect { value -> clients.dnsProvider = app.yomu.core.network.DohProvider.of(value) }
+        }
         // Covers of the online shelf are fetched once the first screen has settled, so a later entry loads them from
         // the device (and they are there offline). Hidden covers are not fetched at all.
         appScope.launch {

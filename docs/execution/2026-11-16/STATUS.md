@@ -1214,5 +1214,33 @@ push or release was made.
 
 **Device/live:** `DEVICE_PENDING` — a real lock screen with privacy on, and notifications arriving while incognito is on.
 
+---
+
+## S06 (remainder) — DNS-over-HTTPS and the cookie/WebView scope
+
+**Status:** `CODE_VERIFIED` for DoH and the clear-scope UI; the Shizuku installer is `BLOCKED` with its reason.
+
+| File | Change |
+|---|---|
+| `core/network/.../ResolvingDns.kt` | NEW. `DohProvider` (system/Cloudflare/Google/AdGuard) and a `Dns` that reads the choice per lookup, sends literal/bare/private names to the system resolver, and falls back to the system answer when the endpoint fails. Built once per chosen provider. |
+| `core/network/.../Network.kt` | The shared client uses the resolver; the DoH client has short timeouts and is built separately, so an answer cannot wait for the request timeout. |
+| `core/network/.../CookieScope.kt` | NEW. `ClearScope` (one host / all sites) with a description used by the dialog, and a host/count projection that never keeps a cookie value. |
+| `core/network/.../Network.kt` | `WebViewCookieJar.names(url)` (names only) and `clear(url)` for a single site. |
+| `core/network/src/test/.../{ResolvingDnsTest,CookieScopeTest}.kt` | NEW. Public vs private names and literals, provider tolerance, grouping by host, no secret kept. |
+| `core/datastore/.../AppSettings.kt`, `app/.../YomuApp.kt` | `dns_provider`; the client follows the setting without rebuilding. |
+| `feature/settings/.../SettingsSections.kt`, `SettingsViewModel.kt` | The DNS choice in Catalog; a "clear site data" dialog with the scope chosen before the action, one-host or every site (also `WebStorage` and WebView form data), and the same scope passed to the clearer. |
+| `feature/settings/res/values{,-ru}/strings.xml` | DNS and site-data strings. |
+
+**Shizuku — blocked, not faked:** the public Shizuku 13.1.5 API exposes `pingBinder`/`checkSelfPermission` but no process or install call (`newProcess` is private); installing a system APK otherwise needs hidden `IPackageManager` stubs. The plan forbids a decorative setting, so no Shizuku switch is added and the private installer remains the only route. Recorded as `BLOCKED` with this reason.
+
+**Commands:**
+
+| Command | Result |
+|---|---|
+| `.\gradlew.bat :core:network:testDebugUnitTest --tests "app.yomu.core.network.*"` | `BUILD SUCCESSFUL` |
+| `.\gradlew.bat :feature:settings:compileDebugKotlin :app:compileDebugKotlin` | `BUILD SUCCESSFUL` |
+
+**Device/live:** `DEVICE_PENDING` — a real LAN server while DoH is on, and a WebView site cleared by host vs all sites.
+
 
 

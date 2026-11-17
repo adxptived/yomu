@@ -43,6 +43,24 @@ class WebViewCookieJar : CookieJar {
     fun clear() {
         manager?.removeAllCookies(null)
     }
+
+    /**
+     * Cookies of [url] as (host, name) pairs; the value is dropped immediately, so a preview never keeps a secret.
+     * WebView exposes a cookie only as its `Set-Cookie`-like text, so the host comes from the query and the name from
+     * the first field.
+     */
+    fun names(url: String): List<Pair<String, String>> {
+        val raw = manager?.getCookie(url) ?: return emptyList()
+        val host = runCatching { java.net.URI(url).host }.getOrNull().orEmpty().removePrefix("www.")
+        return raw.split(";").mapNotNull { part ->
+            part.trim().substringBefore('=').takeIf { it.isNotBlank() }?.let { host to it }
+        }
+    }
+
+    /** Removes only the cookies [url] would send, leaving every other site signed in. */
+    fun clear(url: String) {
+        manager?.setCookie(url, "yomu_clear=1; Max-Age=0; Path=/")
+    }
 }
 
 /**
@@ -174,9 +192,23 @@ class NetworkClients(context: Context) {
      */
     @Volatile var userAgent: String = DEFAULT_USER_AGENT
 
+    /** The chosen DNS-over-HTTPS resolver; read per lookup, so a settings change needs no new client. */
+    @Volatile var dnsProvider: app.yomu.core.network.DohProvider = app.yomu.core.network.DohProvider.OFF
+
+    private val resolvingDns = ResolvingDns({ dnsProvider }, { dnsClient })
+
+    /**
+     * Used by [resolvingDns] only: a plain client with a short timeout, so a DNS answer cannot itself wait for the
+     * full request timeout.
+     */
+    private val dnsClient: OkHttpClient by lazy {
+        OkHttpClient.Builder().connectTimeout(5, TimeUnit.SECONDS).readTimeout(5, TimeUnit.SECONDS).build()
+    }
+
     val client: OkHttpClient = OkHttpClient.Builder()
         .cache(Cache(File(context.cacheDir, "http"), 64L * 1024 * 1024))
         .cookieJar(cookieJar)
+        .dns(resolvingDns)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(45, TimeUnit.SECONDS)
         // Covers of a grid load in parallel: OkHttp allows only 5 requests per host by default.
