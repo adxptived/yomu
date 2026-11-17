@@ -55,6 +55,7 @@ None observed for `:app:assembleDebug`. Profile-specific baselines are recorded 
 | U02 | IN_PROGRESS | Check-plan screen with week grouping, reasons and a manual check; shelf filters and awaiting the manual result are not done. |
 | U03 | IN_PROGRESS | Read/download/bookmark filters on the existing Updates/History feeds, with a ready grouping model; grouped headers, multi-selection and the new-chapters widget are not done. |
 | DL01 | IN_PROGRESS | The queue already had pause/resume/cancel/priority/guarded completion; reauth is now its own failure kind with its own message. Retry-After on queue retries and the remaining fairness tests are open. |
+| DL03 | IN_PROGRESS | Owned download directories are marked `.nomedia`; existing stable names/index were verified, rescan and ComicInfo round-trip tests remain open. |
 
 ---
 

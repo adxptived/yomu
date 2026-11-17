@@ -51,6 +51,16 @@ object Files {
 
     fun sanitize(name: String): String = name.replace(Regex("[\\\\/:*?\"<>|\\u0000-\\u001f]"), "_").trim().take(MAX_NAME).ifBlank { "file" }
 
+    /**
+     * Marks a directory the app owns as "not media": downloaded chapter images and covers are data, not gallery
+     * entries. Only app-owned directories get the marker — a folder the user picked is never written to.
+     */
+    fun ensureNomedia(dir: File) {
+        if (!dir.isDirectory) dir.mkdirs()
+        val marker = File(dir, ".nomedia")
+        if (!marker.exists()) runCatching { marker.createNewFile() }
+    }
+
     fun sha1(input: InputStream, limit: Long = Long.MAX_VALUE): String {
         val md = MessageDigest.getInstance("SHA-1")
         val buf = ByteArray(BUFFER)
