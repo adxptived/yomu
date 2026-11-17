@@ -49,6 +49,8 @@ None observed for `:app:assembleDebug`. Profile-specific baselines are recorded 
 | M01 | CODE_VERIFIED | One chapter-navigation resolver; alternatives and gaps only with reliable numbering. |
 | M02 | IN_PROGRESS | Spread/virtual-page model, split render and a separate "cover alone" setting; rotate-to-fit, start zoom and tiled decode are not done. |
 | M04 | IN_PROGRESS | Per-mode tap schemes, per-axis inversion and one hardware-key resolver; the optional page navigator and animation-speed setting are not done. |
+| U01 | IN_PROGRESS | One update policy with per-title check times, restrictions and upload-rhythm prediction; per-title overrides and the excluded-shelf picker are not done. |
+| DL02 | IN_PROGRESS | Retention policy with bookmark/shelf/ownership protection and a storage cap; the preview UI and per-shelf pickers are not done. |
 
 ---
 

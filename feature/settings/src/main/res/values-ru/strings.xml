@@ -267,6 +267,8 @@
     <string name="set_downloads_sum">Сеть, параллельные загрузки, занятое место</string>
     <string name="set_download_wifi">Скачивать только по Wi‑Fi</string>
     <string name="set_parallel">Параллельных загрузок</string>
+    <string name="set_download_keep_last">Хранить новые главы</string>
+    <string name="set_download_max">Место для загрузок</string>
     <string name="set_auto_delete">Удалять главы после прочтения</string>
     <string name="set_auto_delete_sum">Скачанные главы удаляются, когда вы их дочитали</string>
     <string name="set_pack_cbz">Хранить главы в CBZ</string>

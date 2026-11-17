@@ -892,6 +892,17 @@ internal fun ColumnScope.DownloadsSection(vm: SettingsViewModel, links: Settings
     val noRetries = stringResource(R.string.set_download_retries_off)
     IntSliderPref(vm, s.downloadRetries, R.string.set_download_retries, 0..5, label = { if (it == 0) noRetries else it.toString() })
     SwitchPref(vm, s.autoDeleteRead, R.string.set_auto_delete, R.string.set_auto_delete_sum)
+    // Retention: the newest chapters of a title and a device-wide cap. Protected shelves are stored but chosen on the
+    // shelf itself, not here.
+    val off = stringResource(R.string.set_off)
+    ChoicePref(
+        vm, s.downloadKeepLast, R.string.set_download_keep_last,
+        listOf(0, 3, 5, 10, 20, 50).map { n -> n to if (n == 0) off else n.toString() },
+    )
+    ChoicePref(
+        vm, s.downloadMaxMb, R.string.set_download_max,
+        listOf(0, 500, 1000, 2000, 5000, 10_000).map { mb -> mb to if (mb == 0) off else "$mb MB" },
+    )
     SwitchPref(vm, s.packCbz, R.string.set_pack_cbz, R.string.set_pack_cbz_sum)
     PreferenceItem(stringResource(R.string.set_open_downloads), onClick = links.onOpenDownloads, icon = settingIcon(R.string.set_open_downloads))
     PreferenceItem(stringResource(R.string.set_storage), stringResource(R.string.set_storage_sum), onClick = onOpenStorage, icon = settingIcon(R.string.set_storage))

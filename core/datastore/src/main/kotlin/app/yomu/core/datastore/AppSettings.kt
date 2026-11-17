@@ -269,6 +269,15 @@ class AppSettings(context: Context) {
     val maxParallelDownloads = int("max_parallel_downloads", 2)
     val downloadFolder = string("download_folder", "")
     val autoDeleteRead = bool("auto_delete_read", false)
+
+    /** Keep this many newest downloads of every title (0 = no such rule). */
+    val downloadKeepLast = int("download_keep_last", 0)
+
+    /** Storage cap for downloaded chapters in megabytes (0 = no cap). */
+    val downloadMaxMb = int("download_max_mb", 0)
+
+    /** Shelves whose downloads are never removed automatically (ids as strings). */
+    val downloadProtectedShelves = stringSet("download_protected_shelves")
     val packCbz = bool("pack_cbz", true)
 
     /** Queue new chapters of library titles found by the update check. */

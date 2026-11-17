@@ -22,6 +22,10 @@ import app.yomu.data.library.ImportService
 import app.yomu.data.repository.toDomain
 import app.yomu.data.work.DownloadWorker
 import app.yomu.domain.catalog.ChapterOrder
+import app.yomu.domain.download.DownloadRetention
+import app.yomu.domain.download.RetentionItem
+import app.yomu.domain.download.RetentionSettings
+import app.yomu.domain.model.ChapterInfo
 import app.yomu.domain.model.DownloadItem
 import app.yomu.domain.model.DownloadKind
 import app.yomu.domain.model.DownloadStatus
@@ -664,9 +668,40 @@ class DownloadRepository(
 
     /** Deletes the downloaded files of read chapters of [entryId] (all titles when null). Returns how many were deleted. */
     suspend fun deleteReadDownloads(entryId: Long? = null): Int {
-        val ids = db.catalog().downloadedRead().filter { entryId == null || it.itemId == entryId }.map { it.id }
-        deleteChapterFiles(ids)
-        return ids.size
+        val chapters = if (entryId == null) db.catalog().downloadedChapters().map { it.toDomain() } else catalog.chapters(entryId).filter { it.downloaded }
+        val items = chapters.mapNotNull { retentionItem(it) }
+        val plan = DownloadRetention.plan(items, retentionSettings())
+        deleteChapterFiles(plan.delete)
+        return plan.delete.size
+    }
+
+    private suspend fun retentionSettings(): RetentionSettings {
+        val protected = runCatching { settings.downloadProtectedShelves.get() }.getOrDefault(emptySet())
+            .mapNotNull { it.toLongOrNull() }
+            .toSet()
+        return RetentionSettings(
+            deleteRead = runCatching { settings.autoDeleteRead.get() }.getOrDefault(false),
+            keepLastPerTitle = runCatching { settings.downloadKeepLast.get() }.getOrDefault(0),
+            maxBytes = runCatching { settings.downloadMaxMb.get() }.getOrDefault(0).coerceAtLeast(0).toLong() * 1024 * 1024,
+            protectedShelves = protected,
+        )
+    }
+
+    /** One downloaded chapter in the retention policy's terms: its file size, bookmark, read flag and shelves. */
+    private suspend fun retentionItem(chapter: ChapterInfo): RetentionItem? {
+        val path = chapter.localPath ?: return null
+        val file = File(path)
+        val bytes = if (file.isDirectory) Files.dirSize(file) else file.length()
+        return RetentionItem(
+            chapterId = chapter.id,
+            titleKey = chapter.entryId,
+            number = chapter.number,
+            uploadedAt = chapter.uploadDate,
+            read = chapter.read,
+            bookmarked = chapter.bookmarked,
+            bytes = bytes,
+            shelfIds = runCatching { db.collections().collectionsOfItem(chapter.entryId) }.getOrDefault(emptyList()).toSet(),
+        )
     }
 
     /** Deletes all downloaded chapters of [entryId] and drops its waiting downloads. Returns how many were deleted. */
@@ -689,7 +724,12 @@ class DownloadRepository(
     }
 
     suspend fun onChapterRead(chapterId: Long) {
-        if (settings.autoDeleteRead.get()) deleteChapterFiles(listOf(chapterId))
+        // The same protections as the batch plan: a bookmarked chapter, a protected shelf and a file the app does not
+        // own survive the moment the chapter is marked read.
+        val chapter = catalog.chapter(chapterId) ?: return
+        if (!chapter.downloaded) return
+        val item = retentionItem(chapter) ?: return
+        if (DownloadRetention.shouldDeleteNow(item, retentionSettings())) deleteChapterFiles(listOf(chapterId))
     }
 
     fun storageUsage(): StorageUsage = StorageUsage(

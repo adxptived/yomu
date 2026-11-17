@@ -265,6 +265,8 @@
     <string name="set_downloads_sum">Network, parallel downloads, space used</string>
     <string name="set_download_wifi">Download only over Wi‑Fi</string>
     <string name="set_parallel">Parallel downloads</string>
+    <string name="set_download_keep_last">Keep the newest chapters</string>
+    <string name="set_download_max">Storage for downloads</string>
     <string name="set_auto_delete">Delete chapters after reading</string>
     <string name="set_auto_delete_sum">Downloaded chapters are removed when you finish them</string>
     <string name="set_pack_cbz">Store chapters as CBZ</string>
