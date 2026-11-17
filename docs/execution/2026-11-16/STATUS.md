@@ -978,6 +978,7 @@ No package in this journal claims a device or live-account acceptance it did not
 | `.\gradlew.bat assembleDebug testDebugUnitTest :domain:test :source-api:test :sources:opds:test --console=plain` | after the M02 changes: everything green except the known flaky `DownloadedBookTest.downloadedBookStaysReadable` (1 of 94 app tests) |
 | `.\gradlew.bat :app:testDebugUnitTest --tests "app.yomu.DownloadedBookTest"` | `BUILD SUCCESSFUL` — the same test passes in isolation, as recorded in L04/D02 |
 | `.\gradlew.bat :domain:test --tests "app.yomu.domain.reader.MangaPagingTest" :feature:reader-manga:compileDebugKotlin :app:compileDebugKotlin` | `BUILD SUCCESSFUL` |
+| `.\gradlew.bat assembleDebug testDebugUnitTest :domain:test :source-api:test :sources:opds:test --console=plain` | after U01/DL02/Q04: `BUILD SUCCESSFUL` in 4m 8s (a first run failed on `ChapterDownloadQueueTest`, fixed by the explicit delete-read rule; `Release170ScreensTest.updateDialog` passed on the rerun) |
 
 Baseline at B00 and this run differ only in the changes listed per package. The working tree contains the three original
 plan documents (untracked before this pass), this journal, and the source and test edits described above. No commit,
