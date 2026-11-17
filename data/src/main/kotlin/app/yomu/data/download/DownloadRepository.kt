@@ -428,10 +428,11 @@ class DownloadRepository(
         e is UnexpectedContentException -> context.getString(R.string.download_error_not_file)
         e is NoPagesException -> context.getString(R.string.download_error_no_pages)
         e is kotlinx.coroutines.TimeoutCancellationException -> context.getString(R.string.download_error_timeout)
+        e is app.yomu.source.HttpStatusException && e.code in setOf(401, 403) -> context.getString(R.string.download_error_sign_in)
         else -> when (val a = AppError.from(e)) {
             is AppError.NoNetwork -> context.getString(R.string.download_error_network)
             is AppError.Timeout -> context.getString(R.string.download_error_timeout)
-            is AppError.Http -> context.getString(R.string.download_error_http, a.code)
+            is AppError.Http -> if (a.code in setOf(401, 403)) context.getString(R.string.download_error_sign_in) else context.getString(R.string.download_error_http, a.code)
             is AppError.NeedsWebView -> context.getString(R.string.download_error_webview)
             is AppError.NoSpace -> context.getString(R.string.download_error_space)
             else -> e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName

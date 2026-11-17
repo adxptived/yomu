@@ -69,6 +69,7 @@
     </plurals>
     <string name="download_error_network">Нет подключения к сети</string>
     <string name="download_error_timeout">Сервер не ответил вовремя</string>
+    <string name="download_error_sign_in">Сначала войдите в этот источник</string>
     <string name="download_error_http">Ошибка сервера %d</string>
     <string name="download_error_webview">Сайт требует проверку: откройте источник в WebView</string>
     <string name="download_error_space">Недостаточно места</string>

@@ -49,7 +49,9 @@ class DownloadPolicyTest {
     @Test
     fun serverBusyIsTransientButClientErrorsAreNot() {
         listOf(408, 429, 500, 502, 503, 504).forEach { assertEquals("$it", FailureKind.TRANSIENT, RetryPolicy.classify(http(it))) }
-        listOf(400, 401, 403, 404, 410, 501).forEach { assertEquals("$it", FailureKind.PERMANENT, RetryPolicy.classify(http(it))) }
+        listOf(400, 404, 410, 501).forEach { assertEquals("$it", FailureKind.PERMANENT, RetryPolicy.classify(http(it))) }
+        // A source that wants an account is its own category: retrying cannot help, signing in can.
+        listOf(401, 403).forEach { assertEquals("$it", FailureKind.REAUTH, RetryPolicy.classify(http(it))) }
         assertEquals(FailureKind.PERMANENT, RetryPolicy.classify(FileNotFoundException("gone")))
         assertEquals(FailureKind.PERMANENT, RetryPolicy.classify(UnexpectedContentException("html")))
     }

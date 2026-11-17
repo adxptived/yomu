@@ -10,7 +10,10 @@ enum class FailureKind {
     /** The network or the server hiccuped (timeout, reset by a VPN switch, 5xx, 429): try again later. */
     TRANSIENT,
 
-    /** Retrying cannot help (404, 403, broken file, unsupported content). */
+    /** The source wants an account: retrying without signing in cannot help. */
+    REAUTH,
+
+    /** Retrying cannot help (404, broken file, unsupported content). */
     PERMANENT,
 
     /** The device storage is full: the whole queue should wait, not just this task. */
@@ -23,6 +26,8 @@ object RetryPolicy {
 
     fun classify(e: Throwable): FailureKind = when {
         AppError.from(e) is AppError.NoSpace -> FailureKind.NO_SPACE
+        // 401 and 403 are not "try later": the answer will be the same until the user signs in.
+        e is app.yomu.source.HttpStatusException && e.code in setOf(401, 403) -> FailureKind.REAUTH
         SourceCalls.isTransient(e) -> FailureKind.TRANSIENT
         else -> FailureKind.PERMANENT
     }

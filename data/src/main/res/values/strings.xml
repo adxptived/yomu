@@ -55,6 +55,7 @@
     </plurals>
     <string name="download_error_network">No network connection</string>
     <string name="download_error_timeout">The server did not answer in time</string>
+    <string name="download_error_sign_in">Sign in to this source first</string>
     <string name="download_error_http">Server error %d</string>
     <string name="download_error_webview">The site asks for verification: open the source in WebView</string>
     <string name="download_error_space">Not enough storage space</string>
