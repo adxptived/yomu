@@ -10,7 +10,13 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "books",
-    indices = [Index("title"), Index("sortTitle"), Index("addedAt"), Index("lastReadAt"), Index("format"), Index("status"), Index("language"), Index(value = ["uri"], unique = true), Index("fileHash"), Index("scanFolder"), Index("favorite")],
+    indices = [
+        Index("title"), Index("sortTitle"), Index("addedAt"), Index("lastReadAt"), Index("format"), Index("status"),
+        Index("language"), Index(value = ["uri"], unique = true), Index("fileHash"), Index("scanFolder"), Index("favorite"),
+        // The library's "last read" order is (lastReadAt, addedAt): one index for both keys, or the second one sorts.
+        Index(value = ["lastReadAt", "addedAt"]),
+        Index("progress"),
+    ],
 )
 data class BookEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -381,3 +387,24 @@ data class TrackEntity(
 /** Last successfully applied folder revision. Stored transactionally with page-position migration. */
 @Entity(tableName = "folder_sync_bases", primaryKeys = ["targetId", "folderId"])
 data class FolderSyncBaseEntity(val targetId: String, val folderId: String, val revisionJson: String)
+
+/**
+ * A feed the user subscribed to (S03): its address and conditional-request state, next to the audiobook it keeps
+ * filling. The book holds what is playable now; this row is what makes the feed updatable after a restart.
+ */
+@Entity(
+    tableName = "audio_subscriptions",
+    indices = [Index(value = ["feedUrl"], unique = true), Index("bookId")],
+    foreignKeys = [ForeignKey(entity = BookEntity::class, parentColumns = ["id"], childColumns = ["bookId"], onDelete = ForeignKey.CASCADE)],
+)
+data class AudioSubscriptionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val feedUrl: String,
+    val title: String,
+    val bookId: Long,
+    val etag: String? = null,
+    val lastModified: String? = null,
+    val lastCheckedAt: Long = 0,
+    val createdAt: Long = 0,
+    val enabled: Boolean = true,
+)

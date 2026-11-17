@@ -174,6 +174,19 @@ class CoverStore(private val context: Context) {
 
     fun totalSize(): Long = Files.dirSize(dir)
 
+    /**
+     * Deletes the cover files no book points at. An interrupted import or a row removed outside the repository leaves
+     * a picture behind; the cache in `filesDir` must not grow forever.
+     *
+     * Files newer than [olderThanMs] are kept: an import saves the picture before it inserts the row, and a scan that
+     * runs in between must not delete it.
+     */
+    fun pruneOrphans(referenced: Collection<String>, olderThanMs: Long = 3_600_000): Int {
+        val keep = referenced.mapTo(HashSet()) { File(it).name }
+        val cutoff = System.currentTimeMillis() - olderThanMs
+        return dir.listFiles { f -> f.isFile && f.lastModified() < cutoff && f.name !in keep }?.count { it.delete() } ?: 0
+    }
+
     companion object {
         const val MAX_HEIGHT = 720
     }

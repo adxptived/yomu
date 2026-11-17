@@ -6,6 +6,7 @@ import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -15,6 +16,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import app.yomu.core.common.SecretCipher
 import app.yomu.domain.catalog.ChapterDisplay
+import app.yomu.domain.catalog.ContentPreference
 import app.yomu.domain.catalog.LibraryDisplay
 import app.yomu.domain.catalog.SourceListFilter
 import app.yomu.domain.catalog.SourceSortMode
@@ -205,6 +207,25 @@ class AppSettings(context: Context) {
     val updateIntervalHours = int("update_interval_hours", 6)
     val updateWifiOnly = bool("update_wifi_only", true)
     val showNsfw = bool("show_nsfw", false)
+
+    /** Safe / mixed / adult content; [showNsfw] is the old switch this replaces. */
+    val contentPreference = enum("content_preference", ContentPreference.MIXED)
+
+    /** A User-Agent for every request without its own; empty means the built-in browser-like one. */
+    val userAgent = string("user_agent", "")
+
+    /**
+     * A settings file written before [contentPreference] existed keeps its meaning: the old switch was off by
+     * default, which is [ContentPreference.SAFE], and on meant the content was listed, which is
+     * [ContentPreference.MIXED]. The new value is written once, so the two never disagree afterwards.
+     */
+    suspend fun migrateContentPreference() {
+        val prefs = store.data.first()
+        val key = stringPreferencesKey("content_preference")
+        if (key in prefs) return
+        val legacy = prefs[booleanPreferencesKey("show_nsfw")] ?: false
+        store.edit { it[key] = ContentPreference.fromLegacyShowNsfw(legacy).name }
+    }
     val catalogLanguages = stringSet("catalog_languages")
     val incognito = bool("incognito", false)
     val trustedExtensions = stringSet("trusted_extensions")

@@ -12,16 +12,21 @@ import app.yomu.data.book.PageSource
 import app.yomu.data.repository.joinList
 import app.yomu.data.repository.toDomain
 import app.yomu.data.source.SourceCalls
+import app.yomu.data.source.SourceConnectionProbe
 import app.yomu.data.source.SourceHealth
 import app.yomu.data.source.SourceHealthTracker
 import app.yomu.data.source.SourceManager
 import app.yomu.domain.catalog.ChapterDisplay
+import app.yomu.domain.catalog.ChapterNavigation
+import app.yomu.domain.catalog.ChapterOrder
 import app.yomu.domain.model.CatalogEntry
 import app.yomu.domain.model.ChapterInfo
 import app.yomu.domain.model.ContentType
 import app.yomu.source.CatalogSource
+import app.yomu.source.ConnectionKind
 import app.yomu.source.ItemsPage
 import app.yomu.source.Page
+import app.yomu.source.ProbeResult
 import app.yomu.source.SBookLink
 import app.yomu.source.SChapter
 import app.yomu.source.SItem
@@ -75,6 +80,19 @@ class CatalogRepository(
     fun observeFavorites(): Flow<List<CatalogEntry>> = dao.observeFavorites().map { l ->
         l.map { it.item.toDomain(it.unread, it.downloadedCount, it.lastReadAt ?: 0, it.chapterCount) }
     }
+
+    private val connectionProbe by lazy { SourceConnectionProbe(client) }
+
+    /**
+     * Checks an address before it becomes a saved connection. Nothing is written here: the caller saves only after
+     * [ProbeResult.Recognised], and every other outcome names its cause.
+     */
+    suspend fun probeConnection(
+        url: String,
+        username: String? = null,
+        password: String? = null,
+        supported: Set<ConnectionKind> = SourceConnectionProbe.DEFAULT_SUPPORTED,
+    ): ProbeResult = connectionProbe.probe(url, username, password, supported)
 
     /** Chapter list sort and filters of [entryId]: its own, or the app default. */
     fun observeChapterDisplay(entryId: Long): Flow<ChapterDisplay> =
@@ -286,7 +304,18 @@ class CatalogRepository(
             return
         }
         dao.saveProgress(chapterId, page, System.currentTimeMillis(), finished)
-        if (finished) chaptersReadListener?.let { listener -> dao.chapter(chapterId)?.itemId?.let(listener) }
+        if (finished) {
+            // One chapter, not one release: when the numbering is reliable, other groups' releases of this chapter
+            // are the same chapter and are marked read with it. A restarted volume makes equal numbers different
+            // chapters, and then nothing else is touched.
+            val itemId = dao.chapter(chapterId)?.itemId
+            if (itemId != null) {
+                val reading = ChapterOrder.reading(dao.chapters(itemId).map { it.toDomain() })
+                val alternatives = ChapterNavigation.alternativeReleases(reading, chapterId)
+                if (alternatives.isNotEmpty()) dao.setRead(alternatives, true)
+            }
+            chaptersReadListener?.let { listener -> dao.chapter(chapterId)?.itemId?.let(listener) }
+        }
     }
 
     /**
@@ -328,7 +357,7 @@ class CatalogRepository(
         val langs = sources.languages.value
         return sources.infos.value.filter { it.enabled && !it.hidden && sources.isShown(it, langs) && (onlyContent == null || it.content == onlyContent) }
             .sortedWith(compareByDescending<app.yomu.data.source.SourceInfo> { it.pinned }.thenByDescending { it.lastUsedAt }.thenBy { it.name.lowercase() })
-            .mapNotNull { info -> sources.get(info.id)?.takeIf { it.supportsSearch } }
+            .mapNotNull { info -> sources.get(info.id)?.takeIf { sources.capabilitiesOf(it).search } }
             .filter { it.id != sources.local.id || sources.local.isConfigured }
     }
 

@@ -345,8 +345,79 @@ class DatabaseMigrationTest {
         }
     }
 
+    /** 11 → 12 adds the sort indices only: every row and every column keeps its value. */
+    @Test
+    fun migrates11To12AddingSortIndices() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val file = context.getDatabasePath("migration-test-11.db").apply { parentFile?.mkdirs(); delete() }
+        createFromSchema(file, 11)
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use { sql ->
+            sql.execSQL(
+                "INSERT INTO books (title, sortTitle, authorsText, format, uri, isLinked, fileSize, status, isManga, addedAt, progress, favorite, rating, description) " +
+                    "VALUES ('Book', 'Book', 'Author', 'EPUB', 'file:///book.epub', 0, 10, 'READING', 0, 1, 0.5, 1, 4, 'Kept')",
+            )
+        }
+        val room = Room.databaseBuilder(context, YomuDatabase::class.java, file.path).addMigrations(*YomuDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val db = room.openHelper.writableDatabase
+            assertEquals(CURRENT_VERSION, db.version)
+            db.query("SELECT title, description, rating, favorite FROM books").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("Book", c.getString(0))
+                assertEquals("Kept", c.getString(1))
+                assertEquals(4, c.getInt(2))
+                assertEquals(1, c.getInt(3))
+            }
+            val indices = mutableListOf<String>()
+            db.query("PRAGMA index_list(books)").use { c ->
+                val name = c.getColumnIndexOrThrow("name")
+                while (c.moveToNext()) indices += c.getString(name)
+            }
+            assertTrue("sort indices are missing after the migration: $indices", indices.any { it == "index_books_lastReadAt_addedAt" })
+            assertTrue("sort indices are missing after the migration: $indices", indices.any { it == "index_books_progress" })
+        } finally {
+            room.close()
+            file.delete()
+        }
+    }
+
+    /** 12 → 13 adds the subscription table; every existing book keeps its data and gains no subscription. */
+    @Test
+    fun migrates12To13AddingSubscriptions() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val file = context.getDatabasePath("migration-test-12.db").apply { parentFile?.mkdirs(); delete() }
+        createFromSchema(file, 12)
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use { sql ->
+            sql.execSQL(
+                "INSERT INTO books (title, sortTitle, authorsText, format, uri, isLinked, fileSize, status, isManga, addedAt, progress, favorite, rating) " +
+                    "VALUES ('Book', 'Book', '', 'EPUB', 'file:///book.epub', 0, 10, 'READING', 0, 1, 0.5, 0, 0)",
+            )
+        }
+        val room = Room.databaseBuilder(context, YomuDatabase::class.java, file.path).addMigrations(*YomuDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val db = room.openHelper.writableDatabase
+            assertEquals(CURRENT_VERSION, db.version)
+            db.query("SELECT title FROM books").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("Book", c.getString(0))
+            }
+            db.execSQL(
+                "INSERT INTO audio_subscriptions (feedUrl, title, bookId, lastCheckedAt, createdAt, enabled) " +
+                    "VALUES ('https://example.org/feed.xml', 'Test cast', 1, 0, 0, 1)",
+            )
+            db.query("SELECT title, bookId FROM audio_subscriptions").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("Test cast", c.getString(0))
+                assertEquals(1L, c.getLong(1))
+            }
+        } finally {
+            room.close()
+            file.delete()
+        }
+    }
+
     private companion object {
-        const val CURRENT_VERSION = 11
+        const val CURRENT_VERSION = 13
     }
 }
 

@@ -77,6 +77,17 @@ enum class BrokenReason { UNSUPPORTED_LIB, NEWER_API, UNSIGNED, MALFORMED, FAILE
 
 data class ExtensionUpdate(val installed: InstalledExtension, val available: AvailableExtension)
 
+/**
+ * The result of updating several extensions: the ones that now run, and the ones that did not — each with its cause.
+ * A batch is never reported as "done" when only some of it was installed.
+ */
+data class ExtensionUpdateReport(val updated: List<String> = emptyList(), val failed: List<ExtensionFailure> = emptyList()) {
+    data class ExtensionFailure(val name: String, val reason: ExtensionException.Reason?, val detail: String?)
+
+    val isPartial: Boolean get() = failed.isNotEmpty() && updated.isNotEmpty()
+    val attempted: Int get() = updated.size + failed.size
+}
+
 /** A configured store as the UI shows it. */
 data class StoreState(
     val url: String,
@@ -326,6 +337,39 @@ class ExtensionManager(
             set.filterNot { it.substringBeforeLast(':') in pkgs }.toSet() + exts.map { "${it.pkg}:${it.signatureHash}" }
         }
         reload()
+    }
+
+    /**
+     * Forgets the trust of [exts]: their code stops loading until the user trusts the signature again. Nothing is
+     * deleted and the extension stays listed, so the decision is reversible.
+     */
+    suspend fun untrust(exts: List<InstalledExtension>) {
+        if (exts.isEmpty()) return
+        val pkgs = exts.map { it.pkg }.toSet()
+        settings.trustedExtensions.update { set -> set.filterNot { it.substringBeforeLast(':') in pkgs }.toSet() }
+        reload()
+    }
+
+    /**
+     * Updates every listed extension and reports each result: one broken store entry or one refused signature does not
+     * hide the extensions that did update.
+     */
+    suspend fun updateAll(updates: List<ExtensionUpdate>): ExtensionUpdateReport {
+        val updated = mutableListOf<String>()
+        val failed = mutableListOf<ExtensionUpdateReport.ExtensionFailure>()
+        updates.forEach { update ->
+            try {
+                install(update.available)
+                updated += update.installed.name
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: ExtensionException) {
+                failed += ExtensionUpdateReport.ExtensionFailure(update.installed.name, e.reason, e.message)
+            } catch (e: Throwable) {
+                failed += ExtensionUpdateReport.ExtensionFailure(update.installed.name, null, e.message)
+            }
+        }
+        return ExtensionUpdateReport(updated, failed)
     }
 
     // endregion

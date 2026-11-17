@@ -15,9 +15,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         WordEntity::class, DictionaryEntity::class, DictionaryEntryEntity::class, LookupHistoryEntity::class,
         TranslationCacheEntity::class, SourceEntity::class, CatalogItemEntity::class, ChapterEntity::class,
         DownloadTaskEntity::class, ReadingSessionEntity::class, ExtensionRepoEntity::class, OcrCacheEntity::class, TrackEntity::class,
-        FolderSyncBaseEntity::class,
+        FolderSyncBaseEntity::class, AudioSubscriptionEntity::class,
     ],
-    version = 11,
+    version = 13,
     exportSchema = true,
 )
 abstract class YomuDatabase : RoomDatabase() {
@@ -38,6 +38,7 @@ abstract class YomuDatabase : RoomDatabase() {
     abstract fun ocrCache(): OcrCacheDao
     abstract fun tracks(): TrackDao
     abstract fun folderSyncBases(): FolderSyncBaseDao
+    abstract fun audioSubscriptions(): AudioSubscriptionDao
 
     companion object {
         const val NAME = "yomu.db"
@@ -183,7 +184,40 @@ abstract class YomuDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * 11 → 12: the indices the library's own order needs (see the `books` entity).
+         *
+         * The title and author orders use `COLLATE NOCASE`; SQLite can only serve those from an index whose column
+         * was declared with that collation, and changing a column's collation means rebuilding `books` and all of its
+         * foreign keys. That rebuild is deliberately not part of a package that only adds indices: those two orders
+         * keep sorting the matched rows until a migration can carry the whole table safely.
+         */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_books_lastReadAt_addedAt` ON `books` (`lastReadAt`, `addedAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_books_progress` ON `books` (`progress`)")
+            }
+        }
+
+        /** 12 → 13: a feed the user subscribed to, with what makes it updatable after a restart (S03). */
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `audio_subscriptions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`feedUrl` TEXT NOT NULL, `title` TEXT NOT NULL, `bookId` INTEGER NOT NULL, `etag` TEXT, " +
+                        "`lastModified` TEXT, `lastCheckedAt` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                        "`enabled` INTEGER NOT NULL, " +
+                        "FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_audio_subscriptions_feedUrl` ON `audio_subscriptions` (`feedUrl`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_audio_subscriptions_bookId` ON `audio_subscriptions` (`bookId`)")
+            }
+        }
+
         val MIGRATIONS: Array<Migration> =
-            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+            arrayOf(
+                MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
+                MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
+            )
     }
 }

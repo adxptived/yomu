@@ -1,5 +1,6 @@
 package app.yomu.data.audio
 
+import app.yomu.domain.audio.EpisodeIdentity
 import app.yomu.domain.model.AudioFiles
 import app.yomu.domain.model.AudioOrigin
 import app.yomu.domain.model.AudioTrack
@@ -16,6 +17,9 @@ import java.time.format.DateTimeFormatter
  * Episodes are put in listening order: a feed listing the newest first is reversed.
  */
 object PodcastFeed {
+    /** A feed is a list of links, not a media file: more than this is not a feed this build reads. */
+    const val MAX_FEED_BYTES = 4L * 1024 * 1024
+
     fun looksLikeFeed(head: String): Boolean {
         val start = head.trimStart().take(2048).lowercase()
         return start.startsWith("<?xml") && ("<rss" in start || "<feed" in start) || start.startsWith("<rss") || start.startsWith("<feed")
@@ -30,12 +34,17 @@ object PodcastFeed {
             val title = child(item, "title") ?: url.substringAfterLast('/').substringBefore('?')
             val durationMs = child(item, "itunes:duration")?.let(::duration) ?: 0
             val chapters = ChapterMarks.parse(child(item, "description")?.let { Jsoup.parse(it).wholeText() }, durationMs)
-            date(child(item, "pubDate") ?: child(item, "published") ?: child(item, "updated")) to AudioTrack(title, url, durationMs, chapters)
+            val publishedAt = date(child(item, "pubDate") ?: child(item, "published") ?: child(item, "updated")) ?: 0
+            // An episode keeps its feed identity across a changed enclosure address; the fallback is built from the
+            // address and the publication date, so an episode without a guid still matches on the next refresh.
+            val guid = child(item, "guid") ?: child(item, "id") ?: EpisodeIdentity.of(null, url, title, publishedAt)
+            publishedAt to AudioTrack(title, url, durationMs, chapters, guid = guid, publishedAt = publishedAt)
         }
         if (dated.isEmpty()) return null
         val first = dated.first().first
         val last = dated.last().first
-        val ordered = if (first != null && last != null && first > last) dated.reversed() else dated
+        // A feed listing the newest first is reversed; a feed without dates keeps its own order.
+        val ordered = if (first > 0 && last > 0 && first > last) dated.reversed() else dated
         return AudiobookManifest(
             title = child(channel, "title") ?: feedUrl,
             authors = listOfNotNull(child(channel, "itunes:author") ?: channel.selectFirst("> author > name")?.text()?.takeIf { it.isNotBlank() }),

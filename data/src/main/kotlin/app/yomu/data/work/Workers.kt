@@ -270,11 +270,17 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
 class LibraryScanWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params), KoinComponent {
     private val importer: ImportService by inject()
     private val settings: AppSettings by inject()
+    private val books: app.yomu.data.repository.BookRepositoryImpl by inject()
+    private val covers: app.yomu.data.library.CoverStore by inject()
 
     override suspend fun doWork(): Result {
         settings.scanFolders.get().forEach { folder ->
             runCatching { importer.scanTree(Uri.parse(folder)) }.onFailure { Timber.w(it, "Scan of $folder failed") }
         }
+        // Pictures of removed books (or of an import that never finished) stay in filesDir until someone collects
+        // them; the scan already reads the whole table, so this is where the orphan set is known.
+        runCatching { covers.pruneOrphans(books.rawDb().books().all().mapNotNull { it.coverPath }) }
+            .onFailure { Timber.w(it, "Cover cleanup failed") }
         return Result.success()
     }
 
@@ -285,6 +291,27 @@ class LibraryScanWorker(context: Context, params: WorkerParameters) : CoroutineW
         const val NAME = "library_scan"
         fun runNow(context: Context) = WorkManager.getInstance(context)
             .enqueueUniqueWork("${NAME}_now", ExistingWorkPolicy.REPLACE, OneTimeWorkRequestBuilder<LibraryScanWorker>().build())
+    }
+}
+
+/**
+ * Refreshes every enabled podcast/audio feed (S03). One failing feed does not stop the rest; the position of a
+ * downloaded episode is untouched by a refresh, because episodes are matched by their feed identity.
+ */
+class AudioSubscriptionWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params), KoinComponent {
+    private val subscriptions: app.yomu.data.audio.AudioSubscriptionRepository by inject()
+
+    override suspend fun doWork(): Result {
+        val results = runCatching { subscriptions.refreshAll() }.onFailure { Timber.w(it, "Refreshing subscriptions failed") }
+        results.getOrNull()?.forEach { (id, result) -> Timber.i("Subscription $id: $result") }
+        return Result.success()
+    }
+
+    companion object {
+        const val NAME = "audio_subscriptions"
+
+        fun runNow(context: Context) = WorkManager.getInstance(context)
+            .enqueueUniqueWork("${NAME}_now", ExistingWorkPolicy.KEEP, OneTimeWorkRequestBuilder<AudioSubscriptionWorker>().build())
     }
 }
 
@@ -412,9 +439,18 @@ class WorkScheduler(private val context: Context, private val settings: AppSetti
     suspend fun scheduleAll() {
         scheduleScan()
         scheduleUpdates()
+        scheduleSubscriptions()
         scheduleBackup()
         scheduleReminder()
         scheduleSync()
+    }
+
+    /** Feeds are checked once a day while the device has a connection; the worker skips a feed that answers 304. */
+    suspend fun scheduleSubscriptions() {
+        val request = PeriodicWorkRequestBuilder<AudioSubscriptionWorker>(24, TimeUnit.HOURS)
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .build()
+        wm.enqueueUniquePeriodicWork(AudioSubscriptionWorker.NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
     }
 
     suspend fun scheduleScan() {

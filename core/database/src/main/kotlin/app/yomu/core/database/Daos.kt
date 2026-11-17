@@ -876,6 +876,34 @@ interface TrackDao {
 }
 
 @Dao
+interface AudioSubscriptionDao {
+    @Query("SELECT * FROM audio_subscriptions ORDER BY title COLLATE NOCASE")
+    fun observe(): Flow<List<AudioSubscriptionEntity>>
+
+    @Query("SELECT * FROM audio_subscriptions WHERE enabled = 1 ORDER BY lastCheckedAt, id")
+    suspend fun enabled(): List<AudioSubscriptionEntity>
+
+    @Query("SELECT * FROM audio_subscriptions WHERE id = :id")
+    suspend fun get(id: Long): AudioSubscriptionEntity?
+
+    @Query("SELECT * FROM audio_subscriptions WHERE feedUrl = :url LIMIT 1")
+    suspend fun byFeedUrl(url: String): AudioSubscriptionEntity?
+
+    @Upsert
+    suspend fun upsert(row: AudioSubscriptionEntity): Long
+
+    /** The conditional-request state after a refresh, also written for a 304. */
+    @Query("UPDATE audio_subscriptions SET etag = :etag, lastModified = :modified, lastCheckedAt = :at WHERE id = :id")
+    suspend fun setChecked(id: Long, etag: String?, modified: String?, at: Long)
+
+    @Query("UPDATE audio_subscriptions SET enabled = :enabled WHERE id = :id")
+    suspend fun setEnabled(id: Long, enabled: Boolean)
+
+    @Query("DELETE FROM audio_subscriptions WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
+@Dao
 interface FolderSyncBaseDao {
     @Query("SELECT * FROM folder_sync_bases WHERE targetId = :targetId")
     suspend fun forTarget(targetId: String): List<FolderSyncBaseEntity>

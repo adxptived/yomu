@@ -43,6 +43,10 @@ data class AudioTrack(
     val durationMs: Long = 0,
     val chapters: List<AudioChapter> = emptyList(),
     val file: String? = null,
+    /** The feed's own identity of the episode (RSS `guid`/Atom `id`); null for a plain file or a catalog track. */
+    val guid: String? = null,
+    /** Publication time reported by the feed, 0 when it has none. */
+    val publishedAt: Long = 0,
 )
 
 /** The `.yaudio` file of an audiobook that is not a plain file or folder: online streams, YouTube, podcasts. */

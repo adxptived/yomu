@@ -8,10 +8,12 @@ import app.yomu.core.datastore.AppSettings
 import app.yomu.data.audio.YouTubeClient
 import app.yomu.data.audio.YouTubeSource
 import app.yomu.data.source.tachiyomi.TachiyomiSource
+import app.yomu.source.CapabilitySource
 import app.yomu.source.CatalogSource
 import app.yomu.source.ConfigurableSource
 import app.yomu.source.HttpSource
 import app.yomu.source.Source
+import app.yomu.source.SourceCapabilities
 import app.yomu.source.SourceContent
 import app.yomu.sources.local.LocalSource
 import app.yomu.sources.mangadex.MangaDexFactory
@@ -51,7 +53,8 @@ data class SourceInfo(
     val kind: Kind,
     val pinned: Boolean,
     val enabled: Boolean,
-    val supportsLatest: Boolean,
+    /** What the source can do, from its own report or inferred from its old flags. */
+    val capabilities: SourceCapabilities,
     val configurable: Boolean,
     val extensionPkg: String? = null,
     val lastUsedAt: Long = 0,
@@ -68,6 +71,9 @@ data class SourceInfo(
     /** Home page of the source, when it has one (for "Open in browser"). */
     val webUrl: String? = null,
 ) {
+    /** Kept as the shape the source list already reads; the value comes from [capabilities]. */
+    val supportsLatest: Boolean get() = capabilities.latest
+
     /** Serves audiobooks (YouTube videos and LibriVox recordings): shown as "Audiobooks" in the source list. */
     val audio: Boolean get() = content == SourceContent.AUDIO
     enum class Kind { BUILT_IN, OPDS, LOCAL, EXTENSION }
@@ -122,7 +128,9 @@ class SourceManager(
         builtIn.filter { it is LocalSource || it.id !in extIds } + o + ext.filter { it.id != LocalSource.ID }
     }.stateIn(scope, SharingStarted.Eagerly, builtIn)
 
-    val infos: StateFlow<List<SourceInfo>> = combine(sources, db.sources().observe(), settings.hiddenSources.flow, settings.hiddenExtensions.flow) { list, rows, hiddenSources, hiddenExtensions ->
+    val infos: StateFlow<List<SourceInfo>> = combine(
+        sources, db.sources().observe(), settings.hiddenSources.flow, settings.hiddenExtensions.flow, settings.contentPreference.flow,
+    ) { list, rows, hiddenSources, hiddenExtensions, content ->
         val byId = rows.associateBy { it.id }
         // The extension of every source in one pass: looking it up per source went over all sources of all
         // extensions for each one (millions of comparisons with the big repositories, on every list change).
@@ -134,6 +142,9 @@ class SourceManager(
             runCatching {
                 val row = byId[s.id]
                 val ext = extOf[s.id]
+                // Safe content: a source of an adult extension is not listed anywhere (the list, global search and the
+                // language counts all come from here).
+                if (!content.allows(ext?.isNsfw == true)) return@mapNotNull null
                 SourceInfo(
                     id = s.id, name = s.name, lang = s.lang, content = s.content,
                     kind = when {
@@ -144,7 +155,7 @@ class SourceManager(
                     },
                     pinned = row?.pinned ?: false,
                     enabled = row?.enabled ?: true,
-                    supportsLatest = s.supportsLatest,
+                    capabilities = capabilitiesOf(s),
                     configurable = s is ConfigurableSource,
                     extensionPkg = ext?.pkg,
                     lastUsedAt = row?.lastUsedAt ?: 0,
@@ -209,6 +220,13 @@ class SourceManager(
     }
 
     fun get(id: Long): CatalogSource? = sources.value.firstOrNull { it.id == id }
+
+    /**
+     * What [source] can do: what it reports, or what its old flags imply. One place decides, so a screen and a search
+     * can never disagree about whether a source supports something.
+     */
+    fun capabilitiesOf(source: Source): SourceCapabilities =
+        (source as? CapabilitySource)?.capabilities ?: SourceCapabilities.infer(source)
 
     fun getOrStub(id: Long, name: String = "Unknown"): Source = get(id) ?: object : Source {
         override val id = id

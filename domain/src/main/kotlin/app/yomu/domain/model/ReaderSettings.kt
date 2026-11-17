@@ -81,6 +81,11 @@ data class MangaSettings(
     val direction: MangaDirection = MangaDirection.LTR,
     val scale: ScaleType = ScaleType.FIT_SCREEN,
     val dualPageLandscape: Boolean = true,
+    /**
+     * A cover is one page of its own, not the left half of a two-page spread. Separate from [dualPageLandscape]:
+     * whether spreads are shown at all and whether the first one starts at the cover are different questions.
+     */
+    val coverAlone: Boolean = true,
     val cropBorders: Boolean = false,
     val tapZones: TapZoneLayout = TapZoneLayout.L_SHAPE,
     val invertTapZones: Boolean = false,

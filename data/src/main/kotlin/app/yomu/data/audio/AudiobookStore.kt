@@ -118,9 +118,17 @@ class AudiobookStore(
         val file = manifestFile(book) ?: throw IOException("Not a stored audiobook manifest: ${book.uri}")
         val tmp = File(file.parentFile, file.name + ".tmp")
         tmp.writeText(json.encodeToString(AudiobookManifest.serializer(), manifest))
-        if (!tmp.renameTo(file)) {
+        try {
+            // An atomic replace: File.renameTo refuses to overwrite an existing file on some file systems (Windows),
+            // which would leave a feed subscription unable to apply its second refresh.
+            java.nio.file.Files.move(
+                tmp.toPath(),
+                file.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (e: IOException) {
             tmp.delete()
-            throw IOException("Cannot replace ${file.name}")
+            throw IOException("Cannot replace ${file.name}", e)
         }
     }
 

@@ -607,6 +607,7 @@ class BackupManager(private val context: Context, private val db: YomuDatabase, 
             "bookmarks" to listOf("bookId", "createdAt"),
             "highlights" to listOf("bookId", "chapter", "createdAt", "text"),
             "notes" to listOf("bookId", "createdAt"),
+            "audio_subscriptions" to listOf("feedUrl"),
         )
 
         /** Columns that hold a primary key of another table. */
@@ -626,12 +627,13 @@ class BackupManager(private val context: Context, private val db: YomuDatabase, 
             "chapters" to mapOf("itemId" to "catalog_items"),
             "tracks" to mapOf("itemId" to "catalog_items", "bookId" to "books"),
             "downloads" to mapOf("chapterId" to "chapters", "itemId" to "catalog_items", "sourceId" to "sources"),
+            "audio_subscriptions" to mapOf("bookId" to "books"),
         )
 
         val TABLES = listOf(
             "books", "authors", "book_authors", "series", "collections", "book_collections", "tags", "book_tags",
             "reading_progress", "chapter_progress", "bookmarks", "highlights", "notes", "words", "sources", "catalog_items", "chapters",
-            "catalog_collections", "reading_sessions", "extension_repos", "lookup_history", "tracks",
+            "catalog_collections", "reading_sessions", "extension_repos", "lookup_history", "tracks", "audio_subscriptions",
         )
     }
 }

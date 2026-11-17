@@ -159,12 +159,16 @@ class BookRepositoryImpl(
             repeat(5) { args += like }
         }
         val dir = if (q.ascending) "ASC" else "DESC"
+        // Every order is served by an index: the collated title/author indices and the (lastReadAt, addedAt) pair are
+        // created in YomuDatabase.SORT_INDEX_SQL; Room's own indices cover the rest. COALESCE(lastReadAt, 0) was
+        // dropped from the ORDER BY because NULL sorts exactly where 0 would in both directions, and the expression
+        // could not use an index.
         val order = when (q.sort) {
             LibrarySort.TITLE -> "books.sortTitle COLLATE NOCASE $dir"
             LibrarySort.AUTHOR -> "books.authorsText COLLATE NOCASE $dir, books.seriesName, books.seriesIndex"
-            LibrarySort.ADDED -> "books.addedAt $dir"
-            LibrarySort.LAST_READ -> "COALESCE(books.lastReadAt, 0) $dir, books.addedAt $dir"
-            LibrarySort.PROGRESS -> "books.progress $dir"
+            LibrarySort.ADDED -> "books.addedAt $dir, books.id $dir"
+            LibrarySort.LAST_READ -> "books.lastReadAt $dir, books.addedAt $dir"
+            LibrarySort.PROGRESS -> "books.progress $dir, books.id $dir"
         }
         sql.append(" ORDER BY ").append(order)
         return SimpleSQLiteQuery(sql.toString(), args.toTypedArray())

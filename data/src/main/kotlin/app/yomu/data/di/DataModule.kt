@@ -5,6 +5,7 @@ import app.yomu.core.datastore.AppSettings
 import app.yomu.core.network.NetworkClients
 import app.yomu.core.network.NetworkMonitor
 import app.yomu.data.audio.AudiobookDownloader
+import app.yomu.data.audio.AudioSubscriptionRepository
 import app.yomu.data.audio.AudiobookStore
 import app.yomu.data.audio.YouTubeClient
 import app.yomu.data.backup.BackupManager
@@ -57,8 +58,10 @@ val dataModule = module {
     single { ReadingHistoryRepository(get(), get()) }
     single { YouTubeClient { get<NetworkClients>().client } }
     single { AudiobookStore(androidContext(), get(), { get<NetworkClients>().client }, get()) }
+    single { AudioSubscriptionRepository(get(), get(), get(), { get<NetworkClients>().client }) }
     single { AudiobookDownloader(androidContext(), get()) { get<NetworkClients>().downloadClient } }
     single { ImportService(androidContext(), get(), get(), get(), get()) }
+    single { app.yomu.data.library.ImportReportStore(androidContext()) }
     single { MlKitEngine(androidContext()) }
     single { TranslationService(get(), get(), get(), get(), get()) }
     single { BookTranslator(androidContext(), get(), get(), get()) }
