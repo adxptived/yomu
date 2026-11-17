@@ -103,6 +103,7 @@ object Notifications {
     private suspend fun readPrefs(settings: AppSettings) = NotificationPrefs(
         settings.notifyDisabled.get().mapNotNull { n -> NotifyKind.entries.firstOrNull { it.name == n } }.toSet(),
         settings.quietHours.get(), settings.quietFrom.get(), settings.quietTo.get(),
+        settings.notifyPrivacy.get(), settings.incognito.get(),
     )
 
     /**
@@ -121,8 +122,14 @@ object Notifications {
         scope.launch {
             kotlinx.coroutines.flow.combine(
                 settings.notifyDisabled.flow, settings.quietHours.flow, settings.quietFrom.flow, settings.quietTo.flow,
-            ) { off, quiet, from, to ->
-                NotificationPrefs(off.mapNotNull { n -> NotifyKind.entries.firstOrNull { it.name == n } }.toSet(), quiet, from, to)
+                settings.notifyPrivacy.flow, settings.incognito.flow,
+            ) { values ->
+                @Suppress("UNCHECKED_CAST")
+                val v = values as Array<Any?>
+                NotificationPrefs(
+                    (v[0] as Set<String>).mapNotNull { n -> NotifyKind.entries.firstOrNull { it.name == n } }.toSet(),
+                    v[1] as Boolean, v[2] as Int, v[3] as Int, v[4] as Boolean, v[5] as Boolean,
+                )
             }.collect { prefs = it; prefsLoaded = true }
         }
     }
@@ -149,6 +156,16 @@ object Notifications {
         val p = currentPrefs()
         val quiet = p.isQuiet(Calendar.getInstance().get(Calendar.HOUR_OF_DAY))
         if (quiet) builder.setSilent(true)
+        // A lock screen must not show what is being read. Privacy hides the shade content on the lock screen only;
+        // incognito also removes titles from the shade, because the mode promises no visible reading history.
+        if (p.privacy || p.incognito) builder.setVisibility(NotificationCompat.VISIBILITY_SECRET)
+        if (p.incognito) {
+            val genericTitle = context.getString(R.string.notif_private_title)
+            val genericText = context.getString(R.string.notif_private_text)
+            builder.setContentTitle(genericTitle)
+                .setContentText(genericText)
+                .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(genericText))
+        }
         val n = runCatching { builder.build() }.getOrNull() ?: return
         val k = kind ?: kindOf(n.channelId)
         val shown = p.allows(k)

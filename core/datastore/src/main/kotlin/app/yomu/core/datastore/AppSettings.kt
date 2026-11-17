@@ -204,6 +204,8 @@ class AppSettings(context: Context) {
     val quietHours = bool("quiet_hours", false)
     val quietFrom = int("quiet_from", 22)
     val quietTo = int("quiet_to", 8)
+    /** Hide notification text on the lock screen; the shade keeps the full text. */
+    val notifyPrivacy = bool("notify_privacy", false)
     val reviewModes = stringSet("review_modes", setOf("WORD_TO_TRANSLATION", "TRANSLATION_TO_WORD", "CLOZE"))
 
     // Catalog

@@ -9,6 +9,8 @@
     <string name="notif_downloading">Загрузка</string>
     <string name="notif_checking_updates">Проверка новых глав</string>
     <string name="notif_new_chapters">Новые главы</string>
+    <string name="notif_private_title">Yomu</string>
+    <string name="notif_private_text">Содержимое скрыто в режиме инкогнито</string>
     <plurals name="notif_new_chapters_text">
         <item quantity="one">%1$d новая глава: %2$s</item>
         <item quantity="few">%1$d новые главы: %2$s</item>

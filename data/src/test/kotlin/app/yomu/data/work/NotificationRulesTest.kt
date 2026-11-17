@@ -39,6 +39,19 @@ class NotificationRulesTest {
     }
 
     @Test
+    fun privacyAndIncognitoAreSeparateSwitches() {
+        val quiet = NotificationPrefs(quietHours = true, quietFrom = 22, quietTo = 8)
+        assertFalse(quiet.privacy)
+        assertFalse(quiet.incognito)
+        assertTrue(NotificationPrefs(privacy = true).privacy)
+        assertTrue(NotificationPrefs(incognito = true).incognito)
+        // Turning privacy on does not switch the other mode on, and neither changes quiet hours.
+        assertFalse(NotificationPrefs(privacy = true).incognito)
+        assertFalse(NotificationPrefs(incognito = true).privacy)
+        assertFalse(NotificationPrefs(incognito = true).isQuiet(23))
+    }
+
+    @Test
     fun logKeepsTheNewestAndSurvivesARestart() {
         val file = File(tmp.root, "recent.json")
         val log = NotificationLog(file)

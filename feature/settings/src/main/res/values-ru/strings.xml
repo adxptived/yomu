@@ -709,6 +709,8 @@
     <string name="set_notify_quiet">Тихие часы</string>
     <string name="set_notify_quiet_on">Тихие часы</string>
     <string name="set_notify_quiet_sum">Ночью уведомления приходят без звука и вибрации</string>
+    <string name="set_notify_privacy">Скрывать содержимое на экране блокировки</string>
+    <string name="set_notify_privacy_sum">В шторке текст остаётся; на заблокированном экране видно только название приложения</string>
     <string name="set_notify_quiet_from">С</string>
     <string name="set_notify_quiet_to">До</string>
     <string name="set_notify_recent">Недавние уведомления</string>

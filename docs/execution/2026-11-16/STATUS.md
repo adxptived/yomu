@@ -1181,5 +1181,38 @@ push or release was made.
 
 **Device/live:** `DEVICE_PENDING` — a revoked SAF root in the settings, a real card removal, and a launcher-level widget/notification pass. The index repair is covered by real files in Robolectric.
 
+---
+
+## Q04 (remainder) — the incognito contract, typed stages, notification privacy
+
+**Status:** `CODE_VERIFIED`.
+
+| File | Change |
+|---|---|
+| `domain/.../privacy/IncognitoPolicy.kt` | NEW. `PersistenceEvent` (auto progress, auto read mark, history, session stats, tracker update, user edit, titled notification) and `persists`/`notificationText`: the contract the entry points are audited against. A manual edit is never suppressed. |
+| `domain/src/test/.../IncognitoPolicyTest.kt` | NEW. 4 tests: every automatic event is off in incognito, a user edit stays, outside incognito everything is kept, a notification loses its title. |
+| `core/common/.../ErrorLog.kt` | `DiagStage` with a short code; a report always names its stage; the stage follows the current route family; `handled(stage, t)`. |
+| `core/common/src/test/.../ErrorLogStageTest.kt` | NEW. A report carries `Stage: DOWNLOAD` and a `token=` value is masked before the file exists; a reader/library route selects its stage. |
+| `core/common/build.gradle.kts` | Robolectric and the test core for the new test. |
+| `data/.../work/NotificationRules.kt` | `NotificationPrefs.privacy` and `incognito`. |
+| `core/datastore/.../AppSettings.kt` | `notify_privacy`. |
+| `data/.../work/Workers.kt` | `notify` applies `VISIBILITY_SECRET` for privacy or incognito and replaces title/text with a generic one in incognito; prefs are watched for both switches. |
+| `feature/settings/.../SettingsNotifications.kt` | "Hide content on the lock screen" switch. |
+| `data/src/test/.../NotificationRulesTest.kt` | NEW test: privacy and incognito are separate switches and neither touches quiet hours. |
+| `data/res/values{,-ru}/strings.xml`, `feature/settings/res/values{,-ru}/strings.xml` | Private notification text and the privacy switch. |
+
+**A real defect found here:** two reports written within the same second could get the same file name and overwrite each other (the name used `System.nanoTime() % 1000`); the test for the stage exposed it and the journal now uses a monotonic sequence.
+
+**Commands:**
+
+| Command | Result |
+|---|---|
+| `.\gradlew.bat :domain:test --tests "app.yomu.domain.privacy.*"` | `BUILD SUCCESSFUL` |
+| `.\gradlew.bat :core:common:testDebugUnitTest --tests "app.yomu.core.common.ErrorLogStageTest"` | `BUILD SUCCESSFUL` |
+| `.\gradlew.bat :data:testDebugUnitTest --tests "app.yomu.data.work.NotificationRulesTest"` | `BUILD SUCCESSFUL` |
+| `.\gradlew.bat :feature:settings:compileDebugKotlin :app:compileDebugKotlin` | `BUILD SUCCESSFUL` |
+
+**Device/live:** `DEVICE_PENDING` — a real lock screen with privacy on, and notifications arriving while incognito is on.
+
 
 

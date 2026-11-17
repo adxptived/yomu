@@ -22,6 +22,10 @@ data class NotificationPrefs(
     val quietHours: Boolean = false,
     val quietFrom: Int = 22,
     val quietTo: Int = 8,
+    /** Hide the content on the lock screen; the shade still shows it. */
+    val privacy: Boolean = false,
+    /** Incognito: no title, chapter or book name in a notification, whatever the lock state. */
+    val incognito: Boolean = false,
 ) {
     fun allows(kind: NotifyKind): Boolean = kind !in disabled
 

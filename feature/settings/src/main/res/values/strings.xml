@@ -705,6 +705,8 @@
     <string name="set_notify_quiet">Quiet hours</string>
     <string name="set_notify_quiet_on">Quiet hours</string>
     <string name="set_notify_quiet_sum">Notifications arrive without sound or vibration at night</string>
+    <string name="set_notify_privacy">Hide content on the lock screen</string>
+    <string name="set_notify_privacy_sum">The notification shade still shows it; the lock screen shows only the app name</string>
     <string name="set_notify_quiet_from">From</string>
     <string name="set_notify_quiet_to">Until</string>
     <string name="set_notify_recent">Recent notifications</string>

@@ -9,6 +9,8 @@
     <string name="notif_downloading">Downloading</string>
     <string name="notif_checking_updates">Checking for new chapters</string>
     <string name="notif_new_chapters">New chapters</string>
+    <string name="notif_private_title">Yomu</string>
+    <string name="notif_private_text">Content hidden in incognito mode</string>
     <plurals name="notif_new_chapters_text">
         <item quantity="one">%1$d new chapter in %2$s</item>
         <item quantity="other">%1$d new chapters in %2$s</item>

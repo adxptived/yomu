@@ -123,6 +123,7 @@ internal fun ColumnScope.NotificationsSection(vm: SettingsViewModel) {
 
     PreferenceHeader(stringResource(R.string.set_notify_quiet))
     SwitchPref(vm, s.quietHours, R.string.set_notify_quiet_on, R.string.set_notify_quiet_sum, icon = Icons.Outlined.Bedtime)
+    SwitchPref(vm, s.notifyPrivacy, R.string.set_notify_privacy, R.string.set_notify_privacy_sum)
     val hours = (0..23).map { it to "%02d:00".format(it) }
     if (quiet) {
         ChoicePref(vm, s.quietFrom, R.string.set_notify_quiet_from, hours)
