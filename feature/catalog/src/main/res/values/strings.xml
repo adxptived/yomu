@@ -16,6 +16,11 @@
     <string name="catalog_incognito_on">Incognito mode is on</string>
     <string name="catalog_incognito_off">Incognito mode is off</string>
     <string name="catalog_opds_added">Catalog added</string>
+    <string name="catalog_opds_probe_ok">Address recognised</string>
+    <string name="catalog_opds_probe_auth">The server asks for a login: enter the user and password and try again</string>
+    <string name="catalog_opds_probe_browser">The site wants a browser check first: open it in a browser, pass the check and try again</string>
+    <string name="catalog_opds_probe_unsupported">This address is not an OPDS catalogue</string>
+    <string name="catalog_opds_probe_network">The server did not answer: check the address and the connection</string>
     <string name="catalog_local_configured">Local folder connected</string>
     <string name="catalog_updates_started">Checking for new chapters…</string>
 
@@ -123,6 +128,7 @@
     <string name="show_more">More</string>
     <string name="show_less">Less</string>
     <string name="chapters">Chapters</string>
+    <string name="chapters_missing">The source does not list %1$d chapters: %2$s</string>
     <string name="chapters_empty">No chapters yet</string>
     <plurals name="chapters_count">
         <item quantity="one">%d chapter</item>
@@ -260,6 +266,10 @@
     </plurals>
     <string name="ext_untrusted_section_hint">Their signatures don’t belong to any added repository, so Yomu hasn’t started them. Trust only the ones you installed yourself.</string>
     <string name="ext_trust_all">Trust all</string>
+    <string name="ext_untrust">Revoke trust</string>
+    <string name="ext_untrusted">Trust revoked: %1$s is not loaded</string>
+    <string name="ext_update_all_partial">Updated %1$s extensions; the rest failed</string>
+    <string name="ext_update_all_failed">No extension could be updated (%1$s failed)</string>
     <plurals name="ext_trust_all_title">
         <item quantity="one">Trust %d extension?</item>
         <item quantity="other">Trust %d extensions?</item>
@@ -435,4 +445,72 @@
     <string name="title_listen_online">Listen online</string>
     <string name="title_listen_online_hint">Streams in the player, nothing to download</string>
     <string name="title_audio_adding">Adding the audiobook…</string>
+
+    <!-- Connection wizard (S01) -->
+    <string name="connection_title">Add a source</string>
+    <string name="connection_what">What do you want to add?</string>
+    <string name="connection_content_books">Books</string>
+    <string name="connection_content_books_hint">EPUB, PDF, OPDS catalogues</string>
+    <string name="connection_content_comics">Comics and manga</string>
+    <string name="connection_content_comics_hint">CBZ, folders, extensions, OPDS</string>
+    <string name="connection_content_audio">Audiobooks and podcasts</string>
+    <string name="connection_content_audio_hint">One audio link or a podcast feed</string>
+    <string name="connection_content_files">Files and folders</string>
+    <string name="connection_content_files_hint">A folder of books or images</string>
+    <string name="connection_how">How should it be added?</string>
+    <string name="connection_method_opds">OPDS catalogue</string>
+    <string name="connection_method_opds_hint">The address of a catalogue</string>
+    <string name="connection_method_audio">Audio link</string>
+    <string name="connection_method_audio_hint">One file, feed or YouTube video</string>
+    <string name="connection_method_extension">Extension</string>
+    <string name="connection_method_extension_hint">A MangaDex-style repository</string>
+    <string name="connection_method_rss">Podcast feed</string>
+    <string name="connection_method_rss_hint">Episodes from a feed</string>
+    <string name="connection_method_files">Files</string>
+    <string name="connection_method_files_hint">Books, PDFs, comics</string>
+    <string name="connection_method_folder">Folder</string>
+    <string name="connection_method_folder_hint">A folder of books or images</string>
+    <string name="connection_address_title">Catalogue address</string>
+    <string name="connection_audio_title">Audio link</string>
+    <string name="connection_audio_placeholder">https://example.org/book.mp3</string>
+    <string name="connection_audio_url">Link (URL)</string>
+    <string name="connection_feed_title">Podcast feed</string>
+    <string name="connection_feed_url">Feed address (URL)</string>
+    <string name="connection_feed_placeholder">https://example.org/feed.xml</string>
+    <string name="connection_help_feed">An RSS or Atom feed with audio episodes. After adding, the feed is checked once a day and new episodes appear in the audiobook without moving your place.</string>
+    <string name="connection_help_opds">An OPDS address is a link to a catalogue. It is usually the server address with /opds at the end: Calibre, Standard Ebooks, Flibusta, your own server.</string>
+    <string name="connection_help_audio">A file, a podcast feed or a YouTube link. It is imported once as an audiobook; a subscription that updates itself is not available yet.</string>
+    <string name="connection_signin">The server needs a login</string>
+    <string name="connection_check">Check connection</string>
+    <string name="connection_checking">Checking the address…</string>
+    <string name="connection_preview_title">What was found</string>
+    <string name="connection_kind_opds">OPDS catalogue</string>
+    <string name="connection_kind_rss">RSS or Atom feed</string>
+    <string name="connection_kind_audio">Audio</string>
+    <string name="connection_kind_page">A web page, not a catalogue</string>
+    <string name="connection_preview_note">The first page is checked; a catalogue with several pages is shown completely when opened.</string>
+    <string name="connection_add">Add</string>
+    <string name="connection_saving">Adding…</string>
+    <string name="connection_failed">The source was not added</string>
+    <string name="connection_retry">Change the address</string>
+    <string name="connection_done_title">Added</string>
+    <string name="connection_done_text">%1$s is ready in the catalog.</string>
+    <string name="connection_choose_another">Choose another way</string>
+    <string name="connection_open_extensions">Open extensions</string>
+    <string name="connection_pick_files">Choose files</string>
+    <string name="connection_pick_folder">Choose a folder</string>
+    <string name="connection_importing">Importing…</string>
+    <string name="connection_importing_hint">The same import the library runs: duplicates are recognised</string>
+    <string name="connection_imported_title">Import finished</string>
+    <string name="connection_imported_text">Added: %1$d · already in the library: %2$d · failed: %3$d</string>
+    <string name="connection_import_more">Import more</string>
+    <string name="connection_handoff_extension">Extensions are installed on the Extensions screen: add a repository, then install the sources you need.</string>
+    <string name="connection_handoff_rss">A podcast feed is imported once as an audiobook from the library\'s Add sheet; a subscription that updates itself is not available yet.</string>
+    <string name="connection_handoff_files">Files are added from the library\'s Add sheet; the import report lists every file, including the ones that failed.</string>
+    <string name="connection_handoff_folder">A folder is added from the library\'s Add sheet: as one image book or as a folder to scan for books.</string>
+    <string name="connection_handoff_generic">This way is handled elsewhere in the app.</string>
+    <plurals name="connection_samples">
+        <item quantity="one">%1$d entry is visible in the first page</item>
+        <item quantity="other">%1$d entries are visible in the first page</item>
+    </plurals>
 </resources>

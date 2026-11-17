@@ -16,4 +16,5 @@ val catalogModule = module {
     viewModel { (args: SearchArgs) -> GlobalSearchViewModel(args.query, args.migrateFrom, get(), get(), get()) }
     viewModel { (entryId: Long) -> TitleViewModel(entryId, get(), get(), get(), get(), get(), get()) }
     viewModel { ExtensionsViewModel(androidContext(), get(), get(), get()) }
+    viewModel { SourceConnectionViewModel(androidContext(), get(), get(), get(), get(), get()) }
 }

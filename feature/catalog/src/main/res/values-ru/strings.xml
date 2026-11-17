@@ -16,6 +16,11 @@
     <string name="catalog_incognito_on">Режим инкогнито включён</string>
     <string name="catalog_incognito_off">Режим инкогнито выключен</string>
     <string name="catalog_opds_added">Каталог добавлен</string>
+    <string name="catalog_opds_probe_ok">Адрес распознан</string>
+    <string name="catalog_opds_probe_auth">Сервер требует входа: укажите пользователя и пароль и повторите</string>
+    <string name="catalog_opds_probe_browser">Сайт требует проверки в браузере: откройте его, пройдите проверку и повторите</string>
+    <string name="catalog_opds_probe_unsupported">Этот адрес не является OPDS-каталогом</string>
+    <string name="catalog_opds_probe_network">Сервер не ответил: проверьте адрес и соединение</string>
     <string name="catalog_local_configured">Локальная папка подключена</string>
     <string name="catalog_updates_started">Проверяем новые главы…</string>
 
@@ -123,6 +128,7 @@
     <string name="show_more">Ещё</string>
     <string name="show_less">Свернуть</string>
     <string name="chapters">Главы</string>
+    <string name="chapters_missing">В источнике нет глав: %1$d (%2$s)</string>
     <string name="chapters_empty">Глав пока нет</string>
     <plurals name="chapters_count">
         <item quantity="one">%d глава</item>
@@ -266,6 +272,10 @@
     </plurals>
     <string name="ext_untrusted_section_hint">Их подписи не принадлежат ни одному добавленному репозиторию, поэтому Yomu их не запускает. Доверяйте только тем, что устанавливали сами.</string>
     <string name="ext_trust_all">Доверять всем</string>
+    <string name="ext_untrust">Отозвать доверие</string>
+    <string name="ext_untrusted">Доверие отозвано: %1$s не загружено</string>
+    <string name="ext_update_all_partial">Обновлено расширений: %1$s; остальные не удались</string>
+    <string name="ext_update_all_failed">Не удалось обновить ни одного расширения (ошибок: %1$s)</string>
     <plurals name="ext_trust_all_title">
         <item quantity="one">Доверять %d расширению?</item>
         <item quantity="few">Доверять %d расширениям?</item>
@@ -449,4 +459,74 @@
     <string name="title_listen_online">Слушать онлайн</string>
     <string name="title_listen_online_hint">Играет в плеере, без скачивания</string>
     <string name="title_audio_adding">Добавляю аудиокнигу…</string>
+
+    <!-- Connection wizard (S01) -->
+    <string name="connection_title">Добавить источник</string>
+    <string name="connection_what">Что вы хотите добавить?</string>
+    <string name="connection_content_books">Книги</string>
+    <string name="connection_content_books_hint">EPUB, PDF, OPDS-каталоги</string>
+    <string name="connection_content_comics">Комиксы и манга</string>
+    <string name="connection_content_comics_hint">CBZ, папки, расширения, OPDS</string>
+    <string name="connection_content_audio">Аудиокниги и подкасты</string>
+    <string name="connection_content_audio_hint">Одна аудиоссылка или лента подкаста</string>
+    <string name="connection_content_files">Файлы и папки</string>
+    <string name="connection_content_files_hint">Папка с книгами или картинками</string>
+    <string name="connection_how">Как его подключить?</string>
+    <string name="connection_method_opds">OPDS-каталог</string>
+    <string name="connection_method_opds_hint">Адрес каталога</string>
+    <string name="connection_method_audio">Аудиоссылка</string>
+    <string name="connection_method_audio_hint">Один файл, лента или видео YouTube</string>
+    <string name="connection_method_extension">Расширение</string>
+    <string name="connection_method_extension_hint">Репозиторий в духе MangaDex</string>
+    <string name="connection_method_rss">Лента подкаста</string>
+    <string name="connection_method_rss_hint">Выпуски из ленты</string>
+    <string name="connection_method_files">Файлы</string>
+    <string name="connection_method_files_hint">Книги, PDF, комиксы</string>
+    <string name="connection_method_folder">Папка</string>
+    <string name="connection_method_folder_hint">Папка с книгами или картинками</string>
+    <string name="connection_address_title">Адрес каталога</string>
+    <string name="connection_audio_title">Аудиоссылка</string>
+    <string name="connection_audio_placeholder">https://example.org/book.mp3</string>
+    <string name="connection_audio_url">Ссылка (URL)</string>
+    <string name="connection_feed_title">Лента подкаста</string>
+    <string name="connection_feed_url">Адрес ленты (URL)</string>
+    <string name="connection_feed_placeholder">https://example.org/feed.xml</string>
+    <string name="connection_help_feed">Лента RSS или Atom с аудиовыпусками. После добавления она проверяется раз в сутки, новые выпуски появляются в аудиокниге, а место прослушивания не сдвигается.</string>
+    <string name="connection_help_opds">OPDS-адрес — это ссылка на каталог. Обычно это адрес сервера с /opds в конце: Calibre, Standard Ebooks, Flibusta, ваш собственный сервер.</string>
+    <string name="connection_help_audio">Файл, лента подкаста или ссылка на YouTube. Импортируется один раз как аудиокнига; подписка с автообновлением пока недоступна.</string>
+    <string name="connection_signin">Серверу нужен вход</string>
+    <string name="connection_check">Проверить подключение</string>
+    <string name="connection_checking">Проверяю адрес…</string>
+    <string name="connection_preview_title">Что найдено</string>
+    <string name="connection_kind_opds">OPDS-каталог</string>
+    <string name="connection_kind_rss">Лента RSS или Atom</string>
+    <string name="connection_kind_audio">Аудио</string>
+    <string name="connection_kind_page">Веб-страница, а не каталог</string>
+    <string name="connection_preview_note">Проверяется первая страница; каталог из нескольких страниц откроется целиком.</string>
+    <string name="connection_add">Добавить</string>
+    <string name="connection_saving">Добавляю…</string>
+    <string name="connection_failed">Источник не добавлен</string>
+    <string name="connection_retry">Изменить адрес</string>
+    <string name="connection_done_title">Добавлено</string>
+    <string name="connection_done_text">%1$s готов в каталоге.</string>
+    <string name="connection_choose_another">Выбрать другой способ</string>
+    <string name="connection_open_extensions">Открыть расширения</string>
+    <string name="connection_pick_files">Выбрать файлы</string>
+    <string name="connection_pick_folder">Выбрать папку</string>
+    <string name="connection_importing">Импортирую…</string>
+    <string name="connection_importing_hint">Тот же импорт, что в библиотеке: дубликаты распознаются</string>
+    <string name="connection_imported_title">Импорт завершён</string>
+    <string name="connection_imported_text">Добавлено: %1$d · уже в библиотеке: %2$d · с ошибкой: %3$d</string>
+    <string name="connection_import_more">Импортировать ещё</string>
+    <string name="connection_handoff_extension">Расширения устанавливаются на экране «Расширения»: добавьте репозиторий, затем установите нужные источники.</string>
+    <string name="connection_handoff_rss">Лента подкаста пока импортируется один раз как аудиокнига через «Добавить» в библиотеке; подписка с автообновлением ещё не готова.</string>
+    <string name="connection_handoff_files">Файлы добавляются через «Добавить» в библиотеке; отчёт импорта перечислит каждый файл, включая неудачные.</string>
+    <string name="connection_handoff_folder">Папка добавляется через «Добавить» в библиотеке: как одна книга с картинками или как папка для сканирования книг.</string>
+    <string name="connection_handoff_generic">Этот способ выполняется в другом месте приложения.</string>
+    <plurals name="connection_samples">
+        <item quantity="one">В первой странице виден %1$d элемент</item>
+        <item quantity="few">В первой странице видно %1$d элемента</item>
+        <item quantity="many">В первой странице видно %1$d элементов</item>
+        <item quantity="other">В первой странице видно %1$d элемента</item>
+    </plurals>
 </resources>

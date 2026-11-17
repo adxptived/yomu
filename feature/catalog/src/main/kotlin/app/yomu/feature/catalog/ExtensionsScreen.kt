@@ -361,6 +361,7 @@ fun ExtensionsScreen(
                 onOpenSettings = { id -> detailsFor = null; onOpenSourceSettings(id) },
                 onUpdate = viewModel::update,
                 onTrust = { trustFor = ext },
+                onUntrust = { viewModel.untrust(ext) },
                 onUninstall = { detailsFor = null; uninstallFor = ext },
                 hidden = ext.pkg in hiddenExtensions,
                 onHide = { viewModel.setExtensionHidden(ext.pkg, it) },
@@ -851,6 +852,7 @@ private fun ExtensionDetailsSheet(
     onOpenSettings: (Long) -> Unit,
     onUpdate: (ExtensionUpdate) -> Unit,
     onTrust: () -> Unit,
+    onUntrust: () -> Unit,
     onUninstall: () -> Unit,
     hidden: Boolean,
     onHide: (Boolean) -> Unit,
@@ -882,6 +884,8 @@ private fun ExtensionDetailsSheet(
         Row(Modifier.padding(horizontal = Dimens.l), horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
             if (update != null) FilledTonalButton(onClick = { onUpdate(update) }) { Text(stringResource(R.string.ext_update) + " → " + update.available.versionName) }
             if (ext.status == ExtensionStatus.UNTRUSTED) FilledTonalButton(onClick = onTrust) { Text(stringResource(R.string.ext_trust)) }
+            // A loaded extension can be locked again: its code stops running without deleting anything.
+            if (ext.status == ExtensionStatus.LOADED) OutlinedButton(onClick = onUntrust) { Text(stringResource(R.string.ext_untrust)) }
             OutlinedButton(onClick = onUninstall) { Text(stringResource(R.string.ext_uninstall)) }
         }
         ListItem(

@@ -32,7 +32,7 @@ class SourceVariantsTest {
         content: SourceContent = SourceContent.MANGA,
     ) = SourceInfo(
         id = id, name = name, lang = lang, content = content, kind = kind, pinned = false, enabled = enabled,
-        supportsLatest = true, configurable = false, extensionPkg = pkg,
+        capabilities = app.yomu.source.SourceCapabilities(latest = true), configurable = false, extensionPkg = pkg,
     )
 
     @Test

@@ -344,10 +344,13 @@ class AppSmokeTest {
 
         // The "Add OPDS catalog" row sits after every source; scroll the lazy list to it before it is composed.
         compose.onNode(hasScrollAction() and hasAnyDescendant(hasText("MangaDex"))).performScrollToNode(hasText("Add OPDS catalog"))
-        // The "Add OPDS catalog" dialog starts empty (no prefilled "https://").
-        shotTextDialog("25_add_opds") {
-            compose.onNode(hasText("Add OPDS catalog") and hasAnyAncestor(hasScrollAction())).performSemanticsAction(SemanticsActions.OnClick)
-        }
+        // Since S01 the row opens the connection wizard instead of a one-field dialog: the first question is what is
+        // being added, and Back returns to the source list.
+        compose.onNode(hasText("Add OPDS catalog") and hasAnyAncestor(hasScrollAction())).performSemanticsAction(SemanticsActions.OnClick)
+        awaitText("What do you want to add?")
+        shot("25_add_source")
+        back()
+        awaitText("MangaDex")
 
         // Extensions moved from the end of the source list to an icon of the top bar.
         compose.onNode(hasContentDescription("Extensions")).performClick()

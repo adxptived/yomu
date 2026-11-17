@@ -147,8 +147,17 @@ class YomuApp : Application(), SingletonImageLoader.Factory {
             }
         }
         appScope.launch {
+            runCatching { settings.migrateContentPreference() }.onFailure { Timber.w(it, "Content preference migration failed") }
             runCatching { get<WorkScheduler>().scheduleAll() }.onFailure { Timber.w(it, "Scheduling background work failed") }
             if (!BuildConfig.DEBUG && settings.verboseLogging.flow.first()) Timber.plant(Timber.DebugTree())
+        }
+        // One client serves search, downloads, covers and the connection probe; the User-Agent it sends follows the
+        // setting without rebuilding it.
+        appScope.launch {
+            val clients = get<NetworkClients>()
+            settings.userAgent.flow.collect { value ->
+                clients.userAgent = value.ifBlank { app.yomu.core.network.DEFAULT_USER_AGENT }
+            }
         }
         // Covers of the online shelf are fetched once the first screen has settled, so a later entry loads them from
         // the device (and they are there offline). Hidden covers are not fetched at all.

@@ -4,4 +4,5 @@ dependencies {
     implementation(libs.androidx.webkit)
     implementation(libs.androidx.fragment.compose)
     implementation(libs.androidx.preference)
+    implementation(libs.androidx.documentfile)
 }

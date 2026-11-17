@@ -68,7 +68,10 @@ class ExtensionsViewModel(
     val events = _events.receiveAsFlow()
 
     val query = MutableStateFlow("")
-    val showNsfw: StateFlow<Boolean> = settings.showNsfw.stateIn(viewModelScope)
+    /** Adult extensions are hidden under [ContentPreference.SAFE]; the old switch is replaced by that preference. */
+    val showNsfw: StateFlow<Boolean> = settings.contentPreference.flow
+        .map { it != app.yomu.domain.catalog.ContentPreference.SAFE }
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), true)
     val installing: StateFlow<Map<String, Float?>> = extensions.installing
     val refreshing: StateFlow<Boolean> = extensions.refreshing
     val stores: StateFlow<List<StoreState>> = extensions.stores
@@ -137,9 +140,26 @@ class ExtensionsViewModel(
 
     fun updateAll() = viewModelScope.launch(ScreenErrors) {
         val list = updates.value
-        var done = 0
-        list.forEach { u -> if (run(u.installed.name) { extensions.install(u.available) } != null) done++ }
-        if (done > 0) _events.send(CatalogEvent.Message(R.string.ext_updated_count, done.toString()))
+        if (list.isEmpty()) return@launch
+        val report = runCatchingApp { extensions.updateAll(list) }.getOrElse {
+            _events.send(CatalogEvent.Failure(it))
+            return@launch
+        }
+        // A batch is reported by both numbers: "updated 3 of 5" is not "all updated".
+        _events.send(
+            when {
+                report.failed.isEmpty() -> CatalogEvent.Message(R.string.ext_updated_count, report.updated.size.toString())
+                report.updated.isEmpty() -> CatalogEvent.Message(R.string.ext_update_all_failed, report.failed.size.toString())
+                else -> CatalogEvent.Message(R.string.ext_update_all_partial, "${report.updated.size}/${report.attempted}")
+            },
+        )
+    }
+
+    /** Removes the trust of an extension; it stops loading until trusted again, nothing is deleted. */
+    fun untrust(ext: InstalledExtension) = viewModelScope.launch(ScreenErrors) {
+        runCatchingApp { extensions.untrust(listOf(ext)) }
+            .onSuccess { _events.send(CatalogEvent.Message(R.string.ext_untrusted, ext.name)) }
+            .onFailure { _events.send(CatalogEvent.Failure(it)) }
     }
 
     fun installFromFile(uri: Uri) = viewModelScope.launch(ScreenErrors) {
@@ -178,7 +198,12 @@ class ExtensionsViewModel(
         }
     }
 
-    fun setShowNsfw(value: Boolean) = viewModelScope.launch(ScreenErrors) { settings.showNsfw.set(value) }
+    /** The menu's quick toggle: it moves between hiding and listing adult extensions, never all the way to "show". */
+    fun setShowNsfw(value: Boolean) = viewModelScope.launch(ScreenErrors) {
+        settings.contentPreference.set(
+            if (value) app.yomu.domain.catalog.ContentPreference.MIXED else app.yomu.domain.catalog.ContentPreference.SAFE,
+        )
+    }
 
     fun toggleLanguage(lang: String) = viewModelScope.launch(ScreenErrors) {
         settings.extensionLanguages.update { current ->

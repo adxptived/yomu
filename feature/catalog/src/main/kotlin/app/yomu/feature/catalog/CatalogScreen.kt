@@ -162,6 +162,8 @@ fun CatalogScreen(
     onOpenDownloads: () -> Unit,
     onOpenWebView: (String) -> Unit = {},
     onOpenSourceSettings: (Long) -> Unit = {},
+    /** The connection wizard: what "Add" leads to (S01). */
+    onAddSource: () -> Unit = {},
 ) {
     val ready by viewModel.ready.collectAsStateWithLifecycle()
     val sources by viewModel.sourceList.collectAsStateWithLifecycle()
@@ -187,7 +189,6 @@ fun CatalogScreen(
     val snackbar = remember { SnackbarHostState() }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var showMenu by remember { mutableStateOf(false) }
-    var showAddOpds by remember { mutableStateOf(false) }
     // Pencil of the Sources tab: pick many sources and pin, enable or hide them at once.
     var editingSources by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(tab) { if (HomeTab.entries[tab] != HomeTab.SOURCES) editingSources = false }
@@ -239,7 +240,7 @@ fun CatalogScreen(
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.catalog_add_opds)) },
                                 leadingIcon = { Icon(Icons.Filled.RssFeed, null) },
-                                onClick = { showMenu = false; showAddOpds = true },
+                                onClick = { showMenu = false; onAddSource() },
                             )
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.catalog_local_folder)) },
@@ -301,7 +302,7 @@ fun CatalogScreen(
                     onOpenSource = { s ->
                         if (s.kind == SourceInfo.Kind.LOCAL && !viewModel.localConfigured) pickFolder.launch(null) else onOpenSource(s.id)
                     },
-                    onAddOpds = { showAddOpds = true },
+                    onAddOpds = onAddSource,
                     onPickFolder = { pickFolder.launch(null) },
                     onOpenExtensions = onOpenExtensions,
                     onOpenWebView = onOpenWebView,
@@ -355,9 +356,6 @@ fun CatalogScreen(
         } }
     }
 
-    if (showAddOpds) {
-        AddOpdsDialog(onDismiss = { showAddOpds = false }, onAdd = { n, u, l, p -> viewModel.addOpds(n, u, l, p); showAddOpds = false })
-    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -997,63 +995,4 @@ private fun FeedTab(
             )
         }
     }
-}
-
-@Composable
-private fun AddOpdsDialog(onDismiss: () -> Unit, onAdd: (String, String, String?, String?) -> Unit) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var url by rememberSaveable { mutableStateOf("") }
-    var user by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
-    var showPassword by rememberSaveable { mutableStateOf(false) }
-    val address = webAddress(url)
-    val invalid = url.isNotBlank() && address == null
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Filled.RssFeed, null) },
-        title = { Text(stringResource(R.string.catalog_add_opds)) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Dimens.s)) {
-                OutlinedTextField(
-                    url, { url = it },
-                    label = { Text(stringResource(R.string.opds_url)) },
-                    placeholder = { Text(stringResource(R.string.opds_url_placeholder)) },
-                    supportingText = when {
-                        invalid -> { { Text(stringResource(R.string.opds_url_invalid)) } }
-                        address != null && address != url.trim() -> { { Text(stringResource(R.string.opds_url_will_use, address)) } }
-                        else -> null
-                    },
-                    isError = invalid,
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next, autoCorrectEnabled = false),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.opds_name)) }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next), modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(user, { user = it }, label = { Text(stringResource(R.string.opds_user)) }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Next), modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(
-                    password, { password = it },
-                    label = { Text(stringResource(R.string.opds_password)) },
-                    singleLine = true,
-                    visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                    trailingIcon = {
-                        IconButton(onClick = { showPassword = !showPassword }) {
-                            Icon(
-                                if (showPassword) Icons.Filled.VisibilityOff else Icons.Outlined.Visibility,
-                                stringResource(if (showPassword) R.string.opds_hide_password else R.string.opds_show_password),
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(stringResource(R.string.opds_examples), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = address != null, onClick = { address?.let { onAdd(name, it, user, password) } }) { Text(stringResource(CoreR.string.add)) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(CoreR.string.cancel)) } },
-    )
 }

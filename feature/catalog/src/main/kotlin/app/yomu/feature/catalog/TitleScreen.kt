@@ -240,6 +240,7 @@ private fun TitleContent(
     // One target for the button and the label: the same function that opens the chapter names it.
     val continueAt = remember(chapters, display) { viewModel.continueChapter() }
     val total by viewModel.totalChapters.collectAsStateWithLifecycle()
+    val missing by viewModel.missingChapters.collectAsStateWithLifecycle()
     val scanlators by viewModel.scanlators.collectAsStateWithLifecycle()
     val sourceName by viewModel.sourceName.collectAsStateWithLifecycle()
     val sourceMissing by viewModel.sourceMissing.collectAsStateWithLifecycle()
@@ -596,6 +597,19 @@ private fun TitleContent(
                         }
                     }
                     if (stats.total > 0) item(key = "chapters-progress") { ChapterProgress(stats) }
+                    // A gap is named only when the numbering can be trusted; a restarted volume would make this a lie.
+                    if (!missing.isNullOrEmpty()) item(key = "chapters-missing") {
+                        Text(
+                            stringResource(
+                                R.string.chapters_missing,
+                                missing!!.size,
+                                missing!!.take(8).joinToString(", ") { n -> if (n % 1f == 0f) n.toInt().toString() else n.toString() },
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+                        )
+                    }
                     when {
                         list == null -> item(key = "chapters-loading") { SkeletonList(Modifier.fillMaxWidth().height(300.dp)) }
                         list.isEmpty() && total > 0 -> item(key = "chapters-filtered") {

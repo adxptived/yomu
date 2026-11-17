@@ -31,6 +31,7 @@ import app.yomu.data.source.SourceManager
 import app.yomu.data.tracking.TrackerManager
 import app.yomu.data.work.UpdateWorker
 import app.yomu.domain.catalog.ChapterDisplay
+import app.yomu.domain.catalog.ChapterNavigation
 import app.yomu.domain.catalog.ChapterOrder
 import app.yomu.domain.catalog.ChapterSortMode
 import app.yomu.domain.catalog.LibraryDisplay
@@ -51,8 +52,10 @@ import app.yomu.source.CatalogSource
 import app.yomu.source.FilterList
 import app.yomu.source.HttpSource
 import app.yomu.source.ItemsPage
+import app.yomu.source.ProbeResult
 import app.yomu.source.SBookLink
 import app.yomu.source.SItem
+import app.yomu.source.SourceCapabilities
 import app.yomu.source.SourceContent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -109,6 +112,17 @@ sealed interface CatalogEvent {
 }
 
 // region Catalog home
+
+/** The message shown for a connection check that did not succeed; [ProbeResult.Recognised] never reaches it. */
+internal fun ProbeResult.message(): Int = when (this) {
+    is ProbeResult.Recognised -> R.string.catalog_opds_probe_ok
+    is ProbeResult.Unsupported -> R.string.catalog_opds_probe_unsupported
+    ProbeResult.NeedsAuth -> R.string.catalog_opds_probe_auth
+    ProbeResult.NeedsBrowser -> R.string.catalog_opds_probe_browser
+    is ProbeResult.InvalidUrl -> R.string.opds_url_invalid
+    ProbeResult.NetworkError -> R.string.catalog_opds_probe_network
+    is ProbeResult.ApiMismatch -> R.string.catalog_opds_probe_unsupported
+}
 
 /** Pinned sources first, then by [sort]; ties by name. */
 internal fun sourceComparator(sort: SourceSortMode, deviceLanguage: String = java.util.Locale.getDefault().language): Comparator<SourceInfo> {
@@ -249,6 +263,17 @@ class CatalogHomeViewModel(
     fun setIncognito(value: Boolean) = viewModelScope.launch(ScreenErrors) { settings.incognito.set(value) }
 
     fun addOpds(name: String, url: String, user: String?, password: String?) = viewModelScope.launch(ScreenErrors) {
+        // The connection is checked before it is saved: a catalogue that answers with an error page used to be added
+        // as "installed" and only failed when the user opened it.
+        val probe = catalog.probeConnection(
+            url = url.trim(),
+            username = user?.ifBlank { null },
+            password = password?.ifBlank { null },
+        )
+        if (probe !is ProbeResult.Recognised) {
+            _events.send(CatalogEvent.Message(probe.message()))
+            return@launch
+        }
         runCatchingApp { sources.addOpds(name.trim().ifBlank { url.substringAfter("://").substringBefore('/') }, url.trim(), user?.ifBlank { null }, password?.ifBlank { null }) }
             .onSuccess { _events.send(CatalogEvent.Message(R.string.catalog_opds_added)) }
             .onFailure { _events.send(CatalogEvent.Failure(it)) }
@@ -445,8 +470,16 @@ class SourceBrowseViewModel(
     private val source = sources.get(sourceId)
     override val exists: Boolean = source != null
     override val title: String = navTitle ?: source?.name.orEmpty()
-    val supportsLatest: Boolean = source?.supportsLatest == true
-    override val supportsSearch: Boolean = source?.supportsSearch != false
+
+    /**
+     * What the bottom bar and the tabs may offer. A source that reports no search does not get a search tab, rather
+     * than a tab that always answers with nothing; an extension that never heard of capabilities keeps exactly the
+     * tabs its old flags allowed.
+     */
+    private val capabilities: SourceCapabilities = source?.let(sources::capabilitiesOf)
+        ?: SourceCapabilities(search = false, latest = false, popular = false)
+    val supportsLatest: Boolean = capabilities.latest
+    override val supportsSearch: Boolean = capabilities.search
     override val isNavigation: Boolean = navUrl != null
     override val content: SourceContent = source?.content ?: SourceContent.MANGA
     override val webUrl: String? = (source as? CatalogSource)?.homeUrl ?: (source as? HttpSource)?.baseUrl
@@ -476,16 +509,17 @@ class SourceBrowseViewModel(
     override val tabs: List<BrowseTab> = when {
         isNavigation -> listOf(BrowseTab.POPULAR)
         else -> buildList {
-            add(BrowseTab.POPULAR)
-            if (supportsLatest) add(BrowseTab.LATEST)
-            // No getFilterList() here: this property is built on the main thread, and extensions may build filters
-            // slowly or with network calls. The tab is always offered; a source that cannot search answers with its
-            // filters or an explanatory error instead of freezing the screen.
-            add(BrowseTab.SEARCH)
+            if (capabilities.popular) add(BrowseTab.POPULAR)
+            if (capabilities.latest) add(BrowseTab.LATEST)
+            // A search tab is offered only when the source can search: the screen used to draw it always and a
+            // source without search answered every query with the same empty page.
+            if (capabilities.search) add(BrowseTab.SEARCH)
+            // An installed source that reports nothing browsable still gets one list instead of an empty bar.
+            if (isEmpty()) add(BrowseTab.POPULAR)
         }
     }
     override val initialTab: BrowseTab = tabs.firstOrNull { it.name == initialTabName }
-        ?: if (!initialQuery.isNullOrBlank() && BrowseTab.SEARCH in tabs) BrowseTab.SEARCH else BrowseTab.POPULAR
+        ?: if (!initialQuery.isNullOrBlank() && BrowseTab.SEARCH in tabs) BrowseTab.SEARCH else tabs.first()
 
     /** Runs right away when the screen opens: a search from another screen or the one of the language left. */
     private val initialSearch: String? = initialQuery?.trim()?.takeIf { initialTab == BrowseTab.SEARCH }
@@ -893,6 +927,15 @@ class TitleViewModel(
 
     /** Number of chapters before filtering. */
     val totalChapters: StateFlow<Int> = allChapters.map { it?.size ?: 0 }.state(this, 0)
+
+    /**
+     * Chapter numbers the source does not list between the first and the last one, when its numbering is reliable;
+     * null when a gap cannot be told from a restarted volume or a special chapter. A guess is not shown.
+     */
+    val missingChapters: StateFlow<List<Float>?> = allChapters
+        .map { list -> list?.let { ChapterNavigation.missingNumbers(ChapterOrder.reading(it)) } }
+        .flowOn(Dispatchers.Default)
+        .state(this, null)
 
     /** Scanlation groups of the title, most chapters first. */
     val scanlators: StateFlow<List<String>> = allChapters.map { ChapterDisplay().scanlatorsOf(it.orEmpty()) }.state(this, emptyList())

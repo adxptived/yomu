@@ -91,6 +91,7 @@ import app.yomu.feature.catalog.OnlineLibraryPane
 import app.yomu.feature.catalog.SearchArgs
 import app.yomu.feature.catalog.SourceBrowseScreen
 import app.yomu.feature.catalog.SourceBrowseViewModel
+import app.yomu.feature.catalog.SourceConnectionScreen
 import app.yomu.feature.catalog.SourceSettingsScreen
 import app.yomu.feature.catalog.TitleScreen
 import app.yomu.feature.catalog.WebViewScreen
@@ -368,6 +369,7 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                             onOpenDownloads = { nav.navigate(DownloadsRoute) },
                             onOpenWebView = { nav.navigate(WebViewRoute(it)) },
                             onOpenSourceSettings = { nav.navigate(SourceSettingsRoute(it)) },
+                            onAddSource = { nav.navigate(SourceConnectionRoute) },
                         )
                         TopLevel.DICTIONARY -> DictionaryScreen(
                             viewModel = koinViewModel(),
@@ -572,6 +574,13 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
             val r = entry.toRoute<ExtensionsRoute>()
             ExtensionsScreen(koinViewModel(), back, onOpenSourceSettings = { nav.navigate(SourceSettingsRoute(it)) }, addStoreUrl = r.addStore)
         }
+        screen<SourceConnectionRoute> {
+            SourceConnectionScreen(
+                viewModel = koinViewModel(),
+                onBack = back,
+                onOpenExtensions = { nav.navigate(ExtensionsRoute()) },
+            )
+        }
         screen<SourceSettingsRoute> { entry -> SourceSettingsScreen(entry.toRoute<SourceSettingsRoute>().sourceId, back) }
         screen<WebViewRoute> { entry -> WebViewScreen(entry.toRoute<WebViewRoute>().url, back) }
         screen<DownloadsRoute> { DownloadsScreen(koinViewModel(), back) }
@@ -624,6 +633,7 @@ private fun LibraryTab(nav: NavHostController, tabs: TabsState) {
                 onOpenTitle = openTitle,
                 onReadChapter = { nav.navigate(ReaderRoute(chapterId = it)) },
                 onOpenDownloads = { nav.navigate(DownloadsRoute) },
+                onAddSource = { nav.navigate(SourceConnectionRoute) },
                 online = online,
             )
         }
