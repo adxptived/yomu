@@ -29,6 +29,9 @@ enum class PersistenceEvent {
 
     /** A notification that names a title or a chapter. */
     TITLED_NOTIFICATION,
+
+    /** The title, album, author and artwork handed to Media3 for the lock screen, the shade and Bluetooth. */
+    MEDIA_METADATA,
 }
 
 object IncognitoPolicy {

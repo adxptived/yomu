@@ -3,6 +3,7 @@ package app.yomu.feature.audio
 import android.app.PendingIntent
 import android.content.Context
 import android.net.Uri
+import android.app.Notification
 import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
@@ -23,6 +24,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.session.CommandButton
+import androidx.media3.session.DefaultMediaNotificationProvider
+import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
@@ -37,6 +40,8 @@ import app.yomu.domain.model.AudioTrack
 import app.yomu.domain.model.AudiobookManifest
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.ReadingStatus
+import app.yomu.domain.privacy.IncognitoPolicy
+import app.yomu.domain.privacy.PersistenceEvent
 import app.yomu.domain.repository.BookRepository
 import app.yomu.domain.repository.StatsRepository
 import com.google.common.collect.ImmutableList
@@ -49,6 +54,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -79,6 +85,9 @@ class AudioPlaybackService : MediaSessionService() {
     // Incognito keeps listening out of progress, status and statistics, like reading a text book. Kept current by a
     // collector and read explicitly on every load, where a suspend read is possible.
     @Volatile private var incognito = false
+
+    /** "Hide on the lock screen" for the media notification (privacy without incognito keeps the shade content). */
+    @Volatile private var hideOnLockScreen = false
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var player: ExoPlayer
@@ -119,6 +128,11 @@ class AudioPlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        // The media notification is a notification too: "hide on the lock screen" applies to it, and incognito uses
+        // generic metadata as well (see metadata()).
+        setMediaNotificationProvider(
+            PrivateMediaNotificationProvider(DefaultMediaNotificationProvider(this)) { hideOnLockScreen || incognito },
+        )
         val http = OkHttpDataSource.Factory(network.downloadClient)
         val upstream = DefaultDataSource.Factory(this, http)
         val withHeaders = ResolvingDataSource.Factory(upstream) { spec ->
@@ -172,7 +186,17 @@ class AudioPlaybackService : MediaSessionService() {
             .setCallback(callback)
             .setMediaButtonPreferences(skipButtons())
             .build()
-        scope.launch { appSettings.incognito.flow.collect { incognito = it } }
+        scope.launch {
+            combine(appSettings.incognito.flow, appSettings.notifyPrivacy.flow) { hidden, hide -> hidden to hide }
+                .collect { (hidden, hide) ->
+                    val changed = incognito != hidden
+                    incognito = hidden
+                    hideOnLockScreen = hide
+                    // Turning incognito on or off during playback must change what the shade, the lock screen and
+                    // Bluetooth show right away, not only from the next load.
+                    if (changed) applyMetadata()
+                }
+        }
     }
 
     // Rewind/forward instead of previous/next in the notification: chapters of an audiobook are long.
@@ -318,24 +342,53 @@ class AudioPlaybackService : MediaSessionService() {
         return expires > 0 && expires < System.currentTimeMillis() + EXPIRY_MARGIN_MS
     }
 
-    private fun item(b: Book, index: Int, t: AudioTrack, stream: Resolved?): MediaItem {
-        val metadata = MediaMetadata.Builder()
-            .setTitle(t.title)
-            .setArtist(b.authorsText.ifBlank { null })
-            .setAlbumTitle(b.title)
+    /**
+     * What the system may show about a track. Incognito replaces the title, the chapter, the author, the book and the
+     * artwork with a generic label: the media notification, the lock screen, a car kit and Bluetooth all read this.
+     */
+    private fun metadata(b: Book, index: Int, t: AudioTrack): MediaMetadata {
+        val builder = MediaMetadata.Builder()
             .setTrackNumber(index + 1)
             .setTotalTrackCount(tracks.size.takeIf { it > 0 })
-            .setArtworkUri(b.coverPath?.let { Uri.fromFile(File(it)) })
             .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK_CHAPTER)
-            .build()
+        return if (IncognitoPolicy.persists(PersistenceEvent.MEDIA_METADATA, incognito)) {
+            builder.setTitle(t.title)
+                .setArtist(b.authorsText.ifBlank { null })
+                .setAlbumTitle(b.title)
+                .setArtworkUri(b.coverPath?.let { Uri.fromFile(File(it)) })
+                .build()
+        } else {
+            builder.setTitle(getString(app.yomu.data.R.string.notif_private_title))
+                .setArtist(getString(app.yomu.data.R.string.notif_private_text))
+                .build()
+        }
+    }
+
+    private fun item(b: Book, index: Int, t: AudioTrack, stream: Resolved?): MediaItem {
         return MediaItem.Builder()
             .setMediaId("${b.id}/$index")
             // Not yet resolved YouTube tracks keep their "youtube:" address until just before they play.
             // Downloaded copies play from the device.
             .setUri(stream?.url ?: AudiobookStore.playableUri(t))
             .setMimeType(stream?.mimeType)
-            .setMediaMetadata(metadata)
+            .setMediaMetadata(metadata(b, index, t))
             .build()
+    }
+
+    /**
+     * Rewrites the metadata of the loaded playlist in place (URI and stream stay as they are). Called when incognito
+     * is turned on or off while a book is loaded, so the shade and the lock screen do not keep the other state.
+     */
+    private fun applyMetadata() {
+        val b = book ?: return
+        if (tracks.isEmpty()) return
+        val current = player.currentMediaItemIndex
+        val position = player.currentPosition
+        for (i in 0 until minOf(player.mediaItemCount, tracks.size)) {
+            val item = player.getMediaItemAt(i)
+            player.replaceMediaItem(i, item.buildUpon().setMediaMetadata(metadata(b, i, tracks[i])).build())
+        }
+        if (current in 0 until player.mediaItemCount) player.seekTo(current, position)
     }
 
     /** Resolves the current YouTube track (when the user jumped to it or its address expired) and the next one before it is needed. */
@@ -714,4 +767,32 @@ class AudioPlaybackService : MediaSessionService() {
             else -> 30_000
         }
     }
+}
+
+/**
+ * The default media notification with its lock-screen visibility set by the app's privacy settings. Metadata is
+ * already generic in incognito; this covers "hide on the lock screen" without hiding the shade content in the normal
+ * mode, which is exactly the notification contract.
+ */
+@OptIn(UnstableApi::class)
+private class PrivateMediaNotificationProvider(
+    private val delegate: MediaNotification.Provider,
+    private val hideOnLockScreen: () -> Boolean,
+) : MediaNotification.Provider {
+    override fun createNotification(
+        mediaSession: MediaSession,
+        mediaButtons: ImmutableList<CommandButton>,
+        actionFactory: MediaNotification.ActionFactory,
+        onNotificationChangedCallback: MediaNotification.Provider.Callback,
+    ): MediaNotification {
+        val result = delegate.createNotification(mediaSession, mediaButtons, actionFactory, onNotificationChangedCallback)
+        if (hideOnLockScreen()) result.notification.visibility = Notification.VISIBILITY_SECRET
+        return result
+    }
+
+    override fun handleCustomCommand(session: MediaSession, action: String, args: Bundle): Boolean =
+        delegate.handleCustomCommand(session, action, args)
+
+    override fun getNotificationChannelInfo(): MediaNotification.Provider.NotificationChannelInfo =
+        delegate.getNotificationChannelInfo()
 }

@@ -16,6 +16,7 @@ class IncognitoPolicyTest {
             PersistenceEvent.SESSION_STATS,
             PersistenceEvent.TRACKER_UPDATE,
             PersistenceEvent.TITLED_NOTIFICATION,
+            PersistenceEvent.MEDIA_METADATA,
         ).forEach { assertFalse(IncognitoPolicy.persists(it, incognito = true), it.name) }
     }
 
