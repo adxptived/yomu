@@ -49,7 +49,46 @@ class BookHtmlTest {
         assertFalse(html.contains("<script"), html)
     }
 
-    private class FakeDoc(private val files: List<Pair<String, String>>) : TextDocument {
+    @Test
+    fun `chapter styles are scoped and a linked sheet is inlined for its chapter`() = runBlocking {
+        val doc = FakeDoc(
+            listOf(
+                "OEBPS/text/ch1.xhtml" to """
+                    <html><head><style>.note { color: red }</style></head><body><p class="note">One</p></body></html>
+                """.trimIndent(),
+                "OEBPS/text/ch2.xhtml" to """
+                    <html><head>
+                      <link rel="stylesheet" href="../styles/two.css"/>
+                      <style>.note { display: none }</style>
+                    </head><body><p class="note">Two</p></body></html>
+                """.trimIndent(),
+            ),
+            resources = mapOf(
+                "OEBPS/styles/two.css" to """
+                    .note { visibility: hidden }
+                    body { margin: 1px }
+                    @media (min-width: 600px) { .note { font-size: 120% } }
+                """.trimIndent(),
+            ),
+        )
+
+        val html = requireNotNull(BookHtml.build(doc))
+
+        // The same class keeps two different rules: each is confined to its own chapter.
+        assertTrue(html.contains("section[data-yomu-chapter=\"0\"] .note{ color: red }"), html)
+        assertTrue(html.contains("section[data-yomu-chapter=\"1\"] .note{ display: none }"), html)
+        assertTrue(html.contains("section[data-yomu-chapter=\"1\"] .note{ visibility: hidden }"), html)
+        assertTrue(html.contains("section[data-yomu-chapter=\"1\"]{ margin: 1px }"), html)
+        assertTrue(html.contains("@media (min-width: 600px)"), html)
+        // The sheet was inlined rather than linked unscoped.
+        assertFalse(html.contains("href=\"/OEBPS/styles/two.css\""), html)
+        assertTrue(Regex("<style>\\s*\\.note").findAll(html).none(), html)
+    }
+
+    private class FakeDoc(
+        private val files: List<Pair<String, String>>,
+        private val resources: Map<String, String> = emptyMap(),
+    ) : TextDocument {
         override val title: String = "Test"
         override val language: String = "en"
         override val rtl: Boolean = false
@@ -60,7 +99,7 @@ class BookHtmlTest {
         override fun chapterTitle(index: Int): String = "Chapter ${index + 1}"
         override fun weight(index: Int): Long = files[index].second.length.toLong()
         override suspend fun chapterHtml(index: Int): String = files[index].second
-        override fun resource(path: String): ByteArray? = null
+        override fun resource(path: String): ByteArray? = resources[path]?.toByteArray()
         override fun close() = Unit
     }
 }

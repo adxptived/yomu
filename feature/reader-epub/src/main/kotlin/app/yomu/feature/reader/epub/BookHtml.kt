@@ -25,10 +25,13 @@ object BookHtml {
     const val MARKER = "<!--__YOMU_BOOK__-->"
 
     /** Bump when the builder output changes: old cached documents are rebuilt. */
-    private const val VERSION = 2
+    private const val VERSION = 3
     private const val MAX_BYTES = 6 * 1024 * 1024
     private const val MAX_CHAPTERS = 600
     private const val KEEP_BOOKS = 8
+
+    /** A linked stylesheet larger than this stays a shared link: inlining it per chapter would blow up the document. */
+    private const val MAX_SHEET_BYTES = 512 * 1024
 
     /** A cache, not data: Android may empty it and Settings → Storage clears it; the document is simply rebuilt. */
     private fun dir(context: Context): File = File(context.cacheDir, "book-html").apply { mkdirs() }
@@ -95,10 +98,24 @@ object BookHtml {
             sanitizeChapter(parsed)
             absolutize(parsed, path)
             val body = parsed.body()
-            // Both are already absolute virtual paths: the head loads each sheet once for the whole book.
-            styles += parsed.head().select("style").map { it.data() }.filter { it.isNotBlank() }
-            sheets += parsed.head().select("link[rel=stylesheet][href]").map { it.attr("href") }
+            // Every chapter's CSS becomes a rule of its own section: a class of one chapter must not restyle another.
+            // Inline styles are scoped in place; a linked sheet is inlined and scoped for this chapter, so a sheet
+            // unique to it cannot leak either (a shared sheet is inlined once per chapter, which keeps its rules).
+            parsed.head().select("style").map { it.data() }.filter { it.isNotBlank() }
+                .mapTo(styles) { ChapterCss.scope(it, i) }
+            parsed.head().select("link[rel=stylesheet][href]").map { it.attr("href") }
                 .filter { it.startsWith("/") && !it.contains("__yomu/") && !it.contains("reader.css") }
+                .forEach { href ->
+                    val css = runCatching { doc.resource(href.removePrefix("/")) }.getOrNull()
+                        ?.takeIf { it.size <= MAX_SHEET_BYTES }
+                        ?.let { String(it, Charsets.UTF_8) }
+                        ?.takeIf { "@import" !in it }
+                    if (css != null) {
+                        styles += ChapterCss.scope(cssUrls(css, href.removePrefix("/")), i)
+                    } else {
+                        sheets += href
+                    }
+                }
 
             sections.append("<section data-yomu-chapter=\"").append(i).append('"')
             // Attribute values come from the book: escape them or a class name could break out of the section tag.
