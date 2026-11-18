@@ -2,11 +2,13 @@ package app.yomu.data.book
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.RectF
 import android.net.Uri
 import app.yomu.data.backup.BookFileSync
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookFormat
+import app.yomu.domain.reader.ImageSize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -22,6 +24,19 @@ interface PageSource : Closeable {
     val count: Int
     fun name(index: Int): String
     suspend fun file(index: Int): File
+
+    /**
+     * Pixel size of page [index] when it can be read without fetching the page; null when the page is not available
+     * yet. The manga reader needs it to split only the wide scans and never a portrait page.
+     */
+    suspend fun size(index: Int): ImageSize? = null
+}
+
+/** Image bounds from a header, without decoding the pixels. */
+private fun bounds(input: java.io.InputStream): ImageSize? {
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeStream(input, null, options)
+    return if (options.outWidth > 0 && options.outHeight > 0) ImageSize(options.outWidth, options.outHeight) else null
 }
 
 class ArchivePageSource(
@@ -31,8 +46,22 @@ class ArchivePageSource(
     private val folderProofs: List<FolderPageProof>? = null,
 ) : PageSource {
     private val lock = Mutex()
+    private val sizes = java.util.concurrent.ConcurrentHashMap<Int, ImageSize>()
     override val count: Int get() = pages.size
     override fun name(index: Int): String = pages[index]
+
+    /**
+     * Reads the image header straight from the archive, so the split decision does not have to unpack every page.
+     * The container is opened under the same lock as [file]: a RAR reader is not re-entrant.
+     */
+    override suspend fun size(index: Int): ImageSize? = withContext(Dispatchers.IO) {
+        sizes[index]?.let { return@withContext it }
+        val measured = lock.withLock {
+            runCatching { container.open(pages[index])?.use { input -> bounds(input) } }.getOrNull()
+        }
+        if (measured != null) sizes[index] = measured
+        measured
+    }
 
     override suspend fun file(index: Int): File = withContext(Dispatchers.IO) {
         val name = pages[index]
@@ -61,8 +90,15 @@ class ArchivePageSource(
 }
 
 class PdfPageSource(private val pdf: PdfSource, private val width: Int, private val cacheDir: File, private val crop: RectF? = null) : PageSource {
+    private val sizes = java.util.concurrent.ConcurrentHashMap<Int, ImageSize>()
     override val count: Int get() = pdf.pageCount
     override fun name(index: Int): String = "${index + 1}"
+
+    /** The page's aspect ratio at the width it is rendered with; pdfium knows it without rendering. */
+    override suspend fun size(index: Int): ImageSize? = sizes[index] ?: runCatching {
+        val (w, h) = pdf.pageSize(index)
+        ImageSize(width, (h.toFloat() / w.coerceAtLeast(1) * width).toInt().coerceAtLeast(1))
+    }.getOrNull()?.also { sizes[index] = it }
 
     override suspend fun file(index: Int): File = withContext(Dispatchers.IO) {
         val out = File(cacheDir, "p%05d_%d.jpg".format(index, width))

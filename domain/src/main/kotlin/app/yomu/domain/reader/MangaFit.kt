@@ -33,12 +33,18 @@ object MangaFit {
     const val MAX_SMART_ZOOM: Float = 3f
 
     /**
+     * A wide scan — one image holding a two-page spread — is split into halves; a normal portrait page is not.
+     * An unknown size is not treated as wide: splitting a portrait page breaks the reading order.
+     */
+    fun isWide(pageWidth: Int, pageHeight: Int): Boolean =
+        pageWidth > 0 && pageHeight > 0 && pageWidth > pageHeight * WIDE_ASPECT
+
+    /**
      * Rotation for a page whose real pixel size is known. A wide scan is turned a quarter turn when the option is on;
      * right-to-left books turn the other way so the reading order of the spread is preserved.
      */
     fun widePageRotation(pageWidth: Int, pageHeight: Int, enabled: Boolean, rightToLeft: Boolean): WidePageRotation {
-        if (!enabled || pageWidth <= 0 || pageHeight <= 0) return WidePageRotation.NONE
-        if (pageWidth <= pageHeight * WIDE_ASPECT) return WidePageRotation.NONE
+        if (!enabled || !isWide(pageWidth, pageHeight)) return WidePageRotation.NONE
         return if (rightToLeft) WidePageRotation.RIGHT else WidePageRotation.LEFT
     }
 

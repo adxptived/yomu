@@ -1,6 +1,7 @@
 package app.yomu.data.catalog
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import androidx.room.withTransaction
 import app.yomu.core.database.CatalogItemEntity
 import app.yomu.core.database.ChapterEntity
@@ -25,6 +26,7 @@ import app.yomu.domain.catalog.UpdateTitleState
 import app.yomu.domain.model.CatalogEntry
 import app.yomu.domain.model.ChapterInfo
 import app.yomu.domain.model.ContentType
+import app.yomu.domain.reader.ImageSize
 import app.yomu.source.CatalogSource
 import app.yomu.source.ConnectionKind
 import app.yomu.source.ItemsPage
@@ -614,6 +616,15 @@ class OnlinePageSource(
             if (!(out.exists() && out.length() > 0)) PageFetcher.fetch(context, client, source, pages[index], out)
         }
         out
+    }
+
+    /** Only a page already on the device is measured: choosing a split must not download the whole chapter. */
+    override suspend fun size(index: Int): ImageSize? = withContext(Dispatchers.IO) {
+        val out = File(dir, "%05d.img".format(index))
+        if (!out.exists() || out.length() == 0L) return@withContext null
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(out.path, options)
+        if (options.outWidth > 0 && options.outHeight > 0) ImageSize(options.outWidth, options.outHeight) else null
     }
 
     override fun close() = Unit

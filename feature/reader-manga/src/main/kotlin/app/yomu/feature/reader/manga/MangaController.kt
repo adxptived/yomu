@@ -12,6 +12,8 @@ import androidx.compose.ui.graphics.ColorMatrix
 import app.yomu.data.book.PageSource
 import app.yomu.domain.model.MangaSettings
 import app.yomu.domain.model.TapZoneLayout
+import app.yomu.domain.reader.ImageSize
+import app.yomu.domain.reader.MangaFit
 import app.yomu.domain.reader.ReaderInput
 import app.yomu.domain.reader.ReaderPoint
 import app.yomu.domain.reader.ReaderTapAction
@@ -42,6 +44,23 @@ class MangaController(val pages: PageSource) {
 
     /** Zoom kept for the next pages while [MangaSettings.zoomLock] is on. */
     var lockedZoom by mutableFloatStateOf(1f)
+
+    /**
+     * Pixel sizes learned from page headers, by physical page. Split mode uses them to cut only wide scans; the map is
+     * observable so the slot list follows when a page ahead is measured.
+     */
+    val pageSizes = androidx.compose.runtime.mutableStateMapOf<Int, ImageSize>()
+
+    /** Records a size seen by the image loader or read from a page; an unusable size is ignored. */
+    fun noteSize(index: Int, size: ImageSize?) {
+        if (size != null && size.isUsable && pageSizes[index] != size) pageSizes[index] = size
+    }
+
+    /** True when the page is a wide scan (the only pages split mode cuts); an unknown page is not wide. */
+    fun isWide(index: Int): Boolean = pageSizes[index]?.let { MangaFit.isWide(it.width, it.height) } == true
+
+    /** Reads a page size without materialising the page when the source can provide it. */
+    suspend fun size(index: Int): ImageSize? = pageSizes[index] ?: pages.size(index)?.also { noteSize(index, it) }
 
     /** Incremented to show the tap zone overlay for a few seconds. */
     var tapZonesHint by mutableIntStateOf(0)

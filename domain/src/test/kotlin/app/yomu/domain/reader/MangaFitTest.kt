@@ -9,6 +9,15 @@ import org.junit.jupiter.api.Test
 class MangaFitTest {
 
     @Test
+    fun `only a meaningfully wider page is a wide scan`() {
+        assertTrue(MangaFit.isWide(2000, 1000))
+        assertTrue(!MangaFit.isWide(1000, 2000))
+        assertTrue(!MangaFit.isWide(1000, 900))
+        assertTrue(!MangaFit.isWide(0, 1000))
+        assertTrue(!MangaFit.isWide(1000, 0))
+    }
+
+    @Test
     fun `a wide scan turns left for a left to right book`() {
         assertEquals(WidePageRotation.LEFT, MangaFit.widePageRotation(2000, 1000, enabled = true, rightToLeft = false))
     }

@@ -44,17 +44,33 @@ class MangaPagingTest {
     }
 
     @Test
-    fun `a split view shows two halves per physical page in the chosen direction`() {
-        val ltr = MangaPaging.virtualPages(2, PageSplit.LEFT_TO_RIGHT)
-        assertEquals(listOf(MangaPage(0, 0), MangaPage(0, 1), MangaPage(1, 0), MangaPage(1, 1)), ltr)
-        val rtl = MangaPaging.virtualPages(1, PageSplit.RIGHT_TO_LEFT)
-        assertEquals(listOf(MangaPage(0, 1), MangaPage(0, 0)), rtl)
-        assertTrue(MangaPaging.virtualPages(0, PageSplit.LEFT_TO_RIGHT).isEmpty())
+    fun `a split view shows two halves per wide page in the chosen direction`() {
+        val ltr = MangaPaging.virtualPages(2, PageSplit.LEFT_TO_RIGHT) { true }
+        assertEquals(
+            listOf(MangaPage(0, 0, true), MangaPage(0, 1, true), MangaPage(1, 0, true), MangaPage(1, 1, true)),
+            ltr,
+        )
+        val rtl = MangaPaging.virtualPages(1, PageSplit.RIGHT_TO_LEFT) { true }
+        assertEquals(listOf(MangaPage(0, 1, true), MangaPage(0, 0, true)), rtl)
+        assertTrue(MangaPaging.virtualPages(0, PageSplit.LEFT_TO_RIGHT) { true }.isEmpty())
+    }
+
+    @Test
+    fun `a portrait page keeps one slot in split mode`() {
+        val pages = MangaPaging.virtualPages(4, PageSplit.LEFT_TO_RIGHT) { it == 1 }
+        assertEquals(
+            listOf(MangaPage(0), MangaPage(1, 0, true), MangaPage(1, 1, true), MangaPage(2), MangaPage(3)),
+            pages,
+        )
+        assertEquals(0, MangaPaging.virtualIndexOf(pages, 0, PageSplit.LEFT_TO_RIGHT))
+        assertEquals(1, MangaPaging.virtualIndexOf(pages, 1, PageSplit.LEFT_TO_RIGHT))
+        // A portrait page is never shown as a half.
+        assertTrue(pages.filter { it.physical == 0 }.none { it.split })
     }
 
     @Test
     fun `without a split the slot is the page`() {
-        val pages = MangaPaging.virtualPages(4, PageSplit.OFF)
+        val pages = MangaPaging.virtualPages(4, PageSplit.OFF) { true }
         assertEquals(listOf(0, 1, 2, 3), pages.map { it.physical })
         assertEquals(2, MangaPaging.virtualIndexOf(pages, 2, PageSplit.OFF))
         assertEquals(2, MangaPaging.physicalPage(pages, 2))
@@ -62,17 +78,17 @@ class MangaPagingTest {
 
     @Test
     fun `a restored position opens the half its direction starts with`() {
-        val ltr = MangaPaging.virtualPages(3, PageSplit.LEFT_TO_RIGHT)
+        val ltr = MangaPaging.virtualPages(3, PageSplit.LEFT_TO_RIGHT) { true }
         assertEquals(2, MangaPaging.virtualIndexOf(ltr, 1, PageSplit.LEFT_TO_RIGHT))
         assertEquals(1, MangaPaging.physicalPage(ltr, 2))
-        val rtl = MangaPaging.virtualPages(3, PageSplit.RIGHT_TO_LEFT)
+        val rtl = MangaPaging.virtualPages(3, PageSplit.RIGHT_TO_LEFT) { true }
         assertEquals(2, MangaPaging.virtualIndexOf(rtl, 1, PageSplit.RIGHT_TO_LEFT))
         assertEquals(1, MangaPaging.physicalPage(rtl, 2))
     }
 
     @Test
     fun `an unknown page falls back to the first slot, never a crash`() {
-        val pages = MangaPaging.virtualPages(2, PageSplit.LEFT_TO_RIGHT)
+        val pages = MangaPaging.virtualPages(2, PageSplit.LEFT_TO_RIGHT) { true }
         assertEquals(0, MangaPaging.virtualIndexOf(pages, 99, PageSplit.LEFT_TO_RIGHT))
         assertEquals(0, MangaPaging.physicalPage(emptyList(), 4))
     }

@@ -130,7 +130,7 @@ private const val PRELOAD_PARALLEL = 3
 private const val PRELOAD_SLACK = 2
 
 /** Pages shown by the pager: optional previous-chapter page, the images (or their halves), then an end page. */
-private class Layout(
+internal class Layout(
     val count: Int,
     val hasPrev: Boolean,
     val spreads: List<IntArray>?,
@@ -151,8 +151,39 @@ private class Layout(
         return spreads?.get(i)?.first() ?: virtual?.getOrNull(i)?.physical ?: i
     }
 
-    /** The half shown at [slot], or null when the slot is a whole page. */
-    fun halfOf(slot: Int): app.yomu.domain.reader.MangaPage? = virtual?.getOrNull(slot - offset)
+    /** The half shown at [slot], or null when the slot is a whole page (a portrait scan is never cut). */
+    fun halfOf(slot: Int): app.yomu.domain.reader.MangaPage? = virtual?.getOrNull(slot - offset)?.takeIf { it.split }
+}
+
+/** Where a page request should move the pager, or that the reader is at a chapter edge. */
+internal sealed interface SlotMove {
+    data class To(val slot: Int, val animate: Boolean = true) : SlotMove
+    data object ChapterEdge : SlotMove
+}
+
+/**
+ * The pager's answer to a physical page request (a hardware key, a tap, the slider, a typed number).
+ *
+ * A turn is one *slot*, not one physical page: in split mode the first half's next step is the second half of the
+ * same page, and the last page's next step is the end page rather than the next chapter. Only a request that leaves
+ * page 0 backwards, with nothing before it, is a chapter edge. A jump of more than one slot is never animated.
+ */
+internal fun slotMoveFor(request: Int, page: Int, currentSlot: Int, layout: Layout): SlotMove {
+    val last = layout.total - 1
+    return when {
+        request < 0 -> when {
+            currentSlot > 0 -> SlotMove.To(currentSlot - 1)
+            layout.hasPrev -> SlotMove.To(0)
+            else -> SlotMove.ChapterEdge
+        }
+        request >= layout.count -> SlotMove.To((currentSlot + 1).coerceAtMost(last))
+        request == page + 1 -> SlotMove.To((currentSlot + 1).coerceAtMost(last))
+        request == page - 1 -> SlotMove.To((currentSlot - 1).coerceAtLeast(0))
+        else -> {
+            val slot = layout.slotOf(request)
+            SlotMove.To(slot, animate = kotlin.math.abs(slot - currentSlot) <= 1)
+        }
+    }
 }
 
 @Composable
@@ -184,12 +215,28 @@ fun MangaReaderView(
                         if (i <= now || i > now + controller.preloadAhead + PRELOAD_SLACK) return@withPermit false
                         val file = controller.file(i)
                         // A tall page is preloaded under the same decode budget as the one on screen.
-                        val target = readPageSize(file)?.let {
+                        val size = readPageSize(file)
+                        controller.noteSize(i, size)
+                        val target = size?.let {
                             MangaFit.decodeSize(it.width, it.height, metrics.widthPixels, metrics.heightPixels, controller.settings.scale)
                         }
                         runCatching { loader.enqueue(request(context, file, controller.settings.cropBorders, target = target)) }.isSuccess
                     }
                     if (!ok) started.remove(i)
+                }
+            }
+        }
+    }
+    // Split mode cuts only wide scans. A local archive answers from an image header without unpacking every page; a
+    // page of an online chapter is measured once it is already on the device, which the preloader above fills in.
+    LaunchedEffect(controller, s.splitPages) {
+        if (s.splitPages == app.yomu.domain.reader.PageSplit.OFF) return@LaunchedEffect
+        val gate = Semaphore(PRELOAD_PARALLEL)
+        for (i in 0 until controller.count) {
+            if (controller.pageSizes.containsKey(i)) continue
+            launch {
+                gate.withPermit {
+                    controller.noteSize(i, runCatching { controller.size(i) }.getOrNull())
                 }
             }
         }
@@ -212,7 +259,7 @@ fun MangaReaderView(
             // inside a spread would be unreadable.
             val split = if (!useSpreads) s.splitPages else app.yomu.domain.reader.PageSplit.OFF
             val virtual = if (split != app.yomu.domain.reader.PageSplit.OFF) {
-                app.yomu.domain.reader.MangaPaging.virtualPages(controller.count, split)
+                app.yomu.domain.reader.MangaPaging.virtualPages(controller.count, split, controller::isWide)
             } else {
                 null
             }
@@ -264,33 +311,30 @@ private fun Paged(controller: MangaController, listener: MangaListener, layout: 
     val animate by rememberUpdatedState(s.pageAnimation)
     val speed by rememberUpdatedState(animationSpeed.coerceIn(0.25f, 3f))
     val tween = tween<Float>((320 / speed).toInt().coerceIn(60, 1_200))
+    // The effects below outlive one composition; a layout change (single pages ↔ split ↔ spreads) must be read from
+    // the current one instead of the copy captured when the effect started.
+    val layoutNow by rememberUpdatedState(layout)
     suspend fun go(slot: Int) = if (animate) pager.animateScrollToPage(slot, animationSpec = tween) else pager.scrollToPage(slot)
-    LaunchedEffect(layout.spreads?.size, layout.virtual?.size, layout.hasPrev) { pager.scrollToPage(layout.slotOf(controller.page)) }
+    LaunchedEffect(layout.spreads?.map { it.toList() }, layout.virtual, layout.hasPrev) {
+        // A new slot can appear while a page is being preloaded; only a slot that actually moved needs a correction,
+        // otherwise a page turn in flight would be snapped back to the page being left.
+        val target = layoutNow.slotOf(controller.page)
+        if (target != pager.currentPage) pager.scrollToPage(target)
+    }
     LaunchedEffect(Unit) {
         controller.pageRequests.collect { target ->
-            when {
-                target < 0 -> if (layout.hasPrev) go(0) else listener.onChapterEdge(false)
-                target >= controller.count -> go(layout.total - 1)
-                else -> {
-                    val slot = layout.slotOf(target)
-                    if (slot == pager.currentPage && layout.spreads != null) {
-                        val next = if (target > controller.page) pager.currentPage + 1 else pager.currentPage - 1
-                        go(next.coerceIn(0, layout.total - 1))
-                    } else if (kotlin.math.abs(slot - pager.currentPage) > 1) {
-                        // Long jumps (slider, table of contents) never animate through every page.
-                        pager.scrollToPage(slot)
-                    } else {
-                        go(slot)
-                    }
-                }
+            val move = slotMoveFor(target, controller.page, pager.currentPage, layoutNow)
+            when (move) {
+                is SlotMove.To -> if (move.animate) go(move.slot) else pager.scrollToPage(move.slot)
+                SlotMove.ChapterEdge -> listener.onChapterEdge(false)
             }
         }
     }
     var endReported by remember { mutableStateOf(false) }
     LaunchedEffect(pager) {
         snapshotFlow { pager.currentPage }.distinctUntilChanged().collect { slot ->
-            layout.pageOf(slot)?.let { controller.page = it; listener.onPageChanged(it) }
-            if (slot == layout.total - 1) {
+            layoutNow.pageOf(slot)?.let { controller.page = it; listener.onPageChanged(it) }
+            if (slot == layoutNow.total - 1) {
                 // The end slot is not a page: report the last page so the saved position is not one behind.
                 val last = (controller.count - 1).coerceAtLeast(0)
                 if (controller.page != last) {
@@ -372,7 +416,12 @@ private fun PageImage(
     var attempt by remember(index) { mutableIntStateOf(0) }
     LaunchedEffect(index, attempt) {
         error = null
-        loadPage(controller, index, onFile = { file = it; pageSize = readPageSize(it) }, onError = { error = it })
+        loadPage(controller, index, onFile = {
+            file = it
+            val size = readPageSize(it)
+            pageSize = size
+            controller.noteSize(index, size)
+        }, onError = { error = it })
     }
     var size by remember { mutableStateOf(IntSize(1, 1)) }
     var coords by remember { mutableStateOf<LayoutCoordinates?>(null) }
@@ -668,7 +717,12 @@ private fun Webtoon(controller: MangaController, listener: MangaListener, hasPre
                 var attempt by remember(index) { mutableIntStateOf(0) }
                 LaunchedEffect(index, attempt) {
                     error = null
-                    loadPage(controller, index, onFile = { file = it; pageSize = readPageSize(it) }, onError = { error = it })
+                    loadPage(controller, index, onFile = {
+                        file = it
+                        val size = readPageSize(it)
+                        pageSize = size
+                        controller.noteSize(index, size)
+                    }, onError = { error = it })
                 }
                 val f = file
                 if (error != null) {

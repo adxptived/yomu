@@ -9,9 +9,12 @@ import kotlinx.serialization.Serializable
 @Serializable
 enum class PageSplit { OFF, LEFT_TO_RIGHT, RIGHT_TO_LEFT }
 
-/** One thing on screen: a whole physical page, or one half of it (0 = the first half in reading order). */
-data class MangaPage(val physical: Int, val half: Int = 0) {
-    val isSecondHalf: Boolean get() = half != 0
+/**
+ * One thing on screen: a whole physical page, or one half of it (0 = the first half in reading order). [split] is
+ * false for a page shown whole — a portrait scan is never cut just because the split mode is on.
+ */
+data class MangaPage(val physical: Int, val half: Int = 0, val split: Boolean = false) {
+    val isSecondHalf: Boolean get() = split && half != 0
 }
 
 /**
@@ -55,25 +58,30 @@ object MangaPaging {
         spreads(pageCount, coverAlone).getOrNull(index)?.firstOrNull() ?: -1
 
     /**
-     * What the pager shows when a scan is split: two entries per physical page instead of one. A split is visual only —
-     * [physicalPage] maps back, so progress, a tracker page and a bookmark are still about the real page.
+     * What the pager shows when a scan is split: two entries for a [isWide] page, one for a portrait page. A split is
+     * visual only — [physicalPage] maps back, so progress, a tracker page and a bookmark are still about the real page.
      */
-    fun virtualPages(pageCount: Int, split: PageSplit): List<MangaPage> {
+    fun virtualPages(pageCount: Int, split: PageSplit, isWide: (Int) -> Boolean): List<MangaPage> {
         if (pageCount <= 0) return emptyList()
         if (split == PageSplit.OFF) return (0 until pageCount).map { MangaPage(it) }
         return (0 until pageCount).flatMap { page ->
-            if (split == PageSplit.RIGHT_TO_LEFT) listOf(MangaPage(page, 1), MangaPage(page, 0))
-            else listOf(MangaPage(page, 0), MangaPage(page, 1))
+            when {
+                !isWide(page) -> listOf(MangaPage(page))
+                split == PageSplit.RIGHT_TO_LEFT -> listOf(MangaPage(page, 1, split = true), MangaPage(page, 0, split = true))
+                else -> listOf(MangaPage(page, 0, split = true), MangaPage(page, 1, split = true))
+            }
         }
     }
 
     /**
      * The slot of [physicalPage] in the split view: the first half for a left-to-right split, the second half for a
-     * right-to-left one, so a restored position opens the half a reader of that direction starts with.
+     * right-to-left one, so a restored position opens the half a reader of that direction starts with. A portrait page
+     * has a single slot whatever the split mode is.
      */
     fun virtualIndexOf(pages: List<MangaPage>, physicalPage: Int, split: PageSplit): Int {
         if (pages.isEmpty()) return 0
-        return pages.indexOfFirst { it.physical == physicalPage && it.half == (if (split == PageSplit.RIGHT_TO_LEFT) 1 else 0) }
+        val preferred = if (split == PageSplit.RIGHT_TO_LEFT) 1 else 0
+        return pages.indexOfFirst { it.physical == physicalPage && it.split && it.half == preferred }
             .takeIf { it >= 0 }
             ?: pages.indexOfFirst { it.physical == physicalPage }.takeIf { it >= 0 }
             ?: 0
