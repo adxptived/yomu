@@ -155,7 +155,8 @@
     <string name="rs_scope_global">All books</string>
     <string name="rs_scope_book">This book</string>
     <string name="rs_scope_global_summary">Every title follows these values; a title with its own settings keeps them until you choose it here.</string>
-    <string name="rs_scope_book_summary">Only this title. Switching back to “All books” removes the saved override, so it inherits the app defaults again.</string>
+    <string name="rs_scope_book_summary">Only this title’s text, theme and pages. Brightness, window behaviour and controls are shared and are marked below. Switching back to “All books” removes the saved override.</string>
+    <string name="rs_scope_common_note">These settings are shared by every book; this title does not keep its own copy.</string>
     <string name="rs_preset_eink">E-ink</string>
     <string name="rs_flash_pages">E-ink flash</string>
     <string name="rs_flash_off">Off</string>

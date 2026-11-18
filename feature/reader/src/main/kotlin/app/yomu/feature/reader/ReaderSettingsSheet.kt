@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.FormatLineSpacing
 import androidx.compose.material.icons.outlined.Margin
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material3.AlertDialog
@@ -207,18 +208,18 @@ fun ReaderSettingsSheet(
                         is ReaderContent.Text -> {
                             TextSettings(text, viewModel, query)
                             ThemeSection(text, viewModel, query)
-                            DisplaySettings(common, viewModel, showFooter = true, query = query)
-                            ControlSettings(content, common, manga, wordTap, viewModel, query)
+                            DisplaySettings(common, viewModel, showFooter = true, perBook = perBook, query = query)
+                            ControlSettings(content, common, manga, wordTap, viewModel, perBook = perBook, query = query)
                         }
                         is ReaderContent.Pdf -> {
                             PdfSettingsContent(pdf, viewModel, query)
-                            DisplaySettings(common, viewModel, showFooter = true, query = query)
-                            ControlSettings(content, common, manga, wordTap, viewModel, query)
+                            DisplaySettings(common, viewModel, showFooter = true, perBook = perBook, query = query)
+                            ControlSettings(content, common, manga, wordTap, viewModel, perBook = perBook, query = query)
                         }
                         is ReaderContent.Manga -> {
                             MangaSettingsContent(manga, viewModel, query)
-                            DisplaySettings(common, viewModel, showFooter = false, query = query)
-                            ControlSettings(content, common, manga, wordTap, viewModel, query)
+                            DisplaySettings(common, viewModel, showFooter = false, perBook = perBook, query = query)
+                            ControlSettings(content, common, manga, wordTap, viewModel, perBook = perBook, query = query)
                         }
                     }
                 } else {
@@ -230,9 +231,9 @@ fun ReaderSettingsSheet(
                         }
                         1 -> {
                             if (content is ReaderContent.Text) ThemeSection(text, viewModel, query)
-                            DisplaySettings(common, viewModel, showFooter = content !is ReaderContent.Manga, query = query)
+                            DisplaySettings(common, viewModel, showFooter = content !is ReaderContent.Manga, perBook = perBook, query = query)
                         }
-                        else -> ControlSettings(content, common, manga, wordTap, viewModel, query)
+                        else -> ControlSettings(content, common, manga, wordTap, viewModel, perBook = perBook, query = query)
                     }
                 }
                 Spacer(Modifier.height(Dimens.l))
@@ -880,9 +881,30 @@ private fun MangaSettingsContent(s: MangaSettings, vm: ReaderViewModel, query: S
     MangaPageSettings(s, { transform -> vm.updateManga(transform) }, query = query)
 }
 
+/** N02: marks the groups that are stored once for every book while the per-book scope is chosen. */
+@Composable
+private fun GlobalScopeNote() {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+    ) {
+        Icon(Icons.Outlined.Public, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+        Text(
+            stringResource(R.string.rs_scope_common_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
 /** Screen brightness, the warm filter, the status line and the window behaviour. */
 @Composable
-private fun DisplaySettings(c: CommonReaderSettings, vm: ReaderViewModel, showFooter: Boolean, query: String) {
+private fun DisplaySettings(c: CommonReaderSettings, vm: ReaderViewModel, showFooter: Boolean, perBook: Boolean, query: String) {
+    // N02: these values are stored once for the whole app, so the per-book scope must say so instead of implying
+    // that changing the brightness stays with this book.
+    if (perBook) GlobalScopeNote()
     CollapsibleSection(
         title = stringResource(R.string.rs_group_screen),
         query = query,
@@ -997,11 +1019,21 @@ private fun timeoutLabel(t: ScreenTimeout): String = when (t) {
 
 /** Taps, edge swipes, hardware keys, the word lookup and automatic scrolling. */
 @Composable
-private fun ControlSettings(content: ReaderContent, c: CommonReaderSettings, m: MangaSettings, wordTap: WordTapGesture, vm: ReaderViewModel, query: String) {
+private fun ControlSettings(
+    content: ReaderContent,
+    c: CommonReaderSettings,
+    m: MangaSettings,
+    wordTap: WordTapGesture,
+    vm: ReaderViewModel,
+    perBook: Boolean,
+    query: String,
+) {
     if (content is ReaderContent.Manga) {
+        // The manga controls themselves are manga settings and follow the chosen scope.
         MangaControlSettings(m, { transform -> vm.updateManga(transform) }, onPreviewZones = vm::previewTapZones, query = query)
         return
     }
+    if (perBook) GlobalScopeNote()
     CollapsibleSection(
         title = stringResource(R.string.rs_group_taps),
         query = query,

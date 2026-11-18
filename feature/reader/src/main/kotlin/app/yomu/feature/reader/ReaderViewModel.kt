@@ -1786,18 +1786,30 @@ class ReaderViewModel(
     // ================================================================== settings
     // A short in-memory journal of changed settings: "Undo the last change" after a wrong tap on a slider. One stack for
     // all four groups, so brightness, typography and the page mode are taken back in the order they were changed.
+    private enum class ReaderEngine { TEXT, MANGA, PDF }
+
+    private fun engineOf(content: ReaderContent?): ReaderEngine? = when (content) {
+        is ReaderContent.Text -> ReaderEngine.TEXT
+        is ReaderContent.Pdf -> ReaderEngine.PDF
+        is ReaderContent.Manga -> ReaderEngine.MANGA
+        null -> null
+    }
+
     private sealed interface SettingsChange {
         data class Text(val value: TextReaderSettings, val perBook: Boolean) : SettingsChange
         data class Manga(val value: MangaSettings, val perBook: Boolean) : SettingsChange
         data class Pdf(val value: PdfSettings, val perBook: Boolean) : SettingsChange
         data class Common(val value: CommonReaderSettings) : SettingsChange
 
-        /** The E-ink preset changes three groups at once; one Undo takes all of it back. */
+        /**
+         * The E-ink preset changes the text and the manga group at once in the global scope, and only the engine of
+         * the open book in the per-book scope. One Undo takes back exactly the groups it wrote.
+         */
         data class Eink(
             val text: TextReaderSettings,
             val manga: MangaSettings,
-            val common: CommonReaderSettings,
             val perBook: Boolean,
+            val engine: ReaderEngine?,
         ) : SettingsChange
     }
 
@@ -1863,9 +1875,14 @@ class ReaderViewModel(
             is SettingsChange.Pdf -> writePdf(change.value, change.perBook)
             is SettingsChange.Common -> settings.commonReader.set(change.value)
             is SettingsChange.Eink -> {
-                writeText(change.text, change.perBook)
-                writeManga(change.manga, change.perBook)
-                settings.commonReader.set(change.common)
+                // The preset never touched the common group; writing it here would revert changes made after it.
+                val targets = app.yomu.domain.reader.EinkPreset.targets(
+                    change.perBook,
+                    textBook = change.engine == ReaderEngine.TEXT,
+                    mangaBook = change.engine == ReaderEngine.MANGA,
+                )
+                if (targets.text) writeText(change.text, change.perBook)
+                if (targets.manga) writeManga(change.manga, change.perBook)
             }
             null -> Unit
         }
@@ -1879,13 +1896,21 @@ class ReaderViewModel(
     fun applyEinkPreset() = viewModelScope.launch(ScreenErrors) {
         val beforeText = textSettings.value
         val beforeManga = mangaSettings.value
-        val beforeCommon = common.value
-        val afterText = app.yomu.domain.reader.EinkPreset.text(beforeText)
-        val afterManga = app.yomu.domain.reader.EinkPreset.manga(beforeManga)
+        val engine = engineOf(current())
+        val local = perBook.value
+        // Per book, only the engine the open book actually uses is changed: a text book must not leave a manga
+        // override (and the other way round) that another format of the same title would inherit later.
+        val targets = app.yomu.domain.reader.EinkPreset.targets(
+            local,
+            textBook = engine == ReaderEngine.TEXT,
+            mangaBook = engine == ReaderEngine.MANGA,
+        )
+        val afterText = if (targets.text) app.yomu.domain.reader.EinkPreset.text(beforeText) else beforeText
+        val afterManga = if (targets.manga) app.yomu.domain.reader.EinkPreset.manga(beforeManga) else beforeManga
         if (afterText == beforeText && afterManga == beforeManga) return@launch
-        push(SettingsChange.Eink(beforeText, beforeManga, beforeCommon, perBook.value))
-        writeText(afterText, perBook.value)
-        writeManga(afterManga, perBook.value)
+        push(SettingsChange.Eink(beforeText, beforeManga, local, engine))
+        if (targets.text) writeText(afterText, local)
+        if (targets.manga) writeManga(afterManga, local)
     }
 
     /** Removes an imported font; the current font and saved presets that use it fall back to the serif face. */

@@ -4,6 +4,10 @@ import app.yomu.domain.model.MangaSettings
 import app.yomu.domain.model.PageTurnAnimation
 import app.yomu.domain.model.TextAlignment
 import app.yomu.domain.model.TextReaderSettings
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -49,5 +53,24 @@ class EinkPresetTest {
         assertFalse(EinkPreset.flashDue(4, 5))
         assertFalse(EinkPreset.flashDue(0, 5))
         assertFalse(EinkPreset.flashDue(5, 0))
+    }
+
+    @Test
+    fun `globally the preset prepares both engines, per book only the open one`() {
+        assertEquals(EinkPreset.Targets(text = true, manga = true), EinkPreset.targets(perBook = false, textBook = true, mangaBook = false))
+        assertEquals(EinkPreset.Targets(text = true, manga = false), EinkPreset.targets(perBook = true, textBook = true, mangaBook = false))
+        assertEquals(EinkPreset.Targets(text = false, manga = true), EinkPreset.targets(perBook = true, textBook = false, mangaBook = true))
+        // A PDF has no group of its own in the preset: a per-book PDF leaves no override behind.
+        assertEquals(EinkPreset.Targets(text = false, manga = false), EinkPreset.targets(perBook = true, textBook = false, mangaBook = false))
+    }
+
+    @Test
+    fun `a flash cancelled by a quick page turn still clears the layer`() = runTest {
+        var on = false
+        val job = launch { EinkPreset.flash { on = it } }
+        advanceTimeBy(1)
+        assertTrue(on, "the layer is shown while the flash runs")
+        job.cancelAndJoin()
+        assertFalse(on, "the cancelled flash must remove the layer")
     }
 }

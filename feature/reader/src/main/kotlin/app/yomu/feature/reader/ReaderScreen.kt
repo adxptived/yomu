@@ -660,9 +660,8 @@ fun ReaderScreen(
             if (every > 0 && lastFlashPage > 0 && page != lastFlashPage &&
                 app.yomu.domain.reader.EinkPreset.flashDue(page, every) && sheet == ReaderSheet.NONE
             ) {
-                einkFlash = true
-                delay(app.yomu.domain.reader.EinkPreset.FLASH_MS)
-                einkFlash = false
+                // A quick page turn cancels this effect while it waits; the preset removes the layer in `finally`.
+                app.yomu.domain.reader.EinkPreset.flash { einkFlash = it }
             }
             lastFlashPage = page
         }

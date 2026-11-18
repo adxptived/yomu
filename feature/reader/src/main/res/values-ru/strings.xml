@@ -151,7 +151,8 @@
     <string name="rs_scope_global">Всем книгам</string>
     <string name="rs_scope_book">Этой книге</string>
     <string name="rs_scope_global_summary">Все тайтлы используют эти значения; у книги со своими настройками они сохраняются, пока вы не выберете её здесь.</string>
-    <string name="rs_scope_book_summary">Только эта книга. Возврат к «Всем книгам» удаляет сохранённое переопределение — книга снова наследует настройки приложения.</string>
+    <string name="rs_scope_book_summary">Только текст, тема и страницы этой книги. Яркость, поведение окна и управление общие — они помечены ниже. Возврат к «Всем книгам» удаляет сохранённое переопределение.</string>
+    <string name="rs_scope_common_note">Эти настройки общие для всех книг; у этой книги своей копии нет.</string>
     <string name="rs_preset_eink">E-ink</string>
     <string name="rs_flash_pages">Вспышка для E-ink</string>
     <string name="rs_flash_off">Выкл.</string>
