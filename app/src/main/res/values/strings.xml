@@ -54,7 +54,7 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
-    <string-array name="whats_new_2_9_3">
+    <string-array name="whats_new_2_9_4">
         <item>Clearing one site now really signs it out: cookies on nested paths are removed, other sites keep their sessions, and the screen reports what was found.</item>
         <item>Repairing the download index only trusts real chapters; switching the manga layout keeps your place; each chapter keeps its own CSS in a whole-book document.</item>
         <item>Incognito hides audiobook titles and covers from the media notification and lock screen, and update checks follow the shortest title interval.</item>

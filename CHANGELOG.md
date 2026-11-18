@@ -1,10 +1,10 @@
 # Changelog
 
-## 2.9.3 — the audit pass: scoped clears, real downloads, private media
+## 2.9.4 — the audit pass: scoped clears, real downloads, private media
 
-> **Install.** Installs over 2.9.1 if signed with the same key. No database migration. 2.9.2 was tagged but not
-> published: its release test run stopped on a Robolectric native-graphics crash, so 2.9.3 carries the same changes
-> and runs the test modules one at a time.
+> **Install.** Installs over 2.9.1 if signed with the same key. No database migration. 2.9.2 and 2.9.3 were tagged
+> but not published: their release test runs stopped on a Robolectric native-graphics crash on Linux. 2.9.4 carries
+> the same changes with Robolectric 4.18.1 and sequential test execution.
 
 ### Privacy and data
 
