@@ -17,3 +17,18 @@ keystore.properties
 # Local agent workspace and downloaded scratch archives.
 .commandcode/
 /*.zip
+# Internal agent plans/audit artifacts: the public tree keeps product docs and the current plan.
+.zcode/
+plan.md
+DEVELOPMENT_WIP.md
+/docs/execution/
+/docs/history/
+/docs/audit-assets/
+/docs/AUDIT*.md
+/docs/AGENT_EXECUTION_PLAN*.md
+/docs/DEVELOPMENT_PLAN*.md
+/docs/MIHON_PARITY*.md
+/docs/READER_PARITY*.md
+/docs/UX_PRODUCT_AUDIT*.md
+/docs/PROGRESS.md
+/docs/NOT_DONE.md
