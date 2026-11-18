@@ -149,7 +149,8 @@ class CookieLedger(private val file: File? = null) {
 class SiteDataClearer(private val store: CookieStore, private val ledger: CookieLedger) {
     fun clear(rawHost: String): SiteClearResult {
         val host = normalizeHost(rawHost)
-        if (host.isBlank()) return SiteClearResult("", 0, 0)
+        // Keep what the user typed for the message when the address has no host at all.
+        if (host.isBlank()) return SiteClearResult(rawHost.trim(), 0, 0)
         val hosts = hostAliases(host)
         val keys = hosts.flatMap { ledger.keys(it) }
         val paths = sortedSetOf("/")
