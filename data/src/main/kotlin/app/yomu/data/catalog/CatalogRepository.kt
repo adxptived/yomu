@@ -393,6 +393,9 @@ class CatalogRepository(
         dao.setUpdateInterval(entryId, hours?.coerceIn(1, 24 * 30))
     }
 
+    /** The shortest own interval among library titles, so the periodic worker can run often enough for all of them. */
+    suspend fun shortestUpdateIntervalHours(): Int? = withContext(Dispatchers.IO) { dao.shortestUpdateIntervalHours() }
+
     /** Leaves a title out of (or back in) the automatic checks. Its history is untouched. */
     suspend fun setUpdateExcluded(entryId: Long, excluded: Boolean) = withContext(Dispatchers.IO) {
         dao.setUpdateExcluded(entryId, excluded)

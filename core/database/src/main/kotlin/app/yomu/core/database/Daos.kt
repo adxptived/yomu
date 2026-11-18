@@ -601,6 +601,16 @@ interface CatalogDao {
     @Query("UPDATE catalog_items SET updateIntervalHours = :hours WHERE id = :id")
     suspend fun setUpdateInterval(id: Long, hours: Int?)
 
+    /**
+     * The shortest own interval among library titles that take part in updates. The periodic worker runs at this
+     * window (or at the app-wide one when it is shorter), so a title asking for 3 hours is not scheduled every 24.
+     */
+    @Query(
+        "SELECT MIN(updateIntervalHours) FROM catalog_items " +
+            "WHERE favorite = 1 AND updateExcluded = 0 AND updateIntervalHours IS NOT NULL AND updateIntervalHours > 0",
+    )
+    suspend fun shortestUpdateIntervalHours(): Int?
+
     @Query("UPDATE catalog_items SET updateExcluded = :excluded WHERE id = :id")
     suspend fun setUpdateExcluded(id: Long, excluded: Boolean)
 

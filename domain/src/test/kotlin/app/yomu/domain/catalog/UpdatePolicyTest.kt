@@ -131,4 +131,24 @@ class UpdatePolicyTest {
         val decision = UpdatePolicy.decide(title(excluded = true), now, 6, force = true)
         assertEquals(UpdateSkip.EXCLUDED_TITLE, decision.reason)
     }
+
+    @Test
+    fun `a shorter title interval pulls the worker window down`() {
+        assertEquals(3, UpdatePolicy.schedulerIntervalHours(24, listOf(3, 48)))
+        assertEquals(3, UpdatePolicy.schedulerIntervalHours(24, listOf(3)))
+        // A longer title choice does not stretch the app-wide window.
+        assertEquals(6, UpdatePolicy.schedulerIntervalHours(6, listOf(12, 48)))
+        assertEquals(6, UpdatePolicy.schedulerIntervalHours(6, emptyList()))
+        // Automatic checks off stays off.
+        assertEquals(0, UpdatePolicy.schedulerIntervalHours(0, listOf(3)))
+    }
+
+    @Test
+    fun `the screen's 3-hour title is reachable by a 24-hour app window`() {
+        val title = title(lastSuccess = now - 4 * hour, intervalOverride = 3)
+        // The scheduler runs every 3 hours now, and the title is due on that run; the old 24-hour window would skip it.
+        assertEquals(3, UpdatePolicy.schedulerIntervalHours(24, listOf(3)))
+        assertEquals(3 * hour, UpdatePolicy.effectiveIntervalMs(24, emptyList(), now, overrideHours = 3))
+        assertTrue(UpdatePolicy.decide(title, now, intervalHours = 24).eligible)
+    }
 }

@@ -33,6 +33,7 @@ import app.yomu.data.catalog.CatalogRepository
 import app.yomu.data.download.DownloadRepository
 import app.yomu.data.library.ImportService
 import app.yomu.data.repository.WordRepositoryImpl
+import app.yomu.domain.catalog.UpdatePolicy
 import app.yomu.domain.catalog.UpdateRunReport
 import app.yomu.domain.catalog.UpdateRunTitle
 import kotlinx.coroutines.flow.first
@@ -483,7 +484,7 @@ class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWork
 }
 
 /** Schedules all periodic background work according to the current settings. */
-class WorkScheduler(private val context: Context, private val settings: AppSettings) {
+class WorkScheduler(private val context: Context, private val settings: AppSettings, private val catalog: CatalogRepository) {
     private val wm get() = WorkManager.getInstance(context)
 
     suspend fun scheduleAll() {
@@ -518,8 +519,12 @@ class WorkScheduler(private val context: Context, private val settings: AppSetti
             wm.cancelUniqueWork(UpdateWorker.NAME)
             return
         }
+        // One periodic worker serves every title, so its window must fit the shortest title interval as well as the
+        // app-wide one; the policy still skips titles whose own interval is longer.
+        val shortest = runCatching { catalog.shortestUpdateIntervalHours() }.getOrNull()
+        val window = UpdatePolicy.schedulerIntervalHours(hours, listOfNotNull(shortest))
         val network = if (settings.updateWifiOnly.get()) NetworkType.UNMETERED else NetworkType.CONNECTED
-        val request = PeriodicWorkRequestBuilder<UpdateWorker>(hours.toLong(), TimeUnit.HOURS)
+        val request = PeriodicWorkRequestBuilder<UpdateWorker>(window.toLong(), TimeUnit.HOURS)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(network).setRequiresBatteryNotLow(true).build())
             .build()
         wm.enqueueUniquePeriodicWork(UpdateWorker.NAME, ExistingPeriodicWorkPolicy.UPDATE, request)

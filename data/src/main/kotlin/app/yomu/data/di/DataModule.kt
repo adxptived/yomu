@@ -94,5 +94,5 @@ val dataModule = module {
     }
     single { OcrService(get()) }
     single { PdfAnnotationStore(androidContext(), get(), get()) }
-    single { WorkScheduler(androidContext(), get()) }
+    single { WorkScheduler(androidContext(), get(), get()) }
 }

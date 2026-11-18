@@ -96,6 +96,20 @@ object UpdatePolicy {
     }
 
     /**
+     * The period the single periodic update worker must run at so every title's own interval is reachable.
+     *
+     * The worker is one and its period is global, while a title may ask to be checked more often than the app-wide
+     * interval. Using the app-wide value alone would make the screen promise a 3-hour check that the scheduler only
+     * performs every 24 hours. The shortest per-title choice therefore pulls the window down; titles with a longer
+     * choice keep it, because the policy decides per title inside the run. Zero means automatic checks are off.
+     */
+    fun schedulerIntervalHours(globalHours: Int, overrideHours: Collection<Int>): Int {
+        if (globalHours <= 0) return 0
+        val shortest = overrideHours.filter { it > 0 }.minOrNull() ?: return globalHours
+        return minOf(globalHours, shortest)
+    }
+
+    /**
      * The interval actually used: the configured one, stretched to the title's upload rhythm when that rhythm is known
      * and stable. A title's own override is used as written — an explicit choice is not silently stretched by a guess.
      * Bounded so a dormant title is still checked monthly and a daily one is not checked more often than the user asked.

@@ -30,6 +30,7 @@ import app.yomu.data.source.SourceInfo
 import app.yomu.data.source.SourceManager
 import app.yomu.data.tracking.TrackerManager
 import app.yomu.data.work.UpdateWorker
+import app.yomu.data.work.WorkScheduler
 import app.yomu.domain.catalog.ChapterDisplay
 import app.yomu.domain.catalog.ChapterNavigation
 import app.yomu.domain.catalog.ChapterOrder
@@ -921,6 +922,8 @@ class TitleViewModel(
     private val settings: AppSettings,
     private val trackers: TrackerManager,
     private val audiobooks: AudiobookStore,
+    /** The global update period must follow a title's own interval shortened below it. */
+    private val scheduler: WorkScheduler,
 ) : ViewModel(), TrackingViewModel {
     val entry: StateFlow<CatalogEntry?> = catalog.observeEntry(entryId).state(this, null)
     private val allChapters: StateFlow<List<ChapterInfo>?> = catalog.observeChapters(entryId).state(this, null)
@@ -1156,10 +1159,16 @@ class TitleViewModel(
     fun setBookmarked(ids: Collection<Long>, value: Boolean) = viewModelScope.launch(ScreenErrors) { catalog.setBookmarked(ids, value); clearSelection() }
 
     /** This title's own check interval; null restores the app-wide setting. */
-    fun setUpdateInterval(hours: Int?) = viewModelScope.launch(ScreenErrors) { catalog.setUpdateInterval(entryId, hours) }
+    fun setUpdateInterval(hours: Int?) = viewModelScope.launch(ScreenErrors) {
+        catalog.setUpdateInterval(entryId, hours)
+        scheduler.scheduleUpdates()
+    }
 
     /** Leaves the title out of (or back in) automatic checks. The reading history is untouched. */
-    fun setUpdateExcluded(excluded: Boolean) = viewModelScope.launch(ScreenErrors) { catalog.setUpdateExcluded(entryId, excluded) }
+    fun setUpdateExcluded(excluded: Boolean) = viewModelScope.launch(ScreenErrors) {
+        catalog.setUpdateExcluded(entryId, excluded)
+        scheduler.scheduleUpdates()
+    }
 
     /** Marks every chapter before [chapter] (in reading order, all groups) as read. */
     fun markPreviousRead(chapter: ChapterInfo) = viewModelScope.launch(ScreenErrors) {
