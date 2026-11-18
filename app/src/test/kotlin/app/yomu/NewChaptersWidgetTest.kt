@@ -2,6 +2,7 @@ package app.yomu
 
 import android.appwidget.AppWidgetManager
 import android.content.Context
+import android.os.Looper
 import android.view.View
 import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
@@ -14,9 +15,12 @@ import app.yomu.widget.NewChaptersWidgets
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.GlobalContext
+import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
@@ -29,6 +33,20 @@ class NewChaptersWidgetTest {
     private val context: Context get() = ApplicationProvider.getApplicationContext()
     private val db: YomuDatabase get() = GlobalContext.get().get()
     private val settings: AppSettings get() = GlobalContext.get().get()
+
+    /**
+     * The widget object and the test must read the same settings store. A previous test class can leave its own
+     * Koin/Application pair behind; starting one fresh container for this class keeps the incognito write visible to
+     * the widget.
+     */
+    @Before
+    fun setUp() {
+        if (GlobalContext.getOrNull() != null) stopKoin()
+        startKoin {
+            androidContext(context)
+            modules(yomuModules)
+        }
+    }
 
     @After
     fun tearDown() {
@@ -52,6 +70,7 @@ class NewChaptersWidgetTest {
         val manager = AppWidgetManager.getInstance(context)
         val widget = shadowOf(manager).createWidget(NewChaptersWidget::class.java, R.layout.widget_new_chapters)
         NewChaptersWidgets.refresh(context)
+        shadowOf(Looper.getMainLooper()).idle()
         val view = shadowOf(manager).getViewFor(widget)
         fun text(id: Int) = view.findViewById<TextView>(id).text.toString()
 
@@ -67,6 +86,7 @@ class NewChaptersWidgetTest {
         // Incognito hides the projection entirely.
         settings.incognito.set(true)
         NewChaptersWidgets.refresh(context)
+        shadowOf(Looper.getMainLooper()).idle()
         val hidden = shadowOf(manager).getViewFor(widget)
         assertEquals(View.VISIBLE, hidden.findViewById<View>(R.id.nc_empty).visibility)
         assertEquals(View.GONE, hidden.findViewById<View>(R.id.nc_row_0).visibility)
@@ -76,6 +96,7 @@ class NewChaptersWidgetTest {
         db.catalog().clearNew(older)
         db.catalog().clearNew(newer)
         NewChaptersWidgets.refresh(context)
+        shadowOf(Looper.getMainLooper()).idle()
         val empty = shadowOf(manager).getViewFor(widget)
         assertEquals(View.VISIBLE, empty.findViewById<View>(R.id.nc_empty).visibility)
         assertEquals(View.GONE, empty.findViewById<View>(R.id.nc_row_0).visibility)

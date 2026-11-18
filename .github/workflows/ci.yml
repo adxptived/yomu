@@ -34,7 +34,7 @@ jobs:
         run: ./gradlew assembleDebug
 
       - name: Unit and Robolectric tests (records review screenshots)
-        run: ./gradlew testDebugUnitTest :domain:test :sources:opds:test :sources:mangadex:test :sources:novels:test -Proborazzi.test.record=true
+        run: ./gradlew testDebugUnitTest :domain:test :sources:opds:test :sources:mangadex:test :sources:novels:test -Proborazzi.test.record=true --no-parallel
 
       - name: Snapshot tests
         # A PNG comparison against the approved images, not another recording: the artifacts of the step above are for

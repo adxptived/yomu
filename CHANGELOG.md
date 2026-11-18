@@ -1,8 +1,10 @@
 # Changelog
 
-## 2.9.2 — the audit pass: scoped clears, real downloads, private media
+## 2.9.3 — the audit pass: scoped clears, real downloads, private media
 
-> **Install.** Installs over 2.9.1 if signed with the same key. No database migration.
+> **Install.** Installs over 2.9.1 if signed with the same key. No database migration. 2.9.2 was tagged but not
+> published: its release test run stopped on a Robolectric native-graphics crash, so 2.9.3 carries the same changes
+> and runs the test modules one at a time.
 
 ### Privacy and data
 

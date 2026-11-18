@@ -94,7 +94,9 @@ jobs:
 
       - name: Tests
         if: ${{ !inputs.skip_tests }}
-        run: ./gradlew testDebugUnitTest :domain:test :sources:opds:test :sources:mangadex:test :sources:novels:test
+        # Robolectric native graphics in several module test JVMs at once can abort the process on Linux; the test
+        # tasks are cheap compared to the release build, so they run one project at a time.
+        run: ./gradlew testDebugUnitTest :domain:test :sources:opds:test :sources:mangadex:test :sources:novels:test --no-parallel
 
       - name: Release APK
         env:
