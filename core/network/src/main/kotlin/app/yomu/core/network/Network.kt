@@ -27,12 +27,16 @@ const val DEFAULT_USER_AGENT =
     "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
 
 /** Shares cookies between OkHttp and WebView so that a solved Cloudflare challenge is reused by HTTP requests. */
-class WebViewCookieJar : CookieJar {
+class WebViewCookieJar(private val ledger: CookieLedger = CookieLedger()) : CookieJar {
     private val manager: CookieManager? by lazy { runCatching { CookieManager.getInstance() }.getOrNull() }
+    private val store by lazy { WebViewCookieStore(manager) }
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        val m = manager ?: return
-        cookies.forEach { m.setCookie(url.toString(), it.toString()) }
+        cookies.forEach { cookie ->
+            // The ledger keeps host, path and name only: enough to expire the exact cookie later, never its value.
+            ledger.record(cookie.domain, cookie.path, cookie.name)
+            manager?.setCookie(url.toString(), cookie.toString())
+        }
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
@@ -40,8 +44,19 @@ class WebViewCookieJar : CookieJar {
         return raw.split(";").mapNotNull { Cookie.parse(url, it.trim()) }
     }
 
-    fun clear() {
+    /** Remembers a page a WebView opened, so cookies it set on a nested path can be expired with the site. */
+    fun visited(url: String) {
+        ledger.recordUrl(url)
+    }
+
+    /** Removes every cookie of [host], on every known path; other sites keep their sign-ins. */
+    fun clearHost(host: String): SiteClearResult = SiteDataClearer(store, ledger).clear(host)
+
+    /** Removes every cookie the app holds and forgets the index. */
+    fun clearAll() {
         manager?.removeAllCookies(null)
+        manager?.flush()
+        ledger.clear()
     }
 
     /**
@@ -55,11 +70,6 @@ class WebViewCookieJar : CookieJar {
         return raw.split(";").mapNotNull { part ->
             part.trim().substringBefore('=').takeIf { it.isNotBlank() }?.let { host to it }
         }
-    }
-
-    /** Removes only the cookies [url] would send, leaving every other site signed in. */
-    fun clear(url: String) {
-        manager?.setCookie(url, "yomu_clear=1; Max-Age=0; Path=/")
     }
 }
 
@@ -184,7 +194,7 @@ private class UserAgentInterceptor(private val userAgent: () -> String) : Interc
 
 /** Owner of the shared OkHttp client. */
 class NetworkClients(context: Context) {
-    val cookieJar = WebViewCookieJar()
+    val cookieJar = WebViewCookieJar(CookieLedger(File(context.filesDir, "cookie-scope.tsv")))
 
     /**
      * The User-Agent every request without its own gets. Read per request, so a change in the settings applies to the

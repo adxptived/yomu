@@ -112,22 +112,31 @@ class SettingsViewModel(
 
     /**
      * Clears cookies for [scope]. The scope is shown before the action and the same one is applied here: one site
-     * keeps every other sign-in, "everything" also clears WebView form data and the stored sessions.
+     * keeps every other sign-in, "everything" also clears WebView form data and the stored sessions. A failure is
+     * reported as a failure — the screen no longer claims success after an exception.
      */
     fun clearSiteData(scope: app.yomu.core.network.ClearScope, host: String?) = viewModelScope.launch(ScreenErrors) {
         val jar = clients.cookieJar
         when (scope) {
             app.yomu.core.network.ClearScope.HOST -> {
-                val target = host?.takeIf { it.isNotBlank() } ?: return@launch
-                runCatching { jar.clear("https://$target/") }
+                val target = host?.trim()?.takeIf { it.isNotBlank() } ?: return@launch
+                val result = runCatching { jar.clearHost(target) }
+                result.onSuccess { r ->
+                    _events.send(
+                        if (r.found) SettingsEvent.Message(R.string.set_clear_site_one_done, listOf(r.host))
+                        else SettingsEvent.Message(R.string.set_clear_site_one_empty, listOf(r.host)),
+                    )
+                }.onFailure { _events.send(SettingsEvent.Failure(it)) }
             }
             app.yomu.core.network.ClearScope.ALL -> {
-                runCatching { jar.clear() }
-                runCatching { android.webkit.WebStorage.getInstance().deleteAllData() }
-                runCatching { android.webkit.WebViewDatabase.getInstance(context).clearFormData() }
+                val failures = mutableListOf<Throwable>()
+                runCatching { jar.clearAll() }.onFailure(failures::add)
+                runCatching { android.webkit.WebStorage.getInstance().deleteAllData() }.onFailure(failures::add)
+                runCatching { android.webkit.WebViewDatabase.getInstance(context).clearFormData() }.onFailure(failures::add)
+                if (failures.isNotEmpty()) _events.send(SettingsEvent.Failure(failures.first()))
+                else _events.send(SettingsEvent.Message(R.string.set_clear_site_done))
             }
         }
-        _events.send(SettingsEvent.Message(R.string.set_clear_site_done))
     }
 
     /** Loads the shelves for the excluded-shelf picker; a missing list means the dialog shows an empty state. */

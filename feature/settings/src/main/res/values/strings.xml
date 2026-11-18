@@ -264,6 +264,8 @@
     <string name="set_clear_site_scope_one">Removes the cookies of %1$s only; every other sign-in stays.</string>
     <string name="set_clear_site_scope_all">Removes every cookie the app holds, WebView form data and stored sessions. Library books, downloads and reading positions are not touched.</string>
     <string name="set_clear_site_done">Site data cleared</string>
+    <string name="set_clear_site_one_done">Cookies of %1$s removed, on every path; other sites stay signed in.</string>
+    <string name="set_clear_site_one_empty">No cookies were found for %1$s; nothing was removed.</string>
     <string name="set_content_preference">Adult content</string>
     <string name="set_content_safe">Safe</string>
     <string name="set_content_mixed">Mixed</string>

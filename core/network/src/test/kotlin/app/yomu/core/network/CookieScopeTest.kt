@@ -1,8 +1,8 @@
 package app.yomu.core.network
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
 
 /** S06: the scope dialog says what will be removed before anything is. */
 class CookieScopeTest {

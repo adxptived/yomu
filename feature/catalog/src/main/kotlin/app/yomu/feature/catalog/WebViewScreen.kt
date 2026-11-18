@@ -41,10 +41,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
 import app.yomu.core.common.Share
+import app.yomu.core.network.NetworkClients
 import app.yomu.core.ui.components.RequireWebView
 import app.yomu.core.ui.components.aboveNavBar
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.source.SourceNetwork
+import org.koin.compose.koinInject
 import app.yomu.core.ui.R as CoreR
 
 /**
@@ -56,6 +58,9 @@ import app.yomu.core.ui.R as CoreR
 @Composable
 fun WebViewScreen(url: String, onBack: () -> Unit) {
     val context = LocalContext.current
+    // The site's hosts and paths are remembered without values, so "clear site data" can expire a nested-path cookie
+    // the WebView set during this sign-in.
+    val cookies = koinInject<NetworkClients>().cookieJar
     var title by remember { mutableStateOf(url) }
     var current by remember { mutableStateOf(url) }
     var progress by remember { mutableFloatStateOf(0f) }
@@ -131,11 +136,13 @@ fun WebViewScreen(url: String, onBack: () -> Unit) {
                             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                                 current = url
                                 canGoBack = view.canGoBack()
+                                cookies.visited(url)
                             }
 
                             override fun onPageFinished(view: WebView, url: String) {
                                 current = url
                                 canGoBack = view.canGoBack()
+                                cookies.visited(url)
                                 CookieManager.getInstance().flush()
                             }
                         }

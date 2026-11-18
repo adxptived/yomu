@@ -266,6 +266,8 @@
     <string name="set_clear_site_scope_one">Удаляются cookie только сайта %1$s; остальные входы сохранятся.</string>
     <string name="set_clear_site_scope_all">Удаляются все cookie приложения, данные форм WebView и сохранённые сессии. Книги, загрузки и позиции чтения не затрагиваются.</string>
     <string name="set_clear_site_done">Данные сайтов очищены</string>
+    <string name="set_clear_site_one_done">Cookie сайта %1$s удалены на всех путях; остальные входы сохранены.</string>
+    <string name="set_clear_site_one_empty">У сайта %1$s не найдено cookie; ничего не удалено.</string>
     <string name="set_content_preference">Контент для взрослых</string>
     <string name="set_content_safe">Безопасный</string>
     <string name="set_content_mixed">Смешанный</string>
