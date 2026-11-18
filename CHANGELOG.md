@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.9.2 — the audit pass: scoped clears, real downloads, private media
+
+> **Install.** Installs over 2.9.1 if signed with the same key. No database migration.
+
+### Privacy and data
+
+- **Clearing one site really signs it out.** A per-host clear used to expire one made-up cookie, so the site stayed signed in while the screen said it was done. The app now keeps a value-free index of cookie hosts and paths (exact paths from HTTP responses, candidate paths of pages opened in the WebView) and expires every known name on every known path, both as a host-only and as a domain cookie. The result names what was actually found, or reports the failure; other sites keep their sessions.
+- **A repaired download index only trusts real downloads.** A file is re-attached only when its name has exactly one `[chapterId]`, it sits in the folder of its own title and it is a real download: a readable CBZ with page images, a folder with recognised images, or the HTML of a novel. Empty folders, truncated or image-less archives, foreign file types and ambiguous names are reported, never attached; re-attaching an already-marked chapter counts as restored.
+- **Incognito covers the audiobook surface.** The title, chapter, author, album and artwork handed to Media3 are replaced with a generic label and no cover in incognito, and turning the mode on or off during playback rewrites the loaded playlist. The media notification also follows "hide on the lock screen", while the shade keeps its content in the normal mode.
+
+### The reader
+
+- **A manga page turn follows the layout you see.** After switching single pages, split and spreads, the pager used to keep the layout captured when it started: page requests and saved progress went through the old slot map. The effects now read the current layout, and a turn is one slot — the first half leads to the second half, the last half leads to the end page, and only page 0 backwards leaves the chapter.
+- **Split pages cut only wide scans.** A portrait page is no longer cut in half by split mode. The page size comes from an image header inside an archive or the PDF page box without materialising the page; pages already on the device are measured as they load.
+- **The E-ink flash cannot stay on screen.** A quick page turn cancels the flash effect while it waits; the overlay is now removed in `finally`, not only after a full delay.
+- **"This book" no longer pretends the shared settings are local.** Brightness, window behaviour, edge gestures, keys and the status line are stored once for the app; the settings screen marks them as shared when the per-book scope is chosen. The E-ink preset in that scope writes only the engine of the open book (no stray override for a format the title does not use), and Undo takes back exactly what the preset wrote.
+- **Each chapter keeps its own CSS.** In the whole-book document every chapter shared one head, so `.note { display: none }` from one chapter hid `.note` in another. Chapter styles are now scoped to their own section; `html`, `body` and `:root` map to the section, conditional at-rules are scoped recursively, and a linked stylesheet is inlined and scoped for the chapter that links it.
+
+### Updates
+
+- **The update worker runs at the shortest title interval.** One periodic worker could not honour a title asking for 3 hours while the app-wide interval was 24. Its window is now the minimum of the app-wide interval and the library titles' own intervals; the policy still skips titles whose interval is longer, and changing a title's schedule reschedules the worker.
+
+### Under the hood
+
+- `CookieScopeTest` was JUnit 4 in a module that only runs JUnit 5, so it never executed. It and the new site-clear test are JUnit 5 now.
+- The Java 17 failure of `Release170ScreensTest.updateCardOnSettingsRoot` did not reproduce on Temurin 17.0.21 (7/7) or 21; no timeout was changed.
+
 ## 2.9.1 — one schedule for updates, and a reader that fits the scan
 
 > **Install.** Installs over 2.8.0 if signed with the same key. The database migrates once (11 → 17) on the first launch; the library itself is untouched.
