@@ -77,7 +77,7 @@ internal object ChapterCss {
                         i = end + 1
                     }
                     c == '(' || c == '[' -> depth++
-                    c == ')' || c == ']' -> if (depth > 0) depth--
+                    c == ')' || c == ']' -> depth = (depth - 1).coerceAtLeast(0)
                     depth == 0 && (c == '{' || c == ';') -> return i
                 }
             }
@@ -220,7 +220,10 @@ internal object ChapterCss {
             when {
                 c == '"' || c == '\'' -> { quote = c; compound.append(c) }
                 c == '(' || c == '[' -> { depth++; compound.append(c) }
-                c == ')' || c == ']' -> { if (depth > 0) depth--; compound.append(c) }
+                c == ')' || c == ']' -> {
+                    depth = (depth - 1).coerceAtLeast(0)
+                    compound.append(c)
+                }
                 depth == 0 && (c == '>' || c == '+' || c == '~') -> { flush(); combinator.append(c) }
                 depth == 0 && c.isWhitespace() -> {
                     if (compound.isNotEmpty()) flush()
@@ -267,7 +270,7 @@ internal object ChapterCss {
                 when {
                     c == '"' || c == '\'' -> quote = c
                     c == '(' || c == '[' -> depth++
-                    c == ')' || c == ']' -> if (depth > 0) depth--
+                    c == ')' || c == ']' -> depth = (depth - 1).coerceAtLeast(0)
                     depth == 0 && c == separator -> {
                         out += text.substring(start, i)
                         start = i + 1
