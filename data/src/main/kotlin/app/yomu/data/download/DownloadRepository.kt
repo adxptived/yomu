@@ -836,23 +836,44 @@ class DownloadRepository(
     }
 
     /**
-     * Reconciles the downloaded-chapter index with the files on disk (DL03). The name of a chapter file or folder
-     * carries its id in `[id]`, which is stable across renames of the title and of the source; a matching file is
-     * re-attached, a missing one is marked as not downloaded, and a file with no chapter is only reported as an orphan
-     * (never deleted, it may belong to a book the database no longer knows).
+     * Reconciles the downloaded-chapter index with the files on disk (DL03). A chapter file or folder carries its id in
+     * `[id]`, which is stable across renames of the title and of the source. A file is only re-attached when its name
+     * has exactly one id, it lies in the folder of that chapter's own title and it really is a download (a readable
+     * archive with images, a folder with images, or the HTML of a novel). A missing chapter is marked as not
+     * downloaded, and a file with no chapter — or one that fails the checks — is only reported as an orphan, never
+     * deleted.
      */
     suspend fun repairIndex(): DownloadRepairReport = withContext(Dispatchers.IO) {
         val chapters = db.catalog().allChapters().map { it.toDomain() }
         val known = chapters.associateBy { it.id }
+        val entries = chapters.mapNotNull { c -> db.catalog().get(c.entryId)?.toDomain() }.associateBy { it.id }
         val pattern = Regex("""\[(\d+)]""")
         val found = HashMap<Long, File>()
         val orphanIds = HashSet<Long>()
+        var rejected = 0
         chaptersDir.walkTopDown().onEnter { it.name != "tmp" && !it.name.endsWith(".tmp") }.forEach { file ->
             val name = file.name
             if (name.endsWith(".part") || name.endsWith(".tmp") || name == ".nomedia") return@forEach
-            val id = pattern.find(name)?.groupValues?.getOrNull(1)?.toLongOrNull() ?: return@forEach
-            if (id !in known) {
+            val ids = pattern.findAll(name).mapNotNull { it.groupValues.getOrNull(1)?.toLongOrNull() }.toList()
+            // A name with several ids is ambiguous, and a chapter is named after exactly one of them.
+            if (ids.size != 1) {
+                if (ids.isNotEmpty()) rejected++
+                return@forEach
+            }
+            val id = ids.single()
+            val chapter = known[id]
+            if (chapter == null) {
                 orphanIds += id
+                return@forEach
+            }
+            val entry = entries[chapter.entryId]
+            if (entry == null) {
+                orphanIds += id
+                return@forEach
+            }
+            // The file must live in this title's folder: a same-named file of another title is not this chapter.
+            if (!inChapterFolder(entry, file) || !validDownload(entry, file)) {
+                rejected++
                 return@forEach
             }
             // Prefer the archive over a directory that may be a leftover of an interrupted unpack.
@@ -862,18 +883,19 @@ class DownloadRepository(
         var restored = 0
         var missing = 0
         chapters.forEach { chapter ->
-            val existing = chapter.localPath?.let { File(it) }?.takeIf { it.exists() }
+            val entry = entries[chapter.entryId]
+            val existing = chapter.localPath?.let { File(it) }
+                ?.takeIf { it.exists() && (entry == null || validDownload(entry, it)) }
             if (chapter.downloaded) {
                 if (existing == null) {
                     val disk = found[chapter.id]
                     if (disk != null) {
                         db.catalog().setDownloaded(chapter.id, true, disk.path)
+                        restored++
                     } else {
                         db.catalog().setDownloaded(chapter.id, false, null)
                         missing++
                     }
-                } else if (existing.path != chapter.localPath) {
-                    db.catalog().setDownloaded(chapter.id, true, existing.path)
                 }
             } else {
                 val disk = found[chapter.id]
@@ -883,7 +905,63 @@ class DownloadRepository(
                 }
             }
         }
-        DownloadRepairReport(restored = restored, missing = missing, orphans = orphanIds.size)
+        DownloadRepairReport(restored = restored, missing = missing, orphans = orphanIds.size + rejected)
+    }
+
+    /** True when [file] is directly in the folder this chapter's title downloads into. */
+    private fun inChapterFolder(entry: app.yomu.domain.model.CatalogEntry, file: File): Boolean {
+        val expected = runCatching { chapterFolder(entry).canonicalPath }.getOrNull() ?: return false
+        val actual = runCatching { file.parentFile?.canonicalPath }.getOrNull()
+        return actual != null && actual == expected
+    }
+
+    /** A real download of this chapter: images in a folder or an archive, or the single HTML file of a novel. */
+    private fun validDownload(entry: app.yomu.domain.model.CatalogEntry, file: File): Boolean = when {
+        entry.type == app.yomu.domain.model.ContentType.NOVEL -> file.isFile && file.length() > 0 &&
+            file.extension.lowercase() in setOf("html", "htm", "xhtml") && looksLikeHtml(file)
+        file.isDirectory -> hasImages(file)
+        file.isFile -> file.extension.lowercase() == "cbz" && isImageArchive(file)
+        else -> false
+    }
+
+    private fun looksLikeHtml(file: File): Boolean = runCatching {
+        file.inputStream().use { input ->
+            val head = ByteArray(64)
+            var n = 0
+            while (n < head.size) {
+                val read = input.read(head, n, head.size - n)
+                if (read < 0) break
+                n += read
+            }
+            val text = String(head, 0, n, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\t', '\r', '\n')
+            text.startsWith("<")
+        }
+    }.getOrDefault(false)
+
+    /** At least one non-empty image in the folder, recognised by its first bytes rather than by its extension. */
+    private fun hasImages(dir: File): Boolean = dir.listFiles()?.any { f ->
+        f.isFile && f.length() > 0 && ImageSniffer.extension(ImageSniffer.head(f)) != null
+    } == true
+
+    /** A readable zip archive with at least one page image; a truncated archive fails to open. */
+    private fun isImageArchive(file: File): Boolean = runCatching {
+        java.util.zip.ZipFile(file).use { zip ->
+            zip.entries().asSequence()
+                .filter { !it.isDirectory && it.size != 0L && it.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS }
+                .take(8)
+                .any { entry -> ImageSniffer.extension(headOf(zip.getInputStream(entry))) != null }
+        }
+    }.getOrDefault(false)
+
+    private fun headOf(input: java.io.InputStream): ByteArray {
+        val head = ByteArray(ImageSniffer.HEAD_SIZE)
+        var n = 0
+        while (n < head.size) {
+            val read = input.read(head, n, head.size - n)
+            if (read < 0) break
+            n += read
+        }
+        return head.copyOf(n)
     }
 
     fun storageUsage(): StorageUsage = StorageUsage(
@@ -932,6 +1010,9 @@ class DownloadRepository(
 
         /** A single wait for a Retry-After is re-checked at least this often, so the worker stays responsive. */
         const val RETRY_WAIT_MAX_MS = 10 * 60_000L
+
+        /** Extensions a downloaded page image may carry, for the cheap first filter of an archive. */
+        private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "gif", "avif", "heic", "heif", "jxl", "bmp")
 
         /** [name] in [dir], or "name (1).ext", "name (2).ext"… when taken. Long names are shortened (255-byte limit). */
         fun uniqueFile(dir: File, name: String): File {
