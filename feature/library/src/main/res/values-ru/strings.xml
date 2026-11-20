@@ -21,6 +21,7 @@
         <item quantity="other">%d книги удалены из библиотеки</item>
     </plurals>
     <string name="library_search_hint">Поиск по названию, автору или серии</string>
+    <string name="library_search_syntax_hint">Попробуйте title:Dune &amp;&amp; unread:&gt;2 · || — или · -слово — исключить</string>
     <string name="library_sort">Сортировка</string>
     <string name="library_view_list">Показать списком</string>
     <string name="library_view_grid">Показать сеткой</string>

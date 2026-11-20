@@ -16,8 +16,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TranslationCacheEntity::class, SourceEntity::class, CatalogItemEntity::class, ChapterEntity::class,
         DownloadTaskEntity::class, ReadingSessionEntity::class, ExtensionRepoEntity::class, OcrCacheEntity::class, TrackEntity::class,
         FolderSyncBaseEntity::class, AudioSubscriptionEntity::class,
+        GlossaryEntryEntity::class, IndexedTextEntity::class, IndexedTextFts::class,
     ],
-    version = 17,
+    version = 19,
     exportSchema = true,
 )
 abstract class YomuDatabase : RoomDatabase() {
@@ -39,6 +40,8 @@ abstract class YomuDatabase : RoomDatabase() {
     abstract fun tracks(): TrackDao
     abstract fun folderSyncBases(): FolderSyncBaseDao
     abstract fun audioSubscriptions(): AudioSubscriptionDao
+    abstract fun glossary(): GlossaryDao
+    abstract fun indexedText(): IndexedTextDao
 
     companion object {
         const val NAME = "yomu.db"
@@ -256,11 +259,57 @@ abstract class YomuDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * 17 → 18: when the per-book settings, rating and favourite changed (B02). Existing books are 0: the first
+         * sync treats their values as local until the reader changes them.
+         */
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN metaUpdatedAt INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /**
+         * 18 → 19 (N04): character/term/place notes and the opt-in full-text index. Both are new tables; no existing
+         * row changes. The FTS4 virtual table is an external-content table over `indexed_text`, with the same sync
+         * triggers Room creates for the book-title index, so book deletion removes its indexed text as well.
+         */
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `glossary_entries` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`bookId` INTEGER, `locatorJson` TEXT, `term` TEXT NOT NULL, `normalized` TEXT NOT NULL, " +
+                        "`aliasesJson` TEXT NOT NULL, `kind` TEXT NOT NULL, `note` TEXT, " +
+                        "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, " +
+                        "FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_glossary_entries_bookId` ON `glossary_entries` (`bookId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_glossary_entries_normalized` ON `glossary_entries` (`normalized`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_glossary_entries_updatedAt` ON `glossary_entries` (`updatedAt`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `indexed_text` (`key` TEXT NOT NULL, `bookId` INTEGER NOT NULL, " +
+                        "`sectionId` TEXT NOT NULL, `text` TEXT NOT NULL, `source` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`key`), " +
+                        "FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_indexed_text_bookId` ON `indexed_text` (`bookId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_indexed_text_source` ON `indexed_text` (`source`)")
+                db.execSQL(
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS `indexed_text_fts` USING FTS4(`text` TEXT NOT NULL, " +
+                        "tokenize=unicode61, content=`indexed_text`)",
+                )
+                db.execSQL("CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_indexed_text_fts_BEFORE_UPDATE BEFORE UPDATE ON `indexed_text` BEGIN DELETE FROM `indexed_text_fts` WHERE `docid`=OLD.`rowid`; END")
+                db.execSQL("CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_indexed_text_fts_BEFORE_DELETE BEFORE DELETE ON `indexed_text` BEGIN DELETE FROM `indexed_text_fts` WHERE `docid`=OLD.`rowid`; END")
+                db.execSQL("CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_indexed_text_fts_AFTER_UPDATE AFTER UPDATE ON `indexed_text` BEGIN INSERT INTO `indexed_text_fts`(`docid`, `text`) VALUES (NEW.`rowid`, NEW.`text`); END")
+                db.execSQL("CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_indexed_text_fts_AFTER_INSERT AFTER INSERT ON `indexed_text` BEGIN INSERT INTO `indexed_text_fts`(`docid`, `text`) VALUES (NEW.`rowid`, NEW.`text`); END")
+            }
+        }
+
         val MIGRATIONS: Array<Migration> =
             arrayOf(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                 MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
-                MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
+                MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19,
             )
     }
 }

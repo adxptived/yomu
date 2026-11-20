@@ -1,6 +1,7 @@
 package app.yomu.data.backup
 
 import androidx.room.withTransaction
+import app.yomu.core.database.AudioSubscriptionEntity
 import app.yomu.core.database.BookCollectionCrossRef
 import app.yomu.core.database.BookmarkEntity
 import app.yomu.core.database.CatalogCollectionCrossRef
@@ -8,6 +9,7 @@ import app.yomu.core.database.CatalogItemEntity
 import app.yomu.core.database.ChapterEntity
 import app.yomu.core.database.ChapterProgressEntity
 import app.yomu.core.database.CollectionEntity
+import app.yomu.core.database.GlossaryEntryEntity
 import app.yomu.core.database.HighlightEntity
 import app.yomu.core.database.NoteEntity
 import app.yomu.core.database.ReadingProgressEntity
@@ -37,13 +39,19 @@ internal class SyncMerger(private val db: YomuDatabase) {
         val annotations: Boolean = true,
         val bookmarks: Boolean = true,
         val words: Boolean = true,
+        /** Per-book reader/audio settings, rating and favourite (B02). */
+        val settings: Boolean = true,
+        /** Glossary notes (N04): opt-in, like book files, because it starts sharing private notes between devices. */
+        val glossary: Boolean = false,
     ) {
         /** Whether the record behind [key] (see [SyncKeys]) takes part in the sync. */
         fun includes(key: String): Boolean = when (key.firstOrNull()) {
             'h', 'n' -> annotations
             'b' -> bookmarks
             'w' -> words
+            'g' -> glossary
             'c' -> catalog
+            's' -> catalog
             else -> true
         }
     }
@@ -70,12 +78,17 @@ internal class SyncMerger(private val db: YomuDatabase) {
             throw java.io.IOException("Duplicate book identifier prevents safe metadata sync; resolve the conflict before syncing")
         val idByHash = books.associate { it.fileHash!! to it.id }
         val hashById = books.associate { it.id to it.fileHash!! }
+        fun glossaryKey(entity: GlossaryEntryEntity): String =
+            SyncKeys.glossary(entity.bookId?.let { hashById[it] }, entity.normalized, entity.kind)
         val localHl = if (o.annotations) ann.allHighlights().filter { it.bookId in hashById } else emptyList()
         val allNotes = ann.allNotes()
         val localNotes = if (o.annotations) allNotes.filter { it.highlightId == null && it.bookId in hashById } else emptyList()
         val linkedNotes = allNotes.filter { it.highlightId != null }.groupBy { it.highlightId }
         val localBm = if (o.bookmarks) ann.allBookmarks().filter { it.bookId in hashById } else emptyList()
         val localWords = if (o.words) words.all() else emptyList()
+        // A note with no book is a work-wide note and always travels; one whose book left this device
+        // is not published (nor taken for a deletion) just like a highlight of that book.
+        val localGlossary = if (o.glossary) db.glossary().all().filter { it.bookId == null || it.bookId in hashById } else emptyList()
         var tabs = collections.bookCollections()
         val favorites = if (o.catalog) catalog.favorites() else emptyList()
 
@@ -156,15 +169,18 @@ internal class SyncMerger(private val db: YomuDatabase) {
             localNotes.forEach { present += SyncKeys.note(hashById.getValue(it.bookId), it.createdAt) }
             localBm.forEach { present += SyncKeys.bookmark(hashById.getValue(it.bookId), it.createdAt) }
             localWords.forEach { present += SyncKeys.word(it.lang, it.normalized) }
+            localGlossary.forEach { present += glossaryKey(it) }
             tabs.forEach { present += SyncKeys.tab(it.name) }
             favorites.forEach { present += SyncKeys.title(it.sourceId, it.url) }
             for (k in b.keys) {
                 if (k in present) continue
-                // A book that left this device takes its annotations along: not a deletion for the other devices.
+                // A book that left this device takes its annotations and glossary notes along: not a deletion
+                // for the other devices. Glossary keys are not annotation keys, so they carry no revision proof.
                 val book = SyncKeys.bookOf(k)
                 if (book == null && k.length > 1 && k[1] == '|' && k[0] in "hnb")
                     throw java.io.IOException("Invalid annotation key in sync base; no data was deleted")
-                if (book != null && book !in idByHash) continue
+                val owner = book ?: SyncKeys.bookOfGlossary(k)
+                if (owner != null && owner !in idByHash) continue
                 if (!o.includes(k)) continue
                 if (book != null) {
                     val baseVersion = b.annotationRevisions[k] ?: throw AnnotationSyncProblem(AnnotationSyncProblem.Kind.NO_PROOF, "Annotation deletion has no saved revision; no data was deleted")
@@ -261,8 +277,35 @@ internal class SyncMerger(private val db: YomuDatabase) {
             // Position sync off: the shared status and position stay what the other devices wrote; tabs still merge.
             val publishedStatus = if (o.progress) status else rb?.status ?: bk.status
             finalBookStatus[hash] = publishedStatus
-            outBooks[hash] = if (o.progress) SyncBook(hash, bk.title, locator, value, at, publishedStatus, merged.sorted(), mergedChapters.values.toList())
-            else SyncBook(hash, bk.title, rb?.locator, rb?.progress ?: 0f, rb?.updatedAt ?: 0L, publishedStatus, merged.sorted(), mergedChapters.values.toList())
+            // Reader/audio settings, rating and favourite: the newest write wins. Older devices wrote 0, so their
+            // values are treated as local; a missing local value is filled from a peer that has one.
+            var settingsJson = bk.readerSettingsJson
+            var rating = bk.rating
+            var favorite = bk.favorite
+            var metaAt = bk.metaUpdatedAt
+            val remoteMetaAt = rb?.metaUpdatedAt ?: 0
+            if (o.settings && rb != null && (
+                    remoteMetaAt > metaAt ||
+                        (remoteMetaAt == metaAt && settingsJson == null && rb.settingsJson != null)
+                    )
+            ) {
+                settingsJson = rb.settingsJson
+                rating = rb.rating
+                favorite = rb.favorite
+                metaAt = remoteMetaAt
+                db.books().setMeta(bk.id, settingsJson, rating, favorite, metaAt)
+                changed++
+            } else if (!o.settings && rb != null) {
+                settingsJson = rb.settingsJson
+                rating = rb.rating
+                favorite = rb.favorite
+                metaAt = rb.metaUpdatedAt
+            }
+            outBooks[hash] = if (o.progress) {
+                SyncBook(hash, bk.title, locator, value, at, publishedStatus, merged.sorted(), mergedChapters.values.toList(), settingsJson, metaAt, rating, favorite)
+            } else {
+                SyncBook(hash, bk.title, rb?.locator, rb?.progress ?: 0f, rb?.updatedAt ?: 0L, publishedStatus, merged.sorted(), mergedChapters.values.toList(), settingsJson, metaAt, rating, favorite)
+            }
         }
         r.books.forEach { rb ->
             if (rb.hash !in outBooks) {
@@ -500,11 +543,109 @@ internal class SyncMerger(private val db: YomuDatabase) {
             outTitles.putAll(remoteTitles)
         }
 
-        // 9. The new shared state and base.
+        // 9. Podcast/audiobook subscriptions: the feed address is the identity, the book by hash.
+        val outSubs = LinkedHashMap<String, SyncSubscription>()
+        val remoteSubs = r.subscriptions.associateBy { it.feedUrl.trim().lowercase() }
+        if (o.catalog) {
+            val hashById = books.mapNotNull { b -> b.fileHash?.let { b.id to it } }.toMap()
+            val baseSubs = b?.keys.orEmpty().filter { it.startsWith("s|") }.map { it.removePrefix("s|") }.toSet()
+            for (row in db.audioSubscriptions().all()) {
+                val url = row.feedUrl.trim().lowercase()
+                val hash = hashById[row.bookId] ?: continue
+                val key = SyncKeys.subscription(url)
+                val localAt = maxOf(row.createdAt, row.lastCheckedAt)
+                if (dead(key, localAt)) {
+                    db.audioSubscriptions().delete(row.id)
+                    changed++
+                    continue
+                }
+                val remote = remoteSubs[url]
+                val published = if (remote != null && remote.updatedAt > localAt) {
+                    db.audioSubscriptions().upsert(row.copy(title = remote.title, enabled = remote.enabled, createdAt = remote.createdAt, lastCheckedAt = remote.lastCheckedAt, etag = remote.etag, lastModified = remote.lastModified))
+                    changed++
+                    remote
+                } else {
+                    SyncSubscription(url, row.title, hash, row.enabled, row.createdAt, row.lastCheckedAt, localAt, row.etag, row.lastModified)
+                }
+                outSubs[url] = published
+                live += key
+            }
+            // A subscription in the base and no longer here was deleted locally; its mark keeps it from coming back.
+            for (url in baseSubs) if (url !in outSubs) addTomb(SyncKeys.subscription(url), now)
+            for (remote in r.subscriptions) {
+                val url = remote.feedUrl.trim().lowercase()
+                val key = SyncKeys.subscription(url)
+                if (key in live || dead(key, remote.updatedAt)) continue
+                val localBookId = books.firstOrNull { it.fileHash == remote.bookHash }?.id
+                if (localBookId != null) {
+                    db.audioSubscriptions().upsert(
+                        AudioSubscriptionEntity(
+                            feedUrl = remote.feedUrl, title = remote.title, bookId = localBookId, etag = remote.etag,
+                            lastModified = remote.lastModified, lastCheckedAt = remote.lastCheckedAt,
+                            createdAt = remote.createdAt, enabled = remote.enabled,
+                        ),
+                    )
+                    changed++
+                }
+                outSubs[url] = remote
+                live += key
+            }
+        } else {
+            r.subscriptions.forEach { outSubs[it.feedUrl.trim().lowercase()] = it }
+        }
+
+        // 10. Glossary notes. Identity is (book hash, normalised term, kind) and the newest write wins; a note of a
+        // book that is not on this device stays in the shared file but is not inserted here. An identity is never
+        // reused for a different note: a hash collision fails closed instead of overwriting a local row.
+        val outGlossary = LinkedHashMap<String, SyncGlossaryEntry>()
+        val remoteGlossary = LinkedHashMap<String, SyncGlossaryEntry>()
+        r.glossary.forEach { entry ->
+            val key = SyncKeys.glossary(entry.hash, entry.normalized, entry.kind)
+            if (remoteGlossary.put(key, entry) != null)
+                throw java.io.IOException("Duplicate glossary identity prevents safe sync; no data was applied")
+        }
+        if (o.glossary) {
+            val localGlossaryKeys = HashSet<String>()
+            for (entity in localGlossary) {
+                val key = glossaryKey(entity)
+                if (!localGlossaryKeys.add(key))
+                    throw java.io.IOException("Duplicate local glossary identity prevents safe sync; no data was applied")
+                val remote = remoteGlossary[key]
+                if (remote != null && remote.normalized != entity.normalized)
+                    throw java.io.IOException("Conflicting glossary identities; no glossary notes were overwritten")
+                if (dead(key, maxOf(entity.updatedAt, remote?.updatedAt ?: 0L))) {
+                    db.glossary().delete(entity.id)
+                    changed++
+                    continue
+                }
+                if (remote != null && remote.updatedAt > entity.updatedAt) {
+                    db.glossary().update(remote.toEntity(entity.id, entity.bookId))
+                    outGlossary[key] = remote
+                    changed++
+                } else {
+                    outGlossary[key] = entity.toSync(hashById)
+                }
+                live += key
+            }
+            for ((key, remote) in remoteGlossary) {
+                if (key in outGlossary || dead(key, remote.updatedAt)) continue
+                val localBookId = remote.hash?.let { idByHash[it] }
+                if (remote.hash == null || localBookId != null) {
+                    db.glossary().insert(remote.toEntity(0, localBookId))
+                    changed++
+                }
+                outGlossary[key] = remote
+                live += key
+            }
+        } else {
+            outGlossary.putAll(remoteGlossary)
+        }
+
+        // 11. The new shared state and base.
         if (o.deletions) live.forEach { tomb.remove(it) }
         // A switched-off category keeps its last acknowledged base: switched on again, its records merge from there
         // instead of looking new (or concurrently edited) on both sides.
-        val carried = b?.keys.orEmpty().filter { it.length > 1 && it[1] == '|' && it[0] in "hnbw" && !o.includes(it) }.toSet()
+        val carried = b?.keys.orEmpty().filter { it.length > 1 && it[1] == '|' && it[0] in "hnbwsg" && !o.includes(it) }.toSet()
         val horizon = now - TOMBSTONE_DAYS * 24L * 3600 * 1000
         val keptTombs = tomb.filterValues { it >= horizon }
         val finalTabs = collections.bookCollections()
@@ -517,10 +658,13 @@ internal class SyncMerger(private val db: YomuDatabase) {
             notes = outNotes.values.toList(),
             bookmarks = outBm.values.toList(),
             words = outWords.values.toList(),
+            glossary = outGlossary.values.toList(),
             titles = outTitles.values.toList(),
             tabs = finalTabs.map { SyncTab(it.name, it.sortOrder) },
+            subscriptions = outSubs.values.toList(),
             deleted = keptTombs.toSortedMap(),
             annotationDeletionProofs = proofs.filterKeys { it in keptTombs }.toSortedMap(),
+            extensions = r.extensions,
         )
         val finalNotesForPrivateRevisions = ann.allNotes().filter { it.highlightId != null }.groupBy { it.highlightId }
         val newBase = SyncBase(
@@ -627,6 +771,31 @@ internal class SyncMerger(private val db: YomuDatabase) {
     }
 
     private fun WordEntity.toSync() = SyncWord(term, normalized, lang, translation, definition, context, tags, createdAt, level, ease, intervalDays, repetitions, dueAt, lapses, lastReviewedAt)
+
+    private fun GlossaryEntryEntity.toSync(hashById: Map<Long, String>) = SyncGlossaryEntry(
+        hash = bookId?.let { hashById[it] },
+        locator = locatorJson,
+        term = term,
+        normalized = normalized,
+        aliasesJson = aliasesJson,
+        kind = kind,
+        note = note,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+    )
+
+    private fun SyncGlossaryEntry.toEntity(id: Long, bookId: Long?) = GlossaryEntryEntity(
+        id = id,
+        bookId = bookId,
+        locatorJson = locator,
+        term = term,
+        normalized = normalized,
+        aliasesJson = aliasesJson,
+        kind = kind,
+        note = note,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+    )
 
     companion object {
         /** Deletion marks are kept this long, then forgotten (a device that did not sync for longer may bring records back). */

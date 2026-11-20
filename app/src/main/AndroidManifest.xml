@@ -76,6 +76,20 @@
                 android:resource="@xml/widget_new_chapters_info" />
         </receiver>
 
+        <!-- Audiobook transport widget (A03c): state and buttons come from the playback service. -->
+        <receiver
+            android:name=".widget.AudioWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_audio_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="app.yomu.audio.WIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_audio_info" />
+        </receiver>
+
         <!-- OAuth redirects of the tracking services (2.0.0) -->
         <activity
             android:name=".TrackLoginActivity"

@@ -145,6 +145,17 @@
     <string name="migrate_title">Migrate to another source</string>
     <string name="migrate_hint">Find the same title in another source and pick it: read chapters and the library entry move there.</string>
     <string name="migrate_done">Migrated</string>
+    <string name="migrate_preview_title">Migrate the title?</string>
+    <string name="migrate_preview_target">%1$s → %2$s</string>
+    <string name="migrate_preview_counts">Exact %1$d · likely %2$d · to review %3$d · missing %4$d</string>
+    <string name="migrate_preview_page_warning">Page numbers are not transferred between different releases; read marks and bookmarks are.</string>
+    <string name="migrate_preview_old_kept">The old title and its downloaded chapters stay in the library.</string>
+    <string name="migrate_category_progress">Read progress</string>
+    <string name="migrate_category_bookmarks">Bookmarks</string>
+    <string name="migrate_category_tabs">Shelves</string>
+    <string name="migrate_category_favorite">Favourite</string>
+    <string name="migrate_apply">Migrate</string>
+    <string name="migrate_cancel">Cancel</string>
 
     <string name="title_add_to_library">Add to library</string>
     <string name="title_remove_from_library">Remove from library</string>

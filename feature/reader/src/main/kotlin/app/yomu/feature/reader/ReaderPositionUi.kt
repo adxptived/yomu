@@ -3,7 +3,6 @@ package app.yomu.feature.reader
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
-import android.text.format.DateFormat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -63,10 +62,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.yomu.core.common.TimeFormat
+import app.yomu.core.datastore.AppSettings
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
+import org.koin.compose.koinInject
 import java.io.File
-import java.util.Date
 import app.yomu.core.ui.R as CoreR
 
 /** "Page 34 of ≈412": the page count of reflowable books is estimated, which the "≈" says honestly. */
@@ -280,10 +282,11 @@ internal fun ReaderFooter(
 @Composable
 private fun rememberClockText(): String {
     val context = LocalContext.current
-    val format = remember(context) { DateFormat.getTimeFormat(context) }
-    val time by produceState(format.format(Date()), format) {
+    val settings: AppSettings = koinInject()
+    val pref by settings.timeFormat.flow.collectAsStateWithLifecycle(TimeFormat.SYSTEM)
+    val time by produceState(TimeFormat.format(context, pref, System.currentTimeMillis()), context, pref) {
         while (true) {
-            value = format.format(Date())
+            value = TimeFormat.format(context, pref, System.currentTimeMillis())
             delay(60_000 - System.currentTimeMillis() % 60_000 + 50)
         }
     }

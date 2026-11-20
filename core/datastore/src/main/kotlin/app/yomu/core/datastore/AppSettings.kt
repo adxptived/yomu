@@ -20,6 +20,8 @@ import app.yomu.domain.catalog.ContentPreference
 import app.yomu.domain.catalog.LibraryDisplay
 import app.yomu.domain.catalog.SourceListFilter
 import app.yomu.domain.catalog.SourceSortMode
+import app.yomu.domain.library.LibraryQuerySpecData
+import app.yomu.domain.library.SavedQueryShelf
 import app.yomu.domain.model.CommonReaderSettings
 import app.yomu.domain.model.CustomAction
 import app.yomu.domain.model.DictionaryApp
@@ -91,6 +93,12 @@ class AppSettings(context: Context) {
     val amoled = bool("amoled", false)
     val accent = string("accent", "YOMU")
 
+    /**
+     * Mihon parity (0.21.3): SYSTEM follows the device locale, HOUR_12 / HOUR_24 force the clock. New UI must use
+     * `app.yomu.core.common.TimeFormat` instead of a bare DateFormat whenever it shows a time to the user.
+     */
+    val timeFormat = string("time_format", "SYSTEM")
+
     /** ARGB colour of the "custom" accent (1.5.0). */
     val accentCustom = long("accent_custom", 0xFF8F7FD6)
 
@@ -119,6 +127,10 @@ class AppSettings(context: Context) {
     val libraryTypes = stringSet("library_types")
     val librarySort = enum("library_sort", LibrarySort.LAST_READ)
     val libraryAscending = bool("library_ascending", false)
+    /** The same filters as the versioned query spec (L05); the legacy keys above stay for upgrades. */
+    val libraryQuerySpec = json("library_query_spec", LibraryQuerySpecData(), LibraryQuerySpecData.serializer())
+    /** Smart shelves: a saved query that new matching books join automatically. */
+    val libraryShelves = json("library_shelves", emptyList(), ListSerializer(SavedQueryShelf.serializer()))
     val showContinueReading = bool("show_continue", true)
 
     /** The "From the catalog" row on the library home: hidden, or moved under the books. */
@@ -189,6 +201,9 @@ class AppSettings(context: Context) {
     // Dictionary
     val onlineDictionary = bool("online_dictionary", true)
     val dictionaryLang = string("dictionary_lang", "")
+
+    /** N04: opt-in index of saved text/OCR. Off by default: no index rows are built until the user asks. */
+    val fulltextIndex = bool("fulltext_index", false)
 
     // Vocabulary and SRS
     val dailyGoal = int("daily_goal", 20)
@@ -315,6 +330,12 @@ class AppSettings(context: Context) {
     /** Ask before opening a chapter that is not downloaded while on mobile data. */
     val warnMobileReading = bool("warn_mobile_reading", false)
 
+    /** Mihon parity: preload the next manga chapter pages only on Wi-Fi (off: any network). */
+    val readerPreloadWifiOnly = bool("reader_preload_wifi_only", false)
+
+    /** Mihon parity: vertical chapter navigator for the long-strip reader (off by default). */
+    val verticalChapterNavigator = bool("vertical_chapter_navigator", false)
+
     // Backup and sync
     val autoBackupHours = int("auto_backup_hours", 0)
     val backupFolder = string("backup_folder", "")
@@ -349,7 +370,13 @@ class AppSettings(context: Context) {
     /** Opt-in copy of book files through WebDAV (not shared folders). */
     val syncBookFiles = bool("sync_book_files", false)
 
-    /** Deleted highlights, notes, bookmarks, words and online titles are deleted on the other devices too (2.0.0). */
+    /**
+     * Glossary notes (N04). Opt-in: like book files, it starts sharing notes the user may consider private with
+     * the other devices on the sync target. Off by default; the merge keeps the shared records untouched while off.
+     */
+    val syncGlossary = bool("sync_glossary", false)
+
+    /** Deleted highlights, notes, bookmarks, words, glossary notes and online titles are deleted on the other devices too (2.0.0). */
     val syncDeletions = bool("sync_deletions", true)
 
     /** Granular sync (what takes part): reading positions and statuses, highlights with notes, bookmarks, words, tracker links. */
@@ -419,6 +446,9 @@ class AppSettings(context: Context) {
 
     /** Version of the newest release found by the last check ("" = none): the dot on Settings while it is newer. */
     val updateLatest = string("update_latest", "")
+
+    /** Mihon parity: release tag the user chose to skip; the update dot/check stay quiet for this version. */
+    val skipUpdateVersion = string("skip_update_version", "")
 
     /** versionCode whose "What's new" the user has seen; 0 = none yet. */
     val whatsNewSeen = long("whats_new_seen", 0)

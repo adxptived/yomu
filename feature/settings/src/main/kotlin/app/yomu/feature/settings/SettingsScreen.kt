@@ -102,7 +102,7 @@ import app.yomu.core.ui.R as CoreR
 
 /** Sections of the settings screen. [items] are the titles used by the settings search. */
 enum class SettingsSection(val title: Int, val summary: Int, val icon: ImageVector, val items: List<Int>, val visible: Boolean = true) {
-    APPEARANCE(R.string.set_appearance, R.string.set_appearance_sum, Icons.Outlined.Palette, listOf(R.string.set_theme, R.string.set_dynamic_color, R.string.set_amoled, R.string.set_accent, R.string.set_accent_custom, R.string.set_app_icon, R.string.set_language, R.string.set_haptics, R.string.set_reduce_motion)),
+    APPEARANCE(R.string.set_appearance, R.string.set_appearance_sum, Icons.Outlined.Palette, listOf(R.string.set_theme, R.string.set_dynamic_color, R.string.set_amoled, R.string.set_accent, R.string.set_accent_custom, R.string.set_app_icon, R.string.set_language, R.string.set_time_format, R.string.set_haptics, R.string.set_reduce_motion)),
     NAVIGATION(R.string.set_navigation, R.string.set_navigation_sum, Icons.Outlined.CallToAction, listOf(R.string.set_nav_labels, R.string.set_nav_tabs, R.string.set_nav_reset)),
     LIBRARY(R.string.set_library, R.string.set_library_sum, Icons.Outlined.LocalLibrary, listOf(R.string.set_grid, R.string.set_columns, R.string.set_show_continue, R.string.set_hide_covers, R.string.set_import_mode, R.string.set_folders, R.string.set_auto_scan, R.string.set_scan_now, R.string.set_ask_delete)),
     PROFILE(R.string.set_profile, R.string.set_profile_sum, Icons.Outlined.Person, listOf(R.string.set_profile_stats, R.string.set_profile_milestones, R.string.set_profile_top, R.string.set_profile_recent, R.string.set_profile_share)),
@@ -125,7 +125,7 @@ enum class SettingsSection(val title: Int, val summary: Int, val icon: ImageVect
     ADVANCED(R.string.set_advanced, R.string.set_advanced_sum, Icons.Outlined.Tune, listOf(R.string.set_verbose_logging, R.string.set_error_log, R.string.set_reset_onboarding, R.string.set_reset_hints)),
     LOGS(R.string.set_error_log, R.string.set_error_log_sum, Icons.Outlined.BugReport, emptyList(), visible = false),
     STORAGE(R.string.set_storage, R.string.set_storage_sum, Icons.Outlined.Storage, emptyList(), visible = false),
-    ABOUT(R.string.set_about, R.string.set_about_sum, Icons.Outlined.Info, listOf(R.string.set_version, R.string.set_check_updates, R.string.set_update_auto, R.string.set_about_author, R.string.set_about_source, R.string.set_about_releases, R.string.set_about_issues, R.string.set_license, R.string.set_privacy, R.string.set_libraries)),
+    ABOUT(R.string.set_about, R.string.set_about_sum, Icons.Outlined.Info, listOf(R.string.set_version, R.string.set_check_updates, R.string.set_update_auto, R.string.set_update_skip_clear, R.string.set_about_author, R.string.set_about_source, R.string.set_about_releases, R.string.set_about_issues, R.string.set_license, R.string.set_privacy, R.string.set_libraries)),
 }
 
 /** Links from settings to screens owned by other features. */

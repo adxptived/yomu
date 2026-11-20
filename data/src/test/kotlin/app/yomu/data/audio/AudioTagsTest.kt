@@ -1,5 +1,6 @@
 package app.yomu.data.audio
 
+import app.yomu.domain.audio.AudioGainTag
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -137,15 +138,53 @@ class AudioTagsTest {
 
     @Test
     fun `vorbis comments are read from a second packet`() {
-        // A minimal Ogg page: the comment header of Vorbis starts with its own magic.
+        assertEquals("A story told aloud.", AudioTags.description(vorbisPage("DESCRIPTION=A story told aloud.")))
+    }
+
+    @Test
+    fun `replaygain is read from id3 user text frames`() {
+        val channel = id3Tag(
+            listOf(
+                "TXXX" to utf8UserText("REPLAYGAIN_TRACK_GAIN", "-3.21 dB"),
+                "TXXX" to utf8UserText("REPLAYGAIN_TRACK_PEAK", "0.9123"),
+            ),
+        )
+        assertEquals(AudioGainTag(-3.21f, 0.9123f), AudioTags.gain(channel))
+    }
+
+    @Test
+    fun `replaygain is read from vorbis comments`() {
+        val gain = AudioTags.gain(vorbisPage("REPLAYGAIN_TRACK_GAIN=+2.00 dB", "REPLAYGAIN_TRACK_PEAK=0.5"))
+        assertEquals(AudioGainTag(2f, 0.5f), gain)
+    }
+
+    @Test
+    fun `a track without gain tags has no correction`() {
+        assertNull(AudioTags.gain(id3Tag(listOf("TIT3" to utf8Text("A synopsis.")))))
+        assertNull(AudioTags.gain(channel("not a media file at all".toByteArray())))
+        assertEquals(1f, app.yomu.domain.audio.AudioGain.factor(null))
+    }
+
+    @Test
+    fun `gain text is parsed only as a number`() {
+        assertEquals(-3.21f, AudioTags.parseGain("-3.21 dB"))
+        assertEquals(2f, AudioTags.parseGain("+2.00 dB"))
+        assertNull(AudioTags.parseGain("loud"))
+        assertNull(AudioTags.parseGain(null))
+    }
+
+    /** A minimal Ogg page whose comment packet carries [fields] as `KEY=value` comments. */
+    private fun vorbisPage(vararg fields: String): SeekableByteChannel {
         val comments = ByteArrayOutputStream()
         val vendor = "test".toByteArray()
         comments.write(leInt(vendor.size))
         comments.write(vendor)
-        comments.write(leInt(1))
-        val field = "DESCRIPTION=A story told aloud.".toByteArray()
-        comments.write(leInt(field.size))
-        comments.write(field)
+        comments.write(leInt(fields.size))
+        fields.forEach { field ->
+            val bytes = field.toByteArray()
+            comments.write(leInt(bytes.size))
+            comments.write(bytes)
+        }
         val payload = "\u0003vorbis".toByteArray(Charsets.ISO_8859_1) + comments.toByteArray()
 
         val page = ByteArrayOutputStream()
@@ -155,7 +194,7 @@ class AudioTagsTest {
         page.write(byteArrayOf(1)) // one segment in the table
         page.write(byteArrayOf(payload.size.toByte())) // the lacing value of that segment
         page.write(payload)
-        assertEquals("A story told aloud.", AudioTags.description(channel(page.toByteArray(), "vorbis")))
+        return channel(page.toByteArray(), "vorbis-${System.nanoTime()}")
     }
 
     private fun leInt(value: Int): ByteArray =

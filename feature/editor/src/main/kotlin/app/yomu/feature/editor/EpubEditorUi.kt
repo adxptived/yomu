@@ -106,6 +106,7 @@ import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.data.book.EpubMeta
 import app.yomu.data.book.EpubPaths
+import app.yomu.domain.task.TaskState
 import coil3.compose.AsyncImage
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
@@ -215,6 +216,25 @@ internal fun EpubEditor(viewModel: EditorViewModel, status: EditorStatus, snackb
             PrimaryScrollableTabRow(selectedTabIndex = tab.ordinal, edgePadding = 8.dp) {
                 EpubTab.entries.forEach { t -> YomuTab(selected = tab == t, onClick = { tab = t }, text = { Text(stringResource(t.label)) }) }
             }
+            val tasks by viewModel.tasks.collectAsStateWithLifecycle()
+            val activeTask = tasks.values.firstOrNull { it.running }
+            if (activeTask != null) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.editor_task_save) + " · " +
+                            (activeTask.progress.fraction?.let { "${(it * 100).toInt()}%" } ?: ""),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = viewModel::cancelSave,
+                        enabled = activeTask.state == TaskState.RUNNING || activeTask.state == TaskState.PENDING,
+                    ) { Text(stringResource(R.string.editor_task_cancel)) }
+                }
+            }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (tab) {
                     EpubTab.CHAPTERS -> ChaptersTab(
@@ -302,6 +322,16 @@ private fun ChaptersTab(
             SheetAction(Icons.Default.ContentCut, stringResource(R.string.editor_split)) { act { dialog = ChapterDialog.Split(c) } }
             if (c.index < s.chapters.lastIndex) {
                 SheetAction(Icons.AutoMirrored.Filled.MergeType, stringResource(R.string.editor_merge_next)) { act { viewModel.mergeWithNext(c.path) } }
+            }
+            val volumeIndex = s.volumes.indexOfFirst { v -> v.chapters.any { it.path == c.path } }
+            if (volumeIndex >= 0) {
+                val volume = s.volumes[volumeIndex]
+                if (volume.chapters.last().path == c.path && volumeIndex < s.volumes.lastIndex) {
+                    SheetAction(Icons.AutoMirrored.Filled.MergeType, stringResource(R.string.editor_volume_merge)) { act { viewModel.mergeVolumeWithNext(c.path) } }
+                }
+                if (volume.chapters.first().path != c.path) {
+                    SheetAction(Icons.Default.ContentCut, stringResource(R.string.editor_volume_split)) { act { viewModel.splitVolumeAt(c.path) } }
+                }
             }
             if (s.chapters.size > 1) {
                 SheetAction(Icons.Default.Delete, stringResource(CoreR.string.delete), destructive = true) { act { dialog = ChapterDialog.Delete(c) } }
@@ -773,6 +803,7 @@ private fun ToolsTab(viewModel: EditorViewModel, s: EpubState, onTranslate: () -
     var quotes by rememberSaveable { mutableStateOf(false) }
     var hyphen by rememberSaveable { mutableStateOf(false) }
     val issues by viewModel.issues.collectAsStateWithLifecycle()
+    val brush by viewModel.cleaning.collectAsStateWithLifecycle()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             PreferenceHeader(stringResource(R.string.editor_cleanup))
@@ -784,6 +815,22 @@ private fun ToolsTab(viewModel: EditorViewModel, s: EpubState, onTranslate: () -
             Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.End) {
                 Button(onClick = { viewModel.cleanup(CleanupOptions(empty, spaces, dashes, quotes, hyphen), null) }, enabled = empty || spaces || dashes || quotes || hyphen) {
                     Text(stringResource(R.string.editor_cleanup_apply))
+                }
+            }
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            PreferenceHeader(stringResource(R.string.editor_brush_title))
+            Text(stringResource(R.string.editor_brush_hint), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp))
+            if (!brush.active) {
+                OutlinedButton(onClick = viewModel::stageCleaning, modifier = Modifier.padding(horizontal = 16.dp)) { Text(stringResource(R.string.editor_brush_stage)) }
+            } else {
+                Text(stringResource(R.string.editor_brush_counts, brush.staged, brush.changed), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp))
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { viewModel.brushClean(CleanupOptions(empty, spaces, dashes, quotes, hyphen)) }, enabled = empty || spaces || dashes || quotes || hyphen) { Text(stringResource(R.string.editor_brush_clean)) }
+                    OutlinedButton(onClick = viewModel::undoBrushStroke, enabled = brush.canUndo) { Text(stringResource(R.string.editor_brush_undo)) }
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = viewModel::commitCleaningLayer, enabled = brush.changed > 0) { Text(stringResource(R.string.editor_brush_commit)) }
+                    OutlinedButton(onClick = viewModel::discardCleaningLayer) { Text(stringResource(R.string.editor_brush_discard)) }
                 }
             }
             HorizontalDivider()

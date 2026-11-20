@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -35,6 +36,7 @@ import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -73,6 +75,9 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -129,30 +134,86 @@ private const val PRELOAD_PARALLEL = 3
 /** Queued preloads this far behind the reading position are dropped (the reader jumped elsewhere). */
 private const val PRELOAD_SLACK = 2
 
-/** Pages shown by the pager: optional previous-chapter page, the images (or their halves), then an end page. */
+/** One item of the pager: an image (or a spread) or the boundary between two loaded chapters. */
+internal sealed interface MangaSlot {
+    /** [presentation] indexes the spreads, the split pages or the flat pages, whichever drives this layout. */
+    data class Image(val presentation: Int) : MangaSlot
+
+    /** A chapter boundary after [after]; [last] is the end of the loaded window rather than a chapter inside it. */
+    data class Break(val after: Int, val nextTitle: String?, val last: Boolean) : MangaSlot
+}
+
+/**
+ * Pages shown by the pager: optional previous-chapter page, the images (or their halves), but never a load between
+ * the chapters of the open window — an internal chapter boundary is a slot of its own, not a reload.
+ */
 internal class Layout(
     val count: Int,
     val hasPrev: Boolean,
     val spreads: List<IntArray>?,
     val virtual: List<app.yomu.domain.reader.MangaPage>? = null,
     val split: app.yomu.domain.reader.PageSplit = app.yomu.domain.reader.PageSplit.OFF,
+    /** Last flat page of a loaded chapter, mapped to the title of the chapter after it. */
+    val breaks: Map<Int, String> = emptyMap(),
+    /** Whether the end page is shown after the last page. */
+    val end: Boolean = true,
 ) {
     val offset = if (hasPrev) 1 else 0
-    val imageSlots = spreads?.size ?: virtual?.size ?: count
-    val total = offset + imageSlots + 1
-    fun slotOf(page: Int): Int = offset + (
-        spreads?.indexOfFirst { page in it }?.coerceAtLeast(0)
-            ?: virtual?.let { app.yomu.domain.reader.MangaPaging.virtualIndexOf(it, page, split) }
-            ?: page
-        )
-    fun pageOf(slot: Int): Int? {
-        val i = slot - offset
-        if (i < 0 || i >= imageSlots) return null
-        return spreads?.get(i)?.first() ?: virtual?.getOrNull(i)?.physical ?: i
+    private val presentations = spreads?.size ?: virtual?.size ?: count
+
+    private val pagesOfPresentation: List<IntArray> = List(presentations) { p ->
+        when {
+            spreads != null -> spreads[p]
+            virtual != null -> intArrayOf(virtual[p].physical)
+            else -> intArrayOf(p)
+        }
     }
 
+    /**
+     * The presentation after which each chapter boundary belongs. A split page has two slots for one physical page,
+     * so the break follows the *last* of them; keying it to the first would show the boundary between the halves.
+     */
+    private val breakByPresentation: Map<Int, Int> = breaks.keys.mapNotNull { page ->
+        pagesOfPresentation.indices.lastOrNull { pagesOfPresentation[it].contains(page) }?.let { it to page }
+    }.toMap()
+
+    val slots: List<MangaSlot> = buildList {
+        pagesOfPresentation.forEachIndexed { p, _ ->
+            add(MangaSlot.Image(p))
+            breakByPresentation[p]?.let { after -> add(MangaSlot.Break(after, breaks[after], last = false)) }
+        }
+        if (end) add(MangaSlot.Break((count - 1).coerceAtLeast(0), null, last = true))
+    }
+
+    val total: Int get() = offset + slots.size
+
+    private fun presentationOf(page: Int): Int = when {
+        spreads != null -> spreads.indexOfFirst { page in it }.coerceAtLeast(0)
+        virtual != null -> app.yomu.domain.reader.MangaPaging.virtualIndexOf(virtual, page, split)
+        else -> page.coerceIn(0, (count - 1).coerceAtLeast(0))
+    }
+
+    /** The pager slot showing [page], counting the chapter boundaries before it. */
+    fun slotOf(page: Int): Int {
+        val target = presentationOf(page)
+        return offset + target + breakByPresentation.keys.count { it < target }
+    }
+
+    /** The page shown at [slot] when it is an image slot; null for a chapter boundary. */
+    fun pageOf(slot: Int): Int? {
+        val s = slots.getOrNull(slot - offset) as? MangaSlot.Image ?: return null
+        return pagesOfPresentation[s.presentation].first()
+    }
+
+    fun breakOf(slot: Int): MangaSlot.Break? = slots.getOrNull(slot - offset) as? MangaSlot.Break
+
+    fun imageOf(slot: Int): Int? = (slots.getOrNull(slot - offset) as? MangaSlot.Image)?.presentation
+
     /** The half shown at [slot], or null when the slot is a whole page (a portrait scan is never cut). */
-    fun halfOf(slot: Int): app.yomu.domain.reader.MangaPage? = virtual?.getOrNull(slot - offset)?.takeIf { it.split }
+    fun halfOf(slot: Int): app.yomu.domain.reader.MangaPage? {
+        val p = imageOf(slot) ?: return null
+        return virtual?.getOrNull(p)?.takeIf { it.split }
+    }
 }
 
 /** Where a page request should move the pager, or that the reader is at a chapter edge. */
@@ -196,6 +257,10 @@ fun MangaReaderView(
     modifier: Modifier = Modifier,
     /** Multiplier for page-turn animations from the common reader settings. */
     animationSpeed: Float = 1f,
+    /** Whether pages ahead of the current one may be fetched; the visible page is always loaded on any network. */
+    preloadAllowed: () -> Boolean = { true },
+    /** Opt-in vertical chapter rail for long-strip (webtoon) reading. */
+    verticalChapterNavigator: Boolean = false,
 ) {
     val s = controller.settings
     val context = LocalContext.current
@@ -207,6 +272,8 @@ fun MangaReaderView(
         val gate = Semaphore(PRELOAD_PARALLEL)
         val started = HashSet<Int>()
         snapshotFlow { controller.page to controller.preloadAhead }.collect { (page, ahead) ->
+            // Wi-Fi only: skip the speculative work entirely while metered; turning a page re-evaluates the network.
+            if (!preloadAllowed()) return@collect
             for (i in page + 1..(page + ahead).coerceAtMost(controller.count - 1)) {
                 if (!started.add(i)) continue
                 launch {
@@ -250,33 +317,90 @@ fun MangaReaderView(
         }
     }
     Box(modifier.fillMaxSize().background(Color(s.background.argb))) {
+        // A window already holds the neighbouring chapters: there is no page to load at the edge, only a chapter
+        // boundary to show. Only a local publication keeps the external previous-chapter page.
+        val session = controller.session
+        val externalPrev = hasPrevChapter && session == null
         if (s.direction == MangaDirection.WEBTOON) {
-            Webtoon(controller, listener, hasPrevChapter, hasNextChapter, animationSpeed)
+            Webtoon(controller, listener, externalPrev, controller.endLeadsSomewhere(hasNextChapter), animationSpeed)
         } else {
             val useSpreads = landscape && s.dualPageLandscape && s.direction != MangaDirection.VERTICAL
-            val spreads = if (useSpreads) app.yomu.domain.reader.MangaPaging.spreads(controller.count, s.coverAlone) else null
+            // A spread never mixes two chapters: pairing is computed per chapter and shifted to the flat index, so a
+            // chapter boundary stays a boundary whatever the page counts are.
+            val spreads = if (useSpreads) controller.spreadGroups(s.coverAlone) else null
             // Split pages and spreads are alternatives: a spread already divides the screen, and a half of a page
             // inside a spread would be unreadable.
             val split = if (!useSpreads) s.splitPages else app.yomu.domain.reader.PageSplit.OFF
-            val virtual = if (split != app.yomu.domain.reader.PageSplit.OFF) {
-                app.yomu.domain.reader.MangaPaging.virtualPages(controller.count, split, controller::isWide)
-            } else {
-                null
+            val virtual = if (split != app.yomu.domain.reader.PageSplit.OFF) controller.splitPages(split) else null
+            val layout = Layout(
+                count = controller.count,
+                hasPrev = externalPrev,
+                spreads = spreads,
+                virtual = virtual,
+                split = split,
+                breaks = controller.chapterBreaks(),
+            )
+            Paged(controller, listener, layout, controller.endLeadsSomewhere(hasNextChapter), animationSpeed)
+        }
+        // Long-strip chapters can be far apart; the opt-in rail jumps straight to one of the loaded window's chapters.
+        if (s.direction == MangaDirection.WEBTOON && verticalChapterNavigator) {
+            val chapters = controller.session?.chapters.orEmpty()
+            if (chapters.size > 1) {
+                VerticalChapterNavigator(
+                    chapters = chapters,
+                    currentId = controller.chapter?.id,
+                    onJump = { chapter -> controller.goTo(controller.globalIndex(chapter.id, 0) ?: 0) },
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp),
+                )
             }
-            Paged(controller, listener, Layout(controller.count, hasPrevChapter, spreads, virtual, split), hasNextChapter, animationSpeed)
         }
         AnimatedVisibility(zonesVisible && s.tapZones != TapZoneLayout.DISABLED, enter = fadeIn(), exit = fadeOut()) {
             TapZonesOverlay(s.tapZones, s.zonesInvertedX, s.zonesInvertedY, rtl = s.direction == MangaDirection.RTL)
         }
         if (s.showPageNumber && controller.count > 0) {
             Text(
-                "${controller.page + 1} / ${controller.count}",
+                "${controller.localPage + 1} / ${controller.localCount}",
                 color = Color.White,
                 fontSize = 12.sp,
                 modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 6.dp)
                     .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp),
             )
         }
+        // The chapter being read is named on its first page: with three chapters in the pager, the page number alone
+        // no longer says where the reader is.
+        val chapter = controller.chapter
+        if (chapter != null && controller.localPage == 0) {
+            Text(
+                chapter.title,
+                color = Color.White,
+                fontSize = 12.sp,
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 8.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp),
+            )
+        }
+    }
+}
+
+/** True when the end page of the pager leads to a chapter: the one after the window, or the external next chapter. */
+private fun MangaController.endLeadsSomewhere(hasNextChapter: Boolean): Boolean =
+    if (session != null) hasNextAfterWindow else hasNextChapter
+
+/** Spreads per loaded chapter, shifted to flat page indexes: a spread never mixes two chapters. */
+private fun MangaController.spreadGroups(coverAlone: Boolean): List<IntArray> {
+    val s = session ?: return app.yomu.domain.reader.MangaPaging.spreads(count, coverAlone)
+    return s.slices.flatMap { slice ->
+        app.yomu.domain.reader.MangaPaging.spreads(slice.pages, coverAlone).map { group ->
+            IntArray(group.size) { group[it] + slice.start }
+        }
+    }
+}
+
+/** Split halves per loaded chapter, shifted to flat page indexes; the width is measured on the flat page. */
+private fun MangaController.splitPages(split: app.yomu.domain.reader.PageSplit): List<MangaPage> {
+    val s = session ?: return app.yomu.domain.reader.MangaPaging.virtualPages(count, split, ::isWide)
+    return s.slices.flatMap { slice ->
+        app.yomu.domain.reader.MangaPaging.virtualPages(slice.pages, split) { local -> isWide(slice.start + local) }
+            .map { it.copy(physical = it.physical + slice.start) }
     }
 }
 
@@ -315,7 +439,7 @@ private fun Paged(controller: MangaController, listener: MangaListener, layout: 
     // the current one instead of the copy captured when the effect started.
     val layoutNow by rememberUpdatedState(layout)
     suspend fun go(slot: Int) = if (animate) pager.animateScrollToPage(slot, animationSpec = tween) else pager.scrollToPage(slot)
-    LaunchedEffect(layout.spreads?.map { it.toList() }, layout.virtual, layout.hasPrev) {
+    LaunchedEffect(layout.spreads?.map { it.toList() }, layout.virtual, layout.hasPrev, layout.breaks) {
         // A new slot can appear while a page is being preloaded; only a slot that actually moved needs a correction,
         // otherwise a page turn in flight would be snapped back to the page being left.
         val target = layoutNow.slotOf(controller.page)
@@ -333,21 +457,17 @@ private fun Paged(controller: MangaController, listener: MangaListener, layout: 
     var endReported by remember { mutableStateOf(false) }
     LaunchedEffect(pager) {
         snapshotFlow { pager.currentPage }.distinctUntilChanged().collect { slot ->
-            layoutNow.pageOf(slot)?.let { controller.page = it; listener.onPageChanged(it) }
-            if (slot == layoutNow.total - 1) {
-                // The end slot is not a page: report the last page so the saved position is not one behind.
-                val last = (controller.count - 1).coerceAtLeast(0)
-                if (controller.page != last) {
-                    controller.page = last
-                    listener.onPageChanged(last)
-                }
-                if (!hasNext && !endReported) {
+            // A chapter boundary is not a page: the position stays on the page that was shown before it.
+            val boundary = layoutNow.breakOf(slot)
+            if (boundary != null) {
+                if (boundary.last && !hasNext && !endReported) {
                     endReported = true
                     listener.onFinished()
                 }
-            } else {
-                endReported = false
+                return@collect
             }
+            endReported = false
+            layoutNow.pageOf(slot)?.let { controller.page = it; listener.onPageChanged(it) }
         }
     }
     val onTap: (Offset, IntSize) -> Unit = { pos, size ->
@@ -363,13 +483,22 @@ private fun Paged(controller: MangaController, listener: MangaListener, layout: 
         }
     }
     val content: @Composable (Int) -> Unit = { slot ->
+        val boundary = layout.breakOf(slot)
         when {
+            boundary != null -> EdgePage(
+                next = true,
+                available = if (boundary.last) hasNext else true,
+                title = boundary.nextTitle,
+                onGo = {
+                    if (boundary.last) listener.onChapterEdge(true) else scope.launch { go((slot + 1).coerceAtMost(layout.total - 1)) }
+                },
+                onMenu = listener::onMenu,
+            )
             layout.hasPrev && slot == 0 -> EdgePage(next = false, available = true, onGo = { listener.onChapterEdge(false) }, onMenu = listener::onMenu)
-            slot == layout.total - 1 -> EdgePage(next = true, available = hasNext, onGo = { listener.onChapterEdge(true) }, onMenu = listener::onMenu)
             else -> {
-                val i = slot - layout.offset
+                val i = checkNotNull(layout.imageOf(slot)) { "slot $slot is not an image" }
                 val half = layout.halfOf(slot)
-                val group = layout.spreads?.get(i) ?: intArrayOf(i)
+                val group = layout.spreads?.get(i) ?: intArrayOf(layout.virtual?.getOrNull(i)?.physical ?: i)
                 when {
                     half != null -> PageImage(controller, listener, half.physical, Modifier.fillMaxSize(), onTap, half = half)
                     group.size == 2 -> {
@@ -593,7 +722,7 @@ private fun PageError(error: Throwable?, color: Color, onRetry: () -> Unit, onMe
 }
 
 @Composable
-private fun EdgePage(next: Boolean, available: Boolean, onGo: () -> Unit, onMenu: () -> Unit) {
+private fun EdgePage(next: Boolean, available: Boolean, onGo: () -> Unit, onMenu: () -> Unit, title: String? = null) {
     Column(
         Modifier.fillMaxSize().background(Color(0xFF121212)).pointerInput(Unit) { detectTapGestures { onMenu() } }.padding(32.dp),
         verticalArrangement = Arrangement.Center,
@@ -602,6 +731,15 @@ private fun EdgePage(next: Boolean, available: Boolean, onGo: () -> Unit, onMenu
         if (next) {
             Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF81C784), modifier = Modifier.size(56.dp))
             Text(stringResource(R.string.manga_chapter_finished), color = Color.White, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp))
+            if (!title.isNullOrBlank()) {
+                Text(
+                    title,
+                    color = Color.LightGray,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+            }
             if (available) {
                 Button(onClick = onGo, modifier = Modifier.heightIn(min = 48.dp)) {
                     Text(stringResource(R.string.manga_next_chapter))
@@ -623,8 +761,15 @@ private fun EdgePage(next: Boolean, available: Boolean, onGo: () -> Unit, onMenu
 private fun Webtoon(controller: MangaController, listener: MangaListener, hasPrev: Boolean, hasNext: Boolean, animationSpeed: Float) {
     val s = controller.settings
     val context = LocalContext.current
-    val offset = if (hasPrev) 1 else 0
-    val state = rememberLazyListState(initialFirstVisibleItemIndex = controller.page + offset)
+    // The strip is a list of slots too: page images with a chapter boundary between the loaded chapters.
+    val layout = Layout(
+        count = controller.count,
+        hasPrev = hasPrev,
+        spreads = null,
+        breaks = controller.chapterBreaks(),
+    )
+    val layoutNow by rememberUpdatedState(layout)
+    val state = rememberLazyListState(initialFirstVisibleItemIndex = layout.slotOf(controller.page))
     var zoom by rememberSaveable { mutableFloatStateOf(1f) }
     var finishedReported by remember { mutableStateOf(false) }
     val hScroll = rememberScrollState()
@@ -636,26 +781,33 @@ private fun Webtoon(controller: MangaController, listener: MangaListener, hasPre
     }
     LaunchedEffect(Unit) {
         controller.pageRequests.collect { target ->
+            val current = layoutNow.slotOf(controller.page)
             when {
                 target < 0 -> listener.onChapterEdge(false)
-                target >= controller.count -> state.animateScrollToItem(controller.count + offset)
-                target == controller.page + 1 -> scrollBy(state.layoutInfo.viewportSize.height * 0.85f)
-                target == controller.page - 1 -> scrollBy(-state.layoutInfo.viewportSize.height * 0.85f)
-                else -> state.scrollToItem(target + offset)
+                target >= controller.count -> state.animateScrollToItem(layoutNow.total - 1)
+                target == controller.page + 1 -> state.animateScrollToItem((current + 1).coerceAtMost(layoutNow.total - 1))
+                target == controller.page - 1 -> state.animateScrollToItem((current - 1).coerceAtLeast(0))
+                else -> state.scrollToItem(layoutNow.slotOf(target.coerceIn(0, (controller.count - 1).coerceAtLeast(0))))
             }
         }
     }
     LaunchedEffect(state) {
         snapshotFlow { state.firstVisibleItemIndex }.distinctUntilChanged().collect { i ->
-            val p = (i - offset).coerceIn(0, (controller.count - 1).coerceAtLeast(0))
-            controller.page = p
-            listener.onPageChanged(p)
-            if (i >= controller.count + offset - 1 && !state.canScrollForward) {
+            val slot = i.coerceIn(0, (layoutNow.total - 1).coerceAtLeast(0))
+            // A chapter boundary keeps the position on the page before it.
+            if (layoutNow.breakOf(slot) == null) {
+                layoutNow.pageOf(slot)?.let { p ->
+                    controller.page = p
+                    listener.onPageChanged(p)
+                }
+            }
+            val atEnd = slot >= layoutNow.total - 1 && !state.canScrollForward
+            if (atEnd && !hasNext) {
                 if (!finishedReported) {
                     finishedReported = true
                     listener.onFinished()
                 }
-            } else if (finishedReported && i < controller.count + offset - 1) {
+            } else if (finishedReported && !atEnd) {
                 finishedReported = false
             }
         }
@@ -709,46 +861,102 @@ private fun Webtoon(controller: MangaController, listener: MangaListener, hasPre
             contentPadding = PaddingValues(horizontal = sidePadding * zoom),
             verticalArrangement = Arrangement.spacedBy(if (s.webtoonGaps) 10.dp else 0.dp),
         ) {
-            if (hasPrev) item(key = "prev") { Box(Modifier.fillMaxWidth().heightIn(min = 240.dp)) { EdgePage(false, true, { listener.onChapterEdge(false) }, listener::onMenu) } }
-            items(controller.count, key = { it }) { index ->
-                var file by remember(index) { mutableStateOf<File?>(null) }
-                var pageSize by remember(index) { mutableStateOf<ImageSize?>(null) }
-                var error by remember(index) { mutableStateOf<Throwable?>(null) }
-                var attempt by remember(index) { mutableIntStateOf(0) }
-                LaunchedEffect(index, attempt) {
-                    error = null
-                    loadPage(controller, index, onFile = {
-                        file = it
-                        val size = readPageSize(it)
-                        pageSize = size
-                        controller.noteSize(index, size)
-                    }, onError = { error = it })
-                }
-                val f = file
-                if (error != null) {
-                    // A failed page keeps its place in the strip and can be retried (it used to spin forever).
-                    Box(Modifier.fillMaxWidth().heightIn(min = 400.dp), contentAlignment = Alignment.Center) {
-                        PageError(error, onBackground(s), onRetry = { attempt++ }, onMenu = listener::onMenu)
+            items(layout.total, key = { it }) { slot ->
+                val boundary = layout.breakOf(slot)
+                val index = layout.pageOf(slot)
+                when {
+                    hasPrev && slot == 0 -> Box(Modifier.fillMaxWidth().heightIn(min = 240.dp)) {
+                        EdgePage(false, true, { listener.onChapterEdge(false) }, listener::onMenu)
                     }
-                } else if (f == null) {
-                    Box(Modifier.fillMaxWidth().heightIn(min = 400.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = onBackground(s).copy(alpha = 0.7f))
+                    boundary != null -> Box(Modifier.fillMaxWidth().heightIn(min = if (boundary.last) 360.dp else 240.dp)) {
+                        EdgePage(
+                            next = true,
+                            available = if (boundary.last) hasNext else true,
+                            title = boundary.nextTitle,
+                            onGo = {
+                                if (boundary.last) listener.onChapterEdge(true)
+                                else scope.launch { state.animateScrollToItem((slot + 1).coerceAtMost(layout.total - 1)) }
+                            },
+                            onMenu = listener::onMenu,
+                        )
                     }
-                } else {
-                    val widthPx = with(LocalDensity.current) { maxWidth.roundToPx() }
-                    val target = pageSize?.let {
-                        MangaFit.decodeSize(it.width, it.height, widthPx, 0, ScaleType.FIT_WIDTH)
+                    index != null -> {
+                        var file by remember(index) { mutableStateOf<File?>(null) }
+                        var pageSize by remember(index) { mutableStateOf<ImageSize?>(null) }
+                        var error by remember(index) { mutableStateOf<Throwable?>(null) }
+                        var attempt by remember(index) { mutableIntStateOf(0) }
+                        LaunchedEffect(index, attempt) {
+                            error = null
+                            loadPage(controller, index, onFile = {
+                                file = it
+                                val size = readPageSize(it)
+                                pageSize = size
+                                controller.noteSize(index, size)
+                            }, onError = { error = it })
+                        }
+                        val f = file
+                        if (error != null) {
+                            // A failed page keeps its place in the strip and can be retried (it used to spin forever).
+                            Box(Modifier.fillMaxWidth().heightIn(min = 400.dp), contentAlignment = Alignment.Center) {
+                                PageError(error, onBackground(s), onRetry = { attempt++ }, onMenu = listener::onMenu)
+                            }
+                        } else if (f == null) {
+                            Box(Modifier.fillMaxWidth().heightIn(min = 400.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = onBackground(s).copy(alpha = 0.7f))
+                            }
+                        } else {
+                            val widthPx = with(LocalDensity.current) { maxWidth.roundToPx() }
+                            val target = pageSize?.let {
+                                MangaFit.decodeSize(it.width, it.height, widthPx, 0, ScaleType.FIT_WIDTH)
+                            }
+                            AsyncImage(
+                                model = request(context, f, s.cropBorders, target = target),
+                                contentDescription = null,
+                                contentScale = ContentScale.FillWidth,
+                                colorFilter = filter,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
+                            )
+                        }
                     }
-                    AsyncImage(
-                        model = request(context, f, s.cropBorders, target = target),
-                        contentDescription = null,
-                        contentScale = ContentScale.FillWidth,
-                        colorFilter = filter,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
-                    )
                 }
             }
-            item(key = "end") { Box(Modifier.fillMaxWidth().heightIn(min = 360.dp)) { EdgePage(true, hasNext, { listener.onChapterEdge(true) }, listener::onMenu) } }
+        }
+    }
+}
+
+/** Short number shown on a rail marker, taken from the chapter title (a dot when it has none). */
+private fun chapterMarker(title: String): String = Regex("\\d+").findAll(title).lastOrNull()?.value ?: "•"
+
+/** A slim vertical chapter rail for long strips: one 48dp target per chapter of the currently loaded window. */
+@Composable
+private fun VerticalChapterNavigator(
+    chapters: List<MangaChapter>,
+    currentId: Long?,
+    onJump: (MangaChapter) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())
+            .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        chapters.forEach { chapter ->
+            val current = chapter.id == currentId
+            val label = stringResource(R.string.mr_chapter_navigator_jump, chapter.title)
+            Box(
+                Modifier.size(48.dp)
+                    .background(
+                        if (current) MaterialTheme.colorScheme.primary.copy(alpha = 0.9f) else Color.Transparent,
+                        RoundedCornerShape(24.dp),
+                    )
+                    .clickable(role = Role.Button) { onJump(chapter) }
+                    .semantics { contentDescription = label },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(chapterMarker(chapter.title), color = Color.White, fontSize = 12.sp)
+            }
         }
     }
 }

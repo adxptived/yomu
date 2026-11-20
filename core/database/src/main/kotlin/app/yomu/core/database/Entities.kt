@@ -47,6 +47,8 @@ data class BookEntity(
     val rating: Int = 0,
     /** Upload date carried by ComicInfo (milliseconds), 0 when unknown. Added in schema 17. */
     @ColumnInfo(defaultValue = "0") val uploadDate: Long = 0,
+    /** When the settings, rating or favourite last changed; 0 for books from before sync carried them. Added in schema 18. */
+    @ColumnInfo(defaultValue = "0") val metaUpdatedAt: Long = 0,
 )
 
 /** Reading position inside one chapter of a text book; restored when the reader comes back to that chapter. */
@@ -225,6 +227,56 @@ data class DictionaryEntryEntity(
     /** Definitions separated by \u001e, examples after \u001d. */
     val body: String,
 )
+
+/**
+ * A user's note about a character, term or place, tied to a book and a reader position (both optional for notes
+ * that are not about a particular book). The id is stable across backups; matches use the normalised term and
+ * aliases, not the display spelling. Added in schema 19.
+ */
+@Entity(
+    tableName = "glossary_entries",
+    indices = [Index("bookId"), Index("normalized"), Index("updatedAt")],
+    foreignKeys = [ForeignKey(entity = BookEntity::class, parentColumns = ["id"], childColumns = ["bookId"], onDelete = ForeignKey.CASCADE)],
+)
+data class GlossaryEntryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val bookId: Long?,
+    val locatorJson: String?,
+    val term: String,
+    /** Normalised [term], used to find the same note again after an import. */
+    val normalized: String,
+    /** JSON array of the display aliases; their normalised forms are derived in the domain layer. */
+    val aliasesJson: String,
+    /** Name of a domain GlossaryKind: CHARACTER, TERM or PLACE. */
+    val kind: String,
+    val note: String?,
+    val createdAt: Long,
+    val updatedAt: Long,
+)
+
+/**
+ * One indexed piece of a book's text. [key] is a stable per-source key ("H:42" for a highlight, and so on) so a
+ * rebuild can update only what changed. The FTS4 virtual table below indexes [text]; Room keeps it in sync with
+ * triggers, so deleting a book removes its text from the index too. Added in schema 19.
+ */
+@Entity(
+    tableName = "indexed_text",
+    indices = [Index("bookId"), Index("source")],
+    foreignKeys = [ForeignKey(entity = BookEntity::class, parentColumns = ["id"], childColumns = ["bookId"], onDelete = ForeignKey.CASCADE)],
+)
+data class IndexedTextEntity(
+    @PrimaryKey val key: String,
+    val bookId: Long,
+    val sectionId: String,
+    val text: String,
+    /** TEXT or OCR: where this piece came from. */
+    val source: String,
+    val updatedAt: Long,
+)
+
+@Fts4(contentEntity = IndexedTextEntity::class, tokenizer = FtsOptions.TOKENIZER_UNICODE61)
+@Entity(tableName = "indexed_text_fts")
+data class IndexedTextFts(val text: String)
 
 @Entity(tableName = "lookup_history", indices = [Index(value = ["query"], unique = true), Index("at")])
 data class LookupHistoryEntity(@PrimaryKey(autoGenerate = true) val id: Long = 0, val query: String, val at: Long)

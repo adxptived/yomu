@@ -206,6 +206,12 @@ internal fun TtsSheet(vm: ReaderViewModel, common: CommonReaderSettings, onDismi
             icon = Icons.Outlined.RecordVoiceOver,
             onClick = { voicesOpen = true },
         )
+        PreferenceItem(
+            title = stringResource(R.string.tts_sample),
+            summary = stringResource(R.string.tts_sample_summary),
+            icon = Icons.Default.PlayArrow,
+            onClick = vm::previewTts,
+        )
         Text(
             stringResource(R.string.tts_sleep),
             style = MaterialTheme.typography.titleSmall,

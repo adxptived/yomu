@@ -321,4 +321,24 @@
     <string name="editor_typeset_discard_text">The recognized blocks and your edits of this page are lost.</string>
     <string name="editor_step_typeset">Page translation</string>
     <string name="editor_typeset_done">Pages lettered: %1$d, text blocks: %2$d</string>
+
+    <!-- N05: volumes, staged cleaning brush, long tasks -->
+    <string name="editor_volume_merge">Merge with next volume</string>
+    <string name="editor_volume_split">Start a new volume here</string>
+    <string name="editor_volume_done">Volumes merged</string>
+    <string name="editor_step_volume_merge">Merge volumes</string>
+    <string name="editor_step_volume_split">Split volume</string>
+    <string name="editor_brush_title">Cleaning brush (staged)</string>
+    <string name="editor_brush_hint">Changes stay in a staging copy and are not written until you apply the layer. The book file itself changes only when you save.</string>
+    <string name="editor_brush_stage">Stage brush</string>
+    <string name="editor_brush_clean">Clean staged text</string>
+    <string name="editor_brush_undo">Undo stroke</string>
+    <string name="editor_brush_commit">Apply layer</string>
+    <string name="editor_brush_discard">Discard layer</string>
+    <string name="editor_brush_counts">Staged: %1$d · changed: %2$d</string>
+    <string name="editor_brush_committed">Applied staged changes: %1$d</string>
+    <string name="editor_step_brush">Cleaning brush</string>
+    <string name="editor_task_save">Saving the book</string>
+    <string name="editor_task_cancel">Cancel</string>
+    <string name="editor_task_cancelled">Save cancelled — the book was not changed</string>
 </resources>

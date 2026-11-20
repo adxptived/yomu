@@ -18,6 +18,8 @@ import app.yomu.data.download.RangeResume
 import app.yomu.data.download.RetryPolicy
 import app.yomu.data.source.SourceCalls
 import app.yomu.data.work.Notifications
+import app.yomu.domain.audio.AudioOffline
+import app.yomu.domain.audio.AudioOfflinePlan
 import app.yomu.domain.model.AudioTrack
 import app.yomu.domain.model.AudiobookManifest
 import app.yomu.domain.model.Book
@@ -30,6 +32,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -44,6 +47,28 @@ import kotlin.coroutines.coroutineContext
 /** How much of an online audiobook is kept on the device. */
 data class AudioDownloadState(val downloaded: Int, val total: Int, val bytes: Long) {
     val complete: Boolean get() = total > 0 && downloaded == total
+}
+
+/** One track as the offline sheet shows it: remote, downloaded, playable size known. */
+data class AudioTrackState(
+    val index: Int,
+    val title: String,
+    val remote: Boolean,
+    val downloaded: Boolean,
+    val bytes: Long,
+    val durationMs: Long,
+) {
+    val available: Boolean get() = !remote || downloaded
+}
+
+/** What a download would cost: bytes of the tracks whose length is known, and how many are unknown. */
+data class AudioOfflineEstimate(val bytes: Long = 0, val known: Int = 0, val unknown: Int = 0) {
+    val total: Int get() = known + unknown
+    val complete: Boolean get() = unknown == 0 && known > 0
+
+    companion object {
+        val EMPTY = AudioOfflineEstimate()
+    }
 }
 
 /** A running download: [fraction] of the book, [track] being fetched (0-based). */
@@ -81,29 +106,141 @@ class AudiobookDownloader(
         return AudioDownloadState(files.size, remote.size, files.sumOf { it.length() })
     }
 
-    /** Downloads the missing tracks of [book]; [onProgress] gets the book fraction and the track index. */
-    suspend fun download(book: Book, onProgress: suspend (Float, Int, Int) -> Unit) = withContext(Dispatchers.IO) {
+    /** Every track of an online audiobook with its offline state: what the sheet lists and what "remove selected" uses. */
+    fun trackStates(book: Book): List<AudioTrackState> {
+        val m = runCatching { store.manifest(book) }.getOrNull() ?: return emptyList()
+        return m.tracks.mapIndexed { index, track ->
+            val remote = isRemote(track.uri)
+            val file = AudiobookStore.playableUri(track).takeIf { it != track.uri }?.let { File(it.removePrefix("file://")) }
+            AudioTrackState(
+                index = index,
+                title = track.title,
+                remote = remote,
+                downloaded = file?.isFile == true,
+                bytes = file?.takeIf { it.isFile }?.length() ?: 0,
+                durationMs = track.durationMs,
+            )
+        }
+    }
+
+    /** Free bytes where the copies of [book] are kept (0 when the volume cannot report it). */
+    fun freeBytes(book: Book): Long {
+        val dir = store.downloadDir(book) ?: return 0
+        return dir.usableSpace.takeIf { it > 0 } ?: dir.parentFile?.usableSpace ?: 0
+    }
+
+    /**
+     * Downloads the tracks of [plan] that are not on the device yet.
+     *
+     * The plan is resolved once, before any request: "next N" follows [fromTrack], a selection is clamped to the real
+     * track list, and local tracks are never fetched. Every track is written atomically and recorded in the manifest
+     * as soon as it is complete, so a stopped download keeps what it has and a later one continues the same set.
+     */
+    suspend fun download(
+        book: Book,
+        plan: AudioOfflinePlan = AudioOfflinePlan.All,
+        fromTrack: Int = 0,
+        onProgress: suspend (Float, Int, Int) -> Unit,
+    ) = withContext(Dispatchers.IO) {
         val dir = store.downloadDir(book) ?: error("Not an online audiobook")
         dir.mkdirs()
         var manifest = store.manifest(book) ?: error("Not an online audiobook")
-        val todo = manifest.tracks.indices.filter { isRemote(manifest.tracks[it].uri) }
-        todo.forEachIndexed { n, i ->
+        val remote = manifest.tracks.indices.filter { isRemote(manifest.tracks[it].uri) }.toSet()
+        val selected = AudioOffline.indices(manifest.tracks.size, remote, plan, fromTrack)
+        requireSpace(dir.usableSpace)
+        if (selected.isEmpty()) {
+            onProgress(1f, 0, manifest.tracks.size)
+            return@withContext
+        }
+        var completed = 0
+        selected.forEach { i ->
             val track = manifest.tracks[i]
-            if (AudiobookStore.playableUri(track) != track.uri) return@forEachIndexed
-            onProgress(n.toFloat() / todo.size, i, manifest.tracks.size)
-            val file = fetch(track, dir, i) { f -> onProgress((n + f) / todo.size, i, manifest.tracks.size) }
+            // Already here: it counts as part of the selection but is not fetched again.
+            if (AudiobookStore.playableUri(track) != track.uri) {
+                completed++
+                onProgress(completed.toFloat() / selected.size, i, manifest.tracks.size)
+                return@forEach
+            }
+            requireSpace(dir.usableSpace)
+            onProgress(completed.toFloat() / selected.size, i, manifest.tracks.size)
+            val file = fetch(track, dir, i) { f -> onProgress((completed + f) / selected.size, i, manifest.tracks.size) }
             // Saved after every track: a stopped download keeps what it has.
             manifest = manifest.copy(tracks = manifest.tracks.toMutableList().also { it[i] = track.copy(file = "file://" + file.absolutePath) })
             store.writeManifest(book, manifest)
+            completed++
+            onProgress(completed.toFloat() / selected.size, i, manifest.tracks.size)
         }
         onProgress(1f, manifest.tracks.lastIndex, manifest.tracks.size)
     }
 
-    /** Deletes the offline copies; the book streams again. */
-    suspend fun remove(book: Book) = withContext(Dispatchers.IO) {
+    /**
+     * What fetching [plan] would cost. A track whose server does not report a length is counted as unknown instead of
+     * guessed; tracks already on the device are not part of the estimate.
+     */
+    suspend fun estimate(book: Book, plan: AudioOfflinePlan, fromTrack: Int = 0): AudioOfflineEstimate = withContext(Dispatchers.IO) {
+        val manifest = store.manifest(book) ?: return@withContext AudioOfflineEstimate.EMPTY
+        val remote = manifest.tracks.indices.filter { isRemote(manifest.tracks[it].uri) }.toSet()
+        val selected = AudioOffline.indices(manifest.tracks.size, remote, plan, fromTrack)
+        var bytes = 0L
+        var known = 0
+        var unknown = 0
+        for (index in selected) {
+            val track = manifest.tracks[index]
+            if (AudiobookStore.playableUri(track) != track.uri) continue
+            val length = lengthOf(track)
+            if (length != null && length > 0) {
+                bytes += length
+                known++
+            } else {
+                unknown++
+            }
+        }
+        AudioOfflineEstimate(bytes, known, unknown)
+    }
+
+    private suspend fun lengthOf(track: AudioTrack): Long? = runCatching {
+        val youtubeId = AudiobookManifest.youtubeId(track.uri)
+        if (youtubeId != null) {
+            return@runCatching store.youtube.stream(youtubeId, progressive = true).contentLength
+        }
+        client().newCall(Request.Builder().url(track.uri).head().build()).execute().use { r ->
+            if (r.isSuccessful) {
+                r.header("Content-Length")?.toLongOrNull()
+            } else {
+                // A server without HEAD: one byte is enough to read the total from Content-Range.
+                client().newCall(Request.Builder().url(track.uri).header("Range", "bytes=0-0").build()).execute().use { ranged ->
+                    if (ranged.isSuccessful) totalOf(ranged) else null
+                }
+            }
+        }
+    }.getOrNull()
+
+    /**
+     * Deletes offline copies: the tracks of [tracks] (all of them when null). The manifest, the stream address and
+     * the listening position stay, so the book keeps playing from the network at the same place.
+     */
+    suspend fun remove(book: Book, tracks: Set<Int>? = null) = withContext(Dispatchers.IO) {
         val m = store.manifest(book) ?: return@withContext
-        store.writeManifest(book, m.copy(tracks = m.tracks.map { it.copy(file = null) }))
-        store.downloadDir(book)?.deleteRecursively()
+        val dir = store.downloadDir(book) ?: return@withContext
+        val targets = tracks ?: m.tracks.indices.toSet()
+        val remaining = m.tracks.mapIndexed { index, track ->
+            if (index in targets) {
+                track.file?.removePrefix("file://")?.let { runCatching { File(it).delete() } }
+                track.copy(file = null)
+            } else {
+                track
+            }
+        }
+        store.writeManifest(book, m.copy(tracks = remaining))
+        // The folder itself stays when some tracks are still offline; only a fully online book loses its directory.
+        if (remaining.none { it.file != null }) dir.deleteRecursively()
+    }
+
+    /** Refuses to start when the volume is nearly full; a volume that cannot report free space is not guessed about. */
+    internal fun requireSpace(usable: Long, need: Long = MIN_FREE_BYTES) {
+        if (usable in 1 until need) {
+            throw IOException("Not enough free space: ${app.yomu.core.common.Files.humanSize(usable)} available")
+        }
     }
 
     private suspend fun fetch(track: AudioTrack, dir: File, index: Int, progress: suspend (Float) -> Unit): File {
@@ -241,9 +378,15 @@ class AudiobookDownloader(
 
     // ---------------------------------------------------------------- work
 
-    fun start(bookId: Long, wifiOnly: Boolean) {
+    fun start(bookId: Long, wifiOnly: Boolean, plan: AudioOfflinePlan = AudioOfflinePlan.All, fromTrack: Int = 0) {
         val request = OneTimeWorkRequestBuilder<AudiobookDownloadWorker>()
-            .setInputData(workDataOf(AudiobookDownloadWorker.KEY_BOOK to bookId))
+            .setInputData(
+                workDataOf(
+                    AudiobookDownloadWorker.KEY_BOOK to bookId,
+                    AudiobookDownloadWorker.KEY_PLAN to Json.encodeToString(AudioOfflinePlan.serializer(), plan),
+                    AudiobookDownloadWorker.KEY_FROM to fromTrack,
+                ),
+            )
             .setConstraints(Constraints.Builder().setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED).build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, WORK_BACKOFF_MS, TimeUnit.MILLISECONDS)
             .addTag(TAG)
@@ -290,6 +433,9 @@ class AudiobookDownloader(
     companion object {
         private const val YOUTUBE_CHUNK = 10L * 1024 * 1024
         private const val REPORT_MS = 500L
+
+        /** Free space below which a download is not started: a book must not fill the last megabytes of the device. */
+        private const val MIN_FREE_BYTES = 20L * 1024 * 1024
 
         /** How many times a restart from byte 0 is accepted before the download is reported as broken. */
         private const val MAX_RESTARTS = 4
@@ -342,11 +488,15 @@ class AudiobookDownloadWorker(context: Context, params: WorkerParameters) : Coro
     override suspend fun doWork(): Result {
         val bookId = inputData.getLong(KEY_BOOK, -1)
         val book = books.getBook(bookId) ?: return Result.failure()
+        val plan = inputData.getString(KEY_PLAN)?.let { text ->
+            runCatching { Json.decodeFromString(AudioOfflinePlan.serializer(), text) }.getOrNull()
+        } ?: AudioOfflinePlan.All
+        val fromTrack = inputData.getInt(KEY_FROM, 0)
         val title = applicationContext.getString(R.string.notif_audio_downloading, book.title)
         runCatching { setForeground(info(title, 0f)) }
         var lastShown = 0L
         return runCatching {
-            downloader.download(book) { fraction, track, total ->
+            downloader.download(book, plan, fromTrack) { fraction, track, total ->
                 setProgress(workDataOf(KEY_PROGRESS to fraction, KEY_TRACK to track, KEY_TOTAL to total))
                 val now = System.currentTimeMillis()
                 if (now - lastShown >= NOTIFY_MS) {
@@ -386,6 +536,8 @@ class AudiobookDownloadWorker(context: Context, params: WorkerParameters) : Coro
 
     companion object {
         const val KEY_BOOK = "book"
+        const val KEY_PLAN = "plan"
+        const val KEY_FROM = "from"
         const val KEY_PROGRESS = "progress"
         const val KEY_TRACK = "track"
         const val KEY_TOTAL = "total"

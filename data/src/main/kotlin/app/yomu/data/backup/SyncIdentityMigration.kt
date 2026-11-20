@@ -14,14 +14,14 @@ import java.io.IOException
  */
 internal object SyncIdentityMigration {
     private fun validate(mapping: Map<String, String>, idValid: (String) -> Boolean) {
-        require(mapping.keys.all { it.length in 4..512 && idValid(it) && it != "h" && it != "n" && it != "b" })
+        require(mapping.keys.all { it.length in 4..512 && idValid(it) && it != "h" && it != "n" && it != "b" && it != "g" })
         require(mapping.values.all(idValid))
         require(mapping.keys.none { it in mapping.values })
         require(mapping.values.toSet().size == mapping.size)
     }
 
     private fun migrateKey(key: String, mapping: Map<String, String>): String {
-        if (key.length < 3 || key[1] != '|' || key[0] !in "hnb") return key
+        if (key.length < 3 || key[1] != '|' || key[0] !in "hnbg") return key
         // Match the entire known legacy identity. A URI can itself contain the '|' character.
         val old = mapping.keys.sortedByDescending { it.length }.firstOrNull { key.startsWith("${key[0]}|$it|") } ?: return key
         return "${key[0]}|${mapping.getValue(old)}|" + key.substring(3 + old.length)
@@ -62,6 +62,9 @@ internal object SyncIdentityMigration {
         highlights = deduped(state.highlights, { SyncKeys.highlight(it.hash, it.createdAt, it.text) }, { it.copy(hash = mapping[it.hash] ?: it.hash) }),
         notes = deduped(state.notes, { SyncKeys.note(it.hash, it.createdAt) }, { it.copy(hash = mapping[it.hash] ?: it.hash) }),
         bookmarks = deduped(state.bookmarks, { SyncKeys.bookmark(it.hash, it.createdAt) }, { it.copy(hash = mapping[it.hash] ?: it.hash) }),
+        glossary = deduped(state.glossary, { SyncKeys.glossary(it.hash, it.normalized, it.kind) }, { entry ->
+            entry.copy(hash = entry.hash?.let { mapping[it] } ?: entry.hash)
+        }),
         deleted = rewriteMap(state.deleted, mapping),
     )
 

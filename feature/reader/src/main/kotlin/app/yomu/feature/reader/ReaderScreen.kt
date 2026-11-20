@@ -184,6 +184,7 @@ fun ReaderScreen(
     onOpenStats: () -> Unit,
     onOpenEditor: ((Long) -> Unit)? = null,
     onOpenPageLayout: ((Long) -> Unit)? = null,
+    onOpenLinked: ((Long) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -208,6 +209,7 @@ fun ReaderScreen(
     val readerText by viewModel.effectiveText.collectAsStateWithLifecycle()
     val imageCanvas by viewModel.imageCanvas.collectAsStateWithLifecycle()
     val mangaSettings by viewModel.mangaSettings.collectAsStateWithLifecycle()
+    val verticalChapterNavigator by viewModel.verticalChapterNavigator.collectAsStateWithLifecycle()
     val pdfSettings by viewModel.pdfSettings.collectAsStateWithLifecycle()
     val perBook by viewModel.perBook.collectAsStateWithLifecycle()
     val wordTapSetting by viewModel.wordTapSetting.collectAsStateWithLifecycle()
@@ -373,6 +375,7 @@ fun ReaderScreen(
                 is ReaderEvent.Message -> launch { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(resources.getString(e.res)) }
                 is ReaderEvent.Error -> launch { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(errorMessage(context, e.error)) }
                 is ReaderEvent.OpenUrl -> Share.openUrl(context, e.url)
+                is ReaderEvent.OpenBook -> onOpenLinked?.invoke(e.id)
                 ReaderEvent.Finished -> showFinished = true
                 ReaderEvent.PageNote -> pageNote = true
                 is ReaderEvent.SavePageAs -> {
@@ -528,14 +531,18 @@ fun ReaderScreen(
                     EpubReaderView(c.controller, onAttached = { viewModel.onWebViewAttached(c.controller) })
                 }
                 is ReaderContent.Pdf -> PdfReaderView(c.controller, viewModel, readerText, landscape)
-                is ReaderContent.Manga -> MangaReaderView(
-                    c.controller,
-                    viewModel,
-                    landscape,
-                    hasPrev,
-                    hasNext,
-                    animationSpeed = common.animationSpeed,
-                )
+                is ReaderContent.Manga -> key(c.controller) {
+                    MangaReaderView(
+                        c.controller,
+                        viewModel,
+                        landscape,
+                        hasPrev,
+                        hasNext,
+                        animationSpeed = common.animationSpeed,
+                        preloadAllowed = viewModel::mayPreload,
+                        verticalChapterNavigator = verticalChapterNavigator,
+                    )
+                }
             }
         }
 
@@ -692,7 +699,7 @@ fun ReaderScreen(
                 value = null
                 if (manga != null) {
                     delay(150)
-                    value = runCatching { manga.file(preview.page - 1) }.getOrNull()
+                    value = runCatching { manga.file(manga.globalOfCurrent(preview.page - 1)) }.getOrNull()
                 }
             }
             SeekPreviewCard(preview, v, Modifier.align(Alignment.Center), thumbnail = thumbnail)
@@ -748,6 +755,14 @@ fun ReaderScreen(
                     if (onOpenEditor != null && viewModel.bookId > 0 && !viewModel.isOnline) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.reader_edit_book)) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) },
                             onClick = { dismiss(); onOpenEditor(viewModel.bookId) })
+                    }
+                    val linkedEdition = viewModel.linkedEditionId.value
+                    if (onOpenLinked != null && linkedEdition != null) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.reader_open_linked)) },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Outlined.MenuBook, null) },
+                            onClick = { dismiss(); onOpenLinked(linkedEdition) },
+                        )
                     }
                 },
             )
@@ -977,11 +992,11 @@ fun ReaderScreen(
                 onDismiss = { sheet = ReaderSheet.NONE },
             ) { index -> PdfPageThumb(c.controller, index) }
             is ReaderContent.Manga -> PagesSheet(
-                count = c.controller.count,
+                count = c.controller.localCount,
                 current = position.page,
                 onPick = { viewModel.goToPage(it + 1); sheet = ReaderSheet.NONE },
                 onDismiss = { sheet = ReaderSheet.NONE },
-            ) { index -> MangaPageThumb(c.controller, index) }
+            ) { index -> MangaPageThumb(c.controller, c.controller.globalOfCurrent(index)) }
             else -> Unit
         }
     }

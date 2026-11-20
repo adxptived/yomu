@@ -193,4 +193,58 @@ class EpubWorkspaceTest {
         ws.fix(issues)
         assertFalse(ws.validate().any { it.code == IssueCode.NO_LANGUAGE })
     }
+
+    @Test
+    fun `volumes are grouped by top level contents`() {
+        assertEquals(3, ws.volumes().size)
+        assertEquals(listOf("One", "Two", "Three"), ws.volumes().map { it.title })
+        ws.volumes().forEach { assertEquals(1, it.chapters.size) }
+
+        // Nesting "Two" under "One" makes them one volume, with "Three" a second one.
+        val entries = ws.toc().toMutableList()
+        val idx = entries.indexOfFirst { it.path == ws.spinePaths[1] }
+        assertTrue(idx >= 0)
+        entries[idx] = entries[idx].copy(level = 1)
+        ws.writeToc(entries)
+        assertEquals(2, ws.volumes().size)
+        assertEquals(2, ws.volumes()[0].chapters.size)
+        assertEquals(1, ws.volumes()[1].chapters.size)
+    }
+
+    @Test
+    fun `split and merge volumes`() {
+        val entries = ws.toc().toMutableList()
+        val idx = entries.indexOfFirst { it.path == ws.spinePaths[1] }
+        entries[idx] = entries[idx].copy(level = 1)
+        ws.writeToc(entries)
+        assertEquals(2, ws.volumes().size)
+
+        val second = ws.spinePaths[1]
+        assertEquals(second, ws.splitVolume(0, 1))
+        assertEquals(3, ws.volumes().size)
+
+        val merged = ws.mergeVolumeWithNext(0)
+        assertNotNull(merged)
+        assertEquals(2, ws.volumes().size)
+        assertTrue(ws.bodyHtml(merged!!).contains("Another fox jumps"))
+        val errors = ws.validate().filter { it.code.error }
+        assertTrue(errors.isEmpty(), "unexpected issues: $errors")
+    }
+
+    @Test
+    fun `volume merge is undoable through history`() {
+        val history = History(root, File(tmp, "volume-history"))
+        val original = ws.readText(ws.spinePaths[0])
+
+        history.change("merge volumes", ws.structureFiles() + ws.documents()) { ws.mergeVolumeWithNext(0) }
+        assertEquals(2, ws.volumes().size)
+        assertFalse(ws.readText(ws.spinePaths[0]) == original)
+
+        history.undo()
+        ws.reload()
+        assertEquals(3, ws.volumes().size)
+        assertEquals(original, ws.readText(ws.spinePaths[0]))
+        val errors = ws.validate().filter { it.code.error }
+        assertTrue(errors.isEmpty(), "unexpected issues: $errors")
+    }
 }

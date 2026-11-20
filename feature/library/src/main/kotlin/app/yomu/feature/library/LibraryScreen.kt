@@ -234,6 +234,7 @@ fun LibraryScreen(
     val types by viewModel.typeFilter.collectAsStateWithLifecycle()
     val showBooks by viewModel.showBooks.collectAsStateWithLifecycle()
     val activeFilters by viewModel.activeFilters.collectAsStateWithLifecycle()
+    val shelves by viewModel.shelves.collectAsStateWithLifecycle()
     val search by viewModel.searchText.collectAsStateWithLifecycle()
     val grid by viewModel.grid.collectAsStateWithLifecycle()
     val columns by viewModel.columns.collectAsStateWithLifecycle()
@@ -268,6 +269,7 @@ fun LibraryScreen(
     }
     var showImport by rememberSaveable { mutableStateOf(false) }
     var showAudioLink by rememberSaveable { mutableStateOf(false) }
+    var showSaveShelf by rememberSaveable { mutableStateOf(false) }
     var showFilters by rememberSaveable { mutableStateOf(false) }
     var showDisplay by rememberSaveable { mutableStateOf(false) }
     var showMenu by rememberSaveable { mutableStateOf(false) }
@@ -447,18 +449,27 @@ fun LibraryScreen(
                             IconButton(onClick = { haptic.tick(); viewModel.selectAll() }) { Icon(Icons.Default.SelectAll, stringResource(CoreR.string.select_all)) }
                         },
                     )
-                    searching -> Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = Dimens.s, vertical = Dimens.xs)) {
-                        SearchField(
-                            query = search,
-                            onQueryChange = viewModel::setSearch,
-                            placeholder = stringResource(R.string.library_search_hint),
-                            modifier = Modifier.weight(1f),
-                            focusRequester = searchFocus,
-                            trailing = {
-                                IconButton(onClick = { searching = false; viewModel.setSearch("") }) {
-                                    Icon(Icons.Default.Close, stringResource(CoreR.string.close))
-                                }
-                            },
+                    searching -> Column(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = Dimens.s, vertical = Dimens.xs)) {
+                        Row(Modifier.fillMaxWidth()) {
+                            SearchField(
+                                query = search,
+                                onQueryChange = viewModel::setSearch,
+                                placeholder = stringResource(R.string.library_search_hint),
+                                modifier = Modifier.weight(1f),
+                                focusRequester = searchFocus,
+                                trailing = {
+                                    IconButton(onClick = { searching = false; viewModel.setSearch("") }) {
+                                        Icon(Icons.Default.Close, stringResource(CoreR.string.close))
+                                    }
+                                },
+                            )
+                        }
+                        Text(
+                            stringResource(R.string.library_search_syntax_hint),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            modifier = Modifier.padding(top = Dimens.xxs, start = Dimens.s),
                         )
                     }
                     else -> LibraryHeader(
@@ -544,6 +555,34 @@ fun LibraryScreen(
                         onDisplay = { showDisplay = true },
                     )
                     if (activeFilters > 0) ActiveFilters(filter, types, viewModel)
+                    if (shelves.isNotEmpty() || activeFilters > 0 || search.isNotBlank()) {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = Dimens.l),
+                            horizontalArrangement = Arrangement.spacedBy(Dimens.xs),
+                        ) {
+                            items(shelves, key = { it.id }) { shelf ->
+                                FilterChip(
+                                    selected = false,
+                                    onClick = { onlineTab = false; viewModel.applyShelf(shelf) },
+                                    label = { Text(shelf.name) },
+                                    trailingIcon = {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            stringResource(R.string.library_shelf_delete),
+                                            modifier = Modifier.size(18.dp).clickable { viewModel.deleteShelf(shelf.id) },
+                                        )
+                                    },
+                                )
+                            }
+                            item(key = "save-shelf") {
+                                FilterChip(
+                                    selected = false,
+                                    onClick = { showSaveShelf = true },
+                                    label = { Text(stringResource(R.string.library_save_shelf)) },
+                                )
+                            }
+                        }
+                    }
                 }
                 if (progress.running) {
                     LinearProgressIndicator(
@@ -781,6 +820,14 @@ fun LibraryScreen(
             label = stringResource(R.string.library_audio_link_hint),
             onConfirm = { viewModel.addAudioLink(it) },
             onDismiss = { showAudioLink = false },
+        )
+    }
+    if (showSaveShelf) {
+        TextInputDialog(
+            title = stringResource(R.string.library_shelf_title),
+            label = stringResource(R.string.library_shelf_name),
+            onConfirm = { viewModel.saveShelf(it); showSaveShelf = false },
+            onDismiss = { showSaveShelf = false },
         )
     }
     // The batch report stays available after a restart: the files that failed are named, and the ones whose cause can

@@ -1,5 +1,6 @@
 package app.yomu.domain.library
 
+import app.yomu.domain.model.ReadingStatus
 import kotlinx.serialization.Serializable
 
 /**
@@ -40,6 +41,8 @@ data class LibraryQuerySpecData(
     val availability: List<String> = emptyList(),
     val read: String = Tri.ANY.name,
     val started: String = Tri.ANY.name,
+    /** Added in version 1.1: the library's statuses, stored by name like the rest. */
+    val statuses: List<String> = emptyList(),
     val downloaded: String = Tri.ANY.name,
     val bookmarked: String = Tri.ANY.name,
     val tracked: String = Tri.ANY.name,
@@ -59,6 +62,7 @@ data class LibraryQuerySpecData(
         availability = availability.mapNotNull { name -> Availability.entries.firstOrNull { it.name == name } }.toSet(),
         read = tri(read, Tri.ANY),
         started = tri(started, Tri.ANY),
+        statuses = statuses.mapNotNull { name -> ReadingStatus.entries.firstOrNull { it.name == name } }.toSet(),
         downloaded = tri(downloaded, Tri.ANY),
         bookmarked = tri(bookmarked, Tri.ANY),
         tracked = tri(tracked, Tri.ANY),
@@ -81,6 +85,7 @@ data class LibraryQuerySpecData(
             availability = spec.availability.map { it.name },
             read = spec.read.name,
             started = spec.started.name,
+            statuses = spec.statuses.map { it.name },
             downloaded = spec.downloaded.name,
             bookmarked = spec.bookmarked.name,
             tracked = spec.tracked.name,

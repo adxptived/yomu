@@ -26,8 +26,18 @@ import app.yomu.data.work.LibraryScanWorker
 import app.yomu.domain.library.BulkAction
 import app.yomu.domain.library.BulkExecutor
 import app.yomu.domain.library.BulkOutcome
+import app.yomu.domain.library.ContentOrigin
+import app.yomu.domain.library.ContentType
 import app.yomu.domain.library.LibraryItemKey
+import app.yomu.domain.library.LibraryQuerySpec
+import app.yomu.domain.library.LibraryQuerySpecData
+import app.yomu.domain.library.LibrarySearchField
+import app.yomu.domain.library.LibrarySearchFields
+import app.yomu.domain.library.LibrarySearchQuery
 import app.yomu.domain.library.LibrarySelection
+import app.yomu.domain.library.LibrarySortKey
+import app.yomu.domain.library.SavedQueryShelf
+import app.yomu.domain.library.matches
 import app.yomu.domain.model.BatchMetadata
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookFormat
@@ -65,6 +75,50 @@ enum class FormatGroup(val formats: Set<BookFormat>) {
     ONLINE(emptySet()),
 }
 
+/** The legacy SQL sort keys and the versioned query's keys, mapped where they mean the same thing. */
+private fun LibrarySort.toSpecKey(): LibrarySortKey = when (this) {
+    LibrarySort.TITLE -> LibrarySortKey.TITLE
+    LibrarySort.AUTHOR -> LibrarySortKey.AUTHOR
+    LibrarySort.ADDED -> LibrarySortKey.ADDED
+    LibrarySort.LAST_READ -> LibrarySortKey.LAST_OPENED
+    LibrarySort.PROGRESS -> LibrarySortKey.PROGRESS
+}
+
+private fun LibrarySortKey.toLibrarySort(): LibrarySort = when (this) {
+    LibrarySortKey.TITLE -> LibrarySort.TITLE
+    LibrarySortKey.AUTHOR -> LibrarySort.AUTHOR
+    LibrarySortKey.ADDED, LibrarySortKey.UPDATED -> LibrarySort.ADDED
+    LibrarySortKey.LAST_OPENED, LibrarySortKey.UNREAD -> LibrarySort.LAST_READ
+    LibrarySortKey.PROGRESS -> LibrarySort.PROGRESS
+}
+
+/** The fields of the spec that the local SQL query understands. */
+private fun LibraryQuerySpec.toFilter(): LibraryFilter = LibraryFilter(
+    formats = types.flatMapTo(HashSet()) { type ->
+        when (type) {
+            ContentType.TEXT -> FormatGroup.BOOKS.formats
+            ContentType.PDF -> FormatGroup.PDF.formats
+            ContentType.MANGA -> FormatGroup.COMICS.formats
+            ContentType.AUDIO -> FormatGroup.AUDIO.formats
+            ContentType.UNKNOWN -> emptySet()
+        }
+    },
+    statuses = statuses,
+    tag = tags.firstOrNull(),
+    language = languages.firstOrNull(),
+    collectionId = collectionId,
+    favoritesOnly = favoritesOnly,
+)
+
+/** The "Type" chips a spec stands for; online titles are an origin, local content types are not. */
+private fun LibraryQuerySpec.toFormatGroups(): Set<FormatGroup> = buildSet {
+    if (ContentType.TEXT in types) add(FormatGroup.BOOKS)
+    if (ContentType.PDF in types) add(FormatGroup.PDF)
+    if (ContentType.MANGA in types) add(FormatGroup.COMICS)
+    if (ContentType.AUDIO in types) add(FormatGroup.AUDIO)
+    if (ContentOrigin.CATALOG in origins) add(FormatGroup.ONLINE)
+}
+
 /** An item of "Continue reading": a book or an online title. */
 sealed interface ContinueItem {
     val time: Long
@@ -96,28 +150,102 @@ internal fun CatalogEntry.readingStatus(): ReadingStatus = when {
     else -> ReadingStatus.FINISHED
 }
 
+/** The text as typed and the tree it parsed to; the two always change together. */
+private data class SearchSnapshot(val raw: String, val query: LibrarySearchQuery)
+
+/** The debounced text and what it parsed to, carried together so a filter never sees a mismatched pair. */
+internal data class LibrarySearchAndSort(
+    val raw: String,
+    val parsed: LibrarySearchQuery,
+    val sort: LibrarySort,
+    val ascending: Boolean,
+)
+
+/** A local book's view for the advanced search expression. */
+internal fun Book.toSearchFields(): LibrarySearchFields = object : LibrarySearchFields {
+    override val searchText: String
+        get() = buildList {
+            add(title)
+            add(authorsText)
+            series?.let { add(it) }
+            description?.let { add(it) }
+            publisher?.let { add(it) }
+            language?.let { add(it) }
+            addAll(tags)
+        }.joinToString(" ")
+
+    override fun text(field: LibrarySearchField): String? = when (field) {
+        LibrarySearchField.TITLE -> title
+        LibrarySearchField.AUTHOR -> authorsText.takeIf { it.isNotBlank() }
+        LibrarySearchField.DESCRIPTION -> description
+        LibrarySearchField.GENRE -> tags.joinToString(" ").takeIf { it.isNotBlank() }
+        LibrarySearchField.LANGUAGE -> language
+        else -> null
+    }
+
+    override fun number(field: LibrarySearchField): Long? = when (field) {
+        LibrarySearchField.ADDED -> addedAt
+        LibrarySearchField.PROGRESS -> (progress * 100).toLong()
+        LibrarySearchField.RATING -> rating.toLong()
+        else -> null
+    }
+}
+
+/** An online title's view: it has artist/source/update fields that a local book does not. */
+internal fun CatalogEntry.toSearchFields(): LibrarySearchFields = object : LibrarySearchFields {
+    override val searchText: String
+        get() = buildList {
+            add(title)
+            author?.let { add(it) }
+            artist?.let { add(it) }
+            description?.let { add(it) }
+            genres.joinToString(" ").takeIf { it.isNotBlank() }?.let { add(it) }
+            add(sourceId.toString())
+        }.joinToString(" ")
+
+    override fun text(field: LibrarySearchField): String? = when (field) {
+        LibrarySearchField.TITLE -> title
+        LibrarySearchField.AUTHOR -> author
+        LibrarySearchField.ARTIST -> artist
+        LibrarySearchField.DESCRIPTION -> description
+        LibrarySearchField.GENRE -> genres.joinToString(" ").takeIf { it.isNotBlank() }
+        LibrarySearchField.SOURCE -> sourceId.toString()
+        else -> null
+    }
+
+    override fun number(field: LibrarySearchField): Long? = when (field) {
+        LibrarySearchField.UNREAD -> unread.toLong()
+        LibrarySearchField.ADDED -> addedAt
+        LibrarySearchField.NEXT_UPDATE -> lastUpdateAt
+        LibrarySearchField.PROGRESS -> if (chapterCount > 0) ((chapterCount - unread).toFloat() / chapterCount * 100).toLong() else null
+        else -> null
+    }
+}
+
 /** Online titles of the current tab that pass the search and filters, in the library's order. */
 internal fun List<CatalogEntry>.forLibrary(
     filter: LibraryFilter,
     types: Set<FormatGroup>,
-    search: String,
+    query: LibrarySearchAndSort,
     tabsOf: Map<Long, Set<Long>>,
-    sort: LibrarySort,
-    ascending: Boolean,
 ): List<CatalogEntry> {
     if (types.isNotEmpty() && FormatGroup.ONLINE !in types) return emptyList()
     // Titles of the sources carry no language: a language filter is about the books.
     if (filter.language != null) return emptyList()
-    val q = search.trim()
+    val q = query.raw.trim()
     val shown = filter { e ->
         (filter.collectionId == null || tabsOf[e.id]?.contains(filter.collectionId) == true) &&
-            (q.isEmpty() || e.title.contains(q, ignoreCase = true) || e.author?.contains(q, ignoreCase = true) == true) &&
+            (if (query.parsed.usesAdvanced) {
+                query.parsed.expression.matches(e.toSearchFields())
+            } else {
+                q.isEmpty() || e.title.contains(q, ignoreCase = true) || e.author?.contains(q, ignoreCase = true) == true
+            }) &&
             (filter.statuses.isEmpty() || e.readingStatus() in filter.statuses) &&
             (filter.tag == null || e.genres.any { it.equals(filter.tag, ignoreCase = true) })
     }
     // The same comparator the local books use: one sort definition for both kinds, with the namespace as the
     // tie-breaker, so a reload cannot swap two titles with equal keys.
-    return LibraryProjection.orderOnline(shown, sort, ascending)
+    return LibraryProjection.orderOnline(shown, query.sort, query.ascending)
 }
 
 /** Share of the known chapters that are read. */
@@ -159,12 +287,78 @@ class LibraryViewModel(
     init {
         // Filters survive restarts; the search text is transient on purpose.
         viewModelScope.launch(ScreenErrors) {
-            filter.value = runCatching { settings.libraryFilter.get() }.getOrDefault(LibraryFilter())
-            types.value = runCatching { settings.libraryTypes.get() }.getOrDefault(emptySet())
-                .mapNotNull { name -> FormatGroup.entries.firstOrNull { it.name == name } }.toSet()
+            val storedSpec = runCatching { settings.libraryQuerySpec.get() }.getOrDefault(LibraryQuerySpecData())
+            if (storedSpec != LibraryQuerySpecData()) {
+                // L05: the versioned spec is the source of truth once it holds something; the old keys are for upgrades.
+                applySpec(storedSpec.toSpec())
+            } else {
+                filter.value = runCatching { settings.libraryFilter.get() }.getOrDefault(LibraryFilter())
+                types.value = runCatching { settings.libraryTypes.get() }.getOrDefault(emptySet())
+                    .mapNotNull { name -> FormatGroup.entries.firstOrNull { it.name == name } }.toSet()
+            }
             launch { filter.collect { settings.libraryFilter.set(it) } }
             launch { types.collect { settings.libraryTypes.set(it.map { group -> group.name }.toSet()) } }
         }
+        // Every change of the query is written as one versioned spec, which is what a smart shelf saves.
+        viewModelScope.launch(ScreenErrors) {
+            combine(search.debounce(200), filter, types, settings.librarySort.flow, settings.libraryAscending.flow) { _, _, _, _, _ ->
+                currentSpec()
+            }.collect { settings.libraryQuerySpec.set(LibraryQuerySpecData.from(it)) }
+        }
+    }
+
+    /** Smart shelves: saved queries that new matching books join automatically. */
+    val shelves: StateFlow<List<SavedQueryShelf>> = settings.libraryShelves.stateIn(viewModelScope)
+
+    fun saveShelf(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch(ScreenErrors) {
+            val shelf = SavedQueryShelf(
+                id = System.currentTimeMillis(),
+                name = trimmed,
+                spec = LibraryQuerySpecData.from(currentSpec()),
+            )
+            settings.libraryShelves.set(settings.libraryShelves.get().filterNot { it.name.equals(trimmed, ignoreCase = true) } + shelf)
+        }
+    }
+
+    fun applyShelf(shelf: SavedQueryShelf) = viewModelScope.launch(ScreenErrors) { applySpec(shelf.spec.toSpec()) }
+
+    fun deleteShelf(id: Long) = viewModelScope.launch(ScreenErrors) {
+        settings.libraryShelves.set(settings.libraryShelves.get().filterNot { it.id == id })
+    }
+
+    /** The filters, types, sort and search as the one query model; also what "save shelf" stores. */
+    fun currentSpec(): LibraryQuerySpec {
+        val groups = types.value
+        val contentTypes = buildSet {
+            if (FormatGroup.BOOKS in groups) add(ContentType.TEXT)
+            if (FormatGroup.PDF in groups) add(ContentType.PDF)
+            if (FormatGroup.COMICS in groups) add(ContentType.MANGA)
+            if (FormatGroup.AUDIO in groups) add(ContentType.AUDIO)
+        }
+        val f = filter.value
+        return LibraryQuerySpec(
+            search = search.value,
+            types = contentTypes,
+            origins = if (FormatGroup.ONLINE in groups) setOf(ContentOrigin.CATALOG) else emptySet(),
+            statuses = f.statuses,
+            favoritesOnly = f.favoritesOnly,
+            tags = setOfNotNull(f.tag),
+            languages = setOfNotNull(f.language),
+            collectionId = f.collectionId,
+            sort = sort.value.toSpecKey(),
+            ascending = ascending.value,
+        )
+    }
+
+    private suspend fun applySpec(spec: LibraryQuerySpec) {
+        search.value = spec.search
+        filter.value = spec.toFilter()
+        types.value = spec.toFormatGroups()
+        settings.librarySort.set(spec.sort.toLibrarySort())
+        settings.libraryAscending.set(spec.ascending)
     }
 
     val events: Flow<LibraryEvent> = _events.receiveAsFlow()
@@ -194,13 +388,24 @@ class LibraryViewModel(
     val importProgress = importer.progress
     val downloadSummary: StateFlow<DownloadSummary> = downloads.summary.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DownloadSummary())
 
+    private val parsedSearch: StateFlow<SearchSnapshot> = search.debounce(200)
+        .map { SearchSnapshot(it, LibrarySearchQuery.parse(it)) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchSnapshot("", LibrarySearchQuery.parse("")))
+    private val repositorySearch: Flow<String> = parsedSearch.map { snapshot ->
+        // The SQL LIKE/FTS path would read operators as literals; advanced syntax is evaluated on the loaded items.
+        if (snapshot.query.usesAdvanced) "" else snapshot.raw
+    }
+
     private val query: Flow<LibraryQuery> =
-        combine(search.debounce(200), settings.librarySort.flow, settings.libraryAscending.flow, filter) { s, so, asc, f ->
+        combine(repositorySearch, settings.librarySort.flow, settings.libraryAscending.flow, filter) { s, so, asc, f ->
             LibraryQuery(s, so, asc, f)
         }
 
     val paged: Flow<PagingData<Book>> = query.flatMapLatest { books.pagedBooks(it) }.cachedIn(viewModelScope)
         .combine(pendingDelete) { data, pending -> if (pending.isEmpty()) data else data.filter { it.id !in pending } }
+        .combine(parsedSearch) { data, snapshot ->
+            if (snapshot.query.usesAdvanced) data.filter { snapshot.query.expression.matches(it.toSearchFields()) } else data
+        }
 
     val continueReading = books.observeContinueReading(12)
         .combine(pendingDelete) { l, p -> l.filter { it.id !in p } }
@@ -234,8 +439,10 @@ class LibraryViewModel(
     /** Online titles of the current tab that pass the search and the filters. */
     val onlineShown: StateFlow<List<CatalogEntry>> = combine(
         onlineAll, onlineTabs, filter, types,
-        combine(search.debounce(200), settings.librarySort.flow, settings.libraryAscending.flow) { q, so, asc -> Triple(q, so, asc) },
-    ) { list, tabsOf, f, t, (q, so, asc) -> list.forLibrary(f, t, q, tabsOf, so, asc) }
+        combine(parsedSearch, settings.librarySort.flow, settings.libraryAscending.flow) { snapshot, so, asc ->
+            LibrarySearchAndSort(snapshot.raw, snapshot.query, so, asc)
+        },
+    ) { list, tabsOf, f, t, q -> list.forLibrary(f, t, q, tabsOf) }
         // Filtering and ordering are a pass over the user's online library: it runs on a worker, never on the thread
         // that composes the grid.
         .flowOn(Dispatchers.Default)
@@ -321,10 +528,13 @@ class LibraryViewModel(
 
     fun selectAll() = viewModelScope.launch(ScreenErrors) {
         val q = query.first()
+        val parsed = parsedSearch.value.query
         // One predicate for "select all", the page and the count: the ids come from the same query the grid reads.
         val pending = pendingDelete.value
         val (ids, snapshot) = kotlinx.coroutines.withContext(Dispatchers.IO) {
-            books.observeBooks(q).first().map { it.id }.filter { it !in pending } to q.toString()
+            books.observeBooks(q).first()
+                .filter { !parsed.usesAdvanced || parsed.expression.matches(it.toSearchFields()) }
+                .map { it.id }.filter { it !in pending } to q.toString()
         }
         _selection.value = ids.toSet()
         // "Select all" is a snapshot of the query, not of the loaded tiles: the same set feeds the typed state.

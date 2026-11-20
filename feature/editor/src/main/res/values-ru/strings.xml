@@ -339,4 +339,24 @@
     <string name="editor_typeset_discard_text">Распознанные блоки и ваши правки этой страницы будут потеряны.</string>
     <string name="editor_step_typeset">Перевод страницы</string>
     <string name="editor_typeset_done">Вписано страниц: %1$d, блоков текста: %2$d</string>
+
+    <!-- N05: тома, кисть очистки, длинные операции -->
+    <string name="editor_volume_merge">Объединить со следующим томом</string>
+    <string name="editor_volume_split">Начать новый том здесь</string>
+    <string name="editor_volume_done">Тома объединены</string>
+    <string name="editor_step_volume_merge">Объединение томов</string>
+    <string name="editor_step_volume_split">Разделение тома</string>
+    <string name="editor_brush_title">Кисть очистки (поэтапно)</string>
+    <string name="editor_brush_hint">Изменения остаются в промежуточной копии и не записываются, пока вы не примените слой. Файл книги меняется только при сохранении.</string>
+    <string name="editor_brush_stage">Подготовить кисть</string>
+    <string name="editor_brush_clean">Очистить промежуточный текст</string>
+    <string name="editor_brush_undo">Отменить мазок</string>
+    <string name="editor_brush_commit">Применить слой</string>
+    <string name="editor_brush_discard">Отбросить слой</string>
+    <string name="editor_brush_counts">Подготовлено: %1$d · изменено: %2$d</string>
+    <string name="editor_brush_committed">Применено изменений: %1$d</string>
+    <string name="editor_step_brush">Кисть очистки</string>
+    <string name="editor_task_save">Сохранение книги</string>
+    <string name="editor_task_cancel">Отмена</string>
+    <string name="editor_task_cancelled">Сохранение отменено — книга не изменена</string>
 </resources>

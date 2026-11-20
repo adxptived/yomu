@@ -19,10 +19,10 @@ No accounts, no ads, no telemetry. Your library stays on your device.
 ### Reading
 
 - All the formats you are likely to have: EPUB, PDF, FB2, MOBI/AZW3, DOCX, TXT, HTML, CBZ/CBR/CB7 comics and plain image folders.
-- A comfortable library: covers, metadata, custom shelves, tags, filters, sorting, "Continue reading" and bulk actions. Tick books with checkboxes, rate them with five stars, long-press one for a circular action wheel, and hide or move the "From the catalog" row. Point the app at a folder and it keeps itself up to date.
-- Text reading done properly: your own fonts, sizes and margins, light/dark/sepia/AMOLED themes, pages, chapter scroll or a **long strip** that flows into the next chapter, read-aloud with highlighting and a sleep timer, in-book search and table of contents.
-- Manga and comics: right-to-left, vertical and webtoon modes, dual pages, zoom, image filters. PDFs: night mode, margin crop, passwords, and highlights that are saved into the PDF file itself so other apps see them too.
-- Audiobooks and podcasts: a full-screen player built around the cover, chapters, bookmarks with notes, a sleep timer, speed and skip settings, offline downloads from the catalog, YouTube, RSS or a single audio link.
+- A comfortable library: covers, metadata, custom shelves, tags, filters, sorting, "Continue reading" and bulk actions. Tick books with checkboxes, rate them with five stars, long-press one for a circular action wheel, and hide or move the "From the catalog" row. Point the app at a folder and it keeps itself up to date. **Smart shelves** save the current filters as a shelf that new matching books join automatically.
+- Text reading done properly: your own fonts, sizes and margins, light/dark/sepia/AMOLED themes, pages, chapter scroll or a **long strip** that flows into the next chapter, read-aloud with highlighting, a voice sample and a sleep timer, in-book search and table of contents.
+- Manga and comics: right-to-left, vertical and webtoon modes, dual pages, zoom, image filters. Online chapters open as one window of the current chapter and its neighbours, so an ordinary chapter boundary no longer reloads the reader. PDFs: night mode, margin crop with a preview, passwords, and highlights that are saved into the PDF file itself so other apps see them too.
+- Audiobooks and podcasts: a full-screen player built around the cover, chapters, bookmarks with notes, a sleep timer, speed and skip settings, **rewind on resume (off/adaptive/fixed)**, offline downloads with a whole-book/next-tracks/selected choice, **ReplayGain levelling without clipping**, metadata corrections, linked text editions and a home-screen transport widget. Sources: catalog, YouTube, RSS or a single audio link.
 - DOCX gets a bonus **page layout** mode that shows the document as it will be printed: A4 pages, headers and footers, footnotes and tables.
 - A profile with your reading time, streaks, achievements and detailed statistics — by day, hour and weekday.
 
@@ -58,8 +58,9 @@ No accounts, no ads, no telemetry. Your library stays on your device.
 
 ### Sync between devices
 
-- Backups (manual and scheduled) plus sync through your own WebDAV server, a private GitHub repository or a shared folder: progress, highlights, notes, bookmarks, words and the online library — and, optionally, the book files themselves.
+- Backups (manual and scheduled) with category manifests, an explicit merge or replace choice and a journaled restore that can be undone; sync through your own WebDAV server, a private GitHub repository or a shared folder: progress, highlights, notes, bookmarks, words, the online library, per-book reader/audio settings, ratings, favourites and podcast subscriptions — and, optionally, the book files themselves. Unknown sync categories from a newer client are carried through untouched.
 - Conflicts are resolved by you, in the app: changed files, edited image folders and book deletions appear on a dedicated "Sync conflicts" screen with clear actions. Changed copies are never overwritten or deleted silently.
+- Source migration starts with a preview: every chapter match has a confidence, ambiguous and missing chapters are listed, and page numbers are transferred only within the same release.
 
 | Appearance | Navigation | Updates | Library filters |
 |---|---|---|---|

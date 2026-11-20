@@ -39,6 +39,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import app.yomu.core.common.ScreenErrors
+import app.yomu.core.common.TimeFormat
+import app.yomu.core.datastore.AppSettings
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.theme.Dimens
@@ -56,7 +58,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.text.DateFormat
+import org.koin.compose.koinInject
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -144,6 +146,8 @@ fun UpcomingScreen(viewModel: UpcomingViewModel, onBack: () -> Unit, onOpenTitle
     val filter by viewModel.shelfFilter.collectAsStateWithLifecycle()
     val checking by viewModel.checking.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
+    val settings: AppSettings = koinInject()
+    val timeFormat by settings.timeFormat.flow.collectAsStateWithLifecycle(initialValue = settings.timeFormat.default)
     val dateFormat = rememberFormat()
     Scaffold(
         contentWindowInsets = topLevelContentInsets(),
@@ -186,7 +190,7 @@ fun UpcomingScreen(viewModel: UpcomingViewModel, onBack: () -> Unit, onOpenTitle
                         Text(
                             stringResource(
                                 R.string.upcoming_last_run,
-                                DateFormat.getTimeInstance(DateFormat.SHORT).format(java.util.Date(report.finishedAt)),
+                                TimeFormat.format(context, timeFormat, report.finishedAt),
                                 report.checked,
                                 report.newChapters,
                                 report.failed,
@@ -280,7 +284,7 @@ fun UpcomingScreen(viewModel: UpcomingViewModel, onBack: () -> Unit, onOpenTitle
                                     }
                                 }
                                 items(day.checks, key = { "t-${it.titleId}-${it.nextCheckAt}" }) { check ->
-                                    CheckRow(check, dateFormat, onClick = { onOpenTitle(check.titleId) })
+                                    CheckRow(check, timeFormat, onClick = { onOpenTitle(check.titleId) })
                                     HorizontalDivider()
                                 }
                             }
@@ -293,7 +297,8 @@ fun UpcomingScreen(viewModel: UpcomingViewModel, onBack: () -> Unit, onOpenTitle
 }
 
 @Composable
-private fun CheckRow(check: PlannedCheck, format: DateTimeFormatter, onClick: () -> Unit) {
+private fun CheckRow(check: PlannedCheck, timeFormat: String, onClick: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = Dimens.l, vertical = Dimens.s),
         verticalAlignment = Alignment.CenterVertically,
@@ -306,8 +311,7 @@ private fun CheckRow(check: PlannedCheck, format: DateTimeFormatter, onClick: ()
             }
         }
         Text(
-            java.time.Instant.ofEpochMilli(check.nextCheckAt).atZone(java.time.ZoneId.systemDefault()).toLocalTime()
-                .format(DateTimeFormatter.ofPattern("HH:mm")),
+            TimeFormat.format(context, timeFormat, check.nextCheckAt),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

@@ -816,6 +816,12 @@ class GlobalSearchViewModel(
     val content = MutableStateFlow<SourceContent?>(null)
     private val submitted = MutableStateFlow(initialQuery.orEmpty())
     val migrating = MutableStateFlow(false)
+
+    /** A source migration waiting for the reader's confirmation; null when no preview is open. */
+    val migrationPlan = MutableStateFlow<app.yomu.data.catalog.MigrationPlan?>(null)
+
+    /** What the preview will carry; the user can drop a category before applying. */
+    val migrationCategories = MutableStateFlow(app.yomu.data.catalog.MigrationCategory.entries.toSet())
     private val _events = Channel<CatalogEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
 
@@ -866,14 +872,45 @@ class GlobalSearchViewModel(
 
     fun open(sourceId: Long, item: SItem) = viewModelScope.launch(ScreenErrors) {
         val from = migrateFrom
-        if (from != null) migrating.value = true
-        runCatchingApp { if (from != null) catalog.migrate(from, sourceId, item) else catalog.upsert(sourceId, item) }
-            .onSuccess {
-                if (from != null) _events.send(CatalogEvent.Message(R.string.migrate_done))
-                _events.send(CatalogEvent.OpenTitle(it))
-            }
+        if (from != null) {
+            // Migration now starts with a preview: the source title is read, nothing is written until the user applies.
+            migrating.value = true
+            runCatchingApp { catalog.planMigration(from, sourceId, item, migrationCategories.value) }
+                .onSuccess { migrationPlan.value = it }
+                .onFailure { _events.send(CatalogEvent.Failure(it)) }
+            migrating.value = false
+            return@launch
+        }
+        runCatchingApp { catalog.upsert(sourceId, item) }
+            .onSuccess { _events.send(CatalogEvent.OpenTitle(it)) }
             .onFailure { _events.send(CatalogEvent.Failure(it)) }
-        migrating.value = false
+    }
+
+    fun toggleMigrationCategory(category: app.yomu.data.catalog.MigrationCategory) {
+        migrationCategories.value = if (category in migrationCategories.value) {
+            migrationCategories.value - category
+        } else {
+            migrationCategories.value + category
+        }
+    }
+
+    fun applyMigration() {
+        val plan = migrationPlan.value ?: return
+        viewModelScope.launch(ScreenErrors) {
+            migrating.value = true
+            runCatchingApp { catalog.applyMigration(plan, migrationCategories.value) }
+                .onSuccess {
+                    migrationPlan.value = null
+                    _events.send(CatalogEvent.Message(R.string.migrate_done))
+                    _events.send(CatalogEvent.OpenTitle(it.targetEntryId))
+                }
+                .onFailure { _events.send(CatalogEvent.Failure(it)) }
+            migrating.value = false
+        }
+    }
+
+    fun cancelMigration() {
+        migrationPlan.value = null
     }
 }
 

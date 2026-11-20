@@ -114,16 +114,28 @@ class WordsViewModel(private val context: Context, private val words: WordReposi
     val tag = MutableStateFlow<String?>(null)
     val level = MutableStateFlow(LevelFilter.ALL)
     val sort = MutableStateFlow(WordSort.DATE)
+
+    /** N04: words of one book only; null shows every saved word. */
+    val bookFilter = MutableStateFlow<Long?>(null)
     val selection = MutableStateFlow<Set<Long>>(emptySet())
     val tags: StateFlow<List<String>> = words.observeTags().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Books that have saved words, for the "by book" filter. */
+    val booksWithWords: StateFlow<List<Pair<Long, String>>> = words.observeWords("", null, null, null)
+        .map { list ->
+            list.mapNotNull { w -> w.bookId?.let { id -> id to (w.bookTitle ?: "#$id") } }.distinctBy { it.first }.sortedBy { it.second.lowercase() }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private data class WordFilter(val query: String, val tag: String?, val level: LevelFilter, val bookId: Long?)
     private val events = Channel<WordsEvent>(Channel.BUFFERED)
     val eventFlow = events.receiveAsFlow()
 
     private val retry = MutableStateFlow(0)
 
     val items: StateFlow<UiState<List<Word>>> = retry.flatMapLatest {
-        combine(query.debounce(200), tag, level) { q, t, l -> Triple(q, t, l) }
-            .flatMapLatest { (q, t, l) -> words.observeWords(q, null, t, l.max).map { list -> list.filter { it.level >= l.min } } }
+        combine(query.debounce(200), tag, level, bookFilter) { q, t, l, b -> WordFilter(q, t, l, b) }
+            .flatMapLatest { (q, t, l, b) -> words.observeWords(q, b, t, l.max).map { list -> list.filter { it.level >= l.min } } }
             .combine(sort) { list, s ->
                 val sorted = when (s) {
                     WordSort.DATE -> list.sortedByDescending { it.createdAt }

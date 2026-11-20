@@ -34,6 +34,7 @@ import app.yomu.core.datastore.AppSettings
 import app.yomu.core.network.NetworkClients
 import app.yomu.data.audio.AudiobookStore
 import app.yomu.data.audio.YouTubeClient
+import app.yomu.domain.audio.AudioGain
 import app.yomu.domain.model.AudioNavEntry
 import app.yomu.domain.model.AudioPositions
 import app.yomu.domain.model.AudioTrack
@@ -72,6 +73,10 @@ fun interface AudioSessionActivity {
  * Plays audiobooks in the background with a media notification, lock-screen, headset and Bluetooth controls. The
  * service owns the playlist of the book: it loads tracks, resolves YouTube streams, restores and saves the position,
  * records listening time and runs the sleep timer.
+ *
+ * Android Auto (A03d) needs a browse tree, which only a `MediaLibraryService` exposes. The superclass is not swapped
+ * without a head unit to exercise the browse/auth protocol; this session is already the single command owner such a
+ * tree would call into.
  */
 @OptIn(UnstableApi::class)
 class AudioPlaybackService : MediaSessionService() {
@@ -91,6 +96,12 @@ class AudioPlaybackService : MediaSessionService() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var player: ExoPlayer
+
+    /**
+     * The player the session exposes. Every manual seek (screen, notification, headset, Bluetooth, car kit) goes
+     * through it, so the skip semantics and the seek journal have one owner inside the service.
+     */
+    private lateinit var seeking: ForwardingPlayer
     private var session: MediaSession? = null
 
     private var book: Book? = null
@@ -107,6 +118,12 @@ class AudioPlaybackService : MediaSessionService() {
     private var pausedAt = 0L
     private var skipSilence = false
     private var settings = AudioSettings()
+
+    /** ReplayGain correction of the current track; 1 when gain is off or the track declares none. */
+    private var gainFactor = 1f
+
+    /** Volume left by the sleep fade, kept apart so a track change does not undo it. */
+    private var sleepVolume = 1f
     private val historyStore by lazy { AudioHistoryStore(this) }
 
     /** The last manual jumps of the open book; published to the player screen and saved to a file per book. */
@@ -114,6 +131,7 @@ class AudioPlaybackService : MediaSessionService() {
 
     /** Why the next recorded seek happened; set around the skip commands. */
     private var seekReason = AudioHistory.SEEK
+    private var lastWidgetPublish = 0L
     private val retriedAt = mutableMapOf<Int, Long>()
     private val expiresAt = mutableMapOf<Int, Long>()
     private val resolving = mutableSetOf<Int>()
@@ -156,7 +174,7 @@ class AudioPlaybackService : MediaSessionService() {
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true).build()
         player.addListener(listener)
         // An ExoPlayer cannot change its seek increments once built; the skip intervals are per book.
-        val seeking = object : ForwardingPlayer(player) {
+        seeking = object : ForwardingPlayer(player) {
             override fun getSeekBackIncrement() = settings.skipBackSec * 1000L
             override fun getSeekForwardIncrement() = settings.skipForwardSec * 1000L
 
@@ -244,7 +262,26 @@ class AudioPlaybackService : MediaSessionService() {
             release()
         }
         session = null
+        AudioWidgetContract.clear(this)
+        sendBroadcast(AudioWidgetContract.updateIntent(this))
         super.onDestroy()
+    }
+
+    /**
+     * Widget buttons arrive as explicit service intents. They act on the loaded player only: a tap after a reboot
+     * starts the service, finds no book and plays nothing.
+     */
+    override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
+        if (::player.isInitialized) {
+            when (intent?.action) {
+                AudioWidgetContract.ACTION_TOGGLE -> if (player.mediaItemCount > 0) {
+                    if (player.playWhenReady) player.pause() else player.play()
+                }
+                AudioWidgetContract.ACTION_BACK -> if (::seeking.isInitialized) seeking.seekBack()
+                AudioWidgetContract.ACTION_FORWARD -> if (::seeking.isInitialized) seeking.seekForward()
+            }
+        }
+        return super.onStartCommand(intent, flags, startId)
     }
 
     // ---------------------------------------------------------------- loading
@@ -267,10 +304,13 @@ class AudioPlaybackService : MediaSessionService() {
                 val b = withContext(Dispatchers.IO) { books.getBook(bookId) } ?: error("Book $bookId not found")
                 val list = store.tracks(b).ifEmpty { throw app.yomu.core.common.AppError.FileMissing(b.uri) }
                 val saved = withContext(Dispatchers.IO) { books.getProgress(bookId) }
+                // The rewind setting belongs to the book and must be known before the restored position is computed.
+                settings = AudioSettings.of(b.readerSettingsJson)
                 val start = saved?.chapter?.coerceIn(0, list.lastIndex) ?: 0
                 // Coming back after a while: repeat the last seconds heard, like after a pause.
-                val position = ((saved?.let(AudioPositions::positionMs) ?: 0L) - (b.lastReadAt?.let { rewindAfter(System.currentTimeMillis() - it) } ?: 0L))
-                    .coerceAtLeast(0)
+                val pausedMs = b.lastReadAt?.let { System.currentTimeMillis() - it } ?: 0
+                val position = ((saved?.let(AudioPositions::positionMs) ?: 0L) -
+                    rewindAfter(pausedMs, settings.rewindMode, settings.rewindSeconds)).coerceAtLeast(0)
                 book = b
                 tracks = list
                 nav = AudioPositions.navigation(list)
@@ -295,11 +335,11 @@ class AudioPlaybackService : MediaSessionService() {
                 first?.let { accept(start, it) }
                 val items = list.mapIndexed { i, t -> item(b, i, t, if (i == start) first else null) }
                 player.setMediaItems(items, start, position)
-                settings = AudioSettings.of(b.readerSettingsJson)
                 session?.setMediaButtonPreferences(skipButtons())
                 player.setPlaybackParameters(PlaybackParameters(settings.speed))
                 skipSilence = settings.skipSilence
                 player.skipSilenceEnabled = skipSilence
+                applyGain()
                 player.prepare()
                 player.playWhenReady = play
                 if (b.status == ReadingStatus.NEW && !incognito) withContext(Dispatchers.IO) { books.setStatus(listOf(b.id), ReadingStatus.READING) }
@@ -352,11 +392,21 @@ class AudioPlaybackService : MediaSessionService() {
             .setTotalTrackCount(tracks.size.takeIf { it > 0 })
             .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK_CHAPTER)
         return if (IncognitoPolicy.persists(PersistenceEvent.MEDIA_METADATA, incognito)) {
+            val overrides = settings.metadata
+            val narrator = overrides.narrator?.takeIf { it.isNotBlank() }
+            val artist = narrator ?: b.authorsText.ifBlank { null }
             builder.setTitle(t.title)
-                .setArtist(b.authorsText.ifBlank { null })
+                .setArtist(artist)
+                .setAlbumArtist(artist)
                 .setAlbumTitle(b.title)
                 .setArtworkUri(b.coverPath?.let { Uri.fromFile(File(it)) })
-                .build()
+            // A series and a description the reader corrected are what a car kit and a lock screen should show;
+            // the language stays in the book's settings (Media3 has no metadata field for it).
+            overrides.series?.takeIf { it.isNotBlank() }?.let { builder.setGenre(it) }
+            overrides.description?.takeIf { it.isNotBlank() }?.let { builder.setDescription(it.take(MAX_METADATA_DESCRIPTION)) }
+            // Only a completely known book gets a total duration: a partial sum would understate it.
+            if (tracks.isNotEmpty() && durations.size == tracks.size) builder.setDurationMs(durations.values.sum())
+            builder.build()
         } else {
             builder.setTitle(getString(app.yomu.data.R.string.notif_private_title))
                 .setArtist(getString(app.yomu.data.R.string.notif_private_text))
@@ -506,6 +556,7 @@ class AudioPlaybackService : MediaSessionService() {
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             savePosition(blocking = false)
+            applyGain()
             resolveAhead()
         }
 
@@ -517,8 +568,14 @@ class AudioPlaybackService : MediaSessionService() {
             val paused = pausedAt
             pausedAt = 0
             if (paused > 0) {
-                val rewind = rewindAfter(System.currentTimeMillis() - paused)
-                if (rewind > 0) player.seekTo(player.currentMediaItemIndex, (player.currentPosition - rewind).coerceAtLeast(0))
+                val rewind = rewindAfter(System.currentTimeMillis() - paused, settings.rewindMode, settings.rewindSeconds)
+                if (rewind > 0) {
+                    // The automatic step goes through the session player like any other seek: it is journaled, and a
+                    // sleep timer that was cancelled never rewinds because it does not resume playback.
+                    seekReason = AudioHistory.RETURN
+                    seeking.seekTo(player.currentMediaItemIndex, (player.currentPosition - rewind).coerceAtLeast(0))
+                    seekReason = AudioHistory.SEEK
+                }
             }
             // Addresses expire after a few hours: a book paused overnight asks for a fresh one before it plays.
             resolveAhead()
@@ -608,11 +665,23 @@ class AudioPlaybackService : MediaSessionService() {
         CoroutineScope(Dispatchers.IO).launch { runCatching { stats.recordSession(b.id, since, duration, 0, 0) } }
     }
 
+    /** Applies the track's ReplayGain (only when the reader turned it on) over the current sleep-fade volume. */
+    private fun applyGain() {
+        val track = tracks.getOrNull(player.currentMediaItemIndex)
+        gainFactor = if (!settings.gainEnabled || track == null) {
+            1f
+        } else {
+            runCatching { store.gain(track) }.getOrNull()?.let { AudioGain.factor(it.gainDb, it.peak) } ?: 1f
+        }
+        player.volume = (gainFactor * sleepVolume).coerceIn(0f, 1f)
+    }
+
     // ---------------------------------------------------------------- sleep timer
 
     private fun sleep(minutes: Int) {
         sleepJob?.cancel()
-        player.volume = 1f
+        sleepVolume = 1f
+        player.volume = gainFactor
         sleepAt = 0
         sleepChapter = false
         when {
@@ -623,11 +692,13 @@ class AudioPlaybackService : MediaSessionService() {
                     // Fade out instead of cutting off mid-sentence.
                     val steps = 20
                     for (i in 1..steps) {
-                        player.volume = 1f - i.toFloat() / steps
+                        sleepVolume = 1f - i.toFloat() / steps
+                        player.volume = sleepVolume * gainFactor
                         delay(SLEEP_FADE_MS / steps)
                     }
                     player.pause()
-                    player.volume = 1f
+                    sleepVolume = 1f
+                    player.volume = gainFactor
                     sleepAt = 0
                     publish()
                 }
@@ -664,6 +735,32 @@ class AudioPlaybackService : MediaSessionService() {
                 error?.let { putString(KEY_ERROR, it) }
             },
         )
+        publishWidget()
+    }
+
+    /** Keeps the transport widget current without redrawing it on every position tick. */
+    private fun publishWidget() {
+        val now = System.currentTimeMillis()
+        if (now - lastWidgetPublish < WIDGET_EVERY_MS) return
+        lastWidgetPublish = now
+        val b = book
+        if (b == null || tracks.isEmpty()) {
+            AudioWidgetContract.clear(this)
+        } else {
+            val index = player.currentMediaItemIndex
+            AudioWidgetContract.save(
+                this,
+                AudioWidgetState(
+                    bookId = b.id,
+                    bookTitle = b.title,
+                    trackTitle = tracks.getOrNull(index)?.title.orEmpty(),
+                    playing = player.playWhenReady,
+                    positionMs = player.currentPosition.coerceAtLeast(0),
+                    durationMs = player.duration.takeIf { it > 0 } ?: 0,
+                ),
+            )
+        }
+        sendBroadcast(AudioWidgetContract.updateIntent(this))
     }
 
     // ---------------------------------------------------------------- session
@@ -677,6 +774,10 @@ class AudioPlaybackService : MediaSessionService() {
             if (own) {
                 builder.add(SessionCommand(CMD_LOAD, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SLEEP, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_SKIP, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_REWIND, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_METADATA, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_GAIN, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SKIP_SILENCE, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SKIP_INTERVALS, Bundle.EMPTY))
                     .add(SessionCommand(CMD_BOOKMARKS, Bundle.EMPTY))
@@ -691,6 +792,39 @@ class AudioPlaybackService : MediaSessionService() {
             when (customCommand.customAction) {
                 CMD_LOAD -> load(args.getLong(KEY_BOOK, -1), args.getBoolean(KEY_PLAY, false))
                 CMD_SLEEP -> sleep(args.getInt(KEY_MINUTES, 0))
+                // The screen's skip buttons use the same ForwardingPlayer the notification and a headset reach.
+                CMD_SKIP -> if (args.getBoolean(KEY_FORWARD, false)) seeking.seekForward() else seeking.seekBack()
+                CMD_REWIND -> {
+                    val mode = args.getString(KEY_REWIND_MODE)
+                        ?.let { name -> RewindMode.entries.firstOrNull { it.name.equals(name, ignoreCase = true) } }
+                        ?: settings.rewindMode
+                    settings = settings.copy(
+                        rewindMode = mode,
+                        rewindSeconds = args.getInt(KEY_REWIND_SECONDS, settings.rewindSeconds)
+                            .coerceIn(AudioSettings.REWIND_MIN, AudioSettings.REWIND_MAX),
+                    )
+                    saveSettings()
+                }
+                CMD_METADATA -> {
+                    settings = settings.copy(
+                        metadata = AudioMetadata(
+                            narrator = args.getString(KEY_NARRATOR)?.trim()?.takeIf { it.isNotEmpty() },
+                            series = args.getString(KEY_SERIES)?.trim()?.takeIf { it.isNotEmpty() },
+                            language = args.getString(KEY_LANGUAGE)?.trim()?.takeIf { it.isNotEmpty() },
+                            description = args.getString(KEY_DESCRIPTION)?.trim()?.takeIf { it.isNotEmpty() },
+                        ),
+                    )
+                    saveSettings()
+                    // The shade, the lock screen and a car kit show the corrected card right away.
+                    applyMetadata()
+                    publish()
+                }
+                CMD_GAIN -> {
+                    settings = settings.copy(gainEnabled = args.getBoolean(KEY_ENABLED, false))
+                    applyGain()
+                    saveSettings()
+                    publish()
+                }
                 CMD_SKIP_SILENCE -> {
                     skipSilence = args.getBoolean(KEY_ENABLED, false)
                     player.skipSilenceEnabled = skipSilence
@@ -719,6 +853,10 @@ class AudioPlaybackService : MediaSessionService() {
     companion object {
         const val CMD_LOAD = "app.yomu.audio.LOAD"
         const val CMD_SLEEP = "app.yomu.audio.SLEEP"
+        const val CMD_SKIP = "app.yomu.audio.SKIP"
+        const val CMD_REWIND = "app.yomu.audio.REWIND"
+        const val CMD_METADATA = "app.yomu.audio.METADATA"
+        const val CMD_GAIN = "app.yomu.audio.GAIN"
         const val CMD_SKIP_SILENCE = "app.yomu.audio.SKIP_SILENCE"
         const val CMD_SKIP_INTERVALS = "app.yomu.audio.SKIP_INTERVALS"
         const val CMD_BOOKMARKS = "app.yomu.audio.BOOKMARKS"
@@ -726,6 +864,13 @@ class AudioPlaybackService : MediaSessionService() {
         const val KEY_HISTORY = "history"
         const val KEY_SKIP_BACK = "skipBack"
         const val KEY_SKIP_FORWARD = "skipForward"
+        const val KEY_FORWARD = "forward"
+        const val KEY_REWIND_MODE = "rewindMode"
+        const val KEY_REWIND_SECONDS = "rewindSeconds"
+        const val KEY_NARRATOR = "narrator"
+        const val KEY_SERIES = "series"
+        const val KEY_LANGUAGE = "language"
+        const val KEY_DESCRIPTION = "description"
         const val KEY_BOOKMARKS = "bookmarks"
         const val KEY_ENABLED = "enabled"
         const val KEY_SKIP_SILENCE = "skipSilence"
@@ -742,6 +887,8 @@ class AudioPlaybackService : MediaSessionService() {
         /** How many recent jumps travel in the session extras (the sheet reads the newest first). */
         const val HISTORY_IN_EXTRAS = 30
         private const val MIN_SESSION_MS = 15_000L
+        private const val MAX_METADATA_DESCRIPTION = 4000
+        private const val WIDGET_EVERY_MS = 2_000L
         private const val SLEEP_FADE_MS = 20_000L
         private const val RETRY_WINDOW_MS = 60_000L
         private const val EXPIRY_MARGIN_MS = 5 * 60_000L
@@ -758,14 +905,31 @@ class AudioPlaybackService : MediaSessionService() {
         /** Wait before network retry number [attempt] (from 0): 2, 4, 8, 16, 32 s, then a minute. */
         fun networkBackoff(attempt: Int): Long = (2_000L shl attempt.coerceIn(0, 5)).coerceAtMost(60_000L)
 
-        /** How far to step back when playback resumes after [pausedMs]: nothing for short pauses, up to 30 s after a day. */
-        fun rewindAfter(pausedMs: Long): Long = when {
-            pausedMs < 60_000L -> 0
-            pausedMs < 10 * 60_000L -> 3_000
-            pausedMs < 60 * 60_000L -> 10_000
-            pausedMs < 24 * 60 * 60_000L -> 20_000
-            else -> 30_000
+        /**
+         * How far to step back when playback resumes after [pausedMs]. Adaptive repeats the last seconds heard; a
+         * custom mode always steps the chosen number of seconds; off never moves. A blip shorter than
+         * [PAUSE_BLIP_MS] (a focus loss, an incoming notification) does not count as a pause.
+         */
+        fun rewindAfter(
+            pausedMs: Long,
+            mode: RewindMode = RewindMode.ADAPTIVE,
+            customSeconds: Int = AudioSettings.DEFAULT_REWIND_SECONDS,
+        ): Long {
+            if (pausedMs < PAUSE_BLIP_MS) return 0
+            return when (mode) {
+                RewindMode.OFF -> 0
+                RewindMode.CUSTOM -> customSeconds.coerceIn(AudioSettings.REWIND_MIN, AudioSettings.REWIND_MAX) * 1000L
+                RewindMode.ADAPTIVE -> when {
+                    pausedMs < 60_000L -> 0
+                    pausedMs < 10 * 60_000L -> 3_000
+                    pausedMs < 60 * 60_000L -> 10_000
+                    pausedMs < 24 * 60 * 60_000L -> 20_000
+                    else -> 30_000
+                }
+            }
         }
+
+        private const val PAUSE_BLIP_MS = 3_000L
     }
 }
 

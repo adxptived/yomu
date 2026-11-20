@@ -1,5 +1,6 @@
 package app.yomu.feature.catalog
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.TravelExplore
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -29,6 +32,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,6 +53,8 @@ import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.theme.Dimens
+import app.yomu.data.catalog.MigrationCategory
+import app.yomu.data.catalog.MigrationPlan
 import app.yomu.source.SourceContent
 import app.yomu.core.ui.R as CoreR
 
@@ -65,6 +71,8 @@ fun GlobalSearchScreen(
     val content by viewModel.content.collectAsStateWithLifecycle()
     val results by viewModel.results.collectAsStateWithLifecycle()
     val migrating by viewModel.migrating.collectAsStateWithLifecycle()
+    val migrationPlan by viewModel.migrationPlan.collectAsStateWithLifecycle()
+    val migrationCategories by viewModel.migrationCategories.collectAsStateWithLifecycle()
     val infos by viewModel.sourceInfos.collectAsStateWithLifecycle()
     val onlyWithResults by viewModel.onlyWithResults.collectAsStateWithLifecycle()
     val health by viewModel.health.collectAsStateWithLifecycle()
@@ -185,4 +193,75 @@ fun GlobalSearchScreen(
             }
         }
     }
+
+    migrationPlan?.let { plan ->
+        MigrationPreviewDialog(
+            plan = plan,
+            categories = migrationCategories,
+            busy = migrating,
+            onToggle = viewModel::toggleMigrationCategory,
+            onApply = viewModel::applyMigration,
+            onCancel = viewModel::cancelMigration,
+        )
+    }
+}
+
+/** The preview of a source migration: what will move, how sure the matching is, and what stays behind. */
+@Composable
+private fun MigrationPreviewDialog(
+    plan: MigrationPlan,
+    categories: Set<MigrationCategory>,
+    busy: Boolean,
+    onToggle: (MigrationCategory) -> Unit,
+    onApply: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = { if (!busy) onCancel() },
+        title = { Text(stringResource(R.string.migrate_preview_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Dimens.s)) {
+                Text(stringResource(R.string.migrate_preview_target, plan.fromTitle, plan.targetTitle), style = MaterialTheme.typography.titleSmall)
+                Text(
+                    stringResource(R.string.migrate_preview_counts, plan.exact.size, plan.likely.size, plan.ambiguous.size, plan.missing.size),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (plan.matched.any { !it.pagePositionSafe }) {
+                    Text(
+                        stringResource(R.string.migrate_preview_page_warning),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    stringResource(R.string.migrate_preview_old_kept),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                MigrationCategory.entries.forEach { category ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onToggle(category) },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = category in categories, onCheckedChange = { onToggle(category) })
+                        Text(migrationCategoryLabel(category))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onApply, enabled = !busy) { Text(stringResource(R.string.migrate_apply)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, enabled = !busy) { Text(stringResource(R.string.migrate_cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun migrationCategoryLabel(category: MigrationCategory): String = when (category) {
+    MigrationCategory.PROGRESS -> stringResource(R.string.migrate_category_progress)
+    MigrationCategory.BOOKMARKS -> stringResource(R.string.migrate_category_bookmarks)
+    MigrationCategory.TABS -> stringResource(R.string.migrate_category_tabs)
+    MigrationCategory.FAVORITE -> stringResource(R.string.migrate_category_favorite)
 }

@@ -83,17 +83,21 @@ interface BookDao {
     @Query("UPDATE books SET status = :status WHERE id IN (:ids)")
     suspend fun setStatus(ids: Collection<Long>, status: String)
 
-    @Query("UPDATE books SET favorite = :favorite WHERE id IN (:ids)")
-    suspend fun setFavorite(ids: Collection<Long>, favorite: Boolean)
+    @Query("UPDATE books SET favorite = :favorite, metaUpdatedAt = :at WHERE id IN (:ids)")
+    suspend fun setFavorite(ids: Collection<Long>, favorite: Boolean, at: Long)
 
-    @Query("UPDATE books SET rating = :rating WHERE id IN (:ids)")
-    suspend fun setRating(ids: Collection<Long>, rating: Int)
+    @Query("UPDATE books SET rating = :rating, metaUpdatedAt = :at WHERE id IN (:ids)")
+    suspend fun setRating(ids: Collection<Long>, rating: Int, at: Long)
 
     @Query("UPDATE books SET progress = :progress, lastReadAt = :at, status = CASE WHEN status = 'NEW' THEN 'READING' ELSE status END WHERE id = :id")
     suspend fun updateProgress(id: Long, progress: Float, at: Long)
 
-    @Query("UPDATE books SET readerSettingsJson = :json WHERE id = :id")
-    suspend fun setReaderSettings(id: Long, json: String?)
+    @Query("UPDATE books SET readerSettingsJson = :json, metaUpdatedAt = :at WHERE id = :id")
+    suspend fun setReaderSettings(id: Long, json: String?, at: Long)
+
+    /** Applies the fields of a newer sync record in one write. */
+    @Query("UPDATE books SET readerSettingsJson = :json, rating = :rating, favorite = :favorite, metaUpdatedAt = :at WHERE id = :id")
+    suspend fun setMeta(id: Long, json: String?, rating: Int, favorite: Boolean, at: Long)
 
     @Query("UPDATE books SET coverPath = :path WHERE id = :id")
     suspend fun setCover(id: Long, path: String?)
@@ -680,6 +684,10 @@ interface CatalogDao {
     @Query("UPDATE chapters SET lastPageRead = :page, lastReadAt = :at, read = (read OR :finished), isNew = 0 WHERE id = :id")
     suspend fun saveProgress(id: Long, page: Int, at: Long, finished: Boolean)
 
+    /** Migration: read state, bookmark and page written together, so undo can restore all three as one value. */
+    @Query("UPDATE chapters SET read = :read, bookmarked = :bookmarked, lastPageRead = :page WHERE id = :id")
+    suspend fun setChapterState(id: Long, read: Boolean, bookmarked: Boolean, page: Int)
+
     @Query("UPDATE chapters SET downloaded = :downloaded, localPath = :path WHERE id = :id")
     suspend fun setDownloaded(id: Long, downloaded: Boolean, path: String?)
 
@@ -969,6 +977,9 @@ interface AudioSubscriptionDao {
     @Query("SELECT * FROM audio_subscriptions WHERE enabled = 1 ORDER BY lastCheckedAt, id")
     suspend fun enabled(): List<AudioSubscriptionEntity>
 
+    @Query("SELECT * FROM audio_subscriptions")
+    suspend fun all(): List<AudioSubscriptionEntity>
+
     @Query("SELECT * FROM audio_subscriptions WHERE id = :id")
     suspend fun get(id: Long): AudioSubscriptionEntity?
 
@@ -1005,4 +1016,72 @@ interface FolderSyncBaseDao {
 
     @Query("DELETE FROM folder_sync_bases")
     suspend fun clear()
+}
+
+/** Character/term/place notes. [observe] with a null book filter watches every note. */
+@Dao
+interface GlossaryDao {
+    @Query("SELECT * FROM glossary_entries WHERE (:bookId IS NULL OR bookId = :bookId) ORDER BY updatedAt DESC, id DESC")
+    fun observe(bookId: Long?): Flow<List<GlossaryEntryEntity>>
+
+    @Query("SELECT * FROM glossary_entries ORDER BY updatedAt DESC, id DESC")
+    suspend fun all(): List<GlossaryEntryEntity>
+
+    @Query("SELECT * FROM glossary_entries WHERE id = :id")
+    suspend fun get(id: Long): GlossaryEntryEntity?
+
+    @Query("SELECT * FROM glossary_entries WHERE bookId = :bookId")
+    suspend fun forBook(bookId: Long): List<GlossaryEntryEntity>
+
+    @Insert
+    suspend fun insert(entry: GlossaryEntryEntity): Long
+
+    @Update
+    suspend fun update(entry: GlossaryEntryEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entries: List<GlossaryEntryEntity>)
+
+    @Query("DELETE FROM glossary_entries WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM glossary_entries WHERE bookId = :bookId")
+    suspend fun deleteForBook(bookId: Long)
+
+    @Query("DELETE FROM glossary_entries")
+    suspend fun clear()
+}
+
+/** Only the light stamp is read before a rebuild, so deciding what changed does not load every indexed text. */
+data class IndexStamp(val key: String, val updatedAt: Long)
+
+@Dao
+interface IndexedTextDao {
+    /**
+     * Full-text match over indexed content. Raw query, like the library's title search: Room's SQL parser does not
+     * understand FTS `MATCH`, while SQLite does. The caller passes an already escaped FTS expression as argument 0.
+     */
+    @RawQuery
+    suspend fun search(query: SupportSQLiteQuery): List<IndexedTextEntity>
+
+    @Query("SELECT * FROM indexed_text ORDER BY key")
+    suspend fun all(): List<IndexedTextEntity>
+
+    @Query("SELECT `key`, updatedAt FROM indexed_text")
+    suspend fun stamps(): List<IndexStamp>
+
+    @Upsert
+    suspend fun upsertAll(rows: List<IndexedTextEntity>)
+
+    @Query("DELETE FROM indexed_text WHERE `key` IN (:keys)")
+    suspend fun deleteKeys(keys: Collection<String>)
+
+    @Query("DELETE FROM indexed_text WHERE bookId = :bookId")
+    suspend fun deleteForBook(bookId: Long)
+
+    @Query("DELETE FROM indexed_text")
+    suspend fun clear()
+
+    @Query("SELECT COUNT(*) FROM indexed_text")
+    fun observeCount(): Flow<Int>
 }

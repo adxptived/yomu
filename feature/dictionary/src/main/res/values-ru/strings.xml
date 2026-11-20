@@ -38,6 +38,8 @@
     <string name="dicts_delete_text">Все статьи этого словаря будут удалены с устройства.</string>
 
     <string name="words_search">Поиск по моим словам</string>
+    <string name="words_filter_book">Фильтр по книге</string>
+    <string name="words_all_books">Все книги</string>
     <string name="words_sort">Сортировка</string>
     <string name="words_sort_date">Сначала новые</string>
     <string name="words_sort_alpha">По алфавиту</string>
@@ -81,6 +83,45 @@
     <string name="words_from_book">Из книги: %1$s</string>
     <string name="words_open_book">Открыть книгу</string>
     <string name="words_reset">Сбросить прогресс</string>
+
+    <!-- N04: глоссарий / заметки и индекс текста -->
+    <string name="dict_tab_glossary">Глоссарий</string>
+    <string name="gloss_title">Заметки</string>
+    <string name="gloss_search">Поиск по заметкам</string>
+    <string name="gloss_filter_book">Фильтр по книге</string>
+    <string name="gloss_all_books">Все книги</string>
+    <string name="gloss_add">Добавить заметку</string>
+    <string name="gloss_edit">Изменить заметку</string>
+    <string name="gloss_empty_title">Заметок пока нет</string>
+    <string name="gloss_empty_text">Добавьте персонажа, термин или место, которое хотите запомнить.</string>
+    <string name="gloss_term">Название</string>
+    <string name="gloss_aliases">Другие названия (через запятую)</string>
+    <string name="gloss_kind">Тип</string>
+    <string name="gloss_kind_character">Персонаж</string>
+    <string name="gloss_kind_term">Термин</string>
+    <string name="gloss_kind_place">Место</string>
+    <string name="gloss_book">Книга</string>
+    <string name="gloss_no_book">Без определённой книги</string>
+    <string name="gloss_note">Заметка</string>
+    <string name="gloss_open_book">Открыть книгу</string>
+    <string name="gloss_delete_title">Удалить заметку?</string>
+    <string name="gloss_delete_text">Заметка «%1$s» будет удалена.</string>
+    <string name="gloss_index_title">Индекс текста (необязательно)</string>
+    <string name="gloss_index_disabled">Отключено в настройках. Поиск по названиям остаётся поиском по названиям.</string>
+    <string name="gloss_index_state_idle">Не построен</string>
+    <string name="gloss_index_state_estimating">Оценка…</string>
+    <string name="gloss_index_state_running">Индексируется %1$d из %2$d</string>
+    <string name="gloss_index_state_cancelled">Отменено — частичный индекс сохранён</string>
+    <string name="gloss_index_state_done">Готово: %1$d фрагментов текста</string>
+    <string name="gloss_index_state_failed">Ошибка: %1$s</string>
+    <string name="gloss_index_estimate">Примерно %1$d книг, %2$d фрагментов текста</string>
+    <string name="gloss_index_estimate_btn">Оценить</string>
+    <string name="gloss_index_rebuild">Построить индекс</string>
+    <string name="gloss_index_cancel">Отмена</string>
+    <string name="gloss_index_search">Поиск по индексу</string>
+    <string name="gloss_index_heading_only">Только поиск по названиям — построьте индекс для поиска по тексту.</string>
+    <string name="gloss_index_results">Совпадения в тексте</string>
+    <string name="gloss_index_source">Источник: %1$s</string>
 
     <string name="review_title">Повторение</string>
     <string name="review_start">Начать</string>

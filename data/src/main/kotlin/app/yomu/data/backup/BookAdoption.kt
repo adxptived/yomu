@@ -215,8 +215,7 @@ internal class BookAdoption(
         val migrated = SyncIdentityMigration.metadata(state, base, mapping, bookHashPattern::matches, recomputeRevisions = true)
         if (migrated.state != state) {
             val encoded = when (val snapshot = document?.folderSnapshot) {
-                null -> Json { ignoreUnknownKeys = true; encodeDefaults = false; explicitNulls = false }
-                    .encodeToString(SyncState.serializer(), migrated.state).toByteArray()
+                null -> SyncCodec.encode(migrated.state).toByteArray()
                 else -> FolderMetadataSnapshotCodec.encode(FolderMetadataSnapshot(state = migrated.state, revisions = snapshot.revisions))
             }
             backend.write(encoded, file)

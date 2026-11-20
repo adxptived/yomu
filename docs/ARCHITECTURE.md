@@ -30,13 +30,14 @@ graph TD
 | `core:database` | Android lib | Room: entities, DAOs, FTS4 for the library, migrations |
 | `core:datastore` | Android lib | `AppSettings` — every setting on DataStore Preferences, JSON export/import |
 | `core:network` | Android lib | shared OkHttp clients (cache, timeouts, WebView cookies) |
-| `domain` | Kotlin/JVM | models (books, locators, annotations, words, catalog), repository interfaces, SM-2, lemmatization, Japanese deinflection, find & replace, typography, annotation and word export |
-| `data` | Android lib | import and metadata, containers (ZIP/RAR/7z/folder), the EPUB parser and writer, FB2/TXT/HTML/DOCX/MOBI → EPUB converters, PDF (PDFium), repositories, dictionaries (StarDict/DSL/JMdict/Wiktionary), translation (ML Kit + online engines), OCR, the catalog, extensions, downloads, WorkManager jobs, backup, Mihon import (`backup/MihonImporter`), Sync 2.0 (`SyncManager`, `SyncMerger`, `SyncBackends`: SAF folder / WebDAV), trackers (`tracking/`: Shikimori, AniList, MyAnimeList, Kitsu, MangaUpdates), PDF annotation writing (`book/pdf/`: a custom JVM PDF parser and incremental writer) |
+| `domain` | Kotlin/JVM | models (books, locators, annotations, words, catalog), repository interfaces, SM-2, lemmatization, Japanese deinflection, find & replace, typography, annotation and word export, the library query spec and saved shelves (`LibraryQuerySpec`, `SavedQueryShelf`), the online chapter window (`ReaderWindow`, `ReaderWindowPages`), reader option visibility (`ReaderOptions`), audio offline/gain/linked-edition rules (`AudioOffline`, `AudioGain`, `LinkedEditions`) |
+| `data` | Android lib | import and metadata, containers (ZIP/RAR/7z/folder), the EPUB parser and writer, FB2/TXT/HTML/DOCX/MOBI → EPUB converters, PDF (PDFium), repositories, dictionaries (StarDict/DSL/JMdict/Wiktionary), translation (ML Kit + online engines), OCR, the catalog, **source migration plans and their undo journal** (`catalog/Migration.kt`), extensions, downloads, WorkManager jobs, backup with category manifests and merge/replace (`backup/BackupManager`), Mihon import (`backup/MihonImporter`), Sync 2.0 (`SyncManager`, `SyncMerger`, `SyncCodec`: unknown categories are preserved; per-book settings/rating/favourite merge by `metaUpdatedAt`), SyncBackends: SAF folder / WebDAV), trackers (`tracking/`: Shikimori, AniList, MyAnimeList, Kitsu, MangaUpdates), PDF annotation writing (`book/pdf/`: a custom JVM PDF parser and incremental writer) |
 | `source-api` | Kotlin/JVM | the public source API for extensions (`Source`, `CatalogSource`, `HttpSource`, models, filters) |
 | `sources:*` | Kotlin/Android | OPDS (+ Gutendex, Open Library/Internet Archive), MangaDex, a local folder, novels (`sources:novels`: RanobeLib, NovelBin) |
 | `compat:tachiyomi` | Android lib | the public Mihon/Tachiyomi extension API (`eu.kanade.tachiyomi.*`, lib 1.4/1.6: sources, models, filters, `NetworkHelper`, interceptors, `JavaScriptEngine`), an Injekt graph for extensions, an Rx ↔ coroutines bridge |
-| `feature:library` | Android lib | the library (Paging, grid/list, filters, collections, bulk actions), the book card |
-| `feature:reader*` | Android lib | the shared reading screen (overlay, settings, TTS, search, contents, statistics) and engines: EPUB (WebView + JS), PDF (PDFium + zoom), manga (pages/feed/webtoon) |
+| `feature:library` | Android lib | the library (Paging, grid/list, filters, collections, bulk actions), smart shelves backed by `LibraryQuerySpec`, the book card |
+| `feature:reader*` | Android lib | the shared reading screen (overlay, settings registry, TTS with a voice sample, search, contents, statistics) and engines: EPUB (WebView + JS), PDF (PDFium + zoom + crop preview), manga (pages/feed/webtoon, a bounded window of chapters via `SessionPageSource`), bounded online-novel documents (`WindowHtmlDocument`) |
+| `feature:audio` | Android lib | the media session service (`MediaSessionService`), player screen, offline volume plans, ReplayGain, metadata overrides, linked editions, the widget contract (`AudioWidgetContract`) |
 | `feature:annotations` | Android lib | highlights, notes, bookmarks, quotes, export/import |
 | `feature:dictionary`, `feature:translator` | Android lib | word search, my words, repetition, dictionaries; selection translation, language packs, book translation |
 | `feature:editor` | Android lib | the EPUB editor (metadata, chapters, contents, visual `VisualEditor`, XHTML/CSS, find & replace, cleanup, images, validation, selected-chapter translation) and the manga editor (pages, cropping, colors, spreads, ComicInfo, page translation: `Typeset`, `MangaTypesetUi`) with undo/redo |
@@ -63,6 +64,11 @@ Compose UI  ──events──▶  ViewModel (StateFlow<UiState>)  ──▶  Re
 ### Reading
 `ReaderRoute(bookId, locator) → ReaderViewModel → an engine by format (EPUB/PDF/manga)`. The position is a `Locator` (chapter, progress, text offset); saved with debounce and on exit; reading sessions (`reading_sessions`) are written for history and statistics (`ReadingHistoryRepository`, `StatsCalculator`). DOCX additionally opens in "Page layout": `DocxLayout` (DOCX → HTML with page geometry) + `paginate.js` in a WebView (`DocxLayoutScreen`). Text selection → the floating panel (customizable actions: copy, color, note, dictionary, translate, speak, search, share, custom URLs/apps).
 
+Online editions are bounded: the manga reader holds the current chapter and its neighbours in one `SessionPageSource` (flat page indexes with chapter identity; the nearest chapter is transferred, the far one closed), and the novel reader builds a `WindowHtmlDocument` of the same three chapters with a section↔global-chapter bridge. Crossing a boundary is a page turn, not a reload; the window re-centres after the turn.
+
+### Source migration
+`CatalogRepository.planMigration` reads the target from its source and matches chapters (`MigrationMatcher`: number+group = exact, number = likely, title = likely, several candidates = review). Nothing is written. `applyMigration` verifies both revisions, writes the target and a reversible journal (`files/migration/<plan>.json`) before the transaction, applies the chosen categories, and `undoMigration` restores only values that are still exactly what it wrote. Batch helpers report each plan separately.
+
 ### Dictionary and translation
 A word tap → `Lemmatizer`/`JapaneseDeinflector` → offline dictionaries (Room) → an online dictionary (if allowed) → translation (ML Kit offline or the chosen online engine; a translation cache) → "Save word" with the context sentence → SM-2 repetition.
 
@@ -75,7 +81,13 @@ Extensions: `ExtensionStores` reads repositories (the legacy `index.min.json` + 
 `EditorViewModel` unpacks a book into a working folder (`EpubWorkspace` / `MangaWorkspace`); every change is a `History` step (before/after snapshots of the affected files, surviving restarts). "Save" packs the EPUB/CBZ (mimetype first, uncompressed), validates it with the parser and replaces the original or saves a copy.
 
 ### Background work (WorkManager)
-`LibraryScanWorker`, `DownloadWorker`, `UpdateWorker`, `BackupWorker`, `SyncWorker`, `ReminderWorker`, `BookTranslationWorker`, `PdfAnnotationWorker` (highlights → the PDF file, 2 s after a change) — `WorkScheduler` schedules them from settings.
+`LibraryScanWorker`, `DownloadWorker`, `UpdateWorker`, `BackupWorker`, `SyncWorker`, `ReminderWorker`, `BookTranslationWorker`, `AudiobookDownloadWorker`, `PdfAnnotationWorker` (highlights → the PDF file, 2 s after a change) — `WorkScheduler` schedules them from settings.
+
+## Backup and sync
+
+A backup ZIP has `backup.json` (format version, creation date, old `filesDir`, settings, raw table rows, folder page revisions) plus a category manifest. A restore stages the files first, validates the archive version (a newer archive is refused), can merge (stable identities keep local values, colliding numeric ids are remapped and their children follow) or replace the chosen categories, and journals nothing: a failed transaction rolls rows back and removes the files it published.
+
+The sync file (`yomu-sync.json`) is a versioned `SyncState`. `SyncCodec` keeps unknown top-level categories from a newer client and writes them back, so an older device never turns them into a deletion. Per-book reader/audio settings, rating and favourite merge by `metaUpdatedAt` (newest write wins; a missing local value is filled); progress, status, chapter marks, annotations, words, titles and tabs keep their three-way or newest-wins rules; tombstones are retained for 180 days.
 
 ## Storage
 

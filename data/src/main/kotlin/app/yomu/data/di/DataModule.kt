@@ -16,6 +16,8 @@ import app.yomu.data.catalog.CatalogRepository
 import app.yomu.data.dictionary.DictionaryRepository
 import app.yomu.data.download.DownloadOverview
 import app.yomu.data.download.DownloadRepository
+import app.yomu.data.glossary.GlossaryRepository
+import app.yomu.data.index.FulltextIndexRepository
 import app.yomu.data.library.CoverStore
 import app.yomu.data.library.ImportService
 import app.yomu.data.library.LibraryTabs
@@ -54,6 +56,8 @@ val dataModule = module {
     single { BookRepositoryImpl(androidContext(), get(), get()) } bind BookRepository::class
     single { AnnotationRepositoryImpl(get()) } bind AnnotationRepository::class
     single { WordRepositoryImpl(get()) } bind WordRepository::class
+    single { GlossaryRepository(get()) }
+    single { FulltextIndexRepository(get()) }
     single { StatsRepositoryImpl(get()) } bind StatsRepository::class
     single { ReadingHistoryRepository(get(), get()) }
     single { YouTubeClient { get<NetworkClients>().client } }

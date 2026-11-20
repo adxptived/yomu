@@ -444,6 +444,7 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                     koinViewModel { parametersOf(r.bookId) },
                     back,
                     onYouTubeSignIn = { nav.navigate(WebViewRoute(YouTubeAuth.SIGN_IN_URL)) },
+                    onOpenLinked = { nav.navigate(ReaderRoute(bookId = it)) { launchSingleTop = true } },
                 )
                 docxPages == true -> DocxLayoutScreen(
                     koinViewModel { parametersOf(r.bookId) }, back,
@@ -458,6 +459,7 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                     onOpenStats = { nav.navigate(StatsRoute) },
                     onOpenEditor = { nav.navigate(EditorRoute(it)) },
                     onOpenPageLayout = { nav.navigate(DocxLayoutRoute(it)) },
+                    onOpenLinked = { nav.navigate(ReaderRoute(bookId = it)) { launchSingleTop = true } },
                 )
             }
         }

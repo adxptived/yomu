@@ -41,12 +41,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.yomu.core.common.TimeFormat
 import app.yomu.core.ui.components.PreferenceHeader
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.work.NotificationLog
 import app.yomu.data.work.NotifyKind
-import java.text.DateFormat
-import java.util.Date
 
 private fun NotifyKind.title(): Int = when (this) {
     NotifyKind.NEW_CHAPTERS -> R.string.set_notify_new_chapters
@@ -85,6 +84,7 @@ internal fun ColumnScope.NotificationsSection(vm: SettingsViewModel) {
     val context = LocalContext.current
     val disabled by s.notifyDisabled.state()
     val quiet by s.quietHours.state()
+    val timeFormat by s.timeFormat.state()
     val log = remember { NotificationLog.get(context) }
     val recent by log.entries.collectAsStateWithLifecycle()
 
@@ -139,7 +139,6 @@ internal fun ColumnScope.NotificationsSection(vm: SettingsViewModel) {
             modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s),
         )
     } else {
-        val format = remember { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT) }
         recent.take(30).forEach { r ->
             val kind = NotifyKind.entries.firstOrNull { it.name == r.kind } ?: NotifyKind.TASKS
             ListItem(
@@ -147,7 +146,7 @@ internal fun ColumnScope.NotificationsSection(vm: SettingsViewModel) {
                 leadingContent = { Icon(if (r.shown) kind.icon() else Icons.Outlined.NotificationsOff, null, tint = MaterialTheme.colorScheme.primary) },
                 headlineContent = { Text(r.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 supportingContent = {
-                    val meta = format.format(Date(r.at)) + if (r.shown) "" else " · " + stringResource(R.string.set_notify_muted)
+                    val meta = TimeFormat.formatDateTime(context, timeFormat, r.at) + if (r.shown) "" else " · " + stringResource(R.string.set_notify_muted)
                     Text(listOf(r.text, meta).filter { it.isNotBlank() }.joinToString("\n"), maxLines = 3, overflow = TextOverflow.Ellipsis)
                 },
             )

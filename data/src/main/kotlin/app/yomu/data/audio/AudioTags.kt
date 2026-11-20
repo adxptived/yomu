@@ -1,5 +1,6 @@
 package app.yomu.data.audio
 
+import app.yomu.domain.audio.AudioGainTag
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
@@ -44,14 +45,45 @@ object AudioTags {
     }.getOrNull()
 
     fun description(channel: SeekableByteChannel): String? {
+        val fields = fields(channel) ?: return null
+        val raw = DESCRIPTION_KEYS.firstNotNullOfOrNull { fields[it] } ?: return null
+        return clean(raw)
+    }
+
+    /** ReplayGain of a local track, or null when it declares none. Never throws. */
+    fun gain(file: File): AudioGainTag? = runCatching {
+        if (!file.isFile) return null
+        Files.newByteChannel(file.toPath(), StandardOpenOption.READ).use { channel -> gain(channel) }
+    }.getOrNull()
+
+    fun gain(context: android.content.Context, uri: android.net.Uri): AudioGainTag? = runCatching {
+        if (uri.scheme == "file") return gain(File(uri.path ?: return null))
+        context.contentResolver.openFileDescriptor(uri, "r")?.use { fd ->
+            java.io.FileInputStream(fd.fileDescriptor).channel.use { channel -> gain(channel) }
+        }
+    }.getOrNull()
+
+    fun gain(channel: SeekableByteChannel): AudioGainTag? {
+        val fields = fields(channel) ?: return null
+        fun value(name: String): String? = fields.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+        val gainDb = parseGain(value("REPLAYGAIN_TRACK_GAIN") ?: value("TXXX:REPLAYGAIN_TRACK_GAIN")) ?: return null
+        val peak = parseGain(value("REPLAYGAIN_TRACK_PEAK") ?: value("TXXX:REPLAYGAIN_TRACK_PEAK"))?.takeIf { it > 0f }
+        return AudioGainTag(gainDb, peak)
+    }
+
+    /** A gain tag is text like "-3.21 dB"; only the number is meaningful here. */
+    internal fun parseGain(text: String?): Float? =
+        text?.let { GAIN_NUMBER.find(it)?.value?.toFloatOrNull() }?.takeIf { it.isFinite() }
+
+    /** Description and gain tags of a file: the few text frames this reader understands. */
+    private fun fields(channel: SeekableByteChannel): Map<String, String>? {
         val head = readAt(channel, 0, 12) ?: return null
-        val raw = when {
+        return when {
             head.ascii(0, 3) == "ID3" -> id3(channel, head)
-            head.ascii(4, 4) == "ftyp" -> mp4(channel)
+            head.ascii(4, 4) == "ftyp" -> mp4(channel)?.let { mapOf("DESCRIPTION" to it) }
             head.ascii(0, 4) == "OggS" -> vorbis(channel, head)
             else -> null
         }
-        return raw?.let(::clean)
     }
 
     /** One line of plain text: paragraph breaks kept, other runs of whitespace collapsed, HTML tags dropped. */
@@ -80,9 +112,11 @@ object AudioTags {
     // ---------------------------------------------------------------- ID3v2
 
     /** Frames that carry a synopsis, most specific first. */
-    private val ID3_DESCRIPTION_FRAMES = listOf("TIT3", "COMM", "TXXX:DESCRIPTION", "TXXX:COMMENT")
+    private val DESCRIPTION_KEYS = listOf("TIT3", "COMM", "TXXX:DESCRIPTION", "TXXX:COMMENT", "DESCRIPTION", "COMMENT", "SUMMARY")
 
-    private fun id3(channel: SeekableByteChannel, head: ByteBuffer): String? {
+    private val GAIN_NUMBER = Regex("[-+]?\\d+(?:\\.\\d+)?")
+
+    private fun id3(channel: SeekableByteChannel, head: ByteBuffer): Map<String, String>? {
         val major = head.get(3).toInt()
         val flags = head.get(5).toInt()
         if (major !in 3..4 || flags and 0x80 != 0) return null
@@ -115,7 +149,7 @@ object AudioTags {
             }
             pos += 10 + frameSize
         }
-        return ID3_DESCRIPTION_FRAMES.firstNotNullOfOrNull { wanted[it] }
+        return wanted
     }
 
     /** A text frame body: an encoding byte, then the text. */
@@ -202,7 +236,7 @@ object AudioTags {
      * The comment header of an Ogg Vorbis/Opus stream: the second packet of the first page. It is small and near the
      * start of the file; the audio pages that follow are never read.
      */
-    private fun vorbis(channel: SeekableByteChannel, head: ByteBuffer): String? {
+    private fun vorbis(channel: SeekableByteChannel, head: ByteBuffer): Map<String, String>? {
         // Only the first page is looked at, and never more than the file holds: a short file is not an error.
         val window = minOf(64L * 1024, channel.size()).toInt()
         val page = readAt(channel, 0, window) ?: return null
@@ -225,7 +259,7 @@ object AudioTags {
         return vorbisComments(region, start)
     }
 
-    private fun vorbisComments(region: ByteArray, at: Int): String? {
+    private fun vorbisComments(region: ByteArray, at: Int): Map<String, String>? {
         if (at + 4 > region.size) return null
         val count = leInt(region, at)
         if (count < 0 || count > 4096) return null
@@ -242,7 +276,7 @@ object AudioTags {
             val value = line.substringAfter('=', "").trim()
             if (key.isNotEmpty() && value.isNotEmpty()) fields.putIfAbsent(key, value)
         }
-        return listOf("DESCRIPTION", "COMMENT", "SUMMARY").firstNotNullOfOrNull { fields[it] }
+        return fields
     }
 
     private fun leInt(bytes: ByteArray, at: Int): Int =

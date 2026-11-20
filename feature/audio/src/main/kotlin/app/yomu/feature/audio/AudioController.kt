@@ -149,11 +149,55 @@ class AudioController(private val context: Context) {
         )
     }
 
+    /** The screen's skip buttons: the service applies the per-book interval and journals the jump once. */
+    fun skipBack() = sendSkip(forward = false)
+
+    fun skipForward() = sendSkip(forward = true)
+
+    private fun sendSkip(forward: Boolean) {
+        controller?.sendCustomCommand(
+            SessionCommand(AudioPlaybackService.CMD_SKIP, Bundle.EMPTY),
+            Bundle().apply { putBoolean(AudioPlaybackService.KEY_FORWARD, forward) },
+        )
+    }
+
+    /** Rewind on resume: off, adaptive or a fixed number of seconds; kept with the book's settings. */
+    fun setRewind(mode: RewindMode, seconds: Int) {
+        controller?.sendCustomCommand(
+            SessionCommand(AudioPlaybackService.CMD_REWIND, Bundle.EMPTY),
+            Bundle().apply {
+                putString(AudioPlaybackService.KEY_REWIND_MODE, mode.name)
+                putInt(AudioPlaybackService.KEY_REWIND_SECONDS, seconds)
+            },
+        )
+    }
+
     /** Replaces the book's bookmarks; the service keeps them with the other per-book settings. */
     fun setBookmarks(list: List<Bookmark>) {
         controller?.sendCustomCommand(
             SessionCommand(AudioPlaybackService.CMD_BOOKMARKS, Bundle.EMPTY),
             Bundle().apply { putString(AudioPlaybackService.KEY_BOOKMARKS, AudioSettings.encodeBookmarks(list).toString()) },
+        )
+    }
+
+    /** Corrections to the player card, the shade and the lock screen; the service applies them right away. */
+    fun setMetadata(meta: AudioMetadata) {
+        controller?.sendCustomCommand(
+            SessionCommand(AudioPlaybackService.CMD_METADATA, Bundle.EMPTY),
+            Bundle().apply {
+                putString(AudioPlaybackService.KEY_NARRATOR, meta.narrator)
+                putString(AudioPlaybackService.KEY_SERIES, meta.series)
+                putString(AudioPlaybackService.KEY_LANGUAGE, meta.language)
+                putString(AudioPlaybackService.KEY_DESCRIPTION, meta.description)
+            },
+        )
+    }
+
+    /** ReplayGain correction on or off; the service reads the tag of the current track. */
+    fun setGain(enabled: Boolean) {
+        controller?.sendCustomCommand(
+            SessionCommand(AudioPlaybackService.CMD_GAIN, Bundle.EMPTY),
+            Bundle().apply { putBoolean(AudioPlaybackService.KEY_ENABLED, enabled) },
         )
     }
 

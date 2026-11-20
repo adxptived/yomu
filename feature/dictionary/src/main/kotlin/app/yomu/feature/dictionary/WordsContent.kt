@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -105,6 +106,8 @@ fun WordsContent(viewModel: WordsViewModel, onOpenBook: (Long, Locator?, String)
     val tag by viewModel.tag.collectAsStateWithLifecycle()
     val tags by viewModel.tags.collectAsStateWithLifecycle()
     val sort by viewModel.sort.collectAsStateWithLifecycle()
+    val bookFilter by viewModel.bookFilter.collectAsStateWithLifecycle()
+    val booksWithWords by viewModel.booksWithWords.collectAsStateWithLifecycle()
     val selection by viewModel.selection.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -112,6 +115,7 @@ fun WordsContent(viewModel: WordsViewModel, onOpenBook: (Long, Locator?, String)
     val snackbar = remember { SnackbarHostState() }
     var menu by remember { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
+    var bookMenu by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Word?>(null) }
     var tagDialog by rememberSaveable { mutableStateOf(false) }
     var exportDialog by rememberSaveable { mutableStateOf(false) }
@@ -149,6 +153,23 @@ fun WordsContent(viewModel: WordsViewModel, onOpenBook: (Long, Locator?, String)
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = Dimens.xs)) {
                     SearchField(query, { viewModel.query.value = it }, stringResource(R.string.words_search), Modifier.weight(1f).padding(start = Dimens.l, top = Dimens.s, bottom = Dimens.s))
+                    Box {
+                        IconButton(onClick = { bookMenu = true }) { Icon(Icons.Default.Book, stringResource(R.string.words_filter_book)) }
+                        DropdownMenu(expanded = bookMenu, onDismissRequest = { bookMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.words_all_books)) },
+                                leadingIcon = { if (bookFilter == null) Icon(Icons.Default.CheckCircle, null) else Icon(Icons.Outlined.Circle, null) },
+                                onClick = { bookMenu = false; viewModel.bookFilter.value = null },
+                            )
+                            booksWithWords.forEach { (id, title) ->
+                                DropdownMenuItem(
+                                    text = { Text(title) },
+                                    leadingIcon = { if (bookFilter == id) Icon(Icons.Default.CheckCircle, null) else Icon(Icons.Outlined.Circle, null) },
+                                    onClick = { bookMenu = false; viewModel.bookFilter.value = id },
+                                )
+                            }
+                        }
+                    }
                     Box {
                         IconButton(onClick = { sortMenu = true }) { Icon(Icons.AutoMirrored.Filled.Sort, stringResource(R.string.words_sort)) }
                         DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {

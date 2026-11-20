@@ -94,20 +94,38 @@ class BookRepositoryImpl(
 
     /** Resolve UI positions only after acquiring the folder read lease: sync may have remapped them. */
     suspend fun resolveSavedPosition(bookId: Long, reference: String): Locator? {
+        fun decode(json: String?): Locator? = json?.let {
+            try { DataJson.decodeFromString(Locator.serializer(), it) } catch (e: Exception) { throw java.io.IOException("Saved position is invalid", e) }
+        }
         val parts = reference.split(":")
+        // N04 full-text hits use "i:<index key>" (H:id / N:id / W:id / O:book:section). The key is the stable
+        // identity of saved text, so it resolves to the same live locator as the highlight/note/word list; OCR has
+        // no locator and deliberately falls back to the book's saved position.
+        if (parts.firstOrNull() == "i") {
+            val key = parts.drop(1)
+            val id = key.getOrNull(1)?.toLongOrNull()
+            val found = when (key.firstOrNull()) {
+                "H" -> id?.let { db.annotations().highlight(it)?.takeIf { row -> row.bookId == bookId }?.let { true to it.locatorJson } }
+                "N" -> id?.let { db.annotations().note(it)?.takeIf { row -> row.bookId == bookId }?.let { true to it.locatorJson } }
+                "W" -> id?.let { db.words().get(it)?.takeIf { row -> row.bookId == bookId }?.let { true to it.locatorJson } }
+                else -> null
+            }
+            if (found == null && key.firstOrNull() != "O") throw java.io.IOException("Saved position no longer exists; reopen the list and try again")
+            return decode(found?.second)
+        }
         if (parts.size != 3) throw java.io.IOException("Invalid saved position reference")
         val id = parts[1].toLongOrNull() ?: throw java.io.IOException("Invalid saved position reference")
         val createdAt = parts[2].toLongOrNull() ?: throw java.io.IOException("Invalid saved position reference")
-        val json = when (parts[0]) {
-            "h" -> db.annotations().highlight(id)?.takeIf { it.bookId == bookId && it.createdAt == createdAt }?.let { Pair(true, it.locatorJson) }
-            "n" -> db.annotations().note(id)?.takeIf { it.bookId == bookId && it.createdAt == createdAt }?.let { Pair(true, it.locatorJson) }
-            "b" -> db.annotations().bookmark(id)?.takeIf { it.bookId == bookId && it.createdAt == createdAt }?.let { Pair(true, it.locatorJson) }
-            "w" -> db.words().get(id)?.takeIf { it.bookId == bookId && it.createdAt == createdAt }?.let { Pair(true, it.locatorJson) }
+        // Pair keeps "row exists but has no locator" distinct from "row is gone": a null locator is a valid saved
+        // position (the reader opens the book at its own progress), while a missing row is an error.
+        val found = when (parts[0]) {
+            "h" -> db.annotations().highlight(id)?.takeIf { it.bookId == bookId && it.createdAt == createdAt }?.let { true to it.locatorJson }
+            "n" -> db.annotations().note(id)?.takeIf { it.bookId == bookId && it.createdAt == createdAt }?.let { true to it.locatorJson }
+            "b" -> db.annotations().bookmark(id)?.takeIf { it.bookId == bookId && it.createdAt == createdAt }?.let { true to it.locatorJson }
+            "w" -> db.words().get(id)?.takeIf { it.bookId == bookId && it.createdAt == createdAt }?.let { true to it.locatorJson }
             else -> null
         } ?: throw java.io.IOException("Saved position no longer exists; reopen the list and try again")
-        return json.second?.let {
-            try { DataJson.decodeFromString(Locator.serializer(), it) } catch (e: Exception) { throw java.io.IOException("Saved position is invalid", e) }
-        }
+        return decode(found.second)
     }
 
     fun buildQuery(q: LibraryQuery): SimpleSQLiteQuery {
@@ -248,9 +266,9 @@ class BookRepositoryImpl(
 
     override suspend fun setStatus(ids: Collection<Long>, status: ReadingStatus) = books.setStatus(ids, status.name)
 
-    override suspend fun setFavorite(ids: Collection<Long>, favorite: Boolean) = books.setFavorite(ids, favorite)
+    override suspend fun setFavorite(ids: Collection<Long>, favorite: Boolean) = books.setFavorite(ids, favorite, System.currentTimeMillis())
 
-    override suspend fun setRating(ids: Collection<Long>, rating: Int) = books.setRating(ids, rating.coerceIn(0, 5))
+    override suspend fun setRating(ids: Collection<Long>, rating: Int) = books.setRating(ids, rating.coerceIn(0, 5), System.currentTimeMillis())
 
     /**
      * Applies the batch [edit] to the [list] of books (already in the order they are numbered in, see
@@ -307,7 +325,7 @@ class BookRepositoryImpl(
     override suspend fun getChapterProgress(bookId: Long, chapter: Int): Locator? =
         db.chapterProgress().get(bookId, chapter)?.locatorJson?.toLocator()
 
-    override suspend fun saveReaderSettings(bookId: Long, json: String?) = books.setReaderSettings(bookId, json)
+    override suspend fun saveReaderSettings(bookId: Long, json: String?) = books.setReaderSettings(bookId, json, System.currentTimeMillis())
 
     /**
      * Points the book at a new file (used by the editor for "Replace original" when the format changes,

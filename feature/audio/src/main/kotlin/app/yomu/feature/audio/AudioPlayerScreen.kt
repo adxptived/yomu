@@ -30,6 +30,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bookmark
@@ -56,6 +57,7 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -127,7 +129,11 @@ import app.yomu.core.ui.components.coverTint
 import app.yomu.core.ui.components.rememberCoverColor
 import app.yomu.data.audio.AudioDownloadProgress
 import app.yomu.data.audio.AudioDownloadState
+import app.yomu.data.audio.AudioOfflineEstimate
+import app.yomu.data.audio.AudioTrackState
 import app.yomu.data.audio.YouTubeAuth
+import app.yomu.domain.audio.AudioOffline
+import app.yomu.domain.audio.AudioOfflinePlan
 import app.yomu.domain.model.AudioNavEntry
 import app.yomu.domain.model.AudioOrigin
 import app.yomu.domain.model.AudioPositions
@@ -145,7 +151,12 @@ private const val MAX_SLEEP_MIN = 24 * 60
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYouTubeSignIn: (() -> Unit)? = null) {
+fun AudioPlayerScreen(
+    viewModel: AudioPlayerViewModel,
+    onBack: () -> Unit,
+    onYouTubeSignIn: (() -> Unit)? = null,
+    onOpenLinked: (Long) -> Unit = {},
+) {
     val book by viewModel.book.collectAsStateWithLifecycle()
     val player by viewModel.player.collectAsStateWithLifecycle()
     val chapters by viewModel.chapters.collectAsStateWithLifecycle()
@@ -154,6 +165,12 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
     val origin by viewModel.origin.collectAsStateWithLifecycle()
     val loadError by viewModel.loadError.collectAsStateWithLifecycle()
     val offline by viewModel.offline.collectAsStateWithLifecycle()
+    val offlineTracks by viewModel.offlineTracks.collectAsStateWithLifecycle()
+    val offlineFree by viewModel.offlineFree.collectAsStateWithLifecycle()
+    val offlineEstimate by viewModel.offlineEstimate.collectAsStateWithLifecycle()
+    val offlinePlan by viewModel.offlinePlan.collectAsStateWithLifecycle()
+    val linkedEdition by viewModel.linkedEditionId.collectAsStateWithLifecycle()
+    val linkCandidates by viewModel.linkCandidates.collectAsStateWithLifecycle()
     val download by viewModel.download.collectAsStateWithLifecycle()
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
@@ -257,6 +274,23 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
                                 onClick = { more = false; sheet = "skip" },
                             )
                             DropdownMenuItem(
+                                text = { Text(stringResource(R.string.audio_metadata)) },
+                                leadingIcon = { Icon(Icons.Default.Edit, null) },
+                                onClick = { more = false; sheet = "metadata" },
+                            )
+                            linkedEdition?.let { id ->
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.audio_linked_open)) },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, null) },
+                                    onClick = { more = false; onOpenLinked(id) },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text(stringResource(if (linkedEdition != null) R.string.audio_linked_change else R.string.audio_linked_link)) },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, null) },
+                                onClick = { more = false; sheet = "link" },
+                            )
+                            DropdownMenuItem(
                                 text = { Text(stringResource(R.string.audio_skip_silence)) },
                                 leadingIcon = { Icon(Icons.Default.GraphicEq, null) },
                                 trailingIcon = { if (player?.skipSilence == true) Icon(Icons.Default.Check, null) },
@@ -356,6 +390,15 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
     when (sheet) {
         "chapters" -> YomuSheet(onDismiss = { sheet = null }) {
             SheetTitle(stringResource(R.string.audio_chapters))
+            val total = chapterLengths.sum()
+            if (total > 0) {
+                Text(
+                    stringResource(R.string.audio_total_duration, time(total)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+                )
+            }
             val current = player?.let { AudioPositions.current(chapters, it.track, it.positionMs) } ?: -1
             val state = rememberLazyListState(initialFirstVisibleItemIndex = (current - 2).coerceAtLeast(0))
             LazyColumn(state = state, modifier = Modifier.heightIn(max = 520.dp)) {
@@ -462,11 +505,60 @@ fun AudioPlayerScreen(viewModel: AudioPlayerViewModel, onBack: () -> Unit, onYou
             SkipChoices(stringResource(R.string.audio_skip_forward_title), AudioSettings.SKIP_FORWARD_OPTIONS, settings.skipForwardSec) {
                 viewModel.setSkipIntervals(settings.skipBackSec, it)
             }
+            RewindChoices(settings.rewindMode, settings.rewindSeconds, onMode = { viewModel.setRewind(it, settings.rewindSeconds) }, onSeconds = { viewModel.setRewind(settings.rewindMode, it) })
+            Spacer(Modifier.height(16.dp))
+        }
+        "metadata" -> YomuSheet(onDismiss = { sheet = null }) {
+            SheetTitle(stringResource(R.string.audio_metadata))
+            MetadataPanel(settings.metadata, settings.gainEnabled, onGain = viewModel::setGain) {
+                viewModel.updateMetadata(it)
+                sheet = null
+            }
+        }
+        "link" -> YomuSheet(onDismiss = { sheet = null }) {
+            SheetTitle(stringResource(R.string.audio_linked_title))
+            if (linkedEdition != null) {
+                TextButton(onClick = { viewModel.unlinkEdition(); sheet = null }, modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Text(stringResource(R.string.audio_linked_unlink))
+                }
+            }
+            if (linkCandidates.isEmpty()) {
+                Text(
+                    stringResource(R.string.audio_linked_empty),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                )
+            } else {
+                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    itemsIndexed(linkCandidates, key = { _, book -> book.id }) { _, candidate ->
+                        OptionRow(
+                            listOfNotNull(candidate.title, candidate.authorsText.takeIf { it.isNotBlank() }).joinToString(" · "),
+                            selected = candidate.id == linkedEdition,
+                        ) {
+                            viewModel.linkEdition(candidate.id)
+                            sheet = null
+                        }
+                    }
+                }
+            }
             Spacer(Modifier.height(16.dp))
         }
         "offline" -> YomuSheet(onDismiss = { sheet = null }) {
             SheetTitle(stringResource(R.string.audio_offline))
-            OfflinePanel(offline, download, viewModel::startDownload, viewModel::cancelDownload) { viewModel.removeDownload(); sheet = null }
+            OfflinePanel(
+                state = offline,
+                download = download,
+                tracks = offlineTracks,
+                freeBytes = offlineFree,
+                estimate = offlineEstimate,
+                plan = offlinePlan,
+                onPlan = viewModel::setOfflinePlan,
+                onToggleTrack = viewModel::toggleOfflineTrack,
+                onEstimate = viewModel::estimateDownload,
+                onDownload = viewModel::startDownload,
+                onCancel = viewModel::cancelDownload,
+                onRemove = { viewModel.removeDownload(); sheet = null },
+            )
         }
     }
 
@@ -783,6 +875,78 @@ private fun SkipChoices(title: String, options: List<Int>, selected: Int, onSele
 }
 
 @Composable
+private fun RewindChoices(mode: RewindMode, seconds: Int, onMode: (RewindMode) -> Unit, onSeconds: (Int) -> Unit) {
+    Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.audio_rewind_title), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            RewindMode.entries.forEach { m ->
+                val label = when (m) {
+                    RewindMode.OFF -> stringResource(R.string.audio_rewind_off)
+                    RewindMode.ADAPTIVE -> stringResource(R.string.audio_rewind_adaptive)
+                    RewindMode.CUSTOM -> stringResource(R.string.audio_rewind_custom)
+                }
+                FilterChip(selected = mode == m, onClick = { onMode(m) }, label = { Text(label) })
+            }
+        }
+        if (mode == RewindMode.CUSTOM) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AudioSettings.REWIND_OPTIONS.forEach { sec ->
+                    FilterChip(selected = sec == seconds, onClick = { onSeconds(sec) }, label = { Text(stringResource(R.string.audio_seconds_short, sec)) })
+                }
+            }
+        }
+        if (mode == RewindMode.ADAPTIVE) {
+            Text(stringResource(R.string.audio_rewind_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun MetadataPanel(meta: AudioMetadata, gainEnabled: Boolean, onGain: (Boolean) -> Unit, onSave: (AudioMetadata) -> Unit) {
+    var narrator by rememberSaveable(meta) { mutableStateOf(meta.narrator.orEmpty()) }
+    var series by rememberSaveable(meta) { mutableStateOf(meta.series.orEmpty()) }
+    var language by rememberSaveable(meta) { mutableStateOf(meta.language.orEmpty()) }
+    var description by rememberSaveable(meta) { mutableStateOf(meta.description.orEmpty()) }
+    Column(
+        Modifier.fillMaxWidth().heightIn(max = 560.dp).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedTextField(narrator, { narrator = it }, label = { Text(stringResource(R.string.audio_metadata_narrator)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(series, { series = it }, label = { Text(stringResource(R.string.audio_metadata_series)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(language, { language = it }, label = { Text(stringResource(R.string.audio_metadata_language)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(
+            description,
+            { description = it },
+            label = { Text(stringResource(R.string.audio_metadata_description)) },
+            minLines = 3,
+            maxLines = 6,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(stringResource(R.string.audio_metadata_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = gainEnabled, onClick = { onGain(!gainEnabled) }, label = { Text(stringResource(R.string.audio_gain)) })
+        }
+        Text(stringResource(R.string.audio_gain_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Button(
+            onClick = {
+                onSave(
+                    AudioMetadata(
+                        narrator = narrator.trim().takeIf { it.isNotEmpty() },
+                        series = series.trim().takeIf { it.isNotEmpty() },
+                        language = language.trim().takeIf { it.isNotEmpty() },
+                        description = description.trim().takeIf { it.isNotEmpty() },
+                    ),
+                )
+            },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        ) {
+            Text(stringResource(R.string.audio_save_details))
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
 private fun SeekBar(s: PlayerSnapshot?, span: ChapterSpan, onSeek: (Long) -> Unit) {
     val length = span.lengthMs
     var dragging by remember(s?.bookId, s?.track, span) { mutableStateOf(false) }
@@ -883,22 +1047,112 @@ private fun BookmarkRow(mark: Bookmark, chapters: List<AudioNavEntry>, onClick: 
 private fun OfflinePanel(
     state: AudioDownloadState?,
     download: AudioDownloadProgress?,
+    tracks: List<AudioTrackState>,
+    freeBytes: Long,
+    estimate: AudioOfflineEstimate?,
+    plan: AudioOfflinePlan,
+    onPlan: (AudioOfflinePlan) -> Unit,
+    onToggleTrack: (Int) -> Unit,
+    onEstimate: () -> Unit,
     onDownload: () -> Unit,
     onCancel: () -> Unit,
     onRemove: () -> Unit,
 ) {
+    // The estimate depends on the plan and on what is already downloaded; the sheet measures when the plan changes.
+    LaunchedEffect(plan) { onEstimate() }
+    val active = download?.takeIf { it.running }
+    val running = active != null
+    val downloaded = tracks.count { it.downloaded }
+    val selected = (plan as? AudioOfflinePlan.Selected)?.tracks.orEmpty()
+    val missing = tracks.count { !it.available }
+    val canDownload = !running && when (plan) {
+        AudioOfflinePlan.All -> missing > 0
+        is AudioOfflinePlan.Next -> tracks.any { it.remote }
+        is AudioOfflinePlan.Selected -> selected.isNotEmpty()
+    }
     Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        val active = download?.takeIf { it.running }
-        val running = active != null
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = plan is AudioOfflinePlan.All, onClick = { onPlan(AudioOfflinePlan.All) }, label = { Text(stringResource(R.string.audio_offline_plan_all)) })
+            FilterChip(
+                selected = plan is AudioOfflinePlan.Next,
+                onClick = { onPlan(AudioOffline.next((plan as? AudioOfflinePlan.Next)?.count ?: AudioOffline.NEXT_DEFAULT)) },
+                label = { Text(stringResource(R.string.audio_offline_plan_next)) },
+            )
+            FilterChip(
+                selected = plan is AudioOfflinePlan.Selected,
+                onClick = { onPlan(AudioOfflinePlan.Selected(selected)) },
+                label = { Text(stringResource(R.string.audio_offline_plan_selected)) },
+            )
+        }
+        if (plan is AudioOfflinePlan.Next) {
+            val options = (listOf(3, 5, 10) + plan.count).distinct().sorted()
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                options.forEach { count ->
+                    FilterChip(
+                        selected = plan.count == count,
+                        onClick = { onPlan(AudioOffline.next(count)) },
+                        label = { Text(stringResource(R.string.audio_offline_next_count, count)) },
+                    )
+                }
+            }
+        }
+        if (plan is AudioOfflinePlan.Selected) {
+            Text(
+                stringResource(R.string.audio_offline_selected_count, selected.size),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 260.dp)) {
+                itemsIndexed(tracks, key = { _, track -> track.index }) { _, track ->
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onToggleTrack(track.index) }.padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = track.index in selected, onCheckedChange = { onToggleTrack(track.index) })
+                        Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                            Text(track.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            val meta = when {
+                                !track.remote -> stringResource(R.string.audio_offline_track_local)
+                                track.downloaded -> listOfNotNull(
+                                    stringResource(R.string.audio_offline_track_saved),
+                                    track.bytes.takeIf { it > 0 }?.let { Files.humanSize(it) },
+                                ).joinToString(" · ")
+                                track.bytes > 0 -> Files.humanSize(track.bytes)
+                                else -> ""
+                            }
+                            if (meta.isNotBlank()) {
+                                Text(meta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+        }
         val status = when {
             active != null && active.total > 0 -> stringResource(R.string.audio_offline_running, active.track + 1, active.total)
             running -> stringResource(R.string.audio_offline_waiting)
-            state == null -> ""
+            state == null -> stringResource(R.string.audio_offline_hint)
             state.complete -> stringResource(R.string.audio_offline_complete, Files.humanSize(state.bytes))
             state.downloaded > 0 -> stringResource(R.string.audio_offline_state, state.downloaded, state.total, Files.humanSize(state.bytes))
             else -> stringResource(R.string.audio_offline_hint)
         }
         Text(status, style = MaterialTheme.typography.bodyMedium)
+        // A truthful cost: known bytes are summed, tracks whose server reports no length are counted, never guessed.
+        estimate?.takeIf { it.total > 0 }?.let { e ->
+            val text = when {
+                e.known == 0 -> stringResource(R.string.audio_offline_estimate_unknown)
+                e.unknown > 0 -> stringResource(R.string.audio_offline_estimate_partial, Files.humanSize(e.bytes), e.unknown)
+                else -> stringResource(R.string.audio_offline_estimate, Files.humanSize(e.bytes))
+            }
+            Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (freeBytes > 0) {
+            Text(
+                stringResource(R.string.audio_offline_free, Files.humanSize(freeBytes)),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (active != null) LinearProgressIndicator(progress = { active.fraction }, modifier = Modifier.fillMaxWidth())
         download?.error?.takeIf { !running }?.let {
             Text(stringResource(R.string.audio_offline_failed, it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -906,12 +1160,14 @@ private fun OfflinePanel(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             when {
                 running -> OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.audio_download_cancel)) }
-                state?.complete != true -> Button(onClick = onDownload) {
-                    Text(stringResource(if ((state?.downloaded ?: 0) > 0) R.string.audio_download_rest else R.string.audio_download))
+                canDownload -> Button(onClick = onDownload) {
+                    Text(stringResource(if (downloaded > 0) R.string.audio_download_rest else R.string.audio_download))
                 }
             }
-            if (!running && (state?.downloaded ?: 0) > 0) {
-                TextButton(onClick = onRemove) { Text(stringResource(R.string.audio_download_remove)) }
+            if (!running && downloaded > 0) {
+                TextButton(onClick = onRemove) {
+                    Text(stringResource(if (plan is AudioOfflinePlan.All) R.string.audio_download_remove else R.string.audio_download_remove_selected))
+                }
             }
         }
         Spacer(Modifier.height(8.dp))

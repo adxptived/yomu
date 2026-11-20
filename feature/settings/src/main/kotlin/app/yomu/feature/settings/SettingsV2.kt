@@ -58,6 +58,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.common.Share
+import app.yomu.core.common.TimeFormat
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.PreferenceHeader
 import app.yomu.core.ui.components.TextInputDialog
@@ -73,8 +74,6 @@ import app.yomu.domain.tracking.TrackService
 import app.yomu.feature.annotations.icon
 import app.yomu.feature.annotations.label
 import org.koin.compose.koinInject
-import java.text.DateFormat
-import java.util.Date
 import app.yomu.core.ui.R as CoreR
 
 @Composable
@@ -87,6 +86,7 @@ internal fun Hint(text: String) {
 @Composable
 internal fun ColumnScope.SyncSection(vm: SettingsViewModel, onOpenProblems: () -> Unit) {
     val s = vm.settings
+    val context = LocalContext.current
     val backend by s.syncBackend.state()
     val folder by s.syncFolder.state()
     val url by s.webdavUrl.state()
@@ -95,6 +95,7 @@ internal fun ColumnScope.SyncSection(vm: SettingsViewModel, onOpenProblems: () -
     val enabled by s.syncEnabled.state()
     val lastSync by s.lastSyncAt.state()
     val lastError by s.lastSyncError.state()
+    val timeFormat by s.timeFormat.state()
     val webdav = backend == SyncManager.WEBDAV
     val github = backend == SyncManager.GITHUB
     val configured = when {
@@ -107,9 +108,28 @@ internal fun ColumnScope.SyncSection(vm: SettingsViewModel, onOpenProblems: () -
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(vm::setSyncFolder) }
 
     Hint(stringResource(R.string.set_sync_hint))
+    // B03: one guided path through backend → credentials → probe → categories → schedule → preview, plus a
+    // recovery line that says what the last failure actually needs instead of a bare error string.
+    SyncRecoveryBanner(vm)
+    PreferenceItem(
+        stringResource(R.string.set_sync_wizard_open),
+        stringResource(R.string.set_sync_wizard_open_sum),
+        icon = Icons.Outlined.Tune,
+        onClick = { vm.openSyncWizard() },
+    )
     PreferenceSwitch(stringResource(R.string.set_sync), enabled, { v -> vm.set(s.syncEnabled, v) { vm.rescheduleSync() } }, enabled = configured, icon = settingIcon(R.string.set_sync))
-    val last = if (lastSync > 0) DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(lastSync)) else null
+    val last = if (lastSync > 0) TimeFormat.formatDateTime(context, timeFormat, lastSync) else null
     PreferenceItem(stringResource(R.string.set_sync_now), last?.let { stringResource(R.string.set_last_time, it) }, enabled = configured, onClick = vm::syncNow, icon = settingIcon(R.string.set_sync_now))
+    val summary by vm.syncSummary.collectAsStateWithLifecycle()
+    if (summary.hasRun) {
+        Hint(
+            when {
+                summary.error != null -> stringResource(R.string.set_sync_summary_error, summary.error!!)
+                summary.conflicts > 0 -> stringResource(R.string.set_sync_summary_partial, summary.conflicts)
+                else -> stringResource(R.string.set_sync_summary_ok)
+            },
+        )
+    }
     if (lastError.isNotBlank()) {
         PreferenceItem(
             stringResource(R.string.set_sync_problems),
@@ -179,6 +199,7 @@ internal fun ColumnScope.SyncSection(vm: SettingsViewModel, onOpenProblems: () -
     SwitchPref(vm, s.syncAnnotations, R.string.set_sync_annotations, R.string.set_sync_annotations_sum)
     SwitchPref(vm, s.syncBookmarks, R.string.set_sync_bookmarks, R.string.set_sync_bookmarks_sum)
     SwitchPref(vm, s.syncWords, R.string.set_sync_words, R.string.set_sync_words_sum)
+    SwitchPref(vm, s.syncGlossary, R.string.set_sync_glossary, R.string.set_sync_glossary_sum)
     SwitchPref(vm, s.syncCatalog, R.string.set_sync_catalog, R.string.set_sync_catalog_sum)
     SwitchPref(vm, s.syncTrackLinks, R.string.set_sync_track_links, R.string.set_sync_track_links_sum)
     SwitchPref(vm, s.syncBookFiles, R.string.set_sync_book_files, R.string.set_sync_book_files_sum)
@@ -203,6 +224,7 @@ internal fun ColumnScope.SyncSection(vm: SettingsViewModel, onOpenProblems: () -
     }
 
     Hint(stringResource(R.string.set_sync_all_devices))
+    SyncWizardDialog(vm)
 }
 
 // endregion

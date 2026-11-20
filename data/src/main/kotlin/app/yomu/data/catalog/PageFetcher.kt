@@ -1,16 +1,9 @@
 package app.yomu.data.catalog
 
 import android.content.Context
-import androidx.core.net.toUri
-import app.yomu.data.source.SourceCalls
 import app.yomu.source.CatalogSource
-import app.yomu.source.HttpStatusException
 import app.yomu.source.Page
-import app.yomu.source.await
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.File
 import java.io.IOException
 
@@ -59,12 +52,12 @@ object ImageSniffer {
     }
 }
 
-/** Downloads page images with retries and validation; shared by the online reader cache and the chapter downloader. */
+/**
+ * Downloads page images with retries and validation, shared by the online reader cache and the chapter downloader.
+ * Both paths now use [ResumablePageFetcher], so a truncated page can continue with Range when the server proves it is
+ * still the same image, and a restarted transfer never leaves partial bytes in the final path.
+ */
 object PageFetcher {
-    /**
-     * Saves the image of [page] to [out] and returns its file extension. Transient failures (timeouts, dropped
-     * connections, 429/5xx, error pages instead of images) are retried [attempts] times with a growing pause.
-     */
     suspend fun fetch(
         context: Context,
         client: OkHttpClient,
@@ -72,49 +65,5 @@ object PageFetcher {
         page: Page,
         out: File,
         attempts: Int = 3,
-    ): String = withContext(Dispatchers.IO) {
-        var resolved: String? = null
-        SourceCalls.retrying(attempts, baseDelayMs = 800) { attempt ->
-            // Addresses resolved from the page (often signed and short-lived) are asked again after a failure.
-            val url = page.imageUrl ?: resolved?.takeIf { attempt == 0 } ?: source.getImageUrl(page).also { resolved = it }
-            fetchOnce(context, client, source, page, url, out)
-        }
-    }
-
-    private suspend fun fetchOnce(context: Context, client: OkHttpClient, source: CatalogSource, page: Page, url: String, out: File): String {
-        val tmp = File(out.parentFile, out.name + ".part")
-        try {
-            if (url.startsWith("content://") || url.startsWith("file://")) {
-                context.contentResolver.openInputStream(url.toUri())?.use { i -> tmp.outputStream().use { i.copyTo(it) } }
-                    ?: throw IOException("Cannot open $url")
-                return finish(tmp, out, null)
-            }
-            // Extensions fetch images with their own client (cookies, signed URLs, descrambling interceptors).
-            val response = source.fetchImage(page, url) ?: run {
-                val req = Request.Builder().url(url).apply { source.imageHeaders().forEach { (k, v) -> header(k, v) } }.build()
-                client.newCall(req).await()
-            }
-            return response.use { r ->
-                if (!r.isSuccessful) throw HttpStatusException(r.code, url, app.yomu.source.RetryAfter.parse(r.header("Retry-After"), System.currentTimeMillis()))
-                tmp.outputStream().use { r.body.byteStream().copyTo(it) }
-                finish(tmp, out, r.body.contentType()?.let { "${it.type}/${it.subtype}" })
-            }
-        } finally {
-            tmp.delete()
-        }
-    }
-
-    private fun finish(tmp: File, out: File, contentType: String?): String {
-        if (tmp.length() == 0L) throw NotAnImageException("Empty image")
-        val head = ImageSniffer.head(tmp)
-        val ext = ImageSniffer.extension(head)
-            ?: if (ImageSniffer.looksLikeText(head) || contentType?.startsWith("text/") == true || contentType?.contains("json") == true) {
-                throw NotAnImageException("Not an image (${contentType ?: "text"})")
-            } else {
-                when (contentType?.substringAfter('/')) { "png" -> "png"; "webp" -> "webp"; "gif" -> "gif"; "avif" -> "avif"; else -> "jpg" }
-            }
-        out.delete()
-        if (!tmp.renameTo(out)) tmp.copyTo(out, overwrite = true)
-        return ext
-    }
+    ): String = app.yomu.data.download.ResumablePageFetcher.fetch(context, client, source, page, out, attempts)
 }

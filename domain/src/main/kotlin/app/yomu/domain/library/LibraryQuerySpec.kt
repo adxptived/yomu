@@ -1,5 +1,7 @@
 package app.yomu.domain.library
 
+import app.yomu.domain.model.ReadingStatus
+
 /** A filter that needs "yes", "no" and "any" — a boolean cannot express "I don't care". */
 enum class Tri {
     ANY, YES, NO;
@@ -51,6 +53,8 @@ data class LibraryQuerySpec(
     val availability: Set<Availability> = emptySet(),
     val read: Tri = Tri.ANY,
     val started: Tri = Tri.ANY,
+    /** The library's own statuses; independent of the tri-state read/started flags. */
+    val statuses: Set<ReadingStatus> = emptySet(),
     val downloaded: Tri = Tri.ANY,
     val bookmarked: Tri = Tri.ANY,
     val tracked: Tri = Tri.ANY,
@@ -69,7 +73,7 @@ data class LibraryQuerySpec(
         get() = search.isNotBlank() || types.isNotEmpty() || origins.isNotEmpty() || availability.isNotEmpty() ||
             read != Tri.ANY || started != Tri.ANY || downloaded != Tri.ANY || bookmarked != Tri.ANY ||
             tracked != Tri.ANY || completedPublication != Tri.ANY || favoritesOnly ||
-            tags.isNotEmpty() || languages.isNotEmpty() || collectionId != null
+            statuses.isNotEmpty() || tags.isNotEmpty() || languages.isNotEmpty() || collectionId != null
 
     /** Number of active narrowing conditions, independent of how many options each one holds. */
     val activeFilterCount: Int
@@ -77,7 +81,7 @@ data class LibraryQuerySpec(
             types.isNotEmpty(), origins.isNotEmpty(), availability.isNotEmpty(),
             read != Tri.ANY, started != Tri.ANY, downloaded != Tri.ANY, bookmarked != Tri.ANY,
             tracked != Tri.ANY, completedPublication != Tri.ANY, favoritesOnly,
-            tags.isNotEmpty(), languages.isNotEmpty(), collectionId != null,
+            statuses.isNotEmpty(), tags.isNotEmpty(), languages.isNotEmpty(), collectionId != null,
         ).count { it }
 
     /** A stable identity of the query, used to snapshot a selection against it. */
@@ -85,7 +89,7 @@ data class LibraryQuerySpec(
         get() = listOf(
             search, types.sortedBy { it.name }, origins.sortedBy { it.name }, availability.sortedBy { it.name },
             read, started, downloaded, bookmarked, tracked, completedPublication, favoritesOnly,
-            tags.sorted(), languages.sorted(), collectionId, sort, ascending,
+            statuses.sortedBy { it.name }, tags.sorted(), languages.sorted(), collectionId, sort, ascending,
         ).joinToString("|")
 
     fun matches(item: LibraryQueryItem): Boolean {
@@ -98,7 +102,12 @@ data class LibraryQuerySpec(
         if (!downloaded.matches(item.downloaded)) return false
         if (!bookmarked.matches(item.bookmarked)) return false
         if (!tracked.matches(item.tracked)) return false
-        if (!completedPublication.matches(item.completedPublication)) return false
+        if (completedPublication.matches(item.completedPublication)) {
+            // A known status must pass when the filter names any; an item without one is left to the axes above.
+            if (statuses.isNotEmpty() && item.status != null && item.status !in statuses) return false
+        } else {
+            return false
+        }
         if (favoritesOnly && !item.favorite) return false
         if (tags.isNotEmpty() && item.tags.none { it in tags }) return false
         if (languages.isNotEmpty() && item.language !in languages) return false
@@ -132,6 +141,8 @@ data class LibraryQueryItem(
     val bookmarked: Boolean = false,
     val tracked: Boolean = false,
     val completedPublication: Boolean = false,
+    /** Library status when the item has one; local books do, online titles derive it. */
+    val status: ReadingStatus? = null,
     val favorite: Boolean = false,
     val tags: Set<String> = emptySet(),
     val language: String? = null,

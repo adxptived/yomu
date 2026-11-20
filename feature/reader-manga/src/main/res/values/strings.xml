@@ -5,6 +5,7 @@
     <string name="manga_prev_chapter">Previous chapter</string>
     <string name="manga_no_next">This is the last chapter. Tap to open the menu.</string>
     <string name="manga_page_error">Could not load the page</string>
+    <string name="mr_chapter_navigator_jump">Jump to chapter %1$s</string>
     <string name="manga_tap_prev">Back</string>
     <string name="manga_tap_next">Forward</string>
     <string name="manga_tap_menu">Menu</string>

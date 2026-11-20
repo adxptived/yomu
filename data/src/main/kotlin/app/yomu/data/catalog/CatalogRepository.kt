@@ -53,6 +53,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import java.io.File
 
@@ -538,31 +539,198 @@ class CatalogRepository(
         return SearchRanking.sortLinks(links)
     }
 
-    /** Moves reading state and favourite flag from one entry to the same title in another source. */
+    /**
+     * Moves reading state and favourite flag from one entry to the same title in another source.
+     *
+     * Kept as the one-shot form of [planMigration] + [applyMigration]: the preview UI uses the pair, while older
+     * callers get the same matching, journal and stale-plan checks instead of another matching implementation.
+     */
     suspend fun migrate(fromEntryId: Long, targetSourceId: Long, target: SItem): Long {
-        val from = dao.get(fromEntryId) ?: error("Entry not found")
-        val toId = upsert(targetSourceId, target)
-        refresh(toId)
-        val oldChapters = dao.chapters(fromEntryId)
-        val newChapters = dao.chapters(toId)
-        // Match by chapter number and scanlator, as the sync does: a guess like "number <= last read" marks
-        // unread chapters as read and drops the page position and bookmarks.
-        val oldByKey = oldChapters.associateBy { it.number to it.scanlator }
-        db.withTransaction {
-            dao.updateChapters(
-                newChapters.map { c ->
-                    val old = oldByKey[c.number to c.scanlator]
-                    if (old == null) c.copy(isNew = false)
-                    else c.copy(read = old.read, bookmarked = old.bookmarked, lastPageRead = old.lastPageRead, isNew = false)
-                },
-            )
-            val fromTabs = tabs.onlineTabsOf(fromEntryId)
-            dao.setFavorite(toId, true, null, System.currentTimeMillis())
-            fromTabs.forEach { tabs.setOnline(listOf(toId), it, true) }
-            dao.setFavorite(fromEntryId, false, null, from.addedAt)
-            tabs.forgetOnline(listOf(fromEntryId))
+        val plan = planMigration(fromEntryId, targetSourceId, target)
+        return applyMigration(plan).targetEntryId
+    }
+
+    /**
+     * Reads the target title from its source and matches its chapters, without changing a single row. The plan names
+     * its confidence for every chapter and the revision of both sides, so [applyMigration] can refuse a stale preview.
+     */
+    suspend fun planMigration(
+        fromEntryId: Long,
+        targetSourceId: Long,
+        target: SItem,
+        categories: Set<MigrationCategory> = MigrationCategory.entries.toSet(),
+    ): MigrationPlan = withContext(Dispatchers.IO) {
+        val fromEntity = dao.get(fromEntryId) ?: error("Entry not found")
+        val fromChapters = dao.chapters(fromEntryId)
+        val src = source(targetSourceId)
+        val (details, remote) = sourceCall(targetSourceId) { src.getDetailsAndChapters(target) }
+        val targets = remote.map { MigrationTargetChapter(it.url, it.name, it.number, it.scanlator) }
+        val fromRevision = migrationRevision(fromEntity, fromChapters)
+        val targetRevision = fingerprint(remote.size, remote.joinToString("\n") { it.url })
+        MigrationPlan(
+            planId = fingerprint(fromEntryId, targetSourceId, target.url, fromRevision, targetRevision),
+            fromEntryId = fromEntryId,
+            fromTitle = fromEntity.title,
+            fromRevision = fromRevision,
+            targetSourceId = targetSourceId,
+            targetItem = details.copy(initialized = true, url = target.url),
+            targetTitle = details.title.ifBlank { target.title },
+            targetRevision = targetRevision,
+            matches = MigrationMatcher.match(fromChapters.map { it.toDomain() }, targets),
+            categories = categories,
+        )
+    }
+
+    /**
+     * Applies a preview in one transaction. The journal is written before the transaction and deleted if it fails, so
+     * a crash leaves either "nothing changed" or an undoable migration. Applying the same plan twice is a no-op.
+     */
+    suspend fun applyMigration(
+        plan: MigrationPlan,
+        categories: Set<MigrationCategory> = plan.categories,
+    ): MigrationResult = withContext(Dispatchers.IO) {
+        val selected = categories intersect plan.categories
+        readJournal(plan.planId)?.let {
+            return@withContext MigrationResult(it.targetEntryId, 0, 0, selected, alreadyApplied = true)
         }
-        return toId
+        val fromBefore = dao.get(plan.fromEntryId) ?: throw StaleMigrationPlanException("The source title is gone")
+        val fromChapters = dao.chapters(plan.fromEntryId)
+        if (migrationRevision(fromBefore, fromChapters) != plan.fromRevision) {
+            throw StaleMigrationPlanException("The source title changed after the preview")
+        }
+        val targetId = upsert(plan.targetSourceId, plan.targetItem)
+        refresh(targetId)
+        val targetBefore = dao.get(targetId) ?: throw StaleMigrationPlanException("The target title disappeared")
+        val newChapters = dao.chapters(targetId)
+        val byUrl = newChapters.associateBy { it.url }
+        val plannedUrls = plan.matches.mapNotNull { it.target?.url }
+        if (plannedUrls.any { it !in byUrl }) {
+            throw StaleMigrationPlanException("The target chapter list changed after the preview")
+        }
+        val fromTabs = tabs.onlineTabsOf(plan.fromEntryId)
+        val targetTabs = tabs.onlineTabsOf(targetId)
+        val updates = plan.matches.mapNotNull { match ->
+            val new = match.target?.let { byUrl[it.url] } ?: return@mapNotNull null
+            val read = if (MigrationCategory.PROGRESS in selected) match.from.read else new.read
+            val bookmarked = if (MigrationCategory.BOOKMARKS in selected) match.from.bookmarked else new.bookmarked
+            val page = when {
+                MigrationCategory.PROGRESS !in selected -> new.lastPageRead
+                // A different release may paginate differently: keep the read status, drop the page, say so in the plan.
+                match.pagePositionSafe -> match.from.lastPageRead
+                else -> 0
+            }
+            JournalChapter(
+                targetId = new.id,
+                fromRead = match.from.read,
+                fromBookmarked = match.from.bookmarked,
+                fromPage = match.from.lastPageRead,
+                targetRead = new.read,
+                targetBookmarked = new.bookmarked,
+                targetPage = new.lastPageRead,
+                appliedRead = read,
+                appliedBookmarked = bookmarked,
+                appliedPage = page,
+            )
+        }
+        val journal = MigrationJournal(
+            planId = plan.planId,
+            appliedAt = System.currentTimeMillis(),
+            fromEntryId = plan.fromEntryId,
+            targetEntryId = targetId,
+            fromFavorite = fromBefore.favorite,
+            fromCategoryId = fromBefore.categoryId,
+            fromTabs = fromTabs.toList(),
+            targetFavorite = targetBefore.favorite,
+            targetCategoryId = targetBefore.categoryId,
+            targetTabs = targetTabs.toList(),
+            appliedFromFavorite = if (MigrationCategory.FAVORITE in selected) false else fromBefore.favorite,
+            appliedTargetFavorite = if (MigrationCategory.FAVORITE in selected) true else targetBefore.favorite,
+            categories = selected.map { it.name },
+            chapters = updates,
+        )
+        writeJournal(journal)
+        try {
+            db.withTransaction {
+                updates.forEach { dao.setChapterState(it.targetId, it.appliedRead, it.appliedBookmarked, it.appliedPage) }
+                if (MigrationCategory.FAVORITE in selected) {
+                    val now = System.currentTimeMillis()
+                    dao.setFavorite(targetId, true, targetBefore.categoryId, now)
+                    // The old title stays in the library (and keeps its downloads), but is no longer a favourite.
+                    dao.setFavorite(plan.fromEntryId, false, null, fromBefore.addedAt)
+                }
+                if (MigrationCategory.TABS in selected) {
+                    fromTabs.forEach { tabs.setOnline(listOf(targetId), it, true) }
+                    tabs.forgetOnline(listOf(plan.fromEntryId))
+                }
+            }
+        } catch (e: Throwable) {
+            deleteJournal(plan.planId)
+            throw e
+        }
+        MigrationResult(targetId, updates.size, plan.matches.size - updates.size, selected)
+    }
+
+    /** Restores the values an apply wrote, but only where they are still exactly those values. */
+    suspend fun undoMigration(planId: String): Boolean = withContext(Dispatchers.IO) {
+        val journal = readJournal(planId) ?: return@withContext false
+        db.withTransaction {
+            journal.chapters.forEach { entry ->
+                val current = dao.chapter(entry.targetId) ?: return@forEach
+                if (current.read == entry.appliedRead && current.bookmarked == entry.appliedBookmarked &&
+                    current.lastPageRead == entry.appliedPage
+                ) {
+                    dao.setChapterState(entry.targetId, entry.targetRead, entry.targetBookmarked, entry.targetPage)
+                }
+            }
+            dao.get(journal.fromEntryId)?.takeIf { it.favorite == journal.appliedFromFavorite }?.let {
+                dao.setFavorite(it.id, journal.fromFavorite, journal.fromCategoryId, it.addedAt)
+            }
+            dao.get(journal.targetEntryId)?.takeIf { it.favorite == journal.appliedTargetFavorite }?.let {
+                dao.setFavorite(it.id, journal.targetFavorite, journal.targetCategoryId, it.addedAt)
+            }
+            val currentTargetTabs = tabs.onlineTabsOf(journal.targetEntryId)
+            (currentTargetTabs - journal.targetTabs.toSet()).forEach { tabs.setOnline(listOf(journal.targetEntryId), it, false) }
+            journal.targetTabs.forEach { tabs.setOnline(listOf(journal.targetEntryId), it, true) }
+            journal.fromTabs.forEach { tabs.setOnline(listOf(journal.fromEntryId), it, true) }
+        }
+        deleteJournal(planId)
+        true
+    }
+
+    /** Plans several titles for one target source; a failed preview is reported without stopping the others. */
+    suspend fun planMigrations(
+        targetSourceId: Long,
+        entries: List<Pair<Long, SItem>>,
+        categories: Set<MigrationCategory> = MigrationCategory.entries.toSet(),
+    ): List<Result<MigrationPlan>> = entries.map { (fromId, item) ->
+        runCatching { planMigration(fromId, targetSourceId, item, categories) }
+    }
+
+    /** Applies a batch in order; each result is independent, so one stale plan does not roll back the others. */
+    suspend fun applyMigrations(
+        plans: List<MigrationPlan>,
+        categories: Set<MigrationCategory> = MigrationCategory.entries.toSet(),
+    ): List<Result<MigrationResult>> = plans.map { runCatching { applyMigration(it, categories) } }
+
+    private fun migrationRevision(entry: CatalogItemEntity, chapters: List<ChapterEntity>): String =
+        fingerprint(entry.lastUpdateAt, chapters.size, chapters.joinToString("\n") { it.url })
+
+    private fun journalFile(planId: String): File = File(context.filesDir, "migration").apply { mkdirs() }.resolve("$planId.json")
+
+    private fun readJournal(planId: String): MigrationJournal? = runCatching {
+        val file = journalFile(planId)
+        if (!file.isFile) null else MIGRATION_JSON.decodeFromString(MigrationJournal.serializer(), file.readText())
+    }.getOrNull()
+
+    private fun writeJournal(journal: MigrationJournal) {
+        val file = journalFile(journal.planId)
+        val tmp = File(file.parentFile, file.name + ".tmp")
+        tmp.writeText(MIGRATION_JSON.encodeToString(MigrationJournal.serializer(), journal))
+        java.nio.file.Files.move(tmp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    }
+
+    private fun deleteJournal(planId: String) {
+        journalFile(planId).delete()
     }
 
     suspend fun pages(chapterId: Long): Pair<CatalogSource, List<Page>> {
@@ -591,7 +759,8 @@ class CatalogRepository(
 
     companion object {
         const val KIND_CATALOG = "CATALOG"
-
+        /** Journal of a migration, readable after a restart. */
+        private val MIGRATION_JSON = Json { ignoreUnknownKeys = true; encodeDefaults = true }
         /** Pause between two titles of the same source during the update check. */
         const val UPDATE_PAUSE_MS = 400L
     }

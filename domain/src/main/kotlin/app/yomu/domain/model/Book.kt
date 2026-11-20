@@ -58,6 +58,8 @@ data class Book(
     val favorite: Boolean = false,
     /** The reader's own score, 0 (not rated) to 5. */
     val rating: Int = 0,
+    /** When the settings, rating or favourite changed; used by sync to pick the newest. */
+    val metaUpdatedAt: Long = 0,
 ) {
     val engine: EngineType
         get() = when {

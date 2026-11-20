@@ -45,7 +45,7 @@ internal object FolderMetadataSnapshotCodec {
     // sync must reject the resulting unqualified folder positions, not guess.
     fun encode(snapshot: FolderMetadataSnapshot): ByteArray = try {
         validate(snapshot)
-        val state = json.encodeToJsonElement(SyncState.serializer(), snapshot.state).jsonObject
+        val state = SyncCodec.encodeElement(snapshot.state)
         val root = JsonObject(state + mapOf(
             "version" to JsonPrimitive(3),
             "stateVersion" to JsonPrimitive(snapshot.state.version),
@@ -68,7 +68,7 @@ internal object FolderMetadataSnapshotCodec {
             val stateRoot =
                 JsonObject((root - "stateVersion" - "folderRevisions") + ("version" to JsonPrimitive(stateVersion)))
             FolderMetadataSnapshot(
-                state = json.decodeFromJsonElement(SyncState.serializer(), stateRoot),
+                state = SyncCodec.decode(stateRoot),
                 revisions = json.decodeFromJsonElement(ListSerializer(FolderEntry.serializer()), revisions),
             )
         }

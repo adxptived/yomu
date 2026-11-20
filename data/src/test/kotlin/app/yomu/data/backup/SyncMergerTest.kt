@@ -12,6 +12,9 @@ import app.yomu.core.database.WordEntity
 import app.yomu.core.database.YomuDatabase
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -39,12 +42,28 @@ class SyncMergerTest {
 
         fun sync(deletions: Boolean = true, options: SyncMerger.Options = SyncMerger.Options(deletions = deletions)): Int = runBlocking {
             clock += 1000
-            val remote = shared?.let { json.decodeFromString(SyncState.serializer(), it) }
+            val remote = shared?.let { SyncCodec.decode(json.parseToJsonElement(it).jsonObject) }
             val out = SyncMerger(db).merge(remote, base, "test", clock, options)
-            shared = json.encodeToString(SyncState.serializer(), out.state)
+            shared = SyncCodec.encode(out.state)
             base = out.base
             out.changed
         }
+
+        fun setMeta(bookId: Long, settings: String?, rating: Int, favorite: Boolean, at: Long = clock) = runBlocking {
+            db.books().setMeta(bookId, settings, rating, favorite, at)
+        }
+
+        fun subscribe(bookId: Long, url: String, title: String, at: Long = clock) = runBlocking {
+            db.audioSubscriptions().upsert(
+                app.yomu.core.database.AudioSubscriptionEntity(feedUrl = url, title = title, bookId = bookId, createdAt = at, lastCheckedAt = at),
+            )
+        }
+
+        fun subscriptions() = runBlocking { db.audioSubscriptions().all() }
+
+        fun unsubscribeAll() = runBlocking { db.audioSubscriptions().all().forEach { db.audioSubscriptions().delete(it.id) } }
+
+        fun book(bookId: Long) = runBlocking { db.books().get(bookId)!! }
 
         fun addBook(hash: String): Long = runBlocking {
             db.books().insert(
@@ -630,6 +649,104 @@ class SyncMergerTest {
             assertTrue(failure is java.io.IOException)
             assertEquals(listOf("Aa"), device.highlights())
         } finally { device.db.close() }
+    }
+
+    @Test fun newestPerBookSettingsWinAndOlderValuesDoNotOverwriteThem() {
+        val a = Device()
+        val b = Device()
+        try {
+            val bookA = a.addBook("hash")
+            a.setMeta(bookA, """{"audio":{"speed":1.5}}""", rating = 4, favorite = true, at = 2_000_000)
+            a.sync()
+            val bookB = b.addBook("hash")
+            b.sync()
+            assertEquals("""{"audio":{"speed":1.5}}""", b.book(bookB).readerSettingsJson)
+            assertEquals(4, b.book(bookB).rating)
+            assertTrue(b.book(bookB).favorite)
+
+            // B changes its mind later; the newer write travels back and the older A value is replaced.
+            b.setMeta(bookB, """{"audio":{"speed":2.0}}""", rating = 5, favorite = false, at = 3_000_000)
+            b.sync()
+            a.sync()
+            assertEquals("""{"audio":{"speed":2.0}}""", a.book(bookA).readerSettingsJson)
+            assertEquals(5, a.book(bookA).rating)
+            assertFalse(a.book(bookA).favorite)
+        } finally {
+            a.db.close(); b.db.close()
+        }
+    }
+
+    @Test fun settingsCanBeSwitchedOffWithoutLosingTheRemoteValue() {
+        val a = Device()
+        val b = Device()
+        try {
+            val bookA = a.addBook("hash")
+            a.setMeta(bookA, """{"font":"serif"}""", rating = 3, favorite = true, at = 2_000_000)
+            a.sync()
+            val bookB = b.addBook("hash")
+            b.sync(options = SyncMerger.Options(settings = false))
+            assertNull(b.book(bookB).readerSettingsJson)
+            assertNull(b.book(bookB).readerSettingsJson)
+            b.sync()
+            assertEquals("""{"font":"serif"}""", b.book(bookB).readerSettingsJson)
+        } finally {
+            a.db.close(); b.db.close()
+        }
+    }
+
+    @Test fun anUnknownCategoryIsCarriedThroughInsteadOfBeingDeleted() {
+        val device = Device()
+        try {
+            shared = """{"version":2,"updatedAt":1,"books":[],"futureCategory":{"a":1}}"""
+            device.sync()
+            val root = json.parseToJsonElement(shared!!).jsonObject
+            assertEquals(1, root["futureCategory"]?.jsonObject?.get("a")?.jsonPrimitive?.intOrNull)
+        } finally {
+            device.db.close()
+        }
+    }
+
+    @Test fun aSubscriptionTravelsAndKeepsTheLocalBookId() {
+        val a = Device()
+        val b = Device()
+        try {
+            val bookA = a.addBook("hash")
+            a.subscribe(bookA, "https://example.test/feed", "Podcast", at = 1_000_000)
+            a.sync()
+            val bookB = b.addBook("hash")
+            b.sync()
+            val onB = b.subscriptions().single()
+            assertEquals("Podcast", onB.title)
+            assertEquals(bookB, onB.bookId)
+            assertEquals("https://example.test/feed", onB.feedUrl)
+        } finally {
+            a.db.close(); b.db.close()
+        }
+    }
+
+    @Test fun aSubscriptionDeletedOnOneDeviceIsNotResurrectedByAnother() {
+        val a = Device()
+        val b = Device()
+        try {
+            val bookA = a.addBook("hash")
+            a.subscribe(bookA, "https://example.test/feed", "Podcast", at = 1_000_000)
+            a.sync()
+            val bookB = b.addBook("hash")
+            b.sync()
+            assertEquals(1, b.subscriptions().size)
+
+            a.unsubscribeAll()
+            a.sync()
+            b.sync()
+            assertTrue(b.subscriptions().isEmpty())
+            // A later sync does not bring it back either.
+            a.sync()
+            b.sync()
+            assertTrue(a.subscriptions().isEmpty())
+            assertTrue(b.subscriptions().isEmpty())
+        } finally {
+            a.db.close(); b.db.close()
+        }
     }
 
 }

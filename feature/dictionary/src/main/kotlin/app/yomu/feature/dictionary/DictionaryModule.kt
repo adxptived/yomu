@@ -10,4 +10,5 @@ val dictionaryModule = module {
     viewModel { WordsViewModel(androidContext(), get(), get()) }
     viewModel { ReviewViewModel(get(), get()) }
     viewModel { DictionariesViewModel(get(), get()) }
+    viewModel { GlossaryViewModel(get(), get(), get()) }
 }

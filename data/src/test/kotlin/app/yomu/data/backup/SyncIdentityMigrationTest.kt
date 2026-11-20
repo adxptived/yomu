@@ -36,6 +36,18 @@ class SyncIdentityMigrationTest {
         assertEquals("2".repeat(64), migrated.base!!.privateAnnotationRevisions[newKey])
     }
 
+    @Test fun glossaryNotesAndTheirKeysFollowTheNewIdentity() {
+        val old = "book:old"; val new = "book:new"
+        val note = SyncGlossaryEntry(hash = old, term = "Elena", normalized = "elena", kind = "CHARACTER", updatedAt = 10)
+        val state = SyncState(version = 2, books = listOf(book(old)), glossary = listOf(note))
+        val base = SyncBase(syncId = "t", keys = setOf(SyncKeys.glossary(old, "elena", "CHARACTER")))
+        val migrated = SyncIdentityMigration.metadata(state, base, mapOf(old to new), valid, recomputeRevisions = false)
+        assertEquals(new, migrated.state.glossary.single().hash)
+        assertEquals(new, SyncKeys.bookOfGlossary(SyncKeys.glossary(new, "elena", "CHARACTER")))
+        assertTrue(SyncKeys.glossary(new, "elena", "CHARACTER") in migrated.base!!.keys)
+        assertTrue(SyncKeys.glossary(old, "elena", "CHARACTER") !in migrated.base!!.keys)
+    }
+
     @Test fun deletionProofsRefuseAndMissingRecordsRefuse() {
         val old = "book:old"; val new = "book:new"
         val proofKey = SyncKeys.highlight(old, 10, "x")

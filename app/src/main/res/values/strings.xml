@@ -260,6 +260,13 @@
     <string name="widget_new_chapters_label">New chapters</string>
     <string name="widget_new_chapters_description">New unread chapters of the titles in your library, from the last check.</string>
     <string name="widget_new_chapters_empty">No new chapters. The last check found nothing unread.</string>
+    <string name="widget_audio_label">Audiobook player</string>
+    <string name="widget_audio_description">Play, pause and skip the audiobook from the home screen.</string>
+    <string name="widget_audio_empty">Nothing playing. Start an audiobook in Yomu.</string>
+    <string name="widget_audio_play">Play or pause</string>
+    <string name="widget_audio_back">Back a few seconds</string>
+    <string name="widget_audio_forward">Forward a few seconds</string>
+    <string name="widget_audio_open">Open the audiobook</string>
     <plurals name="widget_unread_chapters">
         <item quantity="one">%1$d unread chapter</item>
         <item quantity="other">%1$d unread chapters</item>

@@ -2,7 +2,6 @@ package app.yomu.data.backup
 
 import androidx.room.withTransaction
 import app.yomu.core.database.YomuDatabase
-import kotlinx.serialization.json.Json
 
 /**
  * Merges with the shared state and publishes it.
@@ -23,7 +22,7 @@ internal suspend fun mergeAndWrite(
     options: SyncMerger.Options,
 ): SyncMerger.Outcome {
     val result = db.withTransaction { SyncMerger(db).merge(remote, base, backend.id, now, options) }
-    val json = Json { ignoreUnknownKeys = true; encodeDefaults = false; explicitNulls = false }
-    backend.write(json.encodeToString(SyncState.serializer(), result.state).toByteArray(), previous)
+    // Unknown categories from a newer client travel with the file untouched.
+    backend.write(SyncCodec.encode(result.state).toByteArray(), previous)
     return result
 }

@@ -5,6 +5,7 @@
     <string name="manga_prev_chapter">Предыдущая глава</string>
     <string name="manga_no_next">Это последняя глава. Нажмите, чтобы открыть меню.</string>
     <string name="manga_page_error">Не удалось загрузить страницу</string>
+    <string name="mr_chapter_navigator_jump">Перейти к главе %1$s</string>
     <string name="manga_tap_prev">Назад</string>
     <string name="manga_tap_next">Вперёд</string>
     <string name="manga_tap_menu">Меню</string>

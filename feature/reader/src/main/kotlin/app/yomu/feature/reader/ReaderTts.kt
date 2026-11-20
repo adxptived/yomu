@@ -143,6 +143,16 @@ class ReaderTts(context: Context) {
             .sortedBy { it.name }
     }.getOrDefault(emptyList())
 
+    /** Speaks a short sample with the current speed, pitch and voice, without touching the reading queue. */
+    fun speakSample(text: String) {
+        stop()
+        queue = listOf(text)
+        index = 0
+        generation++
+        _playing.value = true
+        engine { speakFrom(0) }
+    }
+
     /** Speaks [sentences] starting at [from]. */
     fun play(sentences: List<String>, from: Int = 0) {
         queue = sentences

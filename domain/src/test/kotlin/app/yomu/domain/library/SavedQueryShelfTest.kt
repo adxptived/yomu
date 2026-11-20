@@ -16,6 +16,7 @@ class SavedQueryShelfTest {
             availability = setOf(Availability.FULLY_OFFLINE),
             read = Tri.NO,
             started = Tri.YES,
+            statuses = setOf(app.yomu.domain.model.ReadingStatus.READING, app.yomu.domain.model.ReadingStatus.FINISHED),
             downloaded = Tri.NO,
             favoritesOnly = true,
             tags = setOf("fantasy"),

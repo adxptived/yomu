@@ -15,6 +15,7 @@ import app.yomu.data.repository.authorsToText
 import app.yomu.data.repository.findByHash
 import app.yomu.data.repository.findByUri
 import app.yomu.data.repository.sortTitle
+import app.yomu.domain.audio.AudioGainTag
 import app.yomu.domain.model.AudioChapter
 import app.yomu.domain.model.AudioFiles
 import app.yomu.domain.model.AudioOrigin
@@ -76,6 +77,26 @@ class AudiobookStore(
 
     private val tracksLock = Mutex()
     private val trackCache = HashMap<String, Pair<Long, List<AudioTrack>>>()
+
+    /**
+     * ReplayGain of a track. A manifest may carry the values; a local file is read once and remembered. The tag is
+     * only read when the player asks (gain is off by default), so opening a folder never walks every file.
+     */
+    fun gain(track: AudioTrack): AudioGainTag? {
+        track.gainDb?.let { return AudioGainTag(it, track.gainPeak) }
+        val uri = Uri.parse(playableUri(track))
+        if (uri.scheme != "file" && uri.scheme != "content") return null
+        val key = uri.toString()
+        synchronized(gainCache) { gainCache[key] }?.let { return it.orElse(null) }
+        val value = runCatching { AudioTags.gain(context, uri) }.onFailure { Timber.d(it, "ReplayGain tag") }.getOrNull()
+        synchronized(gainCache) {
+            gainCache[key] = java.util.Optional.ofNullable(value)
+            if (gainCache.size > MAX_GAIN_CACHE) gainCache.keys.take(gainCache.size - MAX_GAIN_CACHE).forEach(gainCache::remove)
+        }
+        return value
+    }
+
+    private val gainCache = HashMap<String, java.util.Optional<AudioGainTag>>()
 
     private suspend fun loadTracks(book: Book): List<AudioTrack> = withContext(Dispatchers.IO) {
         val uri = Uri.parse(book.uri)
@@ -349,6 +370,7 @@ class AudiobookStore(
         private const val MAX_DEPTH = 3
         private const val MAX_PAGE = 4L * 1024 * 1024
         private const val MAX_ZIP_BYTES = 8L * 1024 * 1024 * 1024
+        private const val MAX_GAIN_CACHE = 256
         private val COVER_NAMES = setOf("cover", "folder", "front", "album")
         private val CHAPTER_EXTENSIONS = setOf("m4b", "m4a", "mp4", "aac", "mp3")
         private const val TRACKS_TTL_MS = 30_000L

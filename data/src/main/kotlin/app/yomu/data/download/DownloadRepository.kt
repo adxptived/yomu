@@ -15,7 +15,6 @@ import app.yomu.data.book.Xhtml
 import app.yomu.data.catalog.CatalogRepository
 import app.yomu.data.catalog.ImageSniffer
 import app.yomu.data.catalog.NotAnImageException
-import app.yomu.data.catalog.PageFetcher
 import app.yomu.data.catalog.UpdateCheckResult
 import app.yomu.data.library.ImportOutcome
 import app.yomu.data.library.ImportService
@@ -490,6 +489,10 @@ class DownloadRepository(
     /** Stable file name of a chapter (the chapter id keeps releases with the same name apart, also after list changes). */
     private fun chapterBaseName(chapter: app.yomu.domain.model.ChapterInfo) = Files.sanitize("${chapter.name.take(80)} [${chapter.id}]")
 
+    /** A saved page, not the `.part` bytes or the resume sidecar of a page still being downloaded. */
+    private fun isPageFile(f: File): Boolean =
+        !f.name.endsWith(".part") && !f.name.endsWith(".part.meta")
+
     private suspend fun process(t: DownloadTaskEntity, onProgress: suspend (String, Float) -> Unit) {
         when (t.kind) {
             DownloadKind.BOOK.name -> downloadBook(t, onProgress)
@@ -622,12 +625,13 @@ class DownloadRepository(
                     gate.withPermit {
                         if (stopped.get()) return@withPermit
                         val prefix = "%0${width}d.".format(i)
-                        val existing = tmp.listFiles { f -> f.name.startsWith(prefix) && !f.name.endsWith(".part") }?.firstOrNull()
+                        val existing = tmp.listFiles { f -> f.name.startsWith(prefix) && isPageFile(f) }?.firstOrNull()
                         if (existing == null || existing.length() == 0L) {
                             val raw = File(tmp, "${prefix}img")
-                            val ext = PageFetcher.fetch(context, client, source, page, raw)
+                            val ext = ResumablePageFetcher.fetch(context, client, source, page, raw)
                             val named = File(tmp, prefix + ext)
-                            if (!raw.renameTo(named)) { raw.copyTo(named, overwrite = true); raw.delete() }
+                            // Atomic even on Windows, where File.renameTo refuses to replace an existing page.
+                            java.nio.file.Files.move(raw.toPath(), named.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
                         }
                         val n = saved.incrementAndGet()
                         reportLock.withLock {
@@ -647,7 +651,7 @@ class DownloadRepository(
             }
         }
         if (stopped.get()) return@withContext
-        val files = tmp.listFiles { f -> !f.name.endsWith(".part") }.orEmpty().sortedBy { it.name }
+        val files = tmp.listFiles(::isPageFile).orEmpty().sortedBy { it.name }
         if (files.size < pages.size) throw java.io.IOException("Only ${files.size} of ${pages.size} pages saved")
         val path = if (settings.packCbz.get()) {
             val cbz = File(folder, "$baseName.cbz")

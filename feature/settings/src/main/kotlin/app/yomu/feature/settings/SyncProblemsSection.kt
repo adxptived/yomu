@@ -24,15 +24,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.yomu.core.common.TimeFormat
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.backup.SyncProblemInfo
-import java.text.DateFormat
-import java.util.Date
 
 /**
  * Settings → Sync → conflicts: what stopped the last sync, item by item. Nothing was changed by
@@ -42,6 +42,8 @@ import java.util.Date
 internal fun SyncProblemsSection(vm: SettingsViewModel) {
     LaunchedEffect(Unit) { vm.loadSyncProblems() }
     val problems by vm.syncProblems.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val timeFormat by vm.settings.timeFormat.state()
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
         item(key = "hint") {
@@ -65,6 +67,7 @@ internal fun SyncProblemsSection(vm: SettingsViewModel) {
                 val target = problem.target?.toLongOrNull()
                 SyncProblemRow(
                     problem,
+                    timeFormat = timeFormat,
                     onDismiss = { vm.dismissSyncProblem(problem.id) },
                     onAdopt = if (problem.kind == "book_changed" || problem.kind == "book_update_conflict") {
                         target?.let { id -> { vm.adoptChangedBook(id) } }
@@ -93,6 +96,7 @@ internal fun SyncProblemsSection(vm: SettingsViewModel) {
 @Composable
 private fun SyncProblemRow(
     problem: SyncProblemInfo,
+    timeFormat: String,
     onDismiss: () -> Unit,
     onAdopt: (() -> Unit)?,
     onTakeRemote: (() -> Unit)?,
@@ -100,6 +104,7 @@ private fun SyncProblemRow(
     onPublish: (() -> Unit)? = null,
     onAcceptRemote: (() -> Unit)? = null,
 ) {
+    val context = LocalContext.current
     Row(
         Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s),
         verticalAlignment = Alignment.Top,
@@ -133,7 +138,7 @@ private fun SyncProblemRow(
                 )
             }
             Text(
-                DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(problem.at)),
+                TimeFormat.formatDateTime(context, timeFormat, problem.at),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

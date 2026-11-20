@@ -3,6 +3,7 @@ package app.yomu.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.yomu.core.common.ScreenErrors
+import app.yomu.core.common.TimeFormat
 import app.yomu.core.datastore.AppSettings
 import app.yomu.data.backup.BackupManager
 import app.yomu.data.repository.BookRepositoryImpl
@@ -27,6 +28,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /** Kinds of milestones of the profile; [tiers] are the values to reach, in order. */
 enum class MilestoneKind(val tiers: LongArray) {
@@ -164,7 +166,8 @@ class ProfileViewModel(
      */
     suspend fun exportHistoryCsv(dir: File): File = withContext(Dispatchers.IO) {
         val items = history.observe().first()
-        val time = DateTimeFormatter.ofPattern("HH:mm")
+        // The CSV keeps its original 24-hour column when the setting is SYSTEM; an explicit choice overrides it.
+        val time = TimeFormat.clock(settings.timeFormat.get(), Locale.getDefault()) ?: DateTimeFormatter.ofPattern("HH:mm")
         val zone = ZoneId.systemDefault()
         val file = File(dir, "yomu_history_" + LocalDate.now() + ".csv")
         file.bufferedWriter().use { w ->

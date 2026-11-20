@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.NewReleases
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Source
@@ -85,6 +86,7 @@ internal fun ColumnScope.AboutSection(vm: SettingsViewModel) {
     val context = LocalContext.current
     val uri = LocalUriHandler.current
     val (version, code) = remember { appVersion(context) }
+    val skipped by vm.settings.skipUpdateVersion.state()
     var showLibraries by remember { mutableStateOf(false) }
     val open: (String) -> Unit = { url -> runCatching { uri.openUri(url) } }
 
@@ -93,6 +95,14 @@ internal fun ColumnScope.AboutSection(vm: SettingsViewModel) {
     PreferenceHeader(stringResource(R.string.set_about_project))
     UpdateItem(vm.updates, version)
     SwitchPref(vm, vm.settings.updateAutoCheck, R.string.set_update_auto, R.string.set_update_auto_sum)
+    if (skipped.isNotBlank()) {
+        PreferenceItem(
+            stringResource(R.string.set_update_skip_clear),
+            stringResource(R.string.set_update_skipped, skipped),
+            icon = Icons.Outlined.RestartAlt,
+            onClick = vm.updates::clearSkippedVersion,
+        )
+    }
     PreferenceItem(stringResource(R.string.set_about_author), "${ProjectLinks.AUTHOR} · github.com/adxptived", icon = Icons.Outlined.Person, onClick = { open(ProjectLinks.AUTHOR_URL) })
     PreferenceItem(stringResource(R.string.set_about_source), "github.com/adxptived/yomu", icon = Icons.Outlined.Source, onClick = { open(ProjectLinks.REPO_URL) })
     PreferenceItem(stringResource(R.string.set_about_releases), stringResource(R.string.set_about_releases_sum), icon = Icons.Outlined.NewReleases, onClick = { open(ProjectLinks.RELEASES_URL) })
@@ -233,6 +243,7 @@ internal fun UpdateDialog(release: ReleaseInfo, updates: AppUpdates) {
                 if (release.apkUrl != null) {
                     TextButton(onClick = { updates.dismissDialog(); runCatching { uri.openUri(release.pageUrl) } }) { Text(stringResource(R.string.set_update_page)) }
                 }
+                TextButton(onClick = { updates.skipVersion(release) }) { Text(stringResource(R.string.set_update_skip)) }
                 TextButton(onClick = updates::dismissDialog) { Text(stringResource(R.string.set_later)) }
             }
         },

@@ -56,6 +56,9 @@ import app.yomu.domain.model.PdfMode
 import app.yomu.domain.model.PdfSettings
 import app.yomu.domain.model.ScreenTimeout
 import app.yomu.domain.model.TextReaderSettings
+import app.yomu.domain.reader.ReaderEngine
+import app.yomu.domain.reader.ReaderOption
+import app.yomu.domain.reader.ReaderOptions
 import app.yomu.core.ui.R as CoreR
 
 /** Screen timeout after switching "keep the screen on" off again. */
@@ -176,7 +179,7 @@ private fun MangaQuick(s: MangaSettings, vm: ReaderViewModel) {
             modifier = Modifier.weight(1f),
         )
     }
-    if (s.direction == MangaDirection.WEBTOON) {
+    if (ReaderOptions.shows(ReaderEngine.MANGA, ReaderOptions.mode(s), ReaderOption.MANGA_WEBTOON_GAPS)) {
         PreferenceSwitch(
             stringResource(app.yomu.feature.reader.manga.R.string.mr_webtoon_gaps), s.webtoonGaps,
             { v -> vm.updateManga { it.copy(webtoonGaps = v) } },
@@ -227,7 +230,7 @@ private fun PdfQuick(s: PdfSettings, vm: ReaderViewModel) {
             ) { Text(stringResource(label)) }
         }
     }
-    if (!s.reflow) {
+    if (ReaderOptions.shows(ReaderEngine.PDF, ReaderOptions.mode(s), ReaderOption.MODE)) {
         Text(
             stringResource(R.string.rs_pdf_mode),
             style = MaterialTheme.typography.titleSmall,

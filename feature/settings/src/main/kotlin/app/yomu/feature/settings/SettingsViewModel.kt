@@ -12,6 +12,7 @@ import app.yomu.core.common.runCatchingApp
 import app.yomu.core.datastore.AppSettings
 import app.yomu.core.datastore.Pref
 import app.yomu.data.backup.BackupManager
+import app.yomu.data.backup.BackupOptions
 import app.yomu.data.backup.BackupPreview
 import app.yomu.data.backup.MihonImporter
 import app.yomu.data.backup.SyncManager
@@ -25,12 +26,23 @@ import app.yomu.data.work.LibraryScanWorker
 import app.yomu.data.work.Notifications
 import app.yomu.data.work.NotifyKind
 import app.yomu.data.work.WorkScheduler
+import app.yomu.domain.sync.SyncCategory
+import app.yomu.domain.sync.SyncFailure
+import app.yomu.domain.sync.SyncStatusSummary
+import app.yomu.domain.sync.SyncStep
+import app.yomu.domain.sync.SyncWizard
+import app.yomu.domain.sync.SyncWizardState
+import app.yomu.domain.sync.classifySyncFailure
 import app.yomu.domain.tracking.TrackService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -219,11 +231,11 @@ class SettingsViewModel(
     }
 
     /** Restores the archive whose manifest was just shown. */
-    fun confirmRestore() {
+    fun confirmRestore(options: BackupOptions = BackupOptions()) {
         val uri = previewUri
         backupPreview.value = null
         previewUri = null
-        uri?.let(::restoreBackup)
+        uri?.let { restoreBackup(it, options) }
     }
 
     fun dismissBackupPreview() {
@@ -231,10 +243,14 @@ class SettingsViewModel(
         previewUri = null
     }
 
-    fun restoreBackup(uri: Uri) = viewModelScope.launch(ScreenErrors) {
+    fun restoreBackup(uri: Uri, options: BackupOptions = BackupOptions()) = viewModelScope.launch(ScreenErrors) {
         busy.value = true
         runCatchingApp {
-            appScope.detached { withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)?.use { backup.restore(it) } ?: error("Cannot read the file") } }
+            appScope.detached {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { backup.restore(it, options) } ?: error("Cannot read the file")
+                }
+            }
         }.onSuccess { r ->
             _events.send(SettingsEvent.Message(R.string.set_restore_done, listOf(r.rows, r.files)))
             _events.send(SettingsEvent.Restored)
@@ -270,6 +286,103 @@ class SettingsViewModel(
         busy.value = false
     }
 
+    // B03: sync setup wizard. The transitions are pure (SyncWizard); this ViewModel only wires them to settings,
+    // a connection probe and the scheduler. Nothing is enabled until PREVIEW is confirmed and Finish is tapped.
+
+    /** Null while the wizard is closed. Kept in the ViewModel so rotation does not restart the setup. */
+    val syncWizard = MutableStateFlow<SyncWizardState?>(null)
+
+    /** Opens at BACKEND even for a configured device: every step stays reachable and reviewable. */
+    fun openSyncWizard() = viewModelScope.launch(ScreenErrors) {
+        val backend = settings.syncBackend.get()
+        val categories = buildSet {
+            if (settings.syncProgress.get()) add(SyncCategory.PROGRESS)
+            if (settings.syncCatalog.get()) add(SyncCategory.CATALOG)
+            if (settings.syncAnnotations.get()) add(SyncCategory.ANNOTATIONS)
+            if (settings.syncBookmarks.get()) add(SyncCategory.BOOKMARKS)
+            if (settings.syncWords.get()) add(SyncCategory.WORDS)
+            if (settings.syncBookFiles.get()) add(SyncCategory.FILES)
+            if (settings.syncGlossary.get()) add(SyncCategory.GLOSSARY)
+        }
+        syncWizard.value = SyncWizard.start(configured = false).copy(
+            backend = backend,
+            categories = categories.ifEmpty { SyncCategory.entries.toSet() },
+            scheduleHours = settings.syncIntervalHours.get(),
+        )
+    }
+
+    fun closeSyncWizard() {
+        syncWizard.value = null
+    }
+
+    fun wizardSetBackend(backend: String) {
+        viewModelScope.launch(ScreenErrors) {
+            settings.syncBackend.set(backend)
+            syncWizard.value?.let { syncWizard.value = SyncWizard.withBackend(it, backend) }
+            scheduler.rescheduleSyncAfterChange()
+        }
+    }
+
+    fun wizardInputReady(ready: Boolean) {
+        syncWizard.value?.let { syncWizard.value = SyncWizard.withInput(it, ready) }
+    }
+
+    fun wizardToggleCategory(category: SyncCategory) {
+        syncWizard.value?.let { syncWizard.value = SyncWizard.toggleCategory(it, category) }
+    }
+
+    fun wizardSchedule(hours: Int) {
+        syncWizard.value?.let { syncWizard.value = SyncWizard.withSchedule(it, hours) }
+    }
+
+    fun wizardConfirmPreview(confirmed: Boolean) {
+        syncWizard.value?.let { syncWizard.value = it.copy(previewConfirmed = confirmed) }
+    }
+
+    fun wizardFail(failure: SyncFailure?) {
+        syncWizard.value?.let { syncWizard.value = SyncWizard.failure(it, failure) }
+    }
+
+    fun wizardAdvance() {
+        syncWizard.value?.let { syncWizard.value = SyncWizard.advance(it) }
+    }
+
+    fun wizardBack() {
+        syncWizard.value?.let { syncWizard.value = SyncWizard.back(it) }
+    }
+
+    /** Runs the real connection check at the PROBE step and records a classified failure on the wizard. */
+    fun probeSyncWizard() = viewModelScope.launch(ScreenErrors) {
+        busy.value = true
+        runCatchingApp { appScope.detached { sync.check() } }
+            .onSuccess { syncWizard.value?.let { syncWizard.value = SyncWizard.withProbe(it, true) } }
+            .onFailure { e ->
+                syncWizard.value?.let { state ->
+                    val kind = classifySyncFailure(e.message)
+                    syncWizard.value = SyncWizard.failure(SyncWizard.withProbe(state, false), kind)
+                }
+            }
+        busy.value = false
+    }
+
+    /** Publishes the reviewed settings only after the preview was confirmed, then verifies the connection once. */
+    fun wizardFinish() = viewModelScope.launch(ScreenErrors) {
+        val state = syncWizard.value ?: return@launch
+        if (state.step != SyncStep.READY || !state.previewConfirmed) return@launch
+        settings.syncIntervalHours.set(state.scheduleHours)
+        settings.syncProgress.set(SyncCategory.PROGRESS in state.categories)
+        settings.syncCatalog.set(SyncCategory.CATALOG in state.categories)
+        settings.syncAnnotations.set(SyncCategory.ANNOTATIONS in state.categories)
+        settings.syncBookmarks.set(SyncCategory.BOOKMARKS in state.categories)
+        settings.syncWords.set(SyncCategory.WORDS in state.categories)
+        settings.syncBookFiles.set(SyncCategory.FILES in state.categories)
+        settings.syncGlossary.set(SyncCategory.GLOSSARY in state.categories)
+        settings.syncEnabled.set(true)
+        syncWizard.value = null
+        scheduler.rescheduleSyncAfterChange()
+        _events.send(SettingsEvent.Message(R.string.set_sync_check_ok))
+    }
+
     fun createGitHubRepository(name: String) = viewModelScope.launch(ScreenErrors) {
         busy.value = true
         runCatchingApp { appScope.detached { sync.createGitHubRepository(name).also { scheduler.scheduleSync() } } }
@@ -299,6 +412,12 @@ class SettingsViewModel(
     // Sync conflicts (the problems of the last failed sync)
 
     val syncProblems = MutableStateFlow<List<SyncProblemInfo>>(emptyList())
+
+    /** B03: one status line for the sync screen: last success, conflicts, or the error that stopped it. */
+    val syncSummary: StateFlow<SyncStatusSummary> =
+        combine(settings.lastSyncAt.flow, settings.lastSyncError.flow, syncProblems) { at, error, problems ->
+            SyncStatusSummary(lastSuccessAt = at, error = error.takeIf { it.isNotBlank() }, conflicts = problems.size)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, SyncStatusSummary())
 
     fun loadSyncProblems() = viewModelScope.launch(ScreenErrors) { syncProblems.value = sync.problems() }
 

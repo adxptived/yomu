@@ -593,6 +593,69 @@ class EpubWorkspace(val root: File) {
         writeToc(toc)
     }
 
+    // ---------------------------------------------------------------- volumes (spine/section groups)
+
+    /**
+     * Volumes are contiguous runs of spine documents. A top level contents entry (level 0, without a fragment)
+     * starts a new volume; anchors inside a chapter never do. A book without such entries is one volume.
+     */
+    fun volumes(): List<EditorVolume> {
+        val chapters = chapters()
+        if (chapters.isEmpty()) return emptyList()
+        val order = chapters.associate { it.path to it.index }
+        val boundaries = toc()
+            .filter { it.level == 0 && it.fragment == null }
+            .mapNotNull { order[it.path] }
+            .toSortedSet()
+        boundaries.add(0)
+        val sorted = boundaries.sorted()
+        val titles = toc().filter { it.level == 0 && it.fragment == null }
+        return sorted.mapIndexed { vi, start ->
+            val end = sorted.getOrNull(vi + 1)?.minus(1) ?: chapters.lastIndex
+            val title = titles.firstOrNull { order[it.path] == start }?.title ?: "Volume ${vi + 1}"
+            EditorVolume(vi, title, start, end, chapters.subList(start, end + 1))
+        }
+    }
+
+    /**
+     * Merges volume [volumeIndex] with the following one. Every document of the next volume is appended to the
+     * last document of the current volume (reusing chapter merge), so both the content and the spine group are
+     * combined. TOC/links are fixed by [mergeWithNext]. Returns the absorbing document path, or null when there
+     * is no next volume.
+     */
+    fun mergeVolumeWithNext(volumeIndex: Int): String? {
+        val all = volumes()
+        val current = all.getOrNull(volumeIndex) ?: return null
+        val next = all.getOrNull(volumeIndex + 1) ?: return null
+        val absorbing = current.chapters.last().path
+        next.chapters.forEach { mergeWithNext(absorbing) }
+        return absorbing
+    }
+
+    /**
+     * Starts a new volume at chapter [atOffset] of volume [volumeIndex] by promoting its contents entry to a top
+     * level boundary (creating one when missing). Returns the path that now starts the new volume, or null when
+     * the offset is invalid (the first chapter of a volume cannot start a new one).
+     */
+    fun splitVolume(volumeIndex: Int, atOffset: Int): String? {
+        if (atOffset <= 0) return null
+        val volume = volumes().getOrNull(volumeIndex) ?: return null
+        val target = volume.chapters.getOrNull(atOffset)?.path ?: return null
+        val entries = toc().toMutableList()
+        val idx = entries.indexOfFirst { it.path == target && it.fragment == null }
+        if (idx >= 0) {
+            entries[idx] = entries[idx].copy(level = 0)
+        } else {
+            val order = spinePaths.withIndex().associate { it.value to it.index }
+            val targetOrder = order[target] ?: Int.MAX_VALUE
+            val insertAt = entries.indexOfLast { (order[it.path] ?: Int.MAX_VALUE) < targetOrder } + 1
+            val title = chapters().firstOrNull { it.path == target }?.title ?: target.substringAfterLast('/')
+            entries.add(insertAt, TocEntry(title, target, null, 0))
+        }
+        writeToc(entries)
+        return target
+    }
+
     /** Rewrites relative src/href attributes of [doc] (stored at [from]) so they stay valid when the content moves to [to]. */
     private fun relocate(doc: Document, from: String, to: String) {
         if (from.substringBeforeLast('/', "") == to.substringBeforeLast('/', "")) return

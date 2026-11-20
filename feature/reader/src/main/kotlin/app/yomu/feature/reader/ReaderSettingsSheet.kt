@@ -1,5 +1,6 @@
 package app.yomu.feature.reader
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -61,7 +62,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -106,6 +110,7 @@ import app.yomu.feature.reader.manga.MangaControlSettings
 import app.yomu.feature.reader.manga.MangaPageSettings
 import app.yomu.feature.reader.manga.TapZonesDiagram
 import app.yomu.feature.reader.manga.zoneLabel
+import kotlin.math.roundToInt
 import app.yomu.core.ui.R as CoreR
 
 /**
@@ -316,6 +321,7 @@ private fun groupLabels(content: ReaderContent): List<Pair<Int, Int>> {
             app.yomu.feature.reader.manga.R.string.mr_pages to app.yomu.feature.reader.manga.R.string.mr_group_pages_summary,
             app.yomu.feature.reader.manga.R.string.mr_image to app.yomu.feature.reader.manga.R.string.mr_group_image_summary,
             app.yomu.feature.reader.manga.R.string.mr_tap_zones to app.yomu.feature.reader.manga.R.string.mr_group_zones_summary,
+            R.string.rs_manga_reading to R.string.rs_manga_reading_summary,
         ) + shared
     }
 }
@@ -855,6 +861,7 @@ private fun PdfSettingsContent(s: PdfSettings, vm: ReaderViewModel, query: Strin
             PreferenceSlider(stringResource(R.string.rs_pdf_crop_right), crop.right * 100, 0f..25f, { v -> update(crop.copy(right = v / 100f)) }, { "${it.toInt()}%" }, steps = 25)
             PreferenceSlider(stringResource(R.string.rs_pdf_crop_top), crop.top * 100, 0f..25f, { v -> update(crop.copy(top = v / 100f)) }, { "${it.toInt()}%" }, steps = 25)
             PreferenceSlider(stringResource(R.string.rs_pdf_crop_bottom), crop.bottom * 100, 0f..25f, { v -> update(crop.copy(bottom = v / 100f)) }, { "${it.toInt()}%" }, steps = 25)
+            PdfCropPreview(crop)
         }
     }
     CollapsibleSection(
@@ -877,8 +884,69 @@ private fun PdfSettingsContent(s: PdfSettings, vm: ReaderViewModel, query: Strin
 }
 
 @Composable
+private fun PdfCropPreview(crop: app.yomu.domain.model.CropMargins) {
+    val pageColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
+    val ink = MaterialTheme.colorScheme.primary
+    val description = stringResource(
+        R.string.rs_pdf_crop_preview_description,
+        (crop.left * 100).roundToInt(),
+        (crop.top * 100).roundToInt(),
+        (crop.right * 100).roundToInt(),
+        (crop.bottom * 100).roundToInt(),
+    )
+    Column(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s)) {
+        Canvas(
+            Modifier.fillMaxWidth().height(120.dp).semantics { contentDescription = description },
+        ) {
+            val pad = 6.dp.toPx()
+            val w = (size.width - pad * 2).coerceAtLeast(1f)
+            val h = (size.height - pad * 2).coerceAtLeast(1f)
+            drawRect(pageColor, Offset(pad, pad), Size(w, h))
+            val l = pad + w * crop.left
+            val t = pad + h * crop.top
+            val right = pad + w * (1f - crop.right)
+            val bottom = pad + h * (1f - crop.bottom)
+            val shade = Color.Black.copy(alpha = 0.35f)
+            drawRect(shade, Offset(pad, pad), Size(w, (t - pad).coerceAtLeast(0f)))
+            drawRect(shade, Offset(pad, bottom), Size(w, (pad + h - bottom).coerceAtLeast(0f)))
+            drawRect(shade, Offset(pad, t), Size((l - pad).coerceAtLeast(0f), (bottom - t).coerceAtLeast(0f)))
+            drawRect(shade, Offset(right, t), Size((pad + w - right).coerceAtLeast(0f), (bottom - t).coerceAtLeast(0f)))
+            drawRect(ink, Offset(l, t), Size((right - l).coerceAtLeast(0f), (bottom - t).coerceAtLeast(0f)), style = Stroke(width = 2.dp.toPx()))
+        }
+        Text(
+            stringResource(R.string.rs_pdf_crop_preview_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = Dimens.xs),
+        )
+    }
+}
+
+@Composable
 private fun MangaSettingsContent(s: MangaSettings, vm: ReaderViewModel, query: String) {
     MangaPageSettings(s, { transform -> vm.updateManga(transform) }, query = query)
+    // Global manga toggles (not per-book overrides): they apply to every title, so they live in their own group.
+    val preloadWifiOnly by vm.readerPreloadWifiOnly.collectAsStateWithLifecycle()
+    val chapterNavigator by vm.verticalChapterNavigator.collectAsStateWithLifecycle()
+    CollapsibleSection(
+        title = stringResource(R.string.rs_manga_reading),
+        summary = stringResource(R.string.rs_manga_reading_summary),
+        icon = Icons.Outlined.Public,
+        query = query,
+    ) {
+        PreferenceSwitch(
+            stringResource(R.string.rs_manga_preload_wifi_only),
+            preloadWifiOnly,
+            { vm.setReaderPreloadWifiOnly(it) },
+            summary = stringResource(R.string.rs_manga_preload_wifi_only_sum),
+        )
+        PreferenceSwitch(
+            stringResource(R.string.rs_manga_vertical_navigator),
+            chapterNavigator,
+            { vm.setVerticalChapterNavigator(it) },
+            summary = stringResource(R.string.rs_manga_vertical_navigator_sum),
+        )
+    }
 }
 
 /** N02: marks the groups that are stored once for every book while the per-book scope is chosen. */

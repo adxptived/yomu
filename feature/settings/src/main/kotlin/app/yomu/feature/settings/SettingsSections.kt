@@ -19,12 +19,15 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CollectionsBookmark
@@ -84,6 +87,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.common.Files
+import app.yomu.core.common.TimeFormat
 import app.yomu.core.datastore.Pref
 import app.yomu.core.network.TrafficMeter
 import app.yomu.core.ui.components.ConfirmDialog
@@ -100,6 +104,8 @@ import app.yomu.core.ui.theme.ThemeMode
 import app.yomu.core.ui.theme.hueSaturation
 import app.yomu.core.ui.theme.isDarkScheme
 import app.yomu.core.ui.theme.schemeFor
+import app.yomu.data.backup.BackupCategory
+import app.yomu.data.backup.BackupOptions
 import app.yomu.domain.model.DictionaryApp
 import app.yomu.domain.model.PdfMode
 import app.yomu.domain.model.ReaderOrientation
@@ -176,6 +182,8 @@ internal fun TextPref(
     multiline: Boolean = false,
     summaryWhenEmpty: Int? = null,
     icon: ImageVector? = settingIcon(title),
+    /** Called after a confirmed edit; lets a caller (e.g. the sync wizard) react to a changed value. */
+    onChanged: (() -> Unit)? = null,
 ) {
     val v by pref.state()
     var edit by remember { mutableStateOf(false) }
@@ -187,9 +195,9 @@ internal fun TextPref(
     PreferenceItem(stringResource(title), summary, icon, onClick = { edit = true })
     if (edit) {
         if (secret) {
-            SecretInputDialog(stringResource(title), v, onConfirm = { vm.set(pref, it.trim()); edit = false }, onDismiss = { edit = false })
+            SecretInputDialog(stringResource(title), v, onConfirm = { vm.set(pref, it.trim()); onChanged?.invoke(); edit = false }, onDismiss = { edit = false })
         } else {
-            TextInputDialog(stringResource(title), v, singleLine = !multiline, onConfirm = { vm.set(pref, if (multiline) it else it.trim()); edit = false }, onDismiss = { edit = false })
+            TextInputDialog(stringResource(title), v, singleLine = !multiline, onConfirm = { vm.set(pref, if (multiline) it else it.trim()); onChanged?.invoke(); edit = false }, onDismiss = { edit = false })
         }
     }
 }
@@ -197,7 +205,8 @@ internal fun TextPref(
 private fun hoursLabel(context: android.content.Context, h: Int): String =
     if (h <= 0) context.getString(R.string.set_off) else context.resources.getQuantityString(R.plurals.set_every_hours, h, h)
 
-private fun formatTime(ts: Long): String? = if (ts <= 0) null else DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(ts))
+private fun formatTime(context: android.content.Context, timeFormat: String, ts: Long): String? =
+    if (ts <= 0) null else TimeFormat.formatDateTime(context, timeFormat, ts)
 
 internal fun languageOptions(context: android.content.Context, codes: List<String>, emptyLabel: Int?): List<Pair<String, String>> = buildList {
     if (emptyLabel != null) add("" to context.getString(emptyLabel))
@@ -273,6 +282,14 @@ internal fun ColumnScope.AppearanceSection(vm: SettingsViewModel) {
             AppCompatDelegate.setApplicationLocales(if (tag.isEmpty()) LocaleListCompat.getEmptyLocaleList() else LocaleListCompat.forLanguageTags(tag))
         },
         icon = settingIcon(R.string.set_language),
+    )
+    ChoicePref(
+        vm, s.timeFormat, R.string.set_time_format,
+        listOf(
+            TimeFormat.SYSTEM to stringResource(R.string.set_time_format_system),
+            TimeFormat.HOUR_12 to stringResource(R.string.set_time_format_12),
+            TimeFormat.HOUR_24 to stringResource(R.string.set_time_format_24),
+        ),
     )
     SwitchPref(vm, s.haptics, R.string.set_haptics)
     SwitchPref(vm, s.reduceMotion, R.string.set_reduce_motion, R.string.set_reduce_motion_sum)
@@ -785,6 +802,10 @@ internal fun ColumnScope.TranslationSection(vm: SettingsViewModel, links: Settin
     SwitchPref(vm, s.onlineDictionary, R.string.set_online_dictionary, R.string.set_online_dictionary_sum)
     ChoicePref(vm, s.dictionaryLang, R.string.set_dictionary_lang, languageOptions(context, LANGS, R.string.set_system_language))
     PreferenceItem(stringResource(R.string.set_dictionaries), stringResource(R.string.set_dictionaries_sum), onClick = links.onOpenDictionaries, icon = settingIcon(R.string.set_dictionaries))
+
+    // N04: building an index is explicit and off by default; title search stays a title search without it.
+    PreferenceHeader(stringResource(R.string.set_text_search))
+    SwitchPref(vm, s.fulltextIndex, R.string.set_fulltext_index, R.string.set_fulltext_index_sum)
 
     PreferenceHeader(stringResource(R.string.set_words))
     IntSliderPref(vm, s.dailyGoal, R.string.set_daily_goal, 5..100, step = 5)
@@ -1347,6 +1368,7 @@ internal fun ColumnScope.BackupSection(vm: SettingsViewModel, onOpenSync: () -> 
     val lastBackup by s.lastBackupAt.state()
     val backupFolder by s.backupFolder.state()
     val syncEnabled by s.syncEnabled.state()
+    val timeFormat by s.timeFormat.state()
 
     PreferenceItem(stringResource(R.string.set_backup_create), stringResource(R.string.set_backup_create_sum), onClick = { create.launch(vm.suggestedBackupName()) }, icon = settingIcon(R.string.set_backup_create))
     PreferenceSwitch(stringResource(R.string.set_backup_files), includeFiles, { includeFiles = it }, stringResource(R.string.set_backup_files_sum), icon = settingIcon(R.string.set_backup_files))
@@ -1358,7 +1380,7 @@ internal fun ColumnScope.BackupSection(vm: SettingsViewModel, onOpenSync: () -> 
     ChoicePref(vm, s.autoBackupHours, R.string.set_auto_backup, listOf(0, 12, 24, 72, 168).map { it to hoursLabel(context, it) }, after = { vm.rescheduleBackup() })
     PreferenceItem(stringResource(R.string.set_backup_folder), backupFolder.takeIf { it.isNotBlank() }?.let { android.net.Uri.decode(it.substringAfterLast("/tree/")) } ?: stringResource(R.string.set_not_set), onClick = { backupFolderPick.launch(null) }, icon = settingIcon(R.string.set_backup_folder))
     IntSliderPref(vm, s.backupKeep, R.string.set_backup_keep, 1..20)
-    PreferenceItem(stringResource(R.string.set_backup_now), formatTime(lastBackup)?.let { stringResource(R.string.set_last_time, it) }, enabled = backupFolder.isNotBlank(), onClick = vm::backupNowToFolder, icon = settingIcon(R.string.set_backup_now))
+    PreferenceItem(stringResource(R.string.set_backup_now), formatTime(context, timeFormat, lastBackup)?.let { stringResource(R.string.set_last_time, it) }, enabled = backupFolder.isNotBlank(), onClick = vm::backupNowToFolder, icon = settingIcon(R.string.set_backup_now))
 
     PreferenceHeader(stringResource(R.string.set_sync))
     PreferenceItem(
@@ -1372,13 +1394,18 @@ internal fun ColumnScope.BackupSection(vm: SettingsViewModel, onOpenSync: () -> 
     PreferenceItem(stringResource(R.string.set_reset_all), stringResource(R.string.set_reset_all_sum), onClick = { confirmReset = true }, icon = settingIcon(R.string.set_reset_all))
 
     preview?.let { p ->
+        var replace by remember(p) { mutableStateOf(false) }
+        var chosen by remember(p) { mutableStateOf(BackupCategory.entries.toSet()) }
         AlertDialog(
             onDismissRequest = vm::dismissBackupPreview,
             title = { Text(stringResource(R.string.set_restore_preview_title)) },
             text = {
-                Column {
+                Column(
+                    Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(Dimens.xs),
+                ) {
                     if (p.createdAt > 0) {
-                        val whenMade = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(p.createdAt))
+                        val whenMade = TimeFormat.formatDateTime(context, timeFormat, p.createdAt)
                         Text(stringResource(R.string.set_restore_preview_date, whenMade))
                     }
                     Text(stringResource(R.string.set_restore_preview_counts, p.books, p.highlights, p.notes, p.bookmarks, p.words))
@@ -1387,15 +1414,63 @@ internal fun ColumnScope.BackupSection(vm: SettingsViewModel, onOpenSync: () -> 
                         else stringResource(R.string.set_restore_preview_no_files),
                     )
                     Text(stringResource(R.string.set_restore_preview_merge))
+                    BackupCategory.entries.forEach { category ->
+                        val count = p.categories[category] ?: 0
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                chosen = if (category in chosen) chosen - category else chosen + category
+                            },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = category in chosen,
+                                onCheckedChange = { chosen = if (category in chosen) chosen - category else chosen + category },
+                            )
+                            Column(Modifier.padding(start = Dimens.xs)) {
+                                Text(backupCategoryLabel(category), style = MaterialTheme.typography.bodyMedium)
+                                Text("$count", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().clickable { replace = !replace },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = replace, onCheckedChange = { replace = it })
+                        Column(Modifier.padding(start = Dimens.xs)) {
+                            Text(stringResource(R.string.set_restore_replace), style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                stringResource(R.string.set_restore_replace_sum),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
                 }
             },
-            confirmButton = { TextButton(onClick = vm::confirmRestore) { Text(stringResource(R.string.set_restore)) } },
+            confirmButton = {
+                TextButton(onClick = { vm.confirmRestore(BackupOptions(merge = !replace, categories = chosen)) }) {
+                    Text(stringResource(R.string.set_restore))
+                }
+            },
             dismissButton = { TextButton(onClick = vm::dismissBackupPreview) { Text(stringResource(CoreR.string.cancel)) } },
         )
     }
     if (confirmReset) {
         ConfirmDialog(stringResource(R.string.set_reset_all), stringResource(R.string.set_reset_all_confirm), stringResource(R.string.set_reset), onConfirm = vm::resetAll, onDismiss = { confirmReset = false })
     }
+}
+
+@Composable
+private fun backupCategoryLabel(category: BackupCategory): String = when (category) {
+    BackupCategory.BOOKS -> stringResource(R.string.set_restore_category_books)
+    BackupCategory.ANNOTATIONS -> stringResource(R.string.set_restore_category_annotations)
+    BackupCategory.WORDS -> stringResource(R.string.set_restore_category_words)
+    BackupCategory.CATALOG -> stringResource(R.string.set_restore_category_catalog)
+    BackupCategory.SESSIONS -> stringResource(R.string.set_restore_category_sessions)
+    BackupCategory.SETTINGS -> stringResource(R.string.set_restore_category_settings)
+    BackupCategory.FILES -> stringResource(R.string.set_restore_category_files)
+    BackupCategory.GLOSSARY -> stringResource(R.string.set_restore_category_glossary)
 }
 
 @Composable

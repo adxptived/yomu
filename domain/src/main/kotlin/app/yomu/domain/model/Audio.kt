@@ -47,6 +47,10 @@ data class AudioTrack(
     val guid: String? = null,
     /** Publication time reported by the feed, 0 when it has none. */
     val publishedAt: Long = 0,
+    /** ReplayGain track gain in dB, when the file or the feed declares one. */
+    val gainDb: Float? = null,
+    /** ReplayGain sample peak, used to keep a positive gain from clipping. */
+    val gainPeak: Float? = null,
 )
 
 /** The `.yaudio` file of an audiobook that is not a plain file or folder: online streams, YouTube, podcasts. */

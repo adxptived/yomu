@@ -48,6 +48,7 @@ One line per decision. Format: **what was chosen** — why / how it differs from
 - **The editor works on a working copy (an unpacked EPUB / manga pages) with a disk undo/redo history** (`History`: before/after snapshots per step, surviving restarts). The original file changes only on "Save".
 - **Non-EPUB books are saved as EPUB, manga from CBR/CB7/a folder as CBZ** (writing RAR is impossible with free libraries).
 - **Manga cleaning and typesetting are not implemented** — instead there are margin crop, rotation, brightness/contrast, dual-page splitting, merging and recompression. See KNOWN_LIMITATIONS.
+- **Saving is a two-phase publish (20 ноября).** Before `TaskRegistry.beginPublish` a cancel aborts and leaves the original byte-identical; once the write is claimed it moves to `appScope` and is non-cancellable — a later cancel request (or ViewModel-scope death) cannot relabel committed work as cancelled. The task stays RUNNING until the write really settles, and `SavePublisher` owns the terminal state, journal event, temp cleanup and UI outcome in one `NonCancellable` block. Implemented as a `publishing` flag on `LongTask`, not a new `TaskState`, so other exhaustive `when` branches keep compiling.
 
 ## Security and privacy
 

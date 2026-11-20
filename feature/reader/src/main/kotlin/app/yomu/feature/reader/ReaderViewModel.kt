@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.isSpecified
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.yomu.core.common.AppError
@@ -14,6 +15,7 @@ import app.yomu.core.datastore.AppSettings
 import app.yomu.core.datastore.SettingsJson
 import app.yomu.core.datastore.stateIn
 import app.yomu.core.network.DataSaver
+import app.yomu.core.network.TrafficMeter
 import app.yomu.data.book.Containers
 import app.yomu.data.book.PageSource
 import app.yomu.data.book.PageSources
@@ -23,6 +25,7 @@ import app.yomu.data.book.pdf.PdfAnnotationStore
 import app.yomu.data.book.pdf.PdfAnnotationWorker
 import app.yomu.data.catalog.CatalogRepository
 import app.yomu.data.download.DownloadRepository
+import app.yomu.data.index.FulltextIndexRepository
 import app.yomu.data.library.BookFiles
 import app.yomu.data.ocr.OcrService
 import app.yomu.data.repository.AnnotationRepositoryImpl
@@ -30,6 +33,7 @@ import app.yomu.data.repository.BookRepositoryImpl
 import app.yomu.data.repository.StatsRepositoryImpl
 import app.yomu.data.repository.WordRepositoryImpl
 import app.yomu.data.translation.TranslationService
+import app.yomu.domain.audio.LinkedEditions
 import app.yomu.domain.catalog.ChapterIntent
 import app.yomu.domain.catalog.ChapterNavigation
 import app.yomu.domain.catalog.ChapterOrder
@@ -37,6 +41,7 @@ import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookFormat
 import app.yomu.domain.model.BookReaderSettings
 import app.yomu.domain.model.Bookmark
+import app.yomu.domain.model.CatalogEntry
 import app.yomu.domain.model.ChapterInfo
 import app.yomu.domain.model.CommonReaderSettings
 import app.yomu.domain.model.ContentType
@@ -61,9 +66,8 @@ import app.yomu.domain.model.TocItem
 import app.yomu.domain.reader.PageCapabilitiesOf
 import app.yomu.domain.reader.PageContext
 import app.yomu.domain.reader.PageEngine
-import app.yomu.domain.reader.ReaderInput
 import app.yomu.domain.reader.ReaderPoint
-import app.yomu.domain.reader.ReaderTapAction
+import app.yomu.domain.reader.ReaderWindow
 import app.yomu.domain.text.TextTools
 import app.yomu.feature.reader.epub.BookHtml
 import app.yomu.feature.reader.epub.ChapterText
@@ -75,9 +79,11 @@ import app.yomu.feature.reader.epub.EpubSelection
 import app.yomu.feature.reader.epub.EpubTarget
 import app.yomu.feature.reader.epub.EpubTextDocument
 import app.yomu.feature.reader.epub.EpubWord
+import app.yomu.feature.reader.manga.MangaChapter
 import app.yomu.feature.reader.manga.MangaController
 import app.yomu.feature.reader.manga.MangaListener
 import app.yomu.feature.reader.manga.OverlayBlock
+import app.yomu.feature.reader.manga.SessionPageSource
 import app.yomu.feature.reader.pdf.PdfController
 import app.yomu.feature.reader.pdf.PdfListener
 import app.yomu.feature.reader.pdf.PdfSelection
@@ -165,6 +171,7 @@ sealed interface ReaderEvent {
     data class Message(val res: Int) : ReaderEvent
     data class Error(val error: Throwable) : ReaderEvent
     data class OpenUrl(val url: String) : ReaderEvent
+    data class OpenBook(val id: Long) : ReaderEvent
     data object Finished : ReaderEvent
 
     /** Open the note dialog for the current page (long-press menu). */
@@ -195,12 +202,15 @@ class ReaderViewModel(
     private val ocr: OcrService,
     private val downloads: DownloadRepository,
     private val pdfAnnotations: PdfAnnotationStore,
+    private val fulltextIndex: FulltextIndexRepository,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel(), EpubListener, PdfListener, MangaListener {
 
     val bookId: Long get() = args.bookId
     var book: Book? = null
         private set
-    val isOnline: Boolean get() = args.chapterId > 0
+    /** True while an online chapter is open: a process-restored window can supply the chapter when args cannot. */
+    val isOnline: Boolean get() = _chapterId.value > 0
 
     private val _content = MutableStateFlow<UiState<ReaderContent>>(UiState.Loading)
     val content: StateFlow<UiState<ReaderContent>> = _content
@@ -208,6 +218,9 @@ class ReaderViewModel(
     val passwordNeeded: StateFlow<Boolean> = _password
     private val _title = MutableStateFlow("")
     val title: StateFlow<String> = _title
+
+    /** The audio (or text) edition linked to this book by hand, or null. */
+    val linkedEditionId = MutableStateFlow<Long?>(null)
 
     /** "Chapter 12 of 368" of the online chapter being read, shown under the title; null for books. */
     private var chapterOf: String? = null
@@ -280,6 +293,22 @@ class ReaderViewModel(
     val pdfSettings: StateFlow<PdfSettings> = combine(settings.pdfSettings.flow, bookOverride) { g, o -> o.pdf ?: g }
         .stateIn(viewModelScope, SharingStarted.Eagerly, PdfSettings())
     val common: StateFlow<CommonReaderSettings> = settings.commonReader.stateIn(viewModelScope)
+
+    /** Global manga toggles (not per-book): Wi-Fi-only preload and the long-strip chapter rail. */
+    val readerPreloadWifiOnly: StateFlow<Boolean> = settings.readerPreloadWifiOnly.stateIn(viewModelScope)
+    val verticalChapterNavigator: StateFlow<Boolean> = settings.verticalChapterNavigator.stateIn(viewModelScope)
+
+    /** Whether the manga reader may preload pages ahead of the current one on the active network. */
+    fun mayPreload(): Boolean = preloadAllowed(readerPreloadWifiOnly.value, TrafficMeter.isMetered())
+
+    fun setReaderPreloadWifiOnly(value: Boolean) {
+        viewModelScope.launch(ScreenErrors) { settings.readerPreloadWifiOnly.set(value) }
+    }
+
+    fun setVerticalChapterNavigator(value: Boolean) {
+        viewModelScope.launch(ScreenErrors) { settings.verticalChapterNavigator.set(value) }
+    }
+
     val selectionActions = settings.selectionActions.stateIn(viewModelScope)
     val selectionMenuStyle = settings.selectionMenuStyle.stateIn(viewModelScope)
     val pageMenuStyle = settings.pageMenuStyle.stateIn(viewModelScope)
@@ -308,6 +337,28 @@ class ReaderViewModel(
     val hasPrevChapter = MutableStateFlow(false)
     val hasNextChapter = MutableStateFlow(false)
     private var onlineType: ContentType = ContentType.MANGA
+    private var onlineEntry: CatalogEntry? = null
+
+    /** Chapters of the online window currently loaded, in reading order (at most current ± 1). */
+    private var loadedWindow: List<Long> = emptyList()
+
+    /** Chapter whose end was last reached; its page is written when the reader moves to the next one. */
+    private var lastChapterId = -1L
+    private var lastChapterPage = 0
+    private var lastChapterCount = 0
+    private var windowJob: Job? = null
+    private val windowMutex = Mutex()
+    private var textWindowJob: Job? = null
+    private val textWindowMutex = Mutex()
+
+    /** Chapters of the online novel window loaded in the WebView, in reading order. */
+    private var loadedTextWindow: List<Long> = emptyList()
+    private var lastTextLocal = -1
+    private var lastTextGlobal = -1L
+
+    /** Where the reader is in the online novel: global chapter id and offset inside it. */
+    private var textAnchor: Pair<Long, Int>? = null
+    private var textSaveJob: Job? = null
 
     // ------------------------------------------------------------------ text engine state
     private var initialTarget: Pair<Int, EpubTarget?>? = null
@@ -351,7 +402,19 @@ class ReaderViewModel(
     /** One OCR at a time: two large pages decoded together would peak far beyond what one page needs. */
     private val ocrMutex = Mutex()
     private val chapterOpenMutex = Mutex()
-    private var chapterOpenJob: Job? = null
+
+    // Q01 owners: input routing, chapter navigation/window and page actions each own their cancellation.
+    private val inputRouter = ReaderInputRouter(Dispatchers.Main.immediate) { intent -> executeInputIntent(intent) }
+    private val chapterNavigator = ChapterNavigator(Dispatchers.Main.immediate, ScreenErrors)
+    private val pageActionExecutor = PageActionExecutor(Dispatchers.Main.immediate, ScreenErrors)
+
+    /** Saved state is a plain key/value map; the adapter keeps the snapshot format independent of the framework. */
+    private val windowStore = object : SnapshotStore {
+        override fun get(key: String): Any? = savedStateHandle.get<Any?>(key)
+        override fun set(key: String, value: Any?) { savedStateHandle[key] = value }
+    }
+    private val sourceResolver = SourceConnectionResolver(context, catalog)
+
     private var folderReadSession: BookRepositoryImpl.FolderReadSession? = null
 
     init {
@@ -380,8 +443,15 @@ class ReaderViewModel(
                 .distinctUntilChanged()
                 .collect { cols -> (current() as? ReaderContent.Text)?.controller?.updateColumns(cols) }
         }
+        // A deep link always wins. Only a reader with nothing to open resumes the window left by a killed process.
+        val restored = if (ChapterWindowState.shouldRestore(args)) ChapterWindowState.restore(windowStore) else null
+        if (restored != null) {
+            chapterNavigator.restore(restored)
+            _chapterId.value = restored.currentId
+        }
         viewModelScope.launch(ScreenErrors) {
-            runCatching { if (isOnline) openOnline(args.chapterId) else openBook(args.bookId, null) }
+            val chapter = restored?.currentId ?: args.chapterId
+            runCatching { if (chapter > 0) openOnline(chapter) else openBook(args.bookId, null) }
                 .onFailure { e ->
                     if (e is PdfPasswordRequired) _password.value = true
                     else _content.value = UiState.Error(AppError.from(e))
@@ -411,6 +481,24 @@ class ReaderViewModel(
     }
 
     fun current(): ReaderContent? = (_content.value as? UiState.Data)?.value
+
+    /** Writes the window after every change so process death does not lose the chapter being read. */
+    private fun persistWindow() {
+        val snapshot = chapterNavigator.snapshot()
+        if (snapshot == null) ChapterWindowState.clear(windowStore) else ChapterWindowState.save(windowStore, snapshot)
+    }
+
+    /** The one place the window changes: every open and every shift goes through here, so the snapshot cannot lag. */
+    private fun openWindow(entryId: Long, order: List<Long>, chapterId: Long): ReaderWindow? {
+        val window = chapterNavigator.openWindow(entryId, order, chapterId)
+        persistWindow()
+        return window
+    }
+
+    /** Opens the edition linked to this book; the link only names the other book, which opens at its own position. */
+    fun openLinkedEdition() {
+        linkedEditionId.value?.let { events.trySend(ReaderEvent.OpenBook(it)) }
+    }
 
     /** App chosen for the "dictionary" selection action (kept in memory: the UI asks synchronously). */
     @Volatile private var dictionaryAppCache = app.yomu.domain.model.DictionaryApp.SYSTEM
@@ -469,6 +557,7 @@ class ReaderViewModel(
         try {
             val b = books.getBook(id) ?: throw AppError.CorruptedFile("Book $id not found")
             book = b
+            linkedEditionId.value = LinkedEditions.linkedId(b.readerSettingsJson)
             _title.value = b.title
             _imageCanvas.value = !b.format.isText
             bookOverride.value = b.readerSettingsJson?.let { runCatching { SettingsJson.decodeFromString(BookReaderSettings.serializer(), it) }.getOrNull() } ?: BookReaderSettings()
@@ -586,7 +675,7 @@ class ReaderViewModel(
         c.settings = mangaSettings.value
         c.page = page.coerceIn(0, (pages.count - 1).coerceAtLeast(0))
         // "Save mobile data": on mobile data only the next page of a chapter read from the network is preloaded.
-        if (online && DataSaver.active) c.preloadLimit = DataSaver.PRELOAD_PAGES
+        SourceConnectionResolver.preloadLimit(DataSaver.active, online)?.let { c.preloadLimit = it }
         _toc.value = emptyList()
         _position.value = ReaderPosition(chapter = c.page, chapterCount = pages.count, page = c.page, pages = pages.count, chapterTitle = chapterOf)
         _content.value = UiState.Data(ReaderContent.Manga(c))
@@ -609,82 +698,334 @@ class ReaderViewModel(
         val entry = catalog.entry(ch.entryId) ?: throw AppError.CorruptedFile("Entry not found")
         _chapterId.value = chapterId
         onlineEntryId = entry.id
+        onlineEntry = entry
         onlineType = entry.type
         // Reading order shared with the title page; groups hidden there are skipped (except the chapter being opened).
         val excluded = catalog.chapterDisplay(entry.id).excludedScanlators
         chapters = ChapterOrder.reading(catalog.chapters(entry.id).filter { it.id == chapterId || it.scanlator.isNullOrBlank() || it.scanlator !in excluded })
-        // One resolver for every way to move between chapters; other releases of the same chapter are skipped only
-        // when the numbering can be trusted (see ChapterNavigation).
-        hasPrevChapter.value = ChapterNavigation.resolve(chapters, chapterId, ChapterIntent.PREVIOUS) != null
-        hasNextChapter.value = ChapterNavigation.resolve(chapters, chapterId, ChapterIntent.NEXT) != null
+        applyChapterHeader(ch)
         // "Download ahead": keep the next chapters of library titles downloaded while reading.
         viewModelScope.launch(ScreenErrors) { runCatching { downloads.ensureAhead(entry.id, chapterId) }.onFailure { Timber.w(it, "Download ahead failed") } }
+        _imageCanvas.value = SourceConnectionResolver.showImageCanvas(entry.type)
+        bookOverride.value = catalog.readerSettings(entry.id)?.let { runCatching { SettingsJson.decodeFromString(BookReaderSettings.serializer(), it) }.getOrNull() } ?: BookReaderSettings()
+        when (sourceResolver.windowMode(entry.type)) {
+            // A bounded document of the current chapter and its neighbours; not one page for a whole series.
+            SourceConnectionResolver.WindowMode.TEXT -> check(openTextWindow(chapterId, null)) { "The chapter has no text" }
+            // The reader holds the chapter and its neighbours: crossing an ordinary chapter boundary must not show
+            // the loading screen again. A chapter that cannot be opened is a real error only for the one being read.
+            SourceConnectionResolver.WindowMode.PAGES -> check(openMangaWindow(chapterId, ch.lastPageRead.takeIf { !ch.read } ?: 0)) { "No pages" }
+        }
+        sessionStart = System.currentTimeMillis()
+        lastActivity = sessionStart
+    }
+
+    /** Title, "Chapter N of M" and the neighbouring chapters of the chapter being read. */
+    private fun applyChapterHeader(ch: ChapterInfo) {
+        val entry = onlineEntry ?: return
+        _chapterId.value = ch.id
         _title.value = entry.title + " · " + ch.name
         // "Chapter 12 of 368" under the title: the number in reading order, as on the title page.
         val slots = ChapterOrder.slots(chapters)
         // Typed explicitly: lint takes "unknown + 1" for a string and reports the %d of the format.
-        val number: Int = slots.indexOfFirst { slot -> slot.any { it.id == chapterId } } + 1
+        val number: Int = slots.indexOfFirst { slot -> slot.any { it.id == ch.id } } + 1
         val total: Int = slots.size
         chapterOf = if (number > 0) context.getString(R.string.reader_chapter_of, number, total) else null
-        _imageCanvas.value = entry.type != ContentType.NOVEL && entry.type != ContentType.BOOK && entry.type != ContentType.AUDIO
-        bookOverride.value = catalog.readerSettings(entry.id)?.let { runCatching { SettingsJson.decodeFromString(BookReaderSettings.serializer(), it) }.getOrNull() } ?: BookReaderSettings()
-        if (entry.type == ContentType.NOVEL || entry.type == ContentType.BOOK || entry.type == ContentType.AUDIO) {
-            val html = catalog.novelContent(chapterId)
-            val doc = SingleHtmlDocument(ch.name, html)
-            val c = newTextController(doc)
-            _toc.value = chapters.mapIndexed { i, it -> TocItem(it.name, i) }
-            initialTarget = 0 to null
-            _position.value = ReaderPosition(chapterCount = 1)
-            _content.value = UiState.Data(ReaderContent.Text(c))
-        } else {
-            val local = ch.localPath?.let { File(it) }?.takeIf { it.exists() }
-            val pages = if (local != null) {
-                withContext(Dispatchers.IO) {
-                    val fmt = if (local.isDirectory) BookFormat.FOLDER else BookFormat.CBZ
-                    val fake =
-                        Book(id = -chapterId, title = ch.name, format = fmt, uri = Uri.fromFile(local).toString())
-                    PageSources.open(context, fake, Uri.fromFile(local))
+        // One resolver for every way to move between chapters; other releases of the same chapter are skipped only
+        // when the numbering can be trusted (see ChapterNavigation).
+        hasPrevChapter.value = ChapterNavigation.resolve(chapters, ch.id, ChapterIntent.PREVIOUS) != null
+        hasNextChapter.value = ChapterNavigation.resolve(chapters, ch.id, ChapterIntent.NEXT) != null
+    }
+
+    /**
+     * Reading order of the window: one release per chapter, the current release kept as it is. Other releases of the
+     * same chapter are slots, so a neighbour is never a second copy of the chapter being read.
+     */
+    private fun windowOrder(chapterId: Long): List<Long> = chapterNavigator.readingOrder(chapters, chapterId)
+
+    /** Pages of an online chapter: its downloaded copy when there is one, the source's pages otherwise. */
+    private suspend fun openChapterPages(ch: ChapterInfo): PageSource = sourceResolver.openPages(ch)
+
+    /**
+     * Opens the window around [chapterId] and swaps the reader onto it without the loading state.
+     *
+     * Retention is explicit: chapters the next window still needs are handed over by [SessionPageSource.transfer], the
+     * far ones are released, and only the missing neighbour is fetched. A neighbour that fails leaves the current
+     * chapter readable and is reported instead of failing the open.
+     */
+    private suspend fun openMangaWindow(chapterId: Long, page: Int): Boolean {
+        val ch = chapters.firstOrNull { it.id == chapterId } ?: return false
+        val order = windowOrder(chapterId)
+        val window = openWindow(onlineEntry?.id ?: ch.entryId, order, chapterId) ?: return false
+        val desired = window.ids.toSet()
+        val old = (current() as? ReaderContent.Manga)?.controller?.pages as? SessionPageSource
+        val reused = old?.chapters?.filter { it.id in desired }.orEmpty()
+        val opened = ArrayList<MangaChapter>()
+        var neighbourFailure: Throwable? = null
+        try {
+            for (id in window.ids.filter { candidate -> reused.none { it.id == candidate } }) {
+                val info = chapters.firstOrNull { it.id == id }
+                if (info != null) {
+                    val attempt = runCatching { openChapterPages(info) }
+                    val source = attempt.getOrNull()
+                    if (source != null) {
+                        opened += MangaChapter(id, info.name, source)
+                    } else if (id == chapterId) {
+                        throw attempt.exceptionOrNull() ?: AppError.CorruptedFile("No pages")
+                    } else {
+                        neighbourFailure = attempt.exceptionOrNull()
+                    }
                 }
-            } else {
-                val (source, list) = catalog.pages(chapterId)
-                catalog.onlinePages(source, list, "ch_$chapterId")
             }
-            openManga(pages, ch.lastPageRead.takeIf { !ch.read } ?: 0, online = local == null)
+            if (reused.none { it.id == chapterId } && opened.none { it.id == chapterId }) {
+                opened.forEach { runCatching { it.source.close() } }
+                return false
+            }
+        } catch (e: Throwable) {
+            opened.forEach { runCatching { it.source.close() } }
+            throw e
         }
-        sessionStart = System.currentTimeMillis()
-        lastActivity = sessionStart
+        // Opening succeeded: the old session now hands over the retained chapters and releases the rest.
+        old?.transfer(desired)
+        val loaded = (reused + opened).sortedBy { chapter -> window.ids.indexOf(chapter.id) }
+        val session = SessionPageSource(loaded)
+        val controller = MangaController(session, session)
+        controller.settings = mangaSettings.value
+        // "Save mobile data": only the next page of a chapter read from the network is preloaded on mobile data.
+        SourceConnectionResolver.preloadLimit(DataSaver.active, online = true)?.let { controller.preloadLimit = it }
+        val slice = session.slices.firstOrNull { it.chapterId == chapterId } ?: return false
+        controller.page = slice.start + page.coerceIn(0, slice.pages - 1)
+        // The end page leads outside the window only when a chapter follows the last loaded one.
+        val lastLoaded = loaded.last().id
+        val lastIndex = order.indexOf(lastLoaded)
+        controller.hasNextAfterWindow = lastIndex >= 0 && lastIndex < order.lastIndex
+        loadedWindow = loaded.map { it.id }
+        // The header follows the content: a window that failed to open must not rename the chapter still on screen.
+        applyChapterHeader(ch)
+        _toc.value = emptyList()
+        lastChapterId = chapterId
+        lastChapterPage = controller.localPage
+        lastChapterCount = controller.localCount
+        lastPage = controller.page
+        _position.value = ReaderPosition(
+            chapter = controller.localPage,
+            chapterCount = controller.localCount,
+            page = controller.localPage,
+            pages = controller.localCount,
+            chapterTitle = chapterOf,
+        )
+        _imageCanvas.value = true
+        _content.value = UiState.Data(ReaderContent.Manga(controller))
+        // Where to tap: shown once per opened title (not again for every chapter).
+        val m = mangaSettings.value
+        if (!tapZonesShown && m.showTapZonesOnOpen && m.tapZones != TapZoneLayout.DISABLED && m.direction != MangaDirection.WEBTOON) {
+            tapZonesShown = true
+            controller.showTapZones()
+        }
+        neighbourFailure?.let { events.trySend(ReaderEvent.Message(R.string.reader_chapter_neighbour_failed)) }
+        return true
+    }
+
+    /**
+     * Moves to a chapter already loaded in the window; the reader turns there without fetching it again. False when
+     * the chapter is outside the window and must be opened instead.
+     */
+    private fun moveToLoadedChapter(targetId: Long): Boolean {
+        when (val content = current()) {
+            is ReaderContent.Manga -> {
+                val controller = content.controller
+                if (controller.session == null) return false
+                val index = controller.globalIndex(targetId, 0) ?: return false
+                chapterNavigator.cancelNavigation()
+                controller.goTo(index)
+                return true
+            }
+            is ReaderContent.Text -> {
+                val doc = content.controller.document as? WindowHtmlDocument ?: return false
+                val index = doc.indexOfChapterId(targetId)
+                if (index < 0) return false
+                chapterNavigator.cancelNavigation()
+                viewModelScope.launch(ScreenErrors) {
+                    content.controller.goTo(index, EpubTarget.Progression(0f))
+                    syncTextChapter(index)
+                }
+                return true
+            }
+            else -> return false
+        }
     }
 
     /** Opens the previous/next chapter of an online entry. */
     fun openAdjacentChapter(next: Boolean) {
         // Other groups' releases of the current chapter are skipped; the current group is preferred.
         val target = ChapterNavigation.resolve(chapters, _chapterId.value, if (next) ChapterIntent.NEXT else ChapterIntent.PREVIOUS) ?: return
+        if (moveToLoadedChapter(target.id)) return
         openChapter(target.id, finished = next)
     }
 
     fun openChapterAt(index: Int) {
         val target = chapters.getOrNull(index) ?: return
+        if (moveToLoadedChapter(target.id)) return
         openChapter(target.id, finished = false)
     }
 
     /**
      * One chapter open at a time: two quick taps must not load two containers, where the loser is never closed.
-     * A newer request replaces the older one instead of running beside it.
+     * A newer request replaces the older one instead of running beside it. Inside an online window the current
+     * content stays on screen until the next one is ready; only a reader with nothing to show gets the loading state.
      */
     private fun openChapter(targetId: Long, finished: Boolean) {
-        chapterOpenJob?.cancel()
-        chapterOpenJob = viewModelScope.launch(ScreenErrors) {
+        chapterNavigator.navigate {
             chapterOpenMutex.withLock {
                 flushStats()
                 // Incognito: chapters read online are not marked read.
                 if (finished && !settings.incognito.get()) catalog.saveProgress(_chapterId.value, 0, finished = true)
-                _content.value = UiState.Loading
-                runCatching { openOnline(targetId) }.onFailure { _content.value = UiState.Error(AppError.from(it)) }
+                val target = chapters.firstOrNull { it.id == targetId }
+                val mode = sourceResolver.windowMode(onlineType)
+                val windowed = target != null && onlineEntry != null &&
+                    SourceConnectionResolver.isWindowed(mode, current() is ReaderContent.Text, current() is ReaderContent.Manga)
+                if (!windowed) _content.value = UiState.Loading
+                runCatching {
+                    when {
+                        mode == SourceConnectionResolver.WindowMode.PAGES && windowed ->
+                            if (!openMangaWindow(targetId, target!!.lastPageRead.takeIf { !target.read } ?: 0)) {
+                                throw AppError.CorruptedFile("No pages")
+                            }
+                        mode == SourceConnectionResolver.WindowMode.TEXT && windowed ->
+                            if (!openTextWindow(targetId, null)) {
+                                throw AppError.CorruptedFile("The chapter has no text")
+                            }
+                        else -> openOnline(targetId)
+                    }
+                }.onFailure { e ->
+                    if (windowed) events.send(ReaderEvent.Error(e)) else _content.value = UiState.Error(AppError.from(e))
+                }
             }
         }
     }
 
-    /** Called by the screen every time a WebView is attached (first open and after configuration changes). */
+    /**
+     * Keeps the window centred on the chapter being read. The next chapter is already loaded when a boundary is
+     * crossed, so this runs after the turn, not before it, and a moved reader cancels the pending rebuild.
+     */
+    private fun scheduleWindowShift(chapterId: Long) {
+        val order = windowOrder(chapterId)
+        val window = openWindow(onlineEntry?.id ?: 0, order, chapterId) ?: return
+        if (window.ids == loadedWindow) return
+        windowJob?.cancel()
+        windowJob = viewModelScope.launch(ScreenErrors) {
+            delay(350)
+            windowMutex.withLock {
+                if (_chapterId.value != chapterId) return@withLock
+                val controller = (current() as? ReaderContent.Manga)?.controller ?: return@withLock
+                if (controller.chapter?.id != chapterId) return@withLock
+                runCatching { openMangaWindow(chapterId, controller.localPage) }
+                    .onFailure {
+                        Timber.w(it, "Cannot shift the chapter window")
+                        events.send(ReaderEvent.Message(R.string.reader_chapter_window_failed))
+                    }
+            }
+        }
+    }
+
+    /**
+     * Opens the bounded document of the online novel: the current chapter and its neighbours, with the identity
+     * bridge between section index and global chapter. A neighbour that fails is left out; the chapter being read
+     * stays. The document is capped by the window, so a long series is never concatenated into one WebView page.
+     */
+    private suspend fun openTextWindow(chapterId: Long, offset: Int?): Boolean {
+        val ch = chapters.firstOrNull { it.id == chapterId } ?: return false
+        val order = windowOrder(chapterId)
+        val window = openWindow(onlineEntry?.id ?: ch.entryId, order, chapterId) ?: return false
+        val loaded = ArrayList<WindowHtmlDocument.Chapter>()
+        var neighbourFailure: Throwable? = null
+        for (id in window.ids) {
+            val info = chapters.firstOrNull { it.id == id }
+            if (info != null) {
+                val attempt = runCatching { catalog.novelContent(id) }
+                val html = attempt.getOrNull()
+                if (html != null) {
+                    loaded += WindowHtmlDocument.Chapter(id, info.name, html)
+                } else if (id == chapterId) {
+                    throw attempt.exceptionOrNull() ?: AppError.CorruptedFile("The chapter has no text")
+                } else {
+                    neighbourFailure = attempt.exceptionOrNull()
+                }
+            }
+        }
+        if (loaded.none { it.id == chapterId }) return false
+        val doc = WindowHtmlDocument(onlineEntry?.title ?: ch.name, loaded)
+        val local = doc.indexOfChapterId(chapterId).coerceAtLeast(0)
+        val controller = newTextController(doc)
+        // The contents of an online title are global: a jump still names the library chapter, not a window section.
+        _toc.value = chapters.mapIndexed { i, chapter -> TocItem(chapter.name, i) }
+        initialTarget = local to (offset?.let { EpubTarget.Offset(it) })
+        applyChapterHeader(ch)
+        loadedTextWindow = loaded.map { it.id }
+        lastTextLocal = local
+        lastTextGlobal = chapterId
+        textAnchor = offset?.let { chapterId to it }
+        _position.value = ReaderPosition(chapter = local, chapterCount = doc.chapterCount, chapterTitle = ch.name)
+        _content.value = UiState.Data(ReaderContent.Text(controller))
+        neighbourFailure?.let {
+            Timber.w(it, "A neighbouring novel chapter could not be loaded")
+            events.trySend(ReaderEvent.Message(R.string.reader_chapter_neighbour_failed))
+        }
+        return true
+    }
+
+    /**
+     * Keeps the header, the saved chapter and the window in step with the section the WebView shows. Moving forward
+     * finishes the chapter left behind; moving back never rewrites a read mark.
+     */
+    private fun syncTextChapter(local: Int) {
+        val controller = (current() as? ReaderContent.Text)?.controller ?: return
+        val doc = controller.document as? WindowHtmlDocument ?: return
+        val global = doc.chapterId(local) ?: return
+        if (global == _chapterId.value) return
+        if (lastTextGlobal > 0 && local > lastTextLocal) {
+            val left = lastTextGlobal
+            viewModelScope.launch(ScreenErrors) { catalog.saveProgress(left, 0, finished = true) }
+        }
+        lastTextLocal = local
+        lastTextGlobal = global
+        chapters.firstOrNull { it.id == global }?.let { applyChapterHeader(it) }
+        scheduleTextWindowShift(global)
+    }
+
+    /** Re-centres the novel window after a chapter turn, keeping the offset inside the chapter being read. */
+    private fun scheduleTextWindowShift(chapterId: Long) {
+        val order = windowOrder(chapterId)
+        val window = openWindow(onlineEntry?.id ?: 0, order, chapterId) ?: return
+        if (window.ids == loadedTextWindow) return
+        textWindowJob?.cancel()
+        textWindowJob = viewModelScope.launch(ScreenErrors) {
+            delay(400)
+            textWindowMutex.withLock {
+                if (_chapterId.value != chapterId) return@withLock
+                val controller = (current() as? ReaderContent.Text)?.controller ?: return@withLock
+                val doc = controller.document as? WindowHtmlDocument ?: return@withLock
+                if (doc.indexOfChapterId(chapterId) < 0) return@withLock
+                val offset = textAnchor?.takeIf { it.first == chapterId }?.second
+                runCatching { openTextWindow(chapterId, offset) }
+                    .onFailure {
+                        Timber.w(it, "Cannot shift the novel window")
+                        events.send(ReaderEvent.Message(R.string.reader_chapter_window_failed))
+                    }
+            }
+        }
+    }
+
+    /** Debounced write of the online novel position: the library needs the chapter, not every scroll tick. */
+    private fun scheduleTextSave() {
+        if (!isOnline) return
+        textSaveJob?.cancel()
+        textSaveJob = viewModelScope.launch(ScreenErrors) {
+            delay(800)
+            val (chapterId, _) = textAnchor ?: return@launch
+            if (!settings.incognito.get()) catalog.saveProgress(chapterId, 0, finished = false)
+        }
+    }
+
     fun onWebViewAttached(c: EpubController) {
         // The old page must not flash before the new WebView has laid the text out and jumped to the position.
         _textReady.value = false
@@ -697,9 +1038,38 @@ class ReaderViewModel(
         }
     }
 
+    // ------------------------------------------------------------------ fulltext index
+    /** One chapter-text indexing at a time: an old chapter must not write over a newer one after a jump. */
+    private var indexTextJob: Job? = null
+
+    /**
+     * Best-effort indexing of a local text chapter the reader has actually laid out. Runs off the rendering path,
+     * never changes reading behaviour and is skipped unless the opt-in index is on and a real book is attached (an
+     * online chapter has no book row for the foreign key).
+     */
+    private fun indexChapterText(chapter: Int) {
+        if (isOnline || args.bookId <= 0) return
+        indexTextJob?.cancel()
+        indexTextJob = viewModelScope.launch(ScreenErrors) {
+            runCatching {
+                if (settings.fulltextIndex.get()) {
+                    val controller = (current() as? ReaderContent.Text)?.controller
+                    if (controller != null) {
+                        val document = controller.document
+                        // chapterHtml already runs on IO; parsing it here keeps the WebView's rendering thread free.
+                        val text = ChapterText.of(document.chapterHtml(chapter))
+                        fulltextIndex.indexText(args.bookId, "chapter:${document.chapterPath(chapter)}", text)
+                    }
+                }
+            }.onFailure { Timber.w(it, "Fulltext index of chapter $chapter failed") }
+        }
+    }
+
     // ================================================================== text listener
     override fun onReady(chapter: Int) {
         _textReady.value = true
+        syncTextChapter(chapter)
+        indexChapterText(chapter)
         pushHighlights()
         val c = (current() as? ReaderContent.Text)?.controller ?: return
         c.setSavedWords(savedWords.value.toList())
@@ -730,7 +1100,14 @@ class ReaderViewModel(
         val c = (current() as? ReaderContent.Text)?.controller ?: return
         // Reports that belong to a chapter the controller already left would move the saved position backwards.
         if (chapter != c.chapter) return
+        syncTextChapter(chapter)
         val doc = c.document
+        if (doc is WindowHtmlDocument) {
+            doc.chapterId(chapter)?.let { global ->
+                textAnchor = global to progress.offset
+                scheduleTextSave()
+            }
+        }
         if (!c.wholeBook) updateChapterStarts(doc)
         chapterLengths[chapter] = progress.total
         markActivity()
@@ -782,33 +1159,33 @@ class ReaderViewModel(
         markActivity()
         if (selection.value != null) return
         val point = ReaderPoint(x, y)
-        when (current()) {
+        when (val c = current()) {
             is ReaderContent.Text -> {
-                val c = (current() as ReaderContent.Text).controller
-                val turn = common.value.tapToTurn
-                val rtl = textSettings.value.rtl || c.document.rtl
-                val action = if (turn) ReaderInput.action(common.value.textTapZones, false, rtl, point, sideFraction = 0.25f) else ReaderTapAction.MENU
-                when (action) {
-                    ReaderTapAction.PREV -> c.prev()
-                    ReaderTapAction.NEXT -> c.next()
-                    ReaderTapAction.MENU -> toggleChrome()
-                }
+                val rtl = textSettings.value.rtl || c.controller.document.rtl
+                inputRouter.submit(inputRouter.routeTap(point, common.value.textTapZones, rtl, common.value.tapToTurn))
             }
             is ReaderContent.Pdf -> {
-                val c = current() as ReaderContent.Pdf
-                if (!common.value.tapToTurn) {
-                    toggleChrome()
-                } else {
-                    // A PDF has its own scheme or, by default, the text one.
-                    val action = ReaderInput.action(common.value.pdfZones(), false, false, point, sideFraction = 0.25f)
-                    when (action) {
-                        ReaderTapAction.PREV -> if (c.controller.page > 0) c.controller.goTo(c.controller.page - 1)
-                        ReaderTapAction.NEXT -> if (c.controller.page < c.controller.pageCount - 1) c.controller.goTo(c.controller.page + 1)
-                        ReaderTapAction.MENU -> toggleChrome()
-                    }
-                }
+                // A PDF has its own scheme or, by default, the text one.
+                inputRouter.submit(inputRouter.routeTap(point, common.value.pdfZones(), false, common.value.tapToTurn))
             }
             else -> toggleChrome()
+        }
+    }
+
+    /** Executes the one intent the router chose; the router owns when it is delivered. */
+    private fun executeInputIntent(intent: ReaderIntent) {
+        when (intent) {
+            ReaderIntent.Previous -> {
+                val c = current()
+                if (c is ReaderContent.Pdf && c.controller.page <= 0) return
+                prevPage()
+            }
+            ReaderIntent.Next -> {
+                val c = current()
+                if (c is ReaderContent.Pdf && c.controller.page >= c.controller.pageCount - 1) return
+                nextPage()
+            }
+            ReaderIntent.Menu -> toggleChrome()
         }
     }
 
@@ -889,12 +1266,15 @@ class ReaderViewModel(
     }
 
     override fun onPageChanged(page: Int) {
-        val content = current()
-        val count = when (content) {
-            is ReaderContent.Pdf -> content.controller.pageCount
-            is ReaderContent.Manga -> content.controller.count
-            else -> return
+        when (val content = current()) {
+            is ReaderContent.Manga -> onMangaPageChanged(content.controller, page)
+            is ReaderContent.Pdf -> onPdfPageChanged(content, page)
+            else -> Unit
         }
+    }
+
+    private fun onPdfPageChanged(content: ReaderContent.Pdf, page: Int) {
+        val count = content.controller.pageCount
         markActivity()
         if (page != lastPage) sessionPages++
         lastPage = page
@@ -902,7 +1282,7 @@ class ReaderViewModel(
         hereLocator = Locator(chapter = page, progression = 0f, totalProgression = total)
         _position.value = ReaderPosition(
             chapter = page, chapterCount = count, page = page, pages = count, progression = total, total = total,
-            bookPage = page + 1, bookPages = count, chapterTitle = chapterOf.takeIf { content is ReaderContent.Manga },
+            bookPage = page + 1, bookPages = count,
         )
         if (isOnline) {
             val id = _chapterId.value
@@ -916,7 +1296,64 @@ class ReaderViewModel(
         if (page >= count - 1 && !isOnline) {
             viewModelScope.launch(ScreenErrors) { delay(400); if (lastPage >= count - 1) markFinishedQuietly() }
         }
-        if (_ttsActive.value && current() is ReaderContent.Pdf && ttsChapter != page) speakPdfPage(page)
+        if (_ttsActive.value && ttsChapter != page) speakPdfPage(page)
+    }
+
+    /**
+     * A page of the loaded window. The pager counts pages of all held chapters; progress, the page chip and the saved
+     * position always describe the physical page inside the chapter that page belongs to. Crossing into the next
+     * chapter writes the chapter that was left and re-centres the window after the turn, never before it.
+     */
+    private fun onMangaPageChanged(controller: MangaController, flat: Int) {
+        markActivity()
+        if (flat != lastPage) sessionPages++
+        lastPage = flat
+        val chapter = controller.chapter
+        if (chapter != null) {
+            val local = controller.localPage
+            val count = controller.localCount
+            if (chapter.id != lastChapterId) {
+                if (lastChapterId > 0) {
+                    val left = lastChapterId
+                    val page = lastChapterPage
+                    val finished = lastChapterCount > 0 && page >= lastChapterCount - 1
+                    viewModelScope.launch(ScreenErrors) {
+                        if (!settings.incognito.get()) catalog.saveProgress(left, page, finished)
+                    }
+                }
+                lastChapterId = chapter.id
+                lastChapterPage = local
+                lastChapterCount = count
+                chapters.firstOrNull { it.id == chapter.id }?.let { applyChapterHeader(it) }
+                scheduleWindowShift(chapter.id)
+            } else {
+                lastChapterPage = local
+                lastChapterCount = count
+            }
+            val total = if (count <= 1) 1f else local / (count - 1).toFloat()
+            hereLocator = Locator(chapter = local, progression = 0f, totalProgression = total)
+            _position.value = ReaderPosition(
+                chapter = local, chapterCount = count, page = local, pages = count, progression = total, total = total,
+                bookPage = local + 1, bookPages = count, chapterTitle = chapterOf,
+            )
+            // Incognito: an online chapter is not marked read either.
+            viewModelScope.launch(ScreenErrors) {
+                if (!settings.incognito.get()) catalog.saveProgress(chapter.id, local, finished = local >= count - 1)
+            }
+            return
+        }
+        // A local publication: the pager spans the whole file.
+        val count = controller.count
+        val total = if (count <= 1) 1f else flat / (count - 1).toFloat()
+        hereLocator = Locator(chapter = flat, progression = 0f, totalProgression = total)
+        _position.value = ReaderPosition(
+            chapter = flat, chapterCount = count, page = flat, pages = count, progression = total, total = total,
+            bookPage = flat + 1, bookPages = count,
+        )
+        scheduleSave(Locator(chapter = flat, progression = 0f, totalProgression = total))
+        if (flat >= count - 1) {
+            viewModelScope.launch(ScreenErrors) { delay(400); if (lastPage >= count - 1) markFinishedQuietly() }
+        }
     }
 
     // ================================================================== manga listener
@@ -927,7 +1364,9 @@ class ReaderViewModel(
     /** A long press on a manga page opens the long-press menu; with the menu off, its first action runs at once. */
     override fun onLongPressAt(page: Int, windowPosition: Offset) {
         viewModelScope.launch(ScreenErrors) {
-            val context = pageContext(PageEngine.MANGA, page) ?: return@launch
+            // The pager reports the flat page of the window; the page menu is about the physical page of a chapter.
+            val local = (current() as? ReaderContent.Manga)?.controller?.localOf(page) ?: page
+            val context = pageContext(PageEngine.MANGA, local) ?: return@launch
             openPageMenu(context, windowPosition)
         }
     }
@@ -954,8 +1393,7 @@ class ReaderViewModel(
     /** The configured first action, restricted to what the engine can actually do. */
     private fun defaultPageAction(context: PageContext): PageAction {
         val enabled = QuickActions.normalize(pageActions.value).filter { it.enabled }.map { it.action }
-        return enabled.firstOrNull { isPageActionSupported(it, context) }
-            ?: if (context.capabilities.translatable) PageAction.TRANSLATE else PageAction.BOOKMARK
+        return pageActionExecutor.defaultAction(context, enabled)
     }
 
     /**
@@ -964,7 +1402,7 @@ class ReaderViewModel(
      */
     private suspend fun pageContext(engine: PageEngine, page: Int): PageContext? = when (val c = current()) {
         is ReaderContent.Manga -> {
-            val count = c.controller.count
+            val count = c.controller.localCount
             PageContext(
                 engine = PageEngine.MANGA,
                 bookId = args.bookId,
@@ -1016,14 +1454,7 @@ class ReaderViewModel(
         }
     }
 
-    fun isPageActionSupported(action: PageAction, context: PageContext): Boolean = when (action) {
-        PageAction.TRANSLATE -> context.capabilities.translatable
-        PageAction.SAVE, PageAction.SHARE -> context.capabilities.exportable
-        PageAction.SET_COVER -> context.capabilities.coverable
-        PageAction.COPY_TEXT -> context.capabilities.hasTextLayer || context.capabilities.ocr
-        PageAction.BOOKMARK -> context.capabilities.bookmarkable
-        PageAction.NOTE -> context.acceptsNote
-    }
+    fun isPageActionSupported(action: PageAction, context: PageContext): Boolean = pageActionExecutor.isSupported(action, context)
 
     /**
      * The bitmap of a manga page from its cached file. For a PDF there is no stored page image: it is rendered on
@@ -1041,7 +1472,9 @@ class ReaderViewModel(
         PageEngine.TEXT -> null
     }
 
-    private suspend fun pageFile(page: Int): java.io.File? = (current() as? ReaderContent.Manga)?.controller?.let { c -> withContext(Dispatchers.IO) { c.file(page) } }
+    private suspend fun pageFile(page: Int): java.io.File? = (current() as? ReaderContent.Manga)?.controller?.let { c ->
+        withContext(Dispatchers.IO) { c.file(c.globalOfCurrent(page)) }
+    }
 
     /**
      * Decodes a page for OCR within a pixel budget: a 3000×30000 webtoon strip would need ~343 MiB as an ARGB bitmap
@@ -1108,13 +1541,13 @@ class ReaderViewModel(
     }
 
     /** Saves the page to the gallery (Pictures/Yomu). */
-    private fun savePage(context: PageContext) = viewModelScope.launch(ScreenErrors) {
+    private fun savePage(context: PageContext) = pageActionExecutor.execute {
         runCatching {
-            val (file, mime) = pageBytes(context, "png") ?: return@launch
+            val (file, mime) = pageBytes(context, "png") ?: return@execute
             val name = pageName(context.page, if (mime == "image/png") "png" else "jpg")
             if (android.os.Build.VERSION.SDK_INT < 29) {
                 events.send(ReaderEvent.SavePageAs(file, name, mime))
-                return@launch
+                return@execute
             }
             withContext(Dispatchers.IO) {
                 val resolver = this@ReaderViewModel.context.contentResolver
@@ -1138,16 +1571,16 @@ class ReaderViewModel(
     }
 
     /** Writes a page picked with "Save as" (Android 9 and older). */
-    fun savePageTo(file: java.io.File, target: android.net.Uri) = viewModelScope.launch(ScreenErrors) {
+    fun savePageTo(file: java.io.File, target: android.net.Uri) = pageActionExecutor.execute {
         runCatching {
             withContext(Dispatchers.IO) { (context.contentResolver.openOutputStream(target) ?: error("Cannot save the image")).use { out -> file.inputStream().use { it.copyTo(out) } } }
             events.send(ReaderEvent.Message(R.string.reader_page_saved))
         }.onFailure { events.send(ReaderEvent.Error(it)) }
     }
 
-    private fun sharePage(context: PageContext) = viewModelScope.launch(ScreenErrors) {
+    private fun sharePage(context: PageContext) = pageActionExecutor.execute {
         runCatching {
-            val (file, mime) = pageBytes(context, "png") ?: return@launch
+            val (file, mime) = pageBytes(context, "png") ?: return@execute
             val shared = withContext(Dispatchers.IO) {
                 val ext = if (mime == "image/png") "png" else "jpg"
                 val out = java.io.File(app.yomu.core.common.Share.shareDir(this@ReaderViewModel.context), pageName(context.page, ext))
@@ -1159,7 +1592,7 @@ class ReaderViewModel(
     }
 
     /** Text of a page: the PDF text layer when present, otherwise OCR of the rendered page. */
-    private fun copyPageText(context: PageContext) = viewModelScope.launch(ScreenErrors) {
+    private fun copyPageText(context: PageContext) = pageActionExecutor.execute {
         ocrRunning.value = true
         try {
             runCatching {
@@ -1202,9 +1635,9 @@ class ReaderViewModel(
             toggleBookmark()
             return
         }
-        viewModelScope.launch(ScreenErrors) {
+        pageActionExecutor.execute {
             val id = _chapterId.value
-            val ch = catalog.chapter(id) ?: return@launch
+            val ch = catalog.chapter(id) ?: return@execute
             catalog.setBookmarked(listOf(id), !ch.bookmarked)
             events.send(ReaderEvent.Message(if (ch.bookmarked) R.string.reader_chapter_unbookmarked else R.string.reader_chapter_bookmarked))
         }
@@ -1215,11 +1648,11 @@ class ReaderViewModel(
             events.trySend(ReaderEvent.Message(R.string.reader_cover_books_only))
             return
         }
-        viewModelScope.launch(ScreenErrors) {
+        pageActionExecutor.execute {
             runCatching {
                 val file = when (context.engine) {
-                    PageEngine.MANGA -> pageFile(context.page) ?: return@launch
-                    else -> pageBytes(context, "png")?.first ?: return@launch
+                    PageEngine.MANGA -> pageFile(context.page) ?: return@execute
+                    else -> pageBytes(context, "png")?.first ?: return@execute
                 }
                 val bytes = withContext(Dispatchers.IO) { file.readBytes() }
                 books.setCover(args.bookId, bytes) ?: error("Cannot save the cover")
@@ -1229,8 +1662,8 @@ class ReaderViewModel(
     }
 
     /** Translates a PDF page through its text layer, or OCR when the page is a scan. */
-    private fun translatePdfPage(context: PageContext) = viewModelScope.launch(ScreenErrors) {
-        val c = current() as? ReaderContent.Pdf ?: return@launch
+    private fun translatePdfPage(context: PageContext) = pageActionExecutor.execute {
+        val c = current() as? ReaderContent.Pdf ?: return@execute
         val text = runCatching { c.controller.pdf.text(context.page) }.getOrDefault("").trim()
             .ifEmpty { ocrPdfPage(c.controller.pdf, context.page) }
         if (text.isNotEmpty()) translateText.value = text.take(4000) else events.send(ReaderEvent.Message(R.string.reader_no_text))
@@ -1359,7 +1792,7 @@ class ReaderViewModel(
                 }
             }
             is ReaderContent.Pdf -> c.controller.goTo(item.chapter)
-            is ReaderContent.Manga -> c.controller.goTo(item.chapter)
+            is ReaderContent.Manga -> if (isOnline) openChapterAt(item.chapter) else c.controller.goTo(item.chapter)
             null -> Unit
         }
     }
@@ -1373,7 +1806,7 @@ class ReaderViewModel(
         when (val c = current()) {
             is ReaderContent.Text -> c.controller.goTo(l.chapter, l.offset?.let { EpubTarget.Offset(it) } ?: EpubTarget.Progression(l.progression))
             is ReaderContent.Pdf -> c.controller.goTo(l.chapter)
-            is ReaderContent.Manga -> c.controller.goTo(l.chapter)
+            is ReaderContent.Manga -> c.controller.goTo(c.controller.globalOfCurrent(l.chapter))
             null -> Unit
         }
     }
@@ -1456,7 +1889,10 @@ class ReaderViewModel(
                 }
             }
             is ReaderContent.Pdf -> { rememberJump(); c.controller.goTo((page - 1).coerceIn(0, c.controller.pageCount - 1)) }
-            is ReaderContent.Manga -> { rememberJump(); c.controller.goTo((page - 1).coerceIn(0, c.controller.count - 1)) }
+            is ReaderContent.Manga -> {
+                rememberJump()
+                c.controller.goTo(c.controller.globalOfCurrent((page - 1).coerceIn(0, (c.controller.localCount - 1).coerceAtLeast(0))))
+            }
             null -> Unit
         }
     }
@@ -1505,7 +1941,9 @@ class ReaderViewModel(
                 }
             }
             is ReaderContent.Pdf -> c.controller.goTo((value * (c.controller.pageCount - 1)).toInt())
-            is ReaderContent.Manga -> c.controller.goTo((value * (c.controller.count - 1)).toInt())
+            is ReaderContent.Manga -> c.controller.goTo(
+                c.controller.globalOfCurrent((value * (c.controller.localCount - 1)).toInt().coerceIn(0, (c.controller.localCount - 1).coerceAtLeast(0))),
+            )
             null -> Unit
         }
     }
@@ -1994,7 +2432,7 @@ class ReaderViewModel(
             return
         }
         searchState.value = SearchState(query, loading = true)
-        searchJob = viewModelScope.launch(ScreenErrors) {
+        searchJob = pageActionExecutor.execute {
             when (val c = current()) {
                 is ReaderContent.Text -> {
                     val doc = c.controller.document
@@ -2032,7 +2470,7 @@ class ReaderViewModel(
     fun openHit(hit: SearchHit) {
         rememberJump()
         when (val c = current()) {
-            is ReaderContent.Text -> viewModelScope.launch(ScreenErrors) {
+            is ReaderContent.Text -> pageActionExecutor.execute {
                 val doc = c.controller.document
                 val text = ChapterText.of(doc.chapterHtml(hit.chapter))
                 var from = 0
@@ -2042,7 +2480,7 @@ class ReaderViewModel(
                     if (at < 0) return@repeat
                     from = at + hit.matchLength
                 }
-                if (at < 0) return@launch
+                if (at < 0) return@execute
                 c.controller.goTo(hit.chapter, EpubTarget.Offset(at))
                 delay(if (c.controller.chapter == hit.chapter) 50 else 600)
                 c.controller.mark("search", at, at + hit.matchLength)
@@ -2210,6 +2648,11 @@ class ReaderViewModel(
     /** Voices of the current language; starts the engine, so the picker works before the first playback. */
     suspend fun ttsVoices() = tts.prepareVoices()
 
+    /** N02: a short sample with the current voice, speed and pitch; it never advances the reading queue. */
+    fun previewTts() {
+        tts.speakSample(context.getString(R.string.reader_tts_sample))
+    }
+
     // ================================================================== auto scroll
     fun toggleAutoScroll() = if (autoScroll.value) stopAutoScroll() else startAutoScroll()
 
@@ -2287,7 +2730,7 @@ class ReaderViewModel(
                 val text = runCatching { c.controller.pdf.text(page) }.getOrDefault("").trim().ifEmpty { ocrPdfPage(c.controller.pdf, page) }
                 if (text.isNotEmpty()) translateText.value = text.take(4000) else events.send(ReaderEvent.Message(R.string.reader_no_text))
             }
-            is ReaderContent.Manga -> translateMangaPage(c.controller.page)
+            is ReaderContent.Manga -> translateMangaPage(c.controller.localPage)
             null -> Unit
         }
     }
@@ -2314,15 +2757,18 @@ class ReaderViewModel(
     /** Runs OCR on a manga page, translates the text blocks and shows them as an overlay. */
     fun translateMangaPage(page: Int) {
         val c = (current() as? ReaderContent.Manga)?.controller ?: return
-        if (c.overlays.containsKey(page)) {
+        // Overlays belong to the flat page of the window, so a chapter next door never reuses the previous page's
+        // blocks; the caller (screen, page menu) speaks in physical pages of the current chapter.
+        val flat = c.globalOfCurrent(page)
+        if (c.overlays.containsKey(flat)) {
             c.overlayVisible = !c.overlayVisible
             return
         }
-        viewModelScope.launch(ScreenErrors) {
+        pageActionExecutor.execute {
             ocrRunning.value = true
             try {
                 runCatching {
-                    val file = c.file(page)
+                    val file = c.file(flat)
                     val (blocks, w, h) = ocrMutex.withLock {
                         val bmp = withContext(Dispatchers.IO) { decodeForOcr(file) } ?: error("Cannot decode page")
                         try {
@@ -2343,7 +2789,7 @@ class ReaderViewModel(
                         val t = runCatching { translation.translate(b.text, lang, null).translated }.getOrDefault(b.text)
                         OverlayBlock(b.left / w, b.top / h, b.right / w, b.bottom / h, b.text, t)
                     }
-                    c.overlays[page] = translated
+                    c.overlays[flat] = translated
                     c.overlayVisible = true
                 }.onFailure { events.send(ReaderEvent.Error(it)) }
             } finally {
@@ -2373,6 +2819,9 @@ class ReaderViewModel(
 
     @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
     override fun onCleared() {
+        inputRouter.dispose()
+        chapterNavigator.dispose()
+        pageActionExecutor.dispose()
         val folderLease = folderReadSession
         folderReadSession = null
         TtsBus.controls = null

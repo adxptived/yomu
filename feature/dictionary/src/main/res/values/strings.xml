@@ -38,6 +38,8 @@
     <string name="dicts_delete_text">All entries of this dictionary will be removed from the device.</string>
 
     <string name="words_search">Search my words</string>
+    <string name="words_filter_book">Filter by book</string>
+    <string name="words_all_books">All books</string>
     <string name="words_sort">Sort</string>
     <string name="words_sort_date">Newest first</string>
     <string name="words_sort_alpha">Alphabetical</string>
@@ -81,6 +83,45 @@
     <string name="words_from_book">From: %1$s</string>
     <string name="words_open_book">Open book</string>
     <string name="words_reset">Reset progress</string>
+
+    <!-- N04: glossary / character notes and the opt-in text index -->
+    <string name="dict_tab_glossary">Glossary</string>
+    <string name="gloss_title">Notes</string>
+    <string name="gloss_search">Search notes</string>
+    <string name="gloss_filter_book">Filter by book</string>
+    <string name="gloss_all_books">All books</string>
+    <string name="gloss_add">Add note</string>
+    <string name="gloss_edit">Edit note</string>
+    <string name="gloss_empty_title">No notes yet</string>
+    <string name="gloss_empty_text">Add a character, term or place you want to remember.</string>
+    <string name="gloss_term">Name</string>
+    <string name="gloss_aliases">Aliases (comma separated)</string>
+    <string name="gloss_kind">Kind</string>
+    <string name="gloss_kind_character">Character</string>
+    <string name="gloss_kind_term">Term</string>
+    <string name="gloss_kind_place">Place</string>
+    <string name="gloss_book">Book</string>
+    <string name="gloss_no_book">No specific book</string>
+    <string name="gloss_note">Note</string>
+    <string name="gloss_open_book">Open book</string>
+    <string name="gloss_delete_title">Delete note?</string>
+    <string name="gloss_delete_text">The note for “%1$s” will be removed.</string>
+    <string name="gloss_index_title">Text index (optional)</string>
+    <string name="gloss_index_disabled">Turned off in Settings. Title search stays a title search.</string>
+    <string name="gloss_index_state_idle">Not built</string>
+    <string name="gloss_index_state_estimating">Estimating…</string>
+    <string name="gloss_index_state_running">Indexing %1$d of %2$d</string>
+    <string name="gloss_index_state_cancelled">Cancelled — the partial index was kept</string>
+    <string name="gloss_index_state_done">Ready: %1$d pieces of text</string>
+    <string name="gloss_index_state_failed">Failed: %1$s</string>
+    <string name="gloss_index_estimate">About %1$d books, %2$d pieces of text</string>
+    <string name="gloss_index_estimate_btn">Estimate</string>
+    <string name="gloss_index_rebuild">Build index</string>
+    <string name="gloss_index_cancel">Cancel</string>
+    <string name="gloss_index_search">Search indexed text</string>
+    <string name="gloss_index_heading_only">Title search only — build the index to search saved text.</string>
+    <string name="gloss_index_results">Matches in indexed text</string>
+    <string name="gloss_index_source">Source: %1$s</string>
 
     <string name="review_title">Review</string>
     <string name="review_start">Start</string>

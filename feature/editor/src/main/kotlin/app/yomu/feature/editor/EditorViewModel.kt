@@ -25,6 +25,14 @@ import app.yomu.data.translation.BookTranslator
 import app.yomu.data.translation.TranslationService
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookFormat
+import app.yomu.domain.task.JournalEvent
+import app.yomu.domain.task.JournalOutcome
+import app.yomu.domain.task.LongTask
+import app.yomu.domain.task.RecoveryJournal
+import app.yomu.domain.task.RecoveryJournalSnapshot
+import app.yomu.domain.task.TaskRegistry
+import app.yomu.domain.task.TaskState
+import app.yomu.domain.task.publishPlan
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
@@ -38,10 +46,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import java.io.File
@@ -50,6 +61,9 @@ enum class EditorKind { TEXT, MANGA }
 
 /** Largest side of an image decoded for an editing operation: a full 50 MP page does not fit in a phone's heap. */
 private const val MAX_WORK_SIDE = 4096
+
+/** Prefix of the task id used for save-to-book operations. */
+private const val SAVE_TASK_PREFIX = "save-"
 
 enum class ExportType(val ext: String, val mime: String) {
     EPUB("epub", "application/epub+zip"),
@@ -68,11 +82,20 @@ data class EditorStatus(
     val progress: Float? = null,
 )
 
+/** State of the staged cleaning-brush layer, shown by the tools tab. */
+data class CleaningUiState(
+    val active: Boolean = false,
+    val staged: Int = 0,
+    val changed: Int = 0,
+    val canUndo: Boolean = false,
+)
+
 data class EpubState(
     val version: Long,
     val root: File,
     val meta: EpubMeta,
     val chapters: List<EditorChapter>,
+    val volumes: List<EditorVolume>,
     val toc: List<TocEntry>,
     val images: List<ManifestImage>,
     val styles: List<String>,
@@ -116,12 +139,29 @@ class EditorViewModel(
     private val workDir = File(draftDir, "work")
     private val historyDir = File(draftDir, "history")
     private val draftFile = File(draftDir, "draft.json")
+    private val journalFile get() = File(draftDir, "journal.json")
     private val mutex = Mutex()
     private var history: History? = null
     private var epubWs: EpubWorkspace? = null
     private var mangaWs: MangaWorkspace? = null
     private var version = 0L
     private var kind = EditorKind.TEXT
+
+    private val taskRegistry = TaskRegistry()
+    val tasks: StateFlow<Map<String, LongTask>> = taskRegistry.tasks
+    private val recovery = RecoveryJournal()
+    private val savePublisher = SavePublisher(
+        appScope = appScope,
+        tasks = taskRegistry,
+        journal = recovery,
+        writeBack = { staged -> this@EditorViewModel.writeBack(staged) },
+        record = { id, step, target, before, after -> journalEvent(id, step, target, before, after) },
+        swap = { swapFile() },
+    )
+
+    private var cleaningLayer: CleaningLayer? = null
+    private val _cleaning = MutableStateFlow(CleaningUiState())
+    val cleaning: StateFlow<CleaningUiState> = _cleaning.asStateFlow()
 
     private val _phase = MutableStateFlow<EditorPhase>(EditorPhase.Loading)
     val phase: StateFlow<EditorPhase> = _phase.asStateFlow()
@@ -188,6 +228,7 @@ class EditorViewModel(
                     writeDraft(dirty = false)
                 }
                 history = History(workDir, historyDir)
+                loadJournal()
                 if (kind == EditorKind.TEXT) epubWs = EpubWorkspace(workDir) else mangaWs = MangaWorkspace(workDir)
                 if (!fresh) {
                     val dirty = readDraft()?.second ?: true
@@ -256,6 +297,141 @@ class EditorViewModel(
         }
     }
 
+    // ---------------------------------------------------------------- tasks, recovery journal, staged cleaning
+
+    private fun journalEvent(taskId: String, step: String, target: String?, before: String?, after: String?) {
+        recovery.append(taskId, step, target, before, after, System.currentTimeMillis())
+        persistJournal()
+    }
+
+    /** Written after every event so a kill mid-task leaves enough information to build a recovery plan. */
+    private fun persistJournal() {
+        val snapshot = recovery.snapshot()
+        val json = buildJsonObject {
+            put(
+                "events",
+                JsonArray(snapshot.events.map { e ->
+                    buildJsonObject {
+                        put("taskId", e.taskId)
+                        put("step", e.step)
+                        e.target?.let { put("target", it) }
+                        e.before?.let { put("before", it) }
+                        e.after?.let { put("after", it) }
+                        put("timestamp", e.timestamp)
+                    }
+                }),
+            )
+            put("outcomes", buildJsonObject { snapshot.outcomes.forEach { (id, outcome) -> put(id, outcome.name) } })
+        }.toString()
+        runCatchingCancellable { writeTextAtomic(journalFile, json) }.onFailure { _events.trySend(EditorEvent.Error(it)) }
+    }
+
+    private fun loadJournal() {
+        runCatchingCancellable {
+            if (!journalFile.isFile) return@runCatchingCancellable
+            val obj = Json.parseToJsonElement(journalFile.readText()).jsonObject
+            val events = obj["events"]?.jsonArray.orEmpty().map { e ->
+                val x = e.jsonObject
+                JournalEvent(
+                    taskId = x["taskId"]!!.jsonPrimitive.content,
+                    step = x["step"]!!.jsonPrimitive.content,
+                    target = x["target"]?.jsonPrimitive?.content,
+                    before = x["before"]?.jsonPrimitive?.content,
+                    after = x["after"]?.jsonPrimitive?.content,
+                    timestamp = x["timestamp"]!!.jsonPrimitive.long,
+                )
+            }
+            val outcomes = obj["outcomes"]?.jsonObject.orEmpty().mapValues { (_, value) ->
+                runCatching { JournalOutcome.valueOf(value.jsonPrimitive.content) }.getOrDefault(JournalOutcome.PENDING)
+            }
+            recovery.restore(RecoveryJournalSnapshot(events, outcomes))
+        }
+    }
+
+    /** Cancels an in-flight save; the owner confirms the stop by marking the task cancelled/abandoned. */
+    fun cancelSave() {
+        tasks.value.keys.filter { it.startsWith(SAVE_TASK_PREFIX) }.forEach(taskRegistry::cancel)
+    }
+
+    private fun publishCleaning() {
+        val layer = cleaningLayer
+        _cleaning.value = if (layer == null) {
+            CleaningUiState()
+        } else {
+            CleaningUiState(active = true, staged = layer.stagedPaths().size, changed = layer.changes().size, canUndo = layer.canUndo)
+        }
+    }
+
+    /** Copies the documents into a staging layer; nothing is written to the working copy yet. */
+    fun stageCleaning() = viewModelScope.launch(ScreenErrors) {
+        mutex.withLock {
+            val paths = withContext(Dispatchers.IO) { ws.spinePaths }
+            val layer = CleaningLayer()
+            withContext(Dispatchers.IO) { paths.forEach { p -> layer.stage(p, ws.readText(p)) } }
+            cleaningLayer = layer
+            publishCleaning()
+        }
+    }
+
+    /** Applies the clean-up to the staged text only, as one reversible brush stroke per document. */
+    fun brushClean(options: CleanupOptions) {
+        val layer = cleaningLayer ?: return
+        viewModelScope.launch(ScreenErrors) {
+            mutex.withLock {
+                withContext(Dispatchers.IO) {
+                    val lang = ws.meta.language
+                    val label = context.getString(R.string.editor_step_brush)
+                    layer.stagedPaths().forEach { path ->
+                        layer.apply(path, label) { text -> CleaningLayer.cleanXhtml(text, options, lang) }
+                    }
+                }
+                publishCleaning()
+            }
+        }
+    }
+
+    fun undoBrushStroke() {
+        val layer = cleaningLayer ?: return
+        viewModelScope.launch(ScreenErrors) {
+            mutex.withLock {
+                withContext(Dispatchers.IO) { layer.undo() }
+                publishCleaning()
+            }
+        }
+    }
+
+    /** Commits the staged layer into the working copy as one undoable step; the book file changes only on Save. */
+    fun commitCleaningLayer() {
+        val layer = cleaningLayer ?: return
+        viewModelScope.launch(ScreenErrors) {
+            mutex.withLock {
+                val changes = withContext(Dispatchers.IO) { layer.changes() }
+                if (changes.isNotEmpty()) {
+                    val result = runCatchingCancellable {
+                        withContext(Dispatchers.IO) {
+                            val h = history ?: error("Editor is not ready")
+                            h.change(context.getString(R.string.editor_step_brush), changes.keys) {
+                                changes.forEach { (path, pair) -> ws.writeText(path, pair.second) }
+                            }
+                        }
+                    }
+                    result.onSuccess { setDirty(true) }
+                    result.onFailure { _events.send(EditorEvent.Error(it)) }
+                }
+                cleaningLayer = null
+                publishCleaning()
+                refresh()
+                message(R.string.editor_brush_committed, changes.size)
+            }
+        }
+    }
+
+    fun discardCleaningLayer() {
+        cleaningLayer?.discard()
+        cleaningLayer = null
+        publishCleaning()
+    }
+
     /** Leaves the editor. [keepDraft] keeps unsaved changes for later. */
     fun close(keepDraft: Boolean) = viewModelScope.launch(ScreenErrors) {
         mutex.withLock {
@@ -275,6 +451,7 @@ class EditorViewModel(
                 root = ws.root,
                 meta = ws.meta,
                 chapters = ws.chapters(),
+                volumes = ws.volumes(),
                 toc = ws.toc(),
                 images = ws.images(),
                 styles = ws.stylesheets(),
@@ -372,6 +549,25 @@ class EditorViewModel(
     ) { ws.splitChapter(path, at) }
 
     fun mergeWithNext(path: String) = edit(R.string.editor_step_merge, { ws.structureFiles() + ws.documents() }) { ws.mergeWithNext(path) }
+
+    fun mergeVolumeWithNext(path: String) {
+        val vi = ws.volumes().indexOfFirst { v -> v.chapters.any { it.path == path } }
+        if (vi < 0) return
+        edit(
+            R.string.editor_step_volume_merge,
+            { ws.structureFiles() + ws.documents() },
+            onDone = { _: String? -> message(R.string.editor_volume_done) },
+        ) { ws.mergeVolumeWithNext(vi) }
+    }
+
+    fun splitVolumeAt(path: String) {
+        val all = ws.volumes()
+        val vi = all.indexOfFirst { v -> v.chapters.any { it.path == path } }
+        if (vi < 0) return
+        val offset = all[vi].chapters.indexOfFirst { it.path == path }
+        if (offset <= 0) return
+        edit(R.string.editor_step_volume_split, { ws.structureFiles() }) { ws.splitVolume(vi, offset) }
+    }
 
     suspend fun blocks(path: String): List<BlockInfo> = withContext(Dispatchers.IO) { runCatchingCancellable { ws.blocks(path) }.getOrDefault(emptyList()) }
 
@@ -710,40 +906,121 @@ class EditorViewModel(
 
     private fun outputExt() = if (kind == EditorKind.TEXT) "epub" else "cbz"
 
+    /** Checks a staged artifact before publication, reusing the editor's well-formedness check for EPUB. */
+    private fun validateStaged(staged: File): String? = when (kind) {
+        EditorKind.TEXT -> ZipContainer.open(staged).use { c ->
+            val pkg = EpubParser.parse(c)
+            if (pkg.spine.isEmpty()) return "Empty spine"
+            for (item in pkg.manifest.filter { it.isDocument }) {
+                val bytes = c.read(item.path) ?: return "Missing ${item.path}"
+                EpubWorkspace.wellFormedError(String(bytes, Charsets.UTF_8))?.let { return "${item.path}: $it" }
+            }
+            null
+        }
+        EditorKind.MANGA -> ZipContainer.open(staged).use { c ->
+            if (Containers.imageEntries(c).size != mws.pages.size) "Page count mismatch" else null
+        }
+    }
+
+    /** The original file only when it can be swapped atomically; SAF documents are repointed instead. */
+    private fun publishTarget(): File? {
+        val book = _book.value ?: return null
+        val targetFormat = if (kind == EditorKind.TEXT) BookFormat.EPUB else BookFormat.CBZ
+        val uri = Uri.parse(book.uri)
+        val writableInPlace = uri.scheme == "file" || uri.scheme == null
+        return if (book.format == targetFormat && writableInPlace) File(uri.path!!) else null
+    }
+
+    private fun swapFile(): File? = publishTarget()?.let { File(it.parentFile, it.name + ".new") }
+
     /**
-     * Replaces the library book with the edited version. The output is built first; the write-back itself runs in the
-     * app scope, so leaving the editor (or clearing the ViewModel) cannot cut it off halfway.
+     * Replaces the library book with the edited version. The output is built into a staged file and validated
+     * before the original is touched; a cancel that arrives before publication leaves the original byte-identical
+     * and cleans up temp files. The write-back itself is claimed by [SavePublisher] in the app scope, so leaving
+     * the editor cannot cut it off halfway: the task stays RUNNING until the write settles and only its real
+     * outcome is published — `busy`, the result message and the terminal task state are all updated afterwards.
      */
     fun saveToBook(thenClose: Boolean = false) = viewModelScope.launch(ScreenErrors) {
         mutex.withLock {
             _status.update { it.copy(busy = true, progress = null) }
-            val result = runCatchingCancellable {
-                val tmp = withContext(Dispatchers.IO) {
-                    File(context.cacheDir, "editor/out_$bookId.${outputExt()}").also { buildOutput(it, ::progress) }
+            val taskId = "$SAVE_TASK_PREFIX$bookId"
+            var staged: File? = null
+            val prepared = runCatching {
+                taskRegistry.start(taskId, context.getString(R.string.editor_task_save))
+                journalEvent(taskId, "start", null, null, null)
+                taskRegistry.progress(taskId, 0, 3, "Building")
+                staged = withContext(Dispatchers.IO) {
+                    File(context.cacheDir, "editor/staged_$bookId.${outputExt()}").also { buildOutput(it, ::progress) }
                 }
-                appScope.detached {
-                    withContext(NonCancellable + Dispatchers.IO) {
-                        writeBack(tmp)
+                val stagedFile = staged!!
+                journalEvent(taskId, "staged", stagedFile.path, null, stagedFile.path)
+                taskRegistry.progress(taskId, 1, 3, "Validating")
+                checkNotCancelling(taskId)
+                val error = withContext(Dispatchers.IO) { validateStaged(stagedFile) }
+                if (error != null) taskRegistry.partialError(taskId, stagedFile.name, error)
+                journalEvent(taskId, "validated", stagedFile.path, null, error)
+                taskRegistry.progress(taskId, 2, 3, "Publishing")
+                checkNotCancelling(taskId)
+                val target = publishTarget()
+                val plan = publishPlan(stagedFile, target ?: stagedFile, swapFile() ?: stagedFile, taskRegistry.tasks.value[taskId]!!.state, error)
+                if (!plan.canPublish) throw IllegalStateException(plan.reason ?: "Save blocked")
+                journalEvent(taskId, "publish", target?.path ?: stagedFile.path, null, null)
+                stagedFile to target
+            }
+            val ready = prepared.getOrNull()
+            if (ready == null) {
+                // Staging/validation failed, or a cancel arrived before the write was claimed: nothing was published.
+                withContext(NonCancellable + Dispatchers.IO) {
+                    val e = prepared.exceptionOrNull()!!
+                    val cancelled = e is kotlinx.coroutines.CancellationException ||
+                        taskRegistry.tasks.value[taskId]?.state == TaskState.CANCELLING
+                    if (cancelled) {
+                        taskRegistry.cancelled(taskId)
+                        recovery.markAbandoned(taskId)
+                        journalEvent(taskId, "cancelled", null, null, null)
+                        message(R.string.editor_task_cancelled)
+                    } else {
+                        taskRegistry.fail(taskId, e.message ?: e.javaClass.simpleName)
+                        recovery.markAbandoned(taskId)
+                        journalEvent(taskId, "failed", null, null, e.message)
+                        _events.send(EditorEvent.Error(if (e is SecurityException) AppError.NoPermission(e.message) else e))
+                    }
+                    _status.update { it.copy(busy = false, progress = null) }
+                    staged?.delete()
+                    swapFile()?.delete()
+                }
+                return@withLock
+            }
+            savePublisher.publish(taskId, ready.first, ready.second) { outcome, error ->
+                _status.update { it.copy(busy = false, progress = null) }
+                when (outcome) {
+                    SaveOutcome.DONE -> {
                         history?.markSaved()
                         setDirty(false)
+                        _book.value = books.getBook(bookId)
+                        message(R.string.editor_saved)
+                        if (thenClose) {
+                            withContext(Dispatchers.IO) { draftDir.deleteRecursively() }
+                            _events.send(EditorEvent.Close)
+                        }
                     }
+                    SaveOutcome.CANCELLED -> message(R.string.editor_task_cancelled)
+                    SaveOutcome.FAILED -> _events.send(
+                        EditorEvent.Error(if (error is SecurityException) AppError.NoPermission(error.message) else error ?: IllegalStateException("Save failed")),
+                    )
                 }
-            }
-            _status.update { it.copy(busy = false, progress = null) }
-            result.onSuccess {
-                _book.value = books.getBook(bookId)
-                message(R.string.editor_saved)
-                if (thenClose) {
-                    withContext(Dispatchers.IO) { draftDir.deleteRecursively() }
-                    _events.send(EditorEvent.Close)
-                }
-            }.onFailure { e ->
-                _events.send(EditorEvent.Error(if (e is SecurityException) AppError.NoPermission(e.message) else e))
             }
         }
     }
 
-    /** Publishes the finished [tmp] output; it is kept when something fails so the result is not lost. */
+    /** Cancellation is only honoured before [SavePublisher] claims the write; afterwards the real outcome wins. */
+    private fun checkNotCancelling(taskId: String) {
+        if (taskRegistry.tasks.value[taskId]?.state == TaskState.CANCELLING) {
+            throw kotlinx.coroutines.CancellationException("Save cancelled")
+        }
+    }
+
+    /** Publishes the finished [tmp] output; staged and swap files are removed on both success and failure. */
     private suspend fun writeBack(tmp: File) {
         val book = books.getBook(bookId) ?: throw AppError.CorruptedFile("Book $bookId not found")
         val ext = outputExt()
@@ -754,24 +1031,26 @@ class EditorViewModel(
         // before the new bytes are written. Such books are saved into a new private file and the library entry
         // is repointed instead; the user's document is never touched.
         val writableInPlace = uri.scheme == "file" || uri.scheme == null
-        if (book.format == targetFormat && writableInPlace) {
-            val dest = File(uri.path!!)
-            val swap = File(dest.parentFile, dest.name + ".new")
-            tmp.copyTo(swap, overwrite = true)
-            if (!swap.renameTo(dest)) {
-                swap.copyTo(dest, overwrite = true)
-                swap.delete()
+        var swap: File? = null
+        try {
+            if (book.format == targetFormat && writableInPlace) {
+                val dest = File(uri.path!!)
+                swap = File(dest.parentFile, dest.name + ".new")
+                tmp.copyTo(swap, overwrite = true)
+                if (!swap.renameTo(dest)) swap.copyTo(dest, overwrite = true)
+                books.contentChanged(bookId, dest)
+            } else {
+                var dest = File(booksDir, Files.sanitize(book.title) + ".$ext")
+                if (dest.exists()) dest = File(booksDir, Files.sanitize(book.title) + " ${System.currentTimeMillis()}.$ext")
+                tmp.copyTo(dest)
+                books.replaceFile(bookId, dest, targetFormat)
+                if (writableInPlace) File(uri.path!!).takeIf { it.canonicalPath.startsWith(booksDir.canonicalPath) }?.delete()
             }
-            books.contentChanged(bookId, dest)
-        } else {
-            var dest = File(booksDir, Files.sanitize(book.title) + ".$ext")
-            if (dest.exists()) dest = File(booksDir, Files.sanitize(book.title) + " ${System.currentTimeMillis()}.$ext")
-            tmp.copyTo(dest)
-            books.replaceFile(bookId, dest, targetFormat)
-            if (writableInPlace) File(uri.path!!).takeIf { it.canonicalPath.startsWith(booksDir.canonicalPath) }?.delete()
+            updateLibraryEntry(book)
+        } finally {
+            swap?.delete()
+            tmp.delete()
         }
-        tmp.delete()
-        updateLibraryEntry(book)
     }
 
     private suspend fun updateLibraryEntry(book: Book) {

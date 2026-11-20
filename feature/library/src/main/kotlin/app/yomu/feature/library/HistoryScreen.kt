@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -60,6 +61,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import app.yomu.core.common.ScreenErrors
+import app.yomu.core.common.TimeFormat
 import app.yomu.core.datastore.AppSettings
 import app.yomu.core.ui.components.BookListItem
 import app.yomu.core.ui.components.ConfirmDialog
@@ -87,7 +89,6 @@ import java.io.File
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
 import java.util.Locale
 import app.yomu.core.ui.R as CoreR
 
@@ -117,6 +118,10 @@ class HistoryViewModel(
             TodaySummary(s.todayMs, goal, s.streakDays)
         }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** The clock format of the history rows; changes take effect without leaving the screen. */
+    val timeFormat: StateFlow<String> =
+        settings.timeFormat.flow.stateIn(viewModelScope, SharingStarted.Eagerly, settings.timeFormat.default)
 
     fun remove(item: ReadingHistoryItem) = viewModelScope.launch(ScreenErrors) { history.remove(item) }
     fun clear() = viewModelScope.launch(ScreenErrors) { history.clear() }
@@ -223,6 +228,7 @@ fun HistoryPane(
     val days by viewModel.days.collectAsStateWithLifecycle()
     val today by viewModel.today.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
+    val timeFormat by viewModel.timeFormat.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val resources = LocalResources.current
 
@@ -297,7 +303,7 @@ fun HistoryPane(
                             modifier = motionItem(),
                             end = SwipeAction.destructive(stringResource(R.string.history_remove), remove),
                         ) {
-                            HistoryRow(item = item, onOpen = { open(item) }, onDetails = { details(item) }, onRemove = remove)
+                            HistoryRow(item = item, timeFormat = timeFormat, onOpen = { open(item) }, onDetails = { details(item) }, onRemove = remove)
                         }
                     }
                 }
@@ -360,10 +366,10 @@ private fun DayHeader(day: HistoryDay) {
 }
 
 @Composable
-private fun HistoryRow(item: ReadingHistoryItem, onOpen: () -> Unit, onDetails: () -> Unit, onRemove: () -> Unit, modifier: Modifier = Modifier) {
+private fun HistoryRow(item: ReadingHistoryItem, timeFormat: String, onOpen: () -> Unit, onDetails: () -> Unit, onRemove: () -> Unit, modifier: Modifier = Modifier) {
     var menu by remember { mutableStateOf(false) }
-    val time =
-        remember(item.readAt) { DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(Locale.getDefault()).format(java.time.Instant.ofEpochMilli(item.readAt).atZone(ZoneId.systemDefault())) }
+    val context = LocalContext.current
+    val time = remember(item.readAt, timeFormat) { TimeFormat.format(context, timeFormat, item.readAt) }
     val meta = buildList {
         add(time)
         if (item.durationMs >= 60_000) add(formatDuration(item.durationMs))

@@ -36,6 +36,10 @@
     <string name="set_accent_dynamic_hint">Акцент используется, когда динамические цвета выключены.</string>
     <string name="set_language">Язык приложения</string>
     <string name="set_language_system">Язык системы</string>
+    <string name="set_time_format">Формат времени</string>
+    <string name="set_time_format_system">Как в системе</string>
+    <string name="set_time_format_12">12-часовой</string>
+    <string name="set_time_format_24">24-часовой</string>
     <string name="set_haptics">Виброотклик</string>
     <string name="set_reduce_motion">Меньше анимаций</string>
     <string name="set_reduce_motion_sum">Упрощённые переходы и перелистывание</string>
@@ -223,6 +227,9 @@
     <string name="set_dictionary_lang">Язык словаря</string>
     <string name="set_dictionaries">Словари</string>
     <string name="set_dictionaries_sum">Импорт StarDict, DSL, Yomitan, CSV</string>
+    <string name="set_text_search">Поиск по тексту</string>
+    <string name="set_fulltext_index">Индекс текста</string>
+    <string name="set_fulltext_index_sum">Разрешить локальный индекс сохранённых выделений, заметок и контекстов слов. Построить его можно во вкладке «Глоссарий»; без него поиск ищет только названия.</string>
     <string name="set_words">Слова и повторение</string>
     <string name="set_daily_goal">Цель повторений в день</string>
     <string name="set_reminder">Напоминание о повторении</string>
@@ -360,6 +367,7 @@
     <string name="set_restore_preview_files">Файлов в архиве: %1$d (%2$s)</string>
     <string name="set_restore_preview_no_files">Файлов книг нет: книги восстановятся как записи, файлы нужно будет добавить снова.</string>
     <string name="set_restore_preview_merge">Существующие записи не перезаписываются, а объединяются: конфликт останавливает только этот элемент и попадает в отчёт. Запись начнётся после нажатия «Восстановить».</string>
+    <string name="set_restore_category_glossary">Заметки глоссария</string>
     <string name="set_backup_restore">Восстановить из копии</string>
     <string name="set_backup_restore_sum">Восстановить данные из копии, не перезаписывая конфликтующие записи</string>
     <string name="set_restore">Восстановить</string>
@@ -517,6 +525,9 @@
     <string name="set_update_failed">Не удалось проверить: %1$s</string>
     <string name="set_update_auto">Проверять автоматически</string>
     <string name="set_update_auto_sum">Раз в день при запуске — один запрос к GitHub. О новой версии подскажет точка на «Настройках»</string>
+    <string name="set_update_skip">Пропустить эту версию</string>
+    <string name="set_update_skip_clear">Сбросить пропущенную версию</string>
+    <string name="set_update_skipped">Пропущенная версия: %1$s</string>
     <string name="set_update_downloading">Скачиваем %1$s…</string>
     <string name="set_update_downloading_percent">Скачиваем %1$s… %2$d %%</string>
     <string name="set_update_ready">Версия %1$s скачана и проверена — нажмите, чтобы установить</string>
@@ -588,6 +599,8 @@
     <string name="set_sync_bookmarks_sum">Закладки в книгах</string>
     <string name="set_sync_words">Слова и повторения</string>
     <string name="set_sync_words_sum">Сохранённые слова, переводы и расписание повторений</string>
+    <string name="set_sync_glossary">Заметки глоссария</string>
+    <string name="set_sync_glossary_sum">Заметки о персонажах, терминах и местах, сопоставляемые по книге и названию; по умолчанию выключено</string>
     <string name="set_sync_track_links">Привязки трекеров</string>
     <string name="set_sync_track_links_sum">Какие тайтлы привязаны к Shikimori, AniList и другим трекерам (без токенов входа)</string>
     <string name="set_sync_wifi_only">Только по Wi-Fi</string>
@@ -622,6 +635,42 @@
     <string name="set_sync_problem_migrate_folder">Перевести на стабильный идентификатор</string>
     <string name="set_sync_problem_publish_folder">Опубликовать мою версию</string>
     <string name="set_sync_problem_accept_folder">Принять другую версию</string>
+
+    <!-- B03: мастер настройки синхронизации и восстановление -->
+    <string name="set_sync_wizard_title">Настройка синхронизации</string>
+    <string name="set_sync_wizard_open">Настроить синхронизацию</string>
+    <string name="set_sync_wizard_open_sum">Пошагово: подключение, состав данных и расписание</string>
+    <string name="set_sync_wizard_progress">Шаг %1$d из %2$d</string>
+    <string name="set_sync_step_backend">Выберите, куда синхронизировать</string>
+    <string name="set_sync_step_input">Введите данные подключения</string>
+    <string name="set_sync_step_probe">Проверьте подключение</string>
+    <string name="set_sync_step_categories">Выберите, что синхронизировать</string>
+    <string name="set_sync_step_schedule">Выберите, когда синхронизировать</string>
+    <string name="set_sync_step_preview">Проверьте перед включением</string>
+    <string name="set_sync_step_ready">Готово</string>
+    <string name="set_sync_wizard_backend_hint">У каждого устройства свои данные; везде используйте одну папку, сервер или репозиторий.</string>
+    <string name="set_sync_wizard_input_hint">Заполните данные ниже и подтвердите, что они введены. Пока ничего не отправляется.</string>
+    <string name="set_sync_wizard_input_ready">Данные введены</string>
+    <string name="set_sync_wizard_probe_hint">Подключение проверяется сейчас, до включения синхронизации.</string>
+    <string name="set_sync_wizard_check">Проверить подключение</string>
+    <string name="set_sync_wizard_categories_hint">Хотя бы одна категория остаётся включённой. Выбор действует только на этом устройстве.</string>
+    <string name="set_sync_wizard_schedule_hint">Как часто Yomu синхронизирует данные в фоне.</string>
+    <string name="set_sync_wizard_preview">Синхронизация: %1$s · категорий: %2$d · %3$s. Настройки сохранятся после завершения.</string>
+    <string name="set_sync_wizard_preview_confirm">Я проверил(а) настройки</string>
+    <string name="set_sync_wizard_ready">Настройка завершена. Синхронизация включена, подключение проверено.</string>
+    <string name="set_sync_wizard_finish">Завершить настройку</string>
+    <string name="set_sync_wizard_next">Далее</string>
+    <string name="set_sync_wizard_back">Назад</string>
+    <string name="set_sync_recovery_title">Синхронизация требует внимания</string>
+    <string name="set_sync_recovery_auth">Аккаунт или токен отклонён. Проверьте данные и снова проверьте подключение.</string>
+    <string name="set_sync_recovery_network">Не удалось связаться с сервером. Синхронизация повторится сама, когда сеть вернётся.</string>
+    <string name="set_sync_recovery_storage">Не хватает места. Освободите место и запустите синхронизацию снова.</string>
+    <string name="set_sync_recovery_battery">Ограничения батареи остановили синхронизацию. Подключите зарядное или ослабьте ограничение.</string>
+    <string name="set_sync_recovery_other">Последняя синхронизация завершилась с неожиданной ошибкой. Изучите ошибку и попробуйте снова.</string>
+    <string name="set_sync_recovery_retry">Повторить сейчас</string>
+    <string name="set_sync_recovery_open">Открыть настройку</string>
+    <string name="set_sync_recovery_retry_hint">Эту ошибку можно повторить на месте.</string>
+    <string name="set_sync_recovery_user_hint">Эта ошибка требует ваших действий, прежде чем повтор поможет.</string>
 
     <!-- YouTube sign-in (audiobooks and the YouTube catalog source) -->
     <string name="set_youtube">YouTube</string>

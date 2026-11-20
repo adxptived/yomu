@@ -40,6 +40,19 @@ class SavedPositionResolutionTest {
         db.annotations().deleteBookmark(id)
         assertNotNull(runCatching { repo.resolveSavedPosition(bookId, "b:$id:123") }.exceptionOrNull())
     }
+    @Test fun fulltextHitsResolveToTheLiveLocatorOfTheirSource() = runBlocking {
+        val bookId = book()
+        val noteId = db.annotations().insertNote(NoteEntity(bookId = bookId, highlightId = null, locatorJson = Locator(chapter = 4).toJson(), text = "queen", tags = "", createdAt = 10, updatedAt = 10))
+        assertEquals(4, repo.resolveSavedPosition(bookId, "i:N:$noteId")!!.chapter)
+        // A hit on another book's note must never jump into this book.
+        assertNotNull(runCatching { repo.resolveSavedPosition(bookId + 1, "i:N:$noteId") }.exceptionOrNull())
+        // A source with no locator (OCR, or a note without one) is a valid hit: null means "use saved progress".
+        assertNull(repo.resolveSavedPosition(bookId, "i:O:$bookId:page3"))
+        val noLocator = db.annotations().insertNote(NoteEntity(bookId = bookId, highlightId = null, locatorJson = null, text = "no place", tags = "", createdAt = 11, updatedAt = 11))
+        assertNull(repo.resolveSavedPosition(bookId, "i:N:$noLocator"))
+        assertNotNull(runCatching { repo.resolveSavedPosition(bookId, "i:N:999") }.exceptionOrNull())
+    }
+
     @Test fun nullLocatorIsValidButMalformedLocatorAndReferenceFail() = runBlocking {
         val bookId = book()
         val id = db.annotations().insertNote(NoteEntity(bookId = bookId, highlightId = null, locatorJson = null, text = "note", tags = "", createdAt = 10, updatedAt = 10))

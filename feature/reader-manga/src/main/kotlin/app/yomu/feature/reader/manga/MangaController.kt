@@ -29,9 +29,56 @@ import java.io.File
 data class OverlayBlock(val left: Float, val top: Float, val right: Float, val bottom: Float, val original: String, val translated: String?)
 
 /** State of the image based reader. */
-class MangaController(val pages: PageSource) {
+class MangaController(
+    val pages: PageSource,
+    /** The chapters of an online window; null for a local publication, where the pager spans one chapter. */
+    val session: SessionPageSource? = pages as? SessionPageSource,
+) {
     val count: Int get() = pages.count
+
+    /** The flat page the pager shows: inside the session for online chapters, inside the file for a local book. */
     var page by mutableIntStateOf(0)
+
+    /** The chapter loaded at a flat page, or null for a local publication. */
+    fun chapterAt(index: Int): MangaChapter? = session?.chapterAt(index)
+
+    /** The chapter of the current page. */
+    val chapter: MangaChapter? get() = chapterAt(page)
+
+    /** Page inside the current chapter; equals [page] when there is no window. */
+    val localPage: Int get() = session?.pageAt(page) ?: page
+
+    /** Pages of the current chapter; equals [count] when there is no window. */
+    val localCount: Int get() = chapter?.count ?: count
+
+    /** The flat index of [localPage] in [chapterId]; null when that chapter is not loaded. */
+    fun globalIndex(chapterId: Long, localPage: Int): Int? =
+        session?.locate(chapterId, localPage) ?: localPage.takeIf { it in 0 until count }
+
+    /** The flat index of a page of the current chapter. */
+    fun globalOfCurrent(localPage: Int): Int =
+        chapter?.let { session?.locate(it.id, localPage) } ?: localPage.coerceIn(0, (count - 1).coerceAtLeast(0))
+
+    /** The page inside its chapter of a flat index (the identity for a local publication). */
+    fun localOf(index: Int): Int = session?.pageAt(index) ?: index
+
+    /**
+     * True when a chapter follows the last chapter loaded in the window, so the end page leads somewhere. It is not
+     * the same as "the current chapter has a next one": the next chapter is already inside the window.
+     */
+    var hasNextAfterWindow by mutableStateOf(false)
+
+    /**
+     * The chapter breaks the pager draws: the last flat page of every loaded chapter except the last, with the title
+     * of the chapter that follows. A break is an ordinary page turn, not a reload.
+     */
+    fun chapterBreaks(): Map<Int, String> {
+        val s = session ?: return emptyMap()
+        return s.chapters.zipWithNext().associate { (chapter, next) ->
+            (s.startOf(chapter.id)!! + chapter.count - 1) to next.title
+        }
+    }
+
     var settings by mutableStateOf(MangaSettings())
     val overlays = mutableStateMapOf<Int, List<OverlayBlock>>()
     var overlayVisible by mutableStateOf(true)

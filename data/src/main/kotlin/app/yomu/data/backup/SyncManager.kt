@@ -270,6 +270,7 @@ class SyncManager(
                 catalog = settings.syncCatalog.get(), deletions = settings.syncDeletions.get(), device = deviceName(),
                 progress = settings.syncProgress.get(), annotations = settings.syncAnnotations.get(),
                 bookmarks = settings.syncBookmarks.get(), words = settings.syncWords.get(),
+                glossary = settings.syncGlossary.get(),
             )
             val stableFolders = db.books().all().filter { it.format == "FOLDER" && it.fileHash?.let(FolderManifestCodec::validId) == true }
             val outcome = if (folderSnapshot != null || stableFolders.isNotEmpty()) {
@@ -327,8 +328,8 @@ class SyncManager(
         internal fun decodeRemote(bytes: ByteArray): SyncState = try {
             val json = Json { ignoreUnknownKeys = true; encodeDefaults = false; explicitNulls = false }
             val root = json.parseToJsonElement(SyncJson.text(bytes)).jsonObject
-            require(root.keys.any { it in setOf("version", "updatedAt", "books", "highlights", "notes", "bookmarks", "words", "titles", "tabs", "deleted") })
-            json.decodeFromJsonElement(SyncState.serializer(), root).also(::validateState)
+            require(root.keys.any { it in setOf("version", "updatedAt", "books", "highlights", "notes", "bookmarks", "words", "glossary", "titles", "tabs", "deleted") })
+            SyncCodec.decode(root).also(::validateState)
         } catch (e: Exception) {
             throw java.io.IOException("Cannot read the sync file; it was not overwritten", e)
         }
@@ -337,6 +338,7 @@ class SyncManager(
             require(state.version in 1..2) { "Unsupported sync file version: ${state.version}" }
             fun <T> unique(keys: List<T>) = require(keys.size == keys.toSet().size) { "Duplicate sync record" }
             unique(state.books.map { it.hash })
+            unique(state.subscriptions.map { it.feedUrl.trim().lowercase() })
             state.books.forEach { book ->
                 unique(book.chapterProgress.map { it.chapter })
                 require(book.chapterProgress.all { it.chapter >= 0 }) { "Invalid chapter position" }
@@ -345,6 +347,7 @@ class SyncManager(
             unique(state.notes.map { SyncKeys.note(it.hash, it.createdAt) })
             unique(state.bookmarks.map { SyncKeys.bookmark(it.hash, it.createdAt) })
             unique(state.words.map { SyncKeys.word(it.lang, it.normalized) })
+            unique(state.glossary.map { SyncKeys.glossary(it.hash, it.normalized, it.kind) })
             unique(state.titles.map { SyncKeys.title(it.sourceId, it.url) })
             unique(state.tabs.map { SyncKeys.tab(it.name) })
             require(state.annotationDeletionProofs.all { (key, proof) ->

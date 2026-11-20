@@ -32,8 +32,14 @@
     <string name="reader_autoscroll_speed">Speed %1$d</string>
     <string name="reader_prev_chapter">Previous chapter</string>
     <string name="reader_next_chapter">Next chapter</string>
+    <string name="reader_open_linked">Open the linked edition</string>
+    <string name="reader_tts_sample">This is how the reader will sound.</string>
+    <string name="tts_sample">Sample the voice</string>
+    <string name="tts_sample_summary">Hear the current voice, speed and pitch without starting the book.</string>
     <string name="reader_chapter_of">Chapter %1$d of %2$d</string>
     <string name="reader_chapter_n">Chapter %1$d</string>
+    <string name="reader_chapter_neighbour_failed">The neighbouring chapter could not be loaded; the next one will be tried when you reach it</string>
+    <string name="reader_chapter_window_failed">The next chapter could not be prepared; turn the page to try again</string>
     <string name="reader_page_of">Page %1$d of %2$d</string>
     <string name="reader_page_n">Page %1$d</string>
     <string name="reader_progress_percent">%1$d%%</string>
@@ -199,6 +205,12 @@
     <string name="rs_manga_gray">Grayscale</string>
     <string name="rs_manga_invert">Invert colors</string>
     <string name="rs_manga_preload">Pages to preload</string>
+    <string name="rs_manga_reading">Reading</string>
+    <string name="rs_manga_reading_summary">Preload and navigation, all books</string>
+    <string name="rs_manga_preload_wifi_only">Preload pages on Wi-Fi only</string>
+    <string name="rs_manga_preload_wifi_only_sum">Pages ahead are fetched only on Wi-Fi or other unmetered networks; the page being read still loads on any network</string>
+    <string name="rs_manga_vertical_navigator">Vertical chapter navigator</string>
+    <string name="rs_manga_vertical_navigator_sum">In long-strip mode, show a chapter rail on the edge for jumping between the loaded chapters</string>
     <string name="rs_manga_page_number">Show page number</string>
     <string name="rs_pdf_mode">Layout</string>
     <string name="rs_pdf_paged">Page by page</string>
@@ -213,6 +225,8 @@
     <string name="rs_pdf_crop_right">Crop from the right, %</string>
     <string name="rs_pdf_crop_top">Crop from the top, %</string>
     <string name="rs_pdf_crop_bottom">Crop from the bottom, %</string>
+    <string name="rs_pdf_crop_preview_hint">The outlined area is kept; the shaded margins are cut.</string>
+    <string name="rs_pdf_crop_preview_description">Crop preview: left %1$d%%, top %2$d%%, right %3$d%%, bottom %4$d%%</string>
     <string name="rs_pdf_contrast">Contrast</string>
     <string name="rs_pdf_grayscale">Grayscale</string>
     <string name="rs_pdf_zoom_lock">Lock view</string>

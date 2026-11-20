@@ -53,7 +53,7 @@ class SafeBackupRestoreTest {
         } finally { a.close(); b.close(); root.deleteRecursively() }
     }
 
-    @Test fun databaseIdConflictIsRefusedInsteadOfMixingBooks() = runBlocking {
+    @Test fun databaseIdConflictIsRemappedInsteadOfMixingBooks() = runBlocking {
         val root = File(app.cacheDir, "backup-safe-${UUID.randomUUID()}"); val source = context(File(root, "a")); val dest = context(File(root, "b"))
         val a = YomuDatabase.build(source, true); val b = YomuDatabase.build(dest, true)
         try {
@@ -64,16 +64,18 @@ class SafeBackupRestoreTest {
             val existing = File(dest.filesDir, "books/existing.txt").apply { parentFile.mkdirs(); writeText("local content") }
             val localId = book(b, existing, "existing")
             b.progress().upsert(ReadingProgressEntity(localId, "{}", .5f, 2))
-            val failure = runCatching { BackupManager(dest, b, AppSettings(dest)).restore(archive.inputStream()) }.exceptionOrNull()
-            // Same id, other book: keeping the local row and inserting the archive's bookmark would attach it to a
-            // foreign book, so the whole restore is refused before anything is written.
-            assertTrue("restore must be refused: $failure", failure is IOException)
-            assertTrue(failure!!.message.orEmpty().contains("different library"))
-            assertEquals("existing", b.books().all().single().title)
-            assertEquals("local content", existing.readText())
+            val result = BackupManager(dest, b, AppSettings(dest)).restore(archive.inputStream())
+            // The same numeric id belongs to another book here: the archive's book is inserted under a fresh id and
+            // its bookmark follows it, so nothing is attached to the local book.
+            assertEquals(2, b.books().all().size)
+            assertEquals("existing", b.books().all().first { it.id == localId }.title)
             assertEquals(.5f, b.progress().get(localId)!!.progress, .001f)
-            assertTrue(b.annotations().allBookmarks().isEmpty())
-            assertFalse(File(dest.filesDir, "books/from-backup.txt").exists())
+            val restored = b.books().all().first { it.id != localId }
+            assertEquals("backup", restored.title)
+            assertEquals(listOf("from the backup"), b.annotations().allBookmarks().map { it.title })
+            assertTrue(b.annotations().allBookmarks().single().bookId == restored.id)
+            assertTrue(File(dest.filesDir, "books/from-backup.txt").exists())
+            assertTrue(result.rows >= 2)
         } finally { a.close(); b.close(); root.deleteRecursively() }
     }
 

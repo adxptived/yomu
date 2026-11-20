@@ -18,8 +18,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -153,6 +153,24 @@ object UpdateChecker {
     private const val TIMEOUT_MS = 10_000
 }
 
+/**
+ * Pure decision behind "Skip this version" (Mihon parity). The stored tag and the release version are compared in
+ * their bare numeric form, so a tag written as `v1.7.0` still silences a release parsed as `1.7.0`.
+ */
+internal object SkipUpdate {
+    fun normalize(tag: String): String = tag.trim().removePrefix("v")
+
+    /**
+     * Whether [latest] should stay quiet: the user skipped this version or a newer one. A version newer than the
+     * skipped one brings the dot back. A version that is not an update at all is never "skipped".
+     */
+    fun isSkipped(latest: String, skipped: String, current: String): Boolean {
+        if (latest.isBlank() || skipped.isBlank()) return false
+        if (!UpdateChecker.isNewer(latest, current)) return false
+        return !UpdateChecker.isNewer(latest, skipped)
+    }
+}
+
 /** Runs the APK download outside the screens' lifetime: it goes on when the app is left or its process is restarted. */
 interface UpdateBackground {
     fun start(release: ReleaseInfo)
@@ -197,9 +215,9 @@ class AppUpdates(
     val dialog: StateFlow<ReleaseInfo?> = _dialog.asStateFlow()
 
     /** Version of a newer release found by the last check: the dot on Settings and the card on top of them. */
-    val available: Flow<String?> = settings.updateLatest.flow
-        .map { v -> v.takeIf { it.isNotBlank() && UpdateChecker.isNewer(it, current) } }
-        .distinctUntilChanged()
+    val available: Flow<String?> = combine(settings.updateLatest.flow, settings.skipUpdateVersion.flow) { latest, skipped ->
+        latest.takeIf { it.isNotBlank() && !SkipUpdate.isSkipped(it, skipped, current) }
+    }.distinctUntilChanged()
 
     /** At start: the daily check, if the user turned it on. Quiet, only a newer release changes anything. */
     fun checkIfDue() {
@@ -231,6 +249,21 @@ class AppUpdates(
 
     fun dismissDialog() {
         _dialog.value = null
+    }
+
+    /**
+     * "Skip this version": remember the tag so neither the dot, the card nor the automatic prompt come back for it.
+     * A later, newer release is still announced. A manual "Check for updates" keeps reporting the version.
+     */
+    fun skipVersion(release: ReleaseInfo) {
+        _dialog.value = null
+        _state.value = UpdateState.Idle
+        scope.launch { settings.skipUpdateVersion.set(SkipUpdate.normalize(release.version)) }
+    }
+
+    /** "Clear skipped version" from About: restores the normal prompts from the next check on. */
+    fun clearSkippedVersion() {
+        scope.launch { settings.skipUpdateVersion.set("") }
     }
 
     /** Downloads and verifies the APK of [release], then opens the installer. */
@@ -342,16 +375,21 @@ class AppUpdates(
             Timber.i(e, "Update check failed")
             UpdateState.Failed(e)
         }
+        val skipped = settings.skipUpdateVersion.get()
         if (quiet) {
-            // The check at start speaks up only for a newer version, and never over a download in progress.
+            // The check at start speaks up only for a newer version, and never over a download in progress or one
+            // the user chose to skip. The dot is filtered separately by [available].
             val s = _state.value
-            if (result is UpdateState.Available && (s is UpdateState.Idle || s is UpdateState.UpToDate || s is UpdateState.NoReleases || s is UpdateState.Failed)) {
+            if (result is UpdateState.Available && !SkipUpdate.isSkipped(result.release.version, skipped, current) &&
+                (s is UpdateState.Idle || s is UpdateState.UpToDate || s is UpdateState.NoReleases || s is UpdateState.Failed)
+            ) {
                 _state.value = result
             }
             return
         }
+        // A manual check still reports the version it found; only the automatic prompt/dialog stays quiet.
         _state.value = result
-        if (openDialog && result is UpdateState.Available) _dialog.value = result.release
+        if (openDialog && result is UpdateState.Available && !SkipUpdate.isSkipped(result.release.version, skipped, current)) _dialog.value = result.release
     }
 
     companion object {

@@ -73,6 +73,7 @@ fun DictionaryScreen(
     initialQuery: String? = null,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    val glossaryViewModel: GlossaryViewModel = koinViewModel()
     androidx.compose.runtime.LaunchedEffect(initialQuery) { if (!initialQuery.isNullOrBlank()) { tab = 0; viewModel.search(initialQuery) } }
     Scaffold(
         contentWindowInsets = topLevelContentInsets(),
@@ -90,8 +91,13 @@ fun DictionaryScreen(
             PrimaryTabRow(selectedTabIndex = tab) {
                 YomuTab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(R.string.dict_tab_lookup)) })
                 YomuTab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.dict_tab_words)) })
+                YomuTab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.dict_tab_glossary)) })
             }
-            if (tab == 0) LookupTab(viewModel, onStartReview, onOpenDictionaries) else WordsContent(wordsViewModel, onOpenBook, onStartReview)
+            when (tab) {
+                0 -> LookupTab(viewModel, onStartReview, onOpenDictionaries)
+                1 -> WordsContent(wordsViewModel, onOpenBook, onStartReview)
+                else -> GlossaryContent(glossaryViewModel, onOpenBook)
+            }
         } }
     }
 }

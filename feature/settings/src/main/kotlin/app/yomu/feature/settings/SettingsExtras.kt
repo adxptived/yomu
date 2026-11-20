@@ -89,6 +89,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.common.Files
 import app.yomu.core.common.ScreenErrors
 import app.yomu.core.common.Share
+import app.yomu.core.common.TimeFormat
 import app.yomu.core.datastore.AppSettings
 import app.yomu.core.datastore.AppSettings.Companion.defaultSelectionActions
 import app.yomu.core.ui.components.ConfirmDialog
@@ -109,7 +110,6 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.text.DateFormat
 import java.util.Base64
-import java.util.Date
 import java.util.UUID
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
@@ -323,6 +323,7 @@ internal fun FontsSection(vm: SettingsViewModel) {
 internal fun ErrorLogSection(vm: SettingsViewModel) {
     val context = LocalContext.current
     val logs by vm.logs.collectAsStateWithLifecycle()
+    val timeFormat by vm.settings.timeFormat.state()
     var open by remember { mutableStateOf<Pair<File, String>?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -344,7 +345,7 @@ internal fun ErrorLogSection(vm: SettingsViewModel) {
         items(logs, key = { it.name }) { f ->
             ListItem(
                 headlineContent = { Text(f.name.substringBefore('_').replaceFirstChar { it.titlecase() }) },
-                supportingContent = { Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM).format(Date(f.lastModified())) + " · " + Files.humanSize(f.length())) },
+                supportingContent = { Text(TimeFormat.formatDateTime(context, timeFormat, f.lastModified(), DateFormat.MEDIUM) + " · " + Files.humanSize(f.length())) },
                 modifier = Modifier.clickable { scope.launch(ScreenErrors) { open = f to vm.readLog(f) } },
             )
         }

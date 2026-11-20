@@ -549,8 +549,52 @@ class DatabaseMigrationTest {
         }
     }
 
+    /** 18 → 19 (N04): glossary notes and the book-tagged full-text index, with no change to existing rows. */
+    @Test
+    fun migrates18To19AddingGlossaryAndFulltextIndex() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val file = context.getDatabasePath("migration-test-18.db").apply { parentFile?.mkdirs(); delete() }
+        createFromSchema(file, 18)
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use { sql ->
+            sql.execSQL(
+                "INSERT INTO books (title, sortTitle, authorsText, format, uri, isLinked, fileSize, status, isManga, addedAt, progress, favorite, rating) " +
+                    "VALUES ('Book', 'Book', '', 'EPUB', 'file:///book.epub', 0, 10, 'READING', 0, 1, 0.5, 0, 0)",
+            )
+        }
+        val room = Room.databaseBuilder(context, YomuDatabase::class.java, file.path)
+            .addMigrations(*YomuDatabase.MIGRATIONS)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val db = room.openHelper.writableDatabase
+            assertEquals(CURRENT_VERSION, db.version)
+            db.execSQL(
+                "INSERT INTO glossary_entries (bookId, locatorJson, term, normalized, aliasesJson, kind, note, createdAt, updatedAt) " +
+                    "VALUES (1, '{}', 'Elena', 'elena', '[\"Lena\"]', 'CHARACTER', 'queen', 1, 2)",
+            )
+            db.query("SELECT term, kind FROM glossary_entries").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("Elena", c.getString(0))
+                assertEquals("CHARACTER", c.getString(1))
+            }
+            db.execSQL("INSERT INTO indexed_text (`key`, bookId, sectionId, text, source, updatedAt) VALUES ('H:1', 1, 'c:0', 'the queen', 'TEXT', 1)")
+            db.query(
+                "SELECT c.text FROM indexed_text c JOIN indexed_text_fts f ON f.docid = c.rowid WHERE indexed_text_fts MATCH 'queen'",
+            ).use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("the queen", c.getString(0))
+            }
+            db.execSQL("DELETE FROM books WHERE id = 1")
+            db.query("SELECT COUNT(*) FROM glossary_entries").use { c -> assertTrue(c.moveToFirst()); assertEquals(0, c.getInt(0)) }
+            db.query("SELECT COUNT(*) FROM indexed_text").use { c -> assertTrue(c.moveToFirst()); assertEquals(0, c.getInt(0)) }
+        } finally {
+            room.close()
+            file.delete()
+        }
+    }
+
     private companion object {
-        const val CURRENT_VERSION = 17
+        const val CURRENT_VERSION = 19
     }
 }
 

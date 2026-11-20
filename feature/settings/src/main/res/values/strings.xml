@@ -34,6 +34,10 @@
     <string name="set_accent_dynamic_hint">The accent is used when dynamic colors are off.</string>
     <string name="set_language">App language</string>
     <string name="set_language_system">System language</string>
+    <string name="set_time_format">Time format</string>
+    <string name="set_time_format_system">Follow system</string>
+    <string name="set_time_format_12">12-hour</string>
+    <string name="set_time_format_24">24-hour</string>
     <string name="set_haptics">Vibration feedback</string>
     <string name="set_reduce_motion">Reduce motion</string>
     <string name="set_reduce_motion_sum">Fewer animations and page-turn effects</string>
@@ -221,6 +225,9 @@
     <string name="set_dictionary_lang">Dictionary language</string>
     <string name="set_dictionaries">Dictionaries</string>
     <string name="set_dictionaries_sum">Import StarDict, DSL, Yomitan, CSV</string>
+    <string name="set_text_search">Text search</string>
+    <string name="set_fulltext_index">Build a text index</string>
+    <string name="set_fulltext_index_sum">Allow an on-device index of saved highlights, notes and word contexts. Build it from the Glossary tab; without it search only looks at titles.</string>
     <string name="set_words">Words and review</string>
     <string name="set_daily_goal">Daily review goal</string>
     <string name="set_reminder">Review reminder</string>
@@ -355,7 +362,17 @@
     <string name="set_restore_preview_counts">Books: %1$d · highlights: %2$d · notes: %3$d · bookmarks: %4$d · words: %5$d</string>
     <string name="set_restore_preview_files">Files in the archive: %1$d (%2$s)</string>
     <string name="set_restore_preview_no_files">No book files: books are restored as records and need their files again.</string>
-    <string name="set_restore_preview_merge">Existing records are merged, not overwritten: a conflict stops that item and is reported. Nothing is written until you tap Restore.</string>
+    <string name="set_restore_preview_merge">Merge keeps this library and adds what is missing; replace clears the chosen categories first. Nothing is written until you tap Restore.</string>
+    <string name="set_restore_replace">Replace the chosen categories</string>
+    <string name="set_restore_replace_sum">Everything in the chosen categories is deleted before the backup is restored.</string>
+    <string name="set_restore_category_books">Books and progress</string>
+    <string name="set_restore_category_annotations">Highlights, notes, bookmarks</string>
+    <string name="set_restore_category_words">Words</string>
+    <string name="set_restore_category_catalog">Catalog and tracking</string>
+    <string name="set_restore_category_sessions">Reading sessions</string>
+    <string name="set_restore_category_settings">Settings</string>
+    <string name="set_restore_category_files">Book files</string>
+    <string name="set_restore_category_glossary">Glossary notes</string>
     <string name="set_backup_restore">Restore from backup</string>
     <string name="set_backup_restore_sum">Restore data from a backup; conflicting existing data is not overwritten</string>
     <string name="set_restore">Restore</string>
@@ -513,6 +530,9 @@
     <string name="set_update_failed">Couldn\'t check: %1$s</string>
     <string name="set_update_auto">Check automatically</string>
     <string name="set_update_auto_sum">Once a day at start, one request to GitHub. A dot on Settings tells about a new version</string>
+    <string name="set_update_skip">Skip this version</string>
+    <string name="set_update_skip_clear">Clear skipped version</string>
+    <string name="set_update_skipped">Skipped version: %1$s</string>
     <string name="set_update_downloading">Downloading %1$s…</string>
     <string name="set_update_downloading_percent">Downloading %1$s… %2$d%%</string>
     <string name="set_update_ready">Version %1$s is downloaded and verified, tap to install</string>
@@ -584,6 +604,8 @@
     <string name="set_sync_bookmarks_sum">Bookmarks in books</string>
     <string name="set_sync_words">Words and reviews</string>
     <string name="set_sync_words_sum">Saved words, translations and the review schedule</string>
+    <string name="set_sync_glossary">Glossary notes</string>
+    <string name="set_sync_glossary_sum">Character, term and place notes, matched by book and name; off by default</string>
     <string name="set_sync_track_links">Tracker links</string>
     <string name="set_sync_track_links_sum">Which titles are linked to Shikimori, AniList and the other trackers (without sign-in tokens)</string>
     <string name="set_sync_wifi_only">Only over Wi-Fi</string>
@@ -596,6 +618,9 @@
     <string name="set_sync_all_devices">Use this same new Yomu version on every device you sync. Older versions may not preserve image-folder page revisions.</string>
 
     <!-- 2.0: sync conflicts -->
+    <string name="set_sync_summary_ok">Last sync finished without problems.</string>
+    <string name="set_sync_summary_partial">Last sync finished with %1$d conflict(s) to review.</string>
+    <string name="set_sync_summary_error">Sync needs attention: %1$s</string>
     <string name="set_sync_problems">Sync conflicts</string>
     <string name="set_sync_problems_sum">What stopped the last synchronization</string>
     <string name="set_sync_problems_hint">The synchronization stopped on these problems; nothing was deleted or overwritten. Resolve the cause and run the sync again. Dismissed records disappear, and a successful sync clears the whole list.</string>
@@ -618,6 +643,42 @@
     <string name="set_sync_problem_migrate_folder">Migrate to a stable identity</string>
     <string name="set_sync_problem_publish_folder">Publish my version</string>
     <string name="set_sync_problem_accept_folder">Accept the other version</string>
+
+    <!-- B03: guided sync setup and recovery -->
+    <string name="set_sync_wizard_title">Sync setup</string>
+    <string name="set_sync_wizard_open">Set up sync</string>
+    <string name="set_sync_wizard_open_sum">A guided pass through the connection, what travels and the schedule</string>
+    <string name="set_sync_wizard_progress">Step %1$d of %2$d</string>
+    <string name="set_sync_step_backend">Pick where to sync</string>
+    <string name="set_sync_step_input">Enter the connection details</string>
+    <string name="set_sync_step_probe">Check the connection</string>
+    <string name="set_sync_step_categories">Choose what to sync</string>
+    <string name="set_sync_step_schedule">Choose when to sync</string>
+    <string name="set_sync_step_preview">Review before enabling</string>
+    <string name="set_sync_step_ready">Ready</string>
+    <string name="set_sync_wizard_backend_hint">Each device keeps its own details; use the same folder, server or repository everywhere.</string>
+    <string name="set_sync_wizard_input_hint">Fill in the details below, then confirm that they are entered. Nothing is sent yet.</string>
+    <string name="set_sync_wizard_input_ready">Details are entered</string>
+    <string name="set_sync_wizard_probe_hint">The connection is checked now, before anything is enabled.</string>
+    <string name="set_sync_wizard_check">Run the connection check</string>
+    <string name="set_sync_wizard_categories_hint">At least one stays on. Each choice applies to this device only.</string>
+    <string name="set_sync_wizard_schedule_hint">How often Yomu syncs in the background.</string>
+    <string name="set_sync_wizard_preview">Sync to %1$s · %2$d categories · %3$s. Settings are saved only when you finish.</string>
+    <string name="set_sync_wizard_preview_confirm">I reviewed these settings</string>
+    <string name="set_sync_wizard_ready">Setup is complete. Sync is on and the connection was verified.</string>
+    <string name="set_sync_wizard_finish">Finish setup</string>
+    <string name="set_sync_wizard_next">Next</string>
+    <string name="set_sync_wizard_back">Back</string>
+    <string name="set_sync_recovery_title">Sync needs attention</string>
+    <string name="set_sync_recovery_auth">The account or token was rejected. Check the credentials and test the connection again.</string>
+    <string name="set_sync_recovery_network">The connection could not be reached. Sync retries by itself when the network is back.</string>
+    <string name="set_sync_recovery_storage">There is not enough space. Free some space and run the sync again.</string>
+    <string name="set_sync_recovery_battery">Battery restrictions stopped the sync. Connect the charger or relax the restriction.</string>
+    <string name="set_sync_recovery_other">The last sync failed for an unexpected reason. Review the error and try again.</string>
+    <string name="set_sync_recovery_retry">Try again now</string>
+    <string name="set_sync_recovery_open">Open setup</string>
+    <string name="set_sync_recovery_retry_hint">This failure can be retried in place.</string>
+    <string name="set_sync_recovery_user_hint">This failure needs your action before a retry can help.</string>
 
     <!-- YouTube sign-in (audiobooks and the YouTube catalog source) -->
     <string name="set_youtube">YouTube</string>

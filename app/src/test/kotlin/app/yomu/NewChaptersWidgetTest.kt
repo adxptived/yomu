@@ -83,7 +83,11 @@ class NewChaptersWidgetTest {
         assertEquals(View.GONE, view.findViewById<View>(R.id.nc_row_2).visibility)
         assertEquals(View.GONE, view.findViewById<View>(R.id.nc_empty).visibility)
 
-        // Incognito hides the projection entirely.
+        // Incognito hides the projection entirely. Reset first: a previous test may have left the shared pref true,
+        // and setting the same value twice does not emit a DataStore change to refresh the widget.
+        settings.incognito.set(false)
+        NewChaptersWidgets.refresh(context)
+        shadowOf(Looper.getMainLooper()).idle()
         settings.incognito.set(true)
         NewChaptersWidgets.refresh(context)
         shadowOf(Looper.getMainLooper()).idle()

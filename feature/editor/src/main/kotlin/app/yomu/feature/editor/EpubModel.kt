@@ -8,6 +8,12 @@ data class TocEntry(val title: String, val path: String, val fragment: String? =
 /** A spine document as shown in the chapter list. */
 data class EditorChapter(val index: Int, val path: String, val title: String, val size: Long)
 
+/**
+ * A volume: a contiguous group of spine documents (a book "section"). Volume boundaries are the top level
+ * table-of-contents entries, so a one-volume book is simply a book without such boundaries.
+ */
+data class EditorVolume(val index: Int, val title: String, val start: Int, val end: Int, val chapters: List<EditorChapter>)
+
 data class ManifestImage(val path: String, val mediaType: String, val size: Long, val isCover: Boolean)
 
 /** A top level block of a chapter, offered as split point. */

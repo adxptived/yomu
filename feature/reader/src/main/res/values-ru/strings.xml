@@ -195,6 +195,12 @@
     <string name="rs_manga_gray">Оттенки серого</string>
     <string name="rs_manga_invert">Инверсия цветов</string>
     <string name="rs_manga_preload">Предзагрузка страниц</string>
+    <string name="rs_manga_reading">Чтение</string>
+    <string name="rs_manga_reading_summary">Предзагрузка и навигация для всех книг</string>
+    <string name="rs_manga_preload_wifi_only">Загружать страницы заранее только по Wi-Fi</string>
+    <string name="rs_manga_preload_wifi_only_sum">Страницы вперёд загружаются только по Wi-Fi или другой безлимитной сети; читаемая страница загружается при любой сети</string>
+    <string name="rs_manga_vertical_navigator">Вертикальная навигация по главам</string>
+    <string name="rs_manga_vertical_navigator_sum">В режиме ленты показывать полосу глав по краю для перехода между загруженными главами</string>
     <string name="rs_manga_page_number">Показывать номер страницы</string>
     <string name="rs_pdf_mode">Режим</string>
     <string name="rs_pdf_paged">Постранично</string>
