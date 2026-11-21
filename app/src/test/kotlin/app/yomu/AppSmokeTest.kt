@@ -398,10 +398,9 @@ class AppSmokeTest {
         compose.mainClock.advanceTimeBy(1_000)
 
         clickTab("Repositories")
-        compose.waitUntilAtLeastOneExists(hasContentDescription("Add repository"), 20_000)
-        shotTextDialog("22_add_repository") {
-            compose.onNode(hasContentDescription("Add repository")).performSemanticsAction(SemanticsActions.OnClick)
-        }
+        // Adding a repository is an inline card in the tab now: the field is right there, no dialog to open.
+        compose.waitUntilAtLeastOneExists(hasText("Repository address"), 20_000)
+        shot("22_add_repository")
         back()
 
         // Manga: a generated CBZ opens left to right; since 1.8.0 without the tap zones (they are opt-in again).
@@ -423,7 +422,7 @@ class AppSmokeTest {
         shot("23_manga_reader")
         compose.mainClock.advanceTimeBy(4_000)
         runCatching {
-            val view = compose.onAllNodes(hasText("View") and hasClickAction())
+            val view = compose.onAllNodes(hasText("Settings") and hasClickAction())
             if (view.fetchSemanticsNodes().isEmpty()) {
                 compose.onAllNodes(isRoot())[0].performTouchInput { click(center) }
                 compose.mainClock.advanceTimeBy(1_000)

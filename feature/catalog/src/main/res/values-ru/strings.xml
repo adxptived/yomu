@@ -338,6 +338,7 @@
     <string name="ext_broken_failed_explain">Расширение не запустилось. Возможно, оно устарело или несовместимо с этой версией Yomu — попробуйте его обновить. Если не поможет, отправьте подробности ниже его авторам.</string>
     <string name="ext_error_details">Подробности ошибки</string>
     <string name="ext_repo_url_help">Ссылка на index.min.json, папку на GitHub или ссылка «Добавить в Mihon»</string>
+    <string name="ext_repo_popular_hint">Популярные репозитории ниже можно добавить в один тап.</string>
     <string name="ext_store_unreachable">Не удалось открыть адрес: %1$s</string>
     <!-- 1.3.0: сортировка и фильтры глав, загрузки, сортировка библиотеки и источников -->
     <string name="sort_and_filter">Сортировка и фильтры</string>

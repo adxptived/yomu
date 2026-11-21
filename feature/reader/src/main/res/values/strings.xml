@@ -51,6 +51,12 @@
     <string name="reader_highlight_deleted">Highlight deleted</string>
     <string name="reader_word_saved">“%1$s” saved to your words</string>
     <string name="reader_settings">All reading settings</string>
+    <!-- Groups of the "More" sheet: the old flat list of fifteen items is hard to scan. -->
+    <string name="rmore_voice">Voice and scrolling</string>
+    <string name="rmore_translate">Translate and dictionary</string>
+    <string name="rmore_notes">Notes and annotations</string>
+    <string name="rmore_page">Page</string>
+    <string name="rmore_other">More</string>
     <string name="reader_dictionary">Dictionary</string>
     <string name="reader_language_packs">Offline language packs</string>
     <string name="reader_stats">Reading statistics</string>
@@ -465,7 +471,7 @@
     <string name="reader_cover_set">Cover changed</string>
     <string name="reader_cover_books_only">The cover can be changed for books in the library</string>
     <string name="reader_action_unavailable">This action is not available for this page</string>
-    <string name="reader_quick_display">View</string>
+    <string name="reader_quick_display">Settings</string>
     <string name="reader_keep_awake">Keep screen on</string>
     <string name="reader_brightness_auto">Auto</string>
     <string name="rs_page_anim">Page turn animation</string>

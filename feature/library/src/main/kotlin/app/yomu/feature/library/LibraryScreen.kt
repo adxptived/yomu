@@ -227,6 +227,8 @@ fun LibraryScreen(
     onOpenDownloads: () -> Unit = {},
     /** The connection wizard: a catalogue, a feed or a folder, explained and checked before it is saved (S01). */
     onAddSource: () -> Unit = {},
+    /** The extension/source manager: install catalogs of online sources and configure them. */
+    onOpenSources: () -> Unit = {},
     online: OnlineLibrary? = null,
 ) {
     val context = LocalContext.current
@@ -478,21 +480,22 @@ fun LibraryScreen(
                         )
                     }
                     else -> LibraryHeader(
-                        subtitle = listOfNotNull(
-                            total.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.library_count, it, it) },
-                            onlineTotal.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.library_online_short, it, it) },
-                        ).joinToString(" · ").ifEmpty { null },
                         onSearch = { searching = true },
                         downloads = viewModel.downloadSummary,
                         onDownloads = onOpenDownloads,
                     ) {
                         Box {
-                            CircleIconButton(Icons.Default.MoreVert, stringResource(CoreR.string.more), onClick = { showMenu = true })
+                            CircleIconButton(Icons.Default.MoreVert, stringResource(CoreR.string.more), onClick = { showMenu = true }, size = 44.dp)
                             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.library_import)) },
                                     leadingIcon = { Icon(Icons.Default.LibraryAdd, null) },
                                     onClick = { showMenu = false; showImport = true },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.library_sources)) },
+                                    leadingIcon = { Icon(Icons.Default.TravelExplore, null) },
+                                    onClick = { showMenu = false; onOpenSources() },
                                 )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.library_select_mode)) },
@@ -535,7 +538,8 @@ fun LibraryScreen(
                 }
                 PillTabRow(
                     tabs = buildList {
-                        add(PillTab(TAB_ALL, stringResource(R.string.library_all)))
+                        // The book total rides on the "All" tab: the header's subtitle line is gone with the compact top bar.
+                        add(PillTab(TAB_ALL, stringResource(R.string.library_all), total.takeIf { it > 0 }))
                         if (onlineShownTab) add(PillTab(TAB_ONLINE, stringResource(R.string.library_online), onlineTotal, Icons.Outlined.Public))
                         collections.forEach { add(PillTab(it.id.toString(), it.name, it.count)) }
                     },
@@ -556,8 +560,11 @@ fun LibraryScreen(
                     LibraryToolbar(
                         activeFilters = activeFilters,
                         sortLabel = stringResource(sort.label()),
+                        ascending = ascending,
                         grid = grid,
                         onDisplay = { showDisplay = true },
+                        onSortDirection = { viewModel.setAscending(!ascending) },
+                        onToggleGrid = { viewModel.setGrid(!grid) },
                     )
                     if (activeFilters > 0) ActiveFilters(filter, types, viewModel)
                     if (shelves.isNotEmpty() || activeFilters > 0 || search.isNotBlank()) {
@@ -976,10 +983,9 @@ fun LibraryScreen(
     }
 }
 
-/** Large title with the counts and round actions (downloads while there are any, search, menu). */
+/** Compact title with the round actions (downloads while there are any, search, menu); the counts live on the tabs. */
 @Composable
 private fun LibraryHeader(
-    subtitle: String?,
     onSearch: () -> Unit,
     downloads: StateFlow<DownloadSummary>,
     onDownloads: () -> Unit,
@@ -989,22 +995,17 @@ private fun LibraryHeader(
     val summary by downloads.collectAsStateWithLifecycle()
     Column {
         Row(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(start = Dimens.xl, end = Dimens.l, top = Dimens.m, bottom = Dimens.xs),
+            Modifier.fillMaxWidth().statusBarsPadding().padding(start = Dimens.xl, end = Dimens.l, top = Dimens.xs, bottom = Dimens.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.library_title), style = MaterialTheme.typography.headlineMedium, maxLines = 1)
-                if (subtitle != null) {
-                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            // At most two visible commands: search and the overflow menu. Selection, downloads, refresh, shelves and
-            // settings live in the menu, and the download button still appears while a queue is active.
+            Text(stringResource(R.string.library_title), style = MaterialTheme.typography.titleLarge, maxLines = 1, modifier = Modifier.weight(1f))
+            // At most three visible commands: search and the overflow menu, and the download button while a queue
+            // is active. Selection, refresh, shelves, sources and settings live in the menu.
             if (summary.visible) {
                 DownloadsButton(summary, onDownloads)
                 Spacer(Modifier.width(Dimens.s))
             }
-            CircleIconButton(Icons.Default.Search, stringResource(CoreR.string.search), onClick = onSearch)
+            CircleIconButton(Icons.Default.Search, stringResource(CoreR.string.search), onClick = onSearch, size = 44.dp)
             Spacer(Modifier.width(Dimens.s))
             menu()
         }
@@ -1059,15 +1060,18 @@ private fun DownloadsButton(s: DownloadSummary, onClick: () -> Unit) {
 /**
  * The single entry to display options: filters, sorting and the view.
  *
- * The old header had three separate controls for the same subject; one pill leads to one sheet that keeps all three,
- * so nothing is lost and the header stays to one compact line.
+ * The pill opens the display sheet (filters, the sort field, the view); the sort name toggles the direction right
+ * here, and the grid/list icon toggles the view — all three were dead displays before, and tapping them did nothing.
  */
 @Composable
 private fun LibraryToolbar(
     activeFilters: Int,
     sortLabel: String,
+    ascending: Boolean,
     grid: Boolean,
     onDisplay: () -> Unit,
+    onSortDirection: () -> Unit,
+    onToggleGrid: () -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(start = Dimens.l, end = Dimens.l, top = Dimens.xs, bottom = Dimens.s),
@@ -1080,21 +1084,36 @@ private fun LibraryToolbar(
             onClick = onDisplay,
             badge = activeFilters,
         )
-        Text(
-            sortLabel,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
+        // Tap the sort name to flip its direction; the field itself is picked in the display sheet.
+        Row(
+            Modifier.weight(1f, fill = false).clip(CircleShape).clickable(onClick = onSortDirection).padding(horizontal = Dimens.s, vertical = Dimens.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Dimens.xxs),
+        ) {
+            Text(
+                sortLabel,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Icon(
+                if (ascending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                stringResource(R.string.library_sort_direction),
+                Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Spacer(Modifier.weight(1f))
-        Icon(
-            if (grid) Icons.Default.GridView else Icons.AutoMirrored.Filled.ViewList,
-            null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
-        )
+        IconButton(onClick = onToggleGrid, modifier = Modifier.size(36.dp)) {
+            Icon(
+                if (grid) Icons.Default.GridView else Icons.AutoMirrored.Filled.ViewList,
+                stringResource(if (grid) R.string.library_view_list else R.string.library_view_grid),
+                Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

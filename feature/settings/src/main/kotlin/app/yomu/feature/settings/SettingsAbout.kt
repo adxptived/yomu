@@ -250,9 +250,9 @@ internal fun UpdateDialog(release: ReleaseInfo, updates: AppUpdates) {
     )
 }
 
-/** On top of the settings root while a newer version is out. */
+/** On top of the settings root while a newer version is out; [ready] says the APK is already downloaded. */
 @Composable
-internal fun UpdateCard(version: String, onClick: () -> Unit) {
+internal fun UpdateCard(version: String, ready: Boolean, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
@@ -264,8 +264,16 @@ internal fun UpdateCard(version: String, onClick: () -> Unit) {
                 Icon(Icons.Outlined.SystemUpdate, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onPrimary)
             }
             Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.set_update_card_title, version), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                Text(stringResource(R.string.set_update_card_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                Text(
+                    stringResource(if (ready) R.string.set_update_card_ready_title else R.string.set_update_card_title, version),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    stringResource(if (ready) R.string.set_update_card_ready_text else R.string.set_update_card_text),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                )
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
         }

@@ -58,6 +58,7 @@
     <string name="library_add_scan_folder">Следить за папкой (автоимпорт)</string>
     <string name="library_find_online">Найти книги в сети</string>
     <string name="library_add_source">Добавить источник</string>
+    <string name="library_sources">Источники</string>
     <string name="details_subscription">Подписка на ленту</string>
     <string name="details_subscription_check">Проверить сейчас</string>
     <string name="details_subscription_stop">Не обновлять</string>

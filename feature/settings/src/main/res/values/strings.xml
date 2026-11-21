@@ -551,6 +551,8 @@
     <string name="set_update_page">On GitHub</string>
     <string name="set_update_card_title">Yomu %1$s is available</string>
     <string name="set_update_card_text">Tap to see what\'s new and update</string>
+    <string name="set_update_card_ready_title">Yomu %1$s is ready to install</string>
+    <string name="set_update_card_ready_text">The update is downloaded and verified — tap to install</string>
     <string name="set_app_icon">App icon</string>
     <string name="set_app_icon_hint">The icon changes when you leave the app; the pick is remembered even if Yomu is closed. Some launchers keep the old shortcut on the home screen: then add Yomu again from the app list.</string>
     <!-- 2.0: sync -->

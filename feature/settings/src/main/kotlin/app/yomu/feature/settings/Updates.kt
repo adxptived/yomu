@@ -214,9 +214,11 @@ class AppUpdates(
     /** The release whose details dialog is open (shown by the settings). */
     val dialog: StateFlow<ReleaseInfo?> = _dialog.asStateFlow()
 
-    /** Version of a newer release found by the last check: the dot on Settings and the card on top of them. */
+    /** Version of a newer release found by the last check: the dot on Settings and the card on top of them.
+     * A version that is not actually newer than the installed one is never announced: after an update installs,
+     * the stored "latest" equals the current version and used to keep the card on screen forever. */
     val available: Flow<String?> = combine(settings.updateLatest.flow, settings.skipUpdateVersion.flow) { latest, skipped ->
-        latest.takeIf { it.isNotBlank() && !SkipUpdate.isSkipped(it, skipped, current) }
+        latest.takeIf { it.isNotBlank() && UpdateChecker.isNewer(it, current) && !SkipUpdate.isSkipped(it, skipped, current) }
     }.distinctUntilChanged()
 
     /** At start: the daily check, if the user turned it on. Quiet, only a newer release changes anything. */

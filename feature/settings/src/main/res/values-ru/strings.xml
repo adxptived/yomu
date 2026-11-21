@@ -555,6 +555,8 @@
     <string name="set_update_page">На GitHub</string>
     <string name="set_update_card_title">Доступна Yomu %1$s</string>
     <string name="set_update_card_text">Нажмите, чтобы посмотреть, что нового, и обновить</string>
+    <string name="set_update_card_ready_title">Yomu %1$s готова к установке</string>
+    <string name="set_update_card_ready_text">Обнова скачана и проверена — нажмите, чтобы установить</string>
     <string name="set_app_icon">Значок приложения</string>
     <string name="set_app_icon_hint">Значок меняется, когда вы выходите из приложения; выбор запоминается, даже если Yomu закрыть. Некоторые лаунчеры оставляют старый ярлык на рабочем столе — тогда добавьте Yomu заново из списка приложений.</string>
     <!-- 2.0: sync -->

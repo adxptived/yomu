@@ -50,6 +50,12 @@
     <string name="reader_highlight_deleted">Выделение удалено</string>
     <string name="reader_word_saved">«%1$s» сохранено в ваши слова</string>
     <string name="reader_settings">Все настройки чтения</string>
+    <!-- Группы листа «Ещё»: прежний плоский список из пятнадцати пунктов тяжело просматривать. -->
+    <string name="rmore_voice">Озвучка и прокрутка</string>
+    <string name="rmore_translate">Перевод и словарь</string>
+    <string name="rmore_notes">Заметки и аннотации</string>
+    <string name="rmore_page">Страница</string>
+    <string name="rmore_other">Прочее</string>
     <string name="reader_dictionary">Словарь</string>
     <string name="reader_language_packs">Офлайн-пакеты языков</string>
     <string name="reader_stats">Статистика чтения</string>
@@ -466,7 +472,7 @@
     <string name="reader_cover_set">Обложка изменена</string>
     <string name="reader_cover_books_only">Обложку можно сменить у книг из библиотеки</string>
     <string name="reader_action_unavailable">Это действие недоступно для данной страницы</string>
-    <string name="reader_quick_display">Вид</string>
+    <string name="reader_quick_display">Настройки</string>
     <string name="reader_keep_awake">Не гасить экран</string>
     <string name="reader_brightness_auto">Авто</string>
     <string name="rs_page_anim">Анимация перелистывания</string>

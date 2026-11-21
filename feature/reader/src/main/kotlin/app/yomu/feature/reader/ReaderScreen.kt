@@ -13,6 +13,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,9 +37,10 @@ import androidx.compose.material.icons.automirrored.outlined.NoteAdd
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Headphones
+// Aliased: android.provider.Settings is imported in this file for the system settings screen.
+import androidx.compose.material.icons.filled.Settings as SettingsIcon
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
@@ -60,8 +62,6 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -90,6 +90,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -172,7 +174,7 @@ import java.net.URLEncoder
 import java.util.Locale
 import app.yomu.core.ui.R as CoreR
 
-internal enum class ReaderSheet { NONE, TOC, SEARCH, SETTINGS, TTS, PAGES, JUMPS }
+internal enum class ReaderSheet { NONE, TOC, SEARCH, SETTINGS, TTS, PAGES, JUMPS, MORE }
 
 /**
  * The reader: hosts one of the three engines and the shared chrome (top/bottom bars that auto-hide),
@@ -281,6 +283,84 @@ fun ReaderScreen(
     }
     val bookLang = viewModel.book?.language
     val author = viewModel.book?.authors?.joinToString()
+
+    // The "More" sheet: the former dropdown of fifteen items, grouped by subject. The top bar's ⋮ and the
+    // floating circle above the bottom bar both open it, so the rare commands stay one tap from the thumb.
+    val moreMenu: @Composable (dismiss: () -> Unit) -> Unit = { dismiss ->
+        // Voice and scrolling
+        MoreGroup(stringResource(R.string.rmore_voice))
+        if (data is ReaderContent.Text || data is ReaderContent.Pdf) {
+            MoreAction(Icons.Default.Headphones, stringResource(R.string.reader_tts)) {
+                dismiss()
+                if (!ttsActive) viewModel.startTts()
+                sheet = ReaderSheet.TTS
+            }
+        }
+        MoreAction(if (autoScroll) Icons.Default.Pause else Icons.Default.SlowMotionVideo, stringResource(R.string.reader_autoscroll)) {
+            dismiss(); viewModel.toggleAutoScroll(); viewModel.chromeVisible.value = false
+        }
+        // Translate and dictionary
+        MoreGroup(stringResource(R.string.rmore_translate))
+        MoreAction(Icons.Default.Translate, stringResource(R.string.reader_translate_page)) {
+            dismiss(); viewModel.translatePage()
+        }
+        MoreAction(Icons.AutoMirrored.Outlined.MenuBook, stringResource(R.string.reader_dictionary)) {
+            dismiss(); onOpenDictionary("")
+        }
+        MoreAction(Icons.Outlined.Language, stringResource(R.string.reader_language_packs)) { dismiss(); onOpenPacks() }
+        // Notes and annotations
+        if (viewModel.bookId > 0) {
+            MoreGroup(stringResource(R.string.rmore_notes))
+            MoreAction(Icons.Outlined.EditNote, stringResource(R.string.reader_annotations)) {
+                dismiss(); onOpenAnnotations(viewModel.bookId)
+            }
+            MoreAction(Icons.AutoMirrored.Outlined.NoteAdd, stringResource(R.string.reader_page_note)) {
+                dismiss(); pageNote = viewModel.pageNoteTarget()
+            }
+        }
+        // Page
+        MoreGroup(stringResource(R.string.rmore_page))
+        if (data is ReaderContent.Pdf || data is ReaderContent.Manga) {
+            MoreAction(Icons.Outlined.TouchApp, stringResource(R.string.reader_page_actions)) {
+                dismiss(); viewModel.showCurrentPageActions()
+            }
+            MoreAction(Icons.Default.GridView, stringResource(R.string.reader_pages)) {
+                dismiss(); sheet = ReaderSheet.PAGES
+            }
+        }
+        if (data is ReaderContent.Text) {
+            MoreAction(Icons.Outlined.ViewAgenda, stringResource(R.string.reader_bilingual)) { dismiss(); viewModel.toggleBilingual() }
+        }
+        // Everything else
+        MoreGroup(stringResource(R.string.rmore_other))
+        if (jumpHistory.isNotEmpty()) {
+            MoreAction(Icons.Outlined.History, stringResource(R.string.reader_recent_jumps)) { dismiss(); sheet = ReaderSheet.JUMPS }
+        }
+        MoreAction(Icons.Outlined.BarChart, stringResource(R.string.reader_stats)) { dismiss(); onOpenStats() }
+        // The gesture scheme can be shown again: no screen must be the only way to a function.
+        MoreAction(Icons.Outlined.TouchApp, stringResource(R.string.reader_how_to_control)) {
+            dismiss()
+            tapZonesDone = false
+            tapZonesForced = true
+            if (data is ReaderContent.Manga) viewModel.previewTapZones() else viewModel.chromeVisible.value = false
+        }
+        if (onOpenPageLayout != null && viewModel.bookId > 0 && viewModel.book?.format == BookFormat.DOCX) {
+            MoreAction(Icons.Outlined.Description, stringResource(R.string.reader_page_layout)) {
+                dismiss(); onOpenPageLayout(viewModel.bookId)
+            }
+        }
+        if (onOpenEditor != null && viewModel.bookId > 0 && !viewModel.isOnline) {
+            MoreAction(Icons.Outlined.Edit, stringResource(R.string.reader_edit_book)) {
+                dismiss(); onOpenEditor(viewModel.bookId)
+            }
+        }
+        val linkedEdition = linkedEditionId
+        if (onOpenLinked != null && linkedEdition != null) {
+            MoreAction(Icons.AutoMirrored.Outlined.MenuBook, stringResource(R.string.reader_open_linked)) {
+                dismiss(); onOpenLinked(linkedEdition)
+            }
+        }
+    }
 
     // One haptic tick per chapter turn, whether by page turn, buttons or TTS. Skips the initial open.
     val chapterId by viewModel.chapterId.collectAsStateWithLifecycle()
@@ -784,73 +864,7 @@ fun ReaderScreen(
                 bookmarked = bookmarked,
                 onBack = onBack,
                 onBookmark = { haptic.perform(); viewModel.toggleBookmark() },
-                menu = { dismiss ->
-                    DropdownMenuItem(text = { Text(stringResource(R.string.reader_search)) }, leadingIcon = { Icon(Icons.Default.Search, null) },
-                        onClick = { dismiss(); sheet = ReaderSheet.SEARCH })
-                    if (data is ReaderContent.Text || data is ReaderContent.Pdf) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.reader_tts)) }, leadingIcon = { Icon(Icons.Default.Headphones, null) },
-                            onClick = {
-                                dismiss()
-                                if (!ttsActive) viewModel.startTts()
-                                sheet = ReaderSheet.TTS
-                            })
-                    }
-                    DropdownMenuItem(text = { Text(stringResource(R.string.reader_autoscroll)) },
-                        leadingIcon = { Icon(if (autoScroll) Icons.Default.Pause else Icons.Default.SlowMotionVideo, null) },
-                        enabled = data != null, onClick = { dismiss(); viewModel.toggleAutoScroll(); viewModel.chromeVisible.value = false })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.reader_translate_page)) }, leadingIcon = { Icon(Icons.Default.Translate, null) },
-                        enabled = data != null, onClick = { dismiss(); viewModel.translatePage() })
-                    if (jumpHistory.isNotEmpty()) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.reader_recent_jumps)) }, leadingIcon = { Icon(Icons.Outlined.History, null) },
-                            onClick = { dismiss(); sheet = ReaderSheet.JUMPS })
-                    }
-                    if (viewModel.bookId > 0) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.reader_annotations)) }, leadingIcon = { Icon(Icons.Outlined.EditNote, null) },
-                            onClick = { dismiss(); onOpenAnnotations(viewModel.bookId) })
-                        DropdownMenuItem(text = { Text(stringResource(R.string.reader_page_note)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.NoteAdd, null) },
-                            onClick = { dismiss(); pageNote = viewModel.pageNoteTarget() })
-                    }
-                    DropdownMenuItem(text = { Text(stringResource(R.string.reader_dictionary)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.MenuBook, null) },
-                        onClick = { dismiss(); onOpenDictionary("") })
-                    if (data is ReaderContent.Pdf || data is ReaderContent.Manga) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.reader_page_actions)) }, leadingIcon = { Icon(Icons.Outlined.TouchApp, null) },
-                            onClick = { dismiss(); viewModel.showCurrentPageActions() })
-                        DropdownMenuItem(text = { Text(stringResource(R.string.reader_pages)) }, leadingIcon = { Icon(Icons.Default.GridView, null) },
-                            onClick = { dismiss(); sheet = ReaderSheet.PAGES })
-                    }
-                    if (data is ReaderContent.Text) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.reader_bilingual)) }, leadingIcon = { Icon(Icons.Outlined.ViewAgenda, null) },
-                            onClick = { dismiss(); viewModel.toggleBilingual() })
-                    }
-                    DropdownMenuItem(text = { Text(stringResource(R.string.reader_language_packs)) }, leadingIcon = { Icon(Icons.Outlined.Language, null) },
-                        onClick = { dismiss(); onOpenPacks() })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.reader_stats)) }, leadingIcon = { Icon(Icons.Outlined.BarChart, null) },
-                        onClick = { dismiss(); onOpenStats() })
-                    // The gesture scheme can be shown again: a long-press menu must never be the only way to a function.
-                    DropdownMenuItem(text = { Text(stringResource(R.string.reader_how_to_control)) }, leadingIcon = { Icon(Icons.Outlined.TouchApp, null) },
-                        onClick = {
-                            dismiss()
-                            tapZonesDone = false
-                            tapZonesForced = true
-                            if (data is ReaderContent.Manga) viewModel.previewTapZones() else viewModel.chromeVisible.value = false
-                        })
-                    if (onOpenPageLayout != null && viewModel.bookId > 0 && viewModel.book?.format == BookFormat.DOCX) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.reader_page_layout)) }, leadingIcon = { Icon(Icons.Outlined.Description, null) },
-                            onClick = { dismiss(); onOpenPageLayout(viewModel.bookId) })
-                    }
-                    if (onOpenEditor != null && viewModel.bookId > 0 && !viewModel.isOnline) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.reader_edit_book)) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) },
-                            onClick = { dismiss(); onOpenEditor(viewModel.bookId) })
-                    }
-                    val linkedEdition = linkedEditionId
-                    if (onOpenLinked != null && linkedEdition != null) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.reader_open_linked)) },
-                            leadingIcon = { Icon(Icons.AutoMirrored.Outlined.MenuBook, null) },
-                            onClick = { dismiss(); onOpenLinked(linkedEdition) },
-                        )
-                    }
-                },
+                onMore = { sheet = ReaderSheet.MORE },
             )
         }
 
@@ -931,6 +945,27 @@ fun ReaderScreen(
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             ) {
                 JumpBackChip(page = jump?.page ?: 0, onBack = viewModel::jumpBack, onDismiss = viewModel::dismissJumpBack)
+            }
+            // The floating circle above the bar: every rare command of the reader is one thumb tap away, the
+            // same grouped sheet the top bar's ⋮ opens. It hides with the chrome and over sheets and drags.
+            AnimatedVisibility(
+                visible = chrome && data != null && sheet == ReaderSheet.NONE && seekDrag == null,
+                enter = fadeIn(tween(150)),
+                exit = fadeOut(tween(100)),
+                modifier = Modifier.align(Alignment.End).padding(end = Dimens.l, bottom = Dimens.s),
+            ) {
+                Surface(
+                    onClick = { sheet = ReaderSheet.MORE },
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shadowElevation = 6.dp,
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(Icons.Default.MoreVert, stringResource(CoreR.string.more))
+                    }
+                }
             }
             AnimatedVisibility(
                 visible = chrome && data != null,
@@ -1108,6 +1143,9 @@ fun ReaderScreen(
             )
         }
         ReaderSheet.TTS -> TtsSheet(viewModel, common, onDismiss = { sheet = ReaderSheet.NONE })
+        ReaderSheet.MORE -> YomuSheet(onDismiss = { sheet = ReaderSheet.NONE }, skipPartial = false) {
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { moreMenu { sheet = ReaderSheet.NONE } }
+        }
         ReaderSheet.PAGES -> when (val c = data) {
             is ReaderContent.Pdf -> PagesSheet(
                 count = c.controller.pageCount,
@@ -1151,9 +1189,8 @@ private fun ReaderTopBar(
     bookmarked: Boolean,
     onBack: () -> Unit,
     onBookmark: () -> Unit,
-    menu: @Composable (dismiss: () -> Unit) -> Unit,
+    onMore: () -> Unit,
 ) {
-    var menuOpen by remember { mutableStateOf(false) }
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.statusBarsPadding().heightIn(min = 64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back)) }
@@ -1169,10 +1206,7 @@ private fun ReaderTopBar(
                 Icon(if (bookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, bookmarkLabel,
                     tint = if (bookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Box {
-                IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, stringResource(CoreR.string.more)) }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) { menu { menuOpen = false } }
-            }
+            IconButton(onClick = onMore) { Icon(Icons.Default.MoreVert, stringResource(CoreR.string.more)) }
         }
     }
 }
@@ -1322,7 +1356,7 @@ private fun ReaderBottomBar(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 ChromeButton(Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.reader_toc), onToc, Modifier.weight(1f))
                 ChromeButton(Icons.Default.Search, stringResource(R.string.reader_search), onSearch, Modifier.weight(1f))
-                ChromeButton(Icons.Default.BrightnessMedium, stringResource(R.string.reader_quick_display), onQuick, Modifier.weight(1f))
+                ChromeButton(Icons.Default.SettingsIcon, stringResource(R.string.reader_quick_display), onQuick, Modifier.weight(1f))
             }
         }
     }
@@ -1344,6 +1378,31 @@ private fun ChromeButton(icon: ImageVector, label: String, onClick: () -> Unit, 
         Icon(icon, null, Modifier.size(18.dp))
         Spacer(Modifier.width(4.dp))
         Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+/** A group title of the "More" sheet: the commands are grouped, not one flat wall of rows. */
+@Composable
+private fun MoreGroup(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = Dimens.xl, end = Dimens.xl, top = Dimens.s, bottom = Dimens.xxs),
+    )
+}
+
+/** One command of the "More" sheet. */
+@Composable
+private fun MoreAction(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(onClick = onClick)
+            .padding(horizontal = Dimens.xl, vertical = Dimens.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Dimens.l),
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, style = MaterialTheme.typography.bodyLarge)
     }
 }
 

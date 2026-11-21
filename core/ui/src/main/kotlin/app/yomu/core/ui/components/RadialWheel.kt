@@ -7,7 +7,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -94,6 +93,9 @@ class RadialState(val anchor: Offset, val actions: List<RadialAction>, val title
 
     /** True while the actions that did not fit on the ring are shown as a list instead of the wheel. */
     var overflow by mutableStateOf(false)
+
+    /** True while a press on the menu's own scrim steers the wheel (press, slide, lift to run). */
+    var steering by mutableStateOf(false)
 }
 
 /** The popup covers the whole window; the wheel is placed in window coordinates. */
@@ -190,15 +192,76 @@ fun RadialMenu(
     Popup(
         popupPositionProvider = WheelOrigin,
         onDismissRequest = onDismiss,
-        // While the finger is down the wheel must not take the touch stream away from it. The window must be the
-        // whole screen: with the platform's default width the anchor (window coordinates) lands outside the popup,
-        // and the ring shows up somewhere far from the finger.
+        // While the finger that opened the wheel is down, the wheel must not take the touch stream away from it.
+        // The window must be the whole screen: with the platform's default width the anchor (window coordinates)
+        // lands outside the popup, and the ring shows up somewhere far from the finger.
         properties = PopupProperties(focusable = tappable, clippingEnabled = false, usePlatformDefaultWidth = false),
     ) {
         Box(
             Modifier.fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.45f * progress))
-                .pointerInput(tappable) { if (tappable) detectTapGestures { onDismiss() } },
+                // Steering: press the scrim (not a button) and slide — the sector under the finger highlights and
+                // lifting the finger runs it; a plain tap on the scrim still closes the wheel. While an external
+                // gesture (the long press that opened the wheel) owns the stream, this does nothing: that finger
+                // is steered by the item it started on ([wheelGesture]).
+                .pointerInput(state, tappable, count, base, RADIAL_BUTTON_DP) {
+                    if (!tappable) return@pointerInput
+                    val deadZone = 30.dp.toPx()
+                    val marginPx = 10.dp.toPx()
+                    val slop = viewConfiguration.touchSlop
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = true)
+                        // A stale sector from an earlier gesture must not run on a fresh tap.
+                        state.active = null
+                        var steering = false
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) {
+                                    when (val index = state.active) {
+                                        null -> onDismiss()
+                                        else -> {
+                                            if (WheelLayout.isMore(actions.size, index)) {
+                                                // The ring stays open and swaps itself for the list of the rest.
+                                                state.overflow = true
+                                            } else {
+                                                ringActions.getOrNull(index)?.let { action ->
+                                                    onActionChosen()
+                                                    action.onClick()
+                                                } ?: onDismiss()
+                                            }
+                                        }
+                                    }
+                                    break
+                                }
+                                // Steering needs a deliberate slide: a jittering tap near the ring must not run a sector.
+                                if (!steering) {
+                                    val dx = change.position.x - down.position.x
+                                    val dy = change.position.y - down.position.y
+                                    if (dx * dx + dy * dy < slop * slop) continue
+                                }
+                                val center = wheelCenter(
+                                    if (state.anchor.isSpecified) state.anchor else Offset(size.width / 2f, size.height / 2f),
+                                    base.toPx(), RADIAL_BUTTON_DP.toPx(), marginPx, size.width.toFloat(), size.height.toFloat(),
+                                )
+                                val index = radialSector(count, center, change.position, deadZone)
+                                if (index != null) {
+                                    steering = true
+                                    state.steering = true
+                                    if (state.active != index) state.active = index
+                                } else if (steering) {
+                                    // Slid back into the middle: the centre is the cancel button again.
+                                    state.active = null
+                                }
+                                // A steering finger owns the stream: no child under it starts a press on the way.
+                                if (steering) change.consume()
+                            }
+                        } finally {
+                            state.steering = false
+                        }
+                    }
+                },
         ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val widthPx = with(density) { maxWidth.toPx() }
@@ -283,9 +346,9 @@ fun RadialMenu(
                         Icon(over?.icon ?: Icons.Filled.Close, null, Modifier.size(if (over != null) 26.dp else 22.dp))
                     }
                 }
-                // With a finger on the ring the name of the action it is over is the important thing; it sits under
-                // the central button, where the finger does not cover it.
-                if (dragSelect && state.dragging) {
+                // With a steering or dragging finger on the ring, the name of the action it is over is the important
+                // thing; it sits under the central button, where the finger does not cover it.
+                if ((dragSelect && state.dragging) || state.steering) {
                     val label = over?.label ?: title
                     if (label != null) {
                         Surface(

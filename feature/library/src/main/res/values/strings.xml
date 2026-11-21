@@ -52,6 +52,7 @@
     <string name="library_add_scan_folder">Watch a folder (auto import)</string>
     <string name="library_find_online">Find books online</string>
     <string name="library_add_source">Add a source</string>
+    <string name="library_sources">Sources</string>
     <string name="details_subscription">Feed subscription</string>
     <string name="details_subscription_check">Check now</string>
     <string name="details_subscription_stop">Stop updating</string>

@@ -23,14 +23,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Extension
@@ -55,6 +52,7 @@ import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -107,7 +105,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.SearchField
-import app.yomu.core.ui.components.YomuFab
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.core.ui.components.copyText
@@ -162,7 +159,6 @@ fun ExtensionsScreen(
     var trustAll by remember { mutableStateOf<List<InstalledExtension>?>(null) }
     var uninstallFor by remember { mutableStateOf<InstalledExtension?>(null) }
     var detailsFor by remember { mutableStateOf<String?>(null) }
-    var addStore by rememberSaveable { mutableStateOf(addStoreUrl != null) }
     var addStoreInitial by rememberSaveable { mutableStateOf(addStoreUrl.orEmpty()) }
     var removeStore by remember { mutableStateOf<StoreState?>(null) }
     var pickLanguages by remember { mutableStateOf(false) }
@@ -235,15 +231,6 @@ fun ExtensionsScreen(
                 }
             }
         },
-        floatingActionButton = {
-            if (tab == 2) {
-                YomuFab(
-                    text = stringResource(R.string.ext_add_repo),
-                    icon = Icons.Filled.Add,
-                    onClick = { addStore = true },
-                )
-            }
-        },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         val direction = LocalLayoutDirection.current
@@ -297,10 +284,20 @@ fun ExtensionsScreen(
                 }
             }
             else -> LazyColumn(modifier, contentPadding = PaddingValues(bottom = navBarBottomPadding(96.dp))) {
+                // Adding a repository right in the tab: paste a link, see the name, size and key, add — no dialog.
+                item(key = "add") {
+                    AddStoreCard(
+                        initial = addStoreInitial,
+                        preview = preview,
+                        onCheck = viewModel::previewStore,
+                        onConfirm = { viewModel.confirmStore(); addStoreInitial = "" },
+                        onDismiss = { viewModel.dismissPreview(); addStoreInitial = "" },
+                    )
+                }
                 item {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                        modifier = Modifier.fillMaxWidth().padding(Dimens.l),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s),
                     ) {
                         Row(Modifier.padding(Dimens.l), horizontalArrangement = Arrangement.spacedBy(Dimens.m)) {
                             Icon(Icons.Outlined.VerifiedUser, null, tint = MaterialTheme.colorScheme.primary)
@@ -330,7 +327,6 @@ fun ExtensionsScreen(
                             trailingContent = {
                                 FilledTonalButton(onClick = {
                                     addStoreInitial = rec.url
-                                    addStore = true
                                     viewModel.previewStore(rec.url)
                                 }) { Text(stringResource(CoreR.string.add)) }
                             },
@@ -401,15 +397,6 @@ fun ExtensionsScreen(
             confirmLabel = stringResource(R.string.ext_uninstall),
             onConfirm = { viewModel.uninstall(ext) },
             onDismiss = { uninstallFor = null },
-        )
-    }
-    if (addStore) {
-        AddStoreDialog(
-            initial = addStoreInitial,
-            preview = preview,
-            onCheck = viewModel::previewStore,
-            onConfirm = { viewModel.confirmStore(); addStore = false },
-            onDismiss = { viewModel.dismissPreview(); addStore = false },
         )
     }
     removeStore?.let { s ->
@@ -721,8 +708,12 @@ private fun StoreRow(s: StoreState, onRemove: () -> Unit) {
     )
 }
 
+/**
+ * Adding a repository, right in the tab: paste the address, the check shows the name, the size and the signing key,
+ * and one button goes from "Check" to "Add". The old modal dialog is gone: the field sits where the eyes already are.
+ */
 @Composable
-private fun AddStoreDialog(
+private fun AddStoreCard(
     initial: String,
     preview: StorePreview?,
     onCheck: (String) -> Unit,
@@ -732,6 +723,13 @@ private fun AddStoreDialog(
     val context = LocalContext.current
     // No prefilled "https://": people paste full links, and a prefix only produced "https://https://…".
     var text by rememberSaveable { mutableStateOf(initial) }
+    // A prefill from outside (a recommendation, an "Add to Mihon" link) replaces what the field holds.
+    LaunchedEffect(initial) {
+        if (initial.isNotEmpty() && initial != text) {
+            text = initial
+            onCheck(initial)
+        }
+    }
     val ready = (preview as? StorePreview.Ready)?.takeIf { it.input == text.trim() }
     val canCheck = text.trim().length >= 4 && preview !is StorePreview.Loading
     val submit = {
@@ -740,80 +738,87 @@ private fun AddStoreDialog(
             canCheck -> onCheck(text)
         }
     }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Outlined.Storage, null) },
-        title = { Text(stringResource(R.string.ext_add_repo)) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Dimens.m)) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    label = { Text(stringResource(R.string.ext_repo_url)) },
-                    placeholder = { Text(stringResource(R.string.ext_repo_url_hint)) },
-                    supportingText = { Text(stringResource(R.string.ext_repo_url_help)) },
-                    singleLine = true,
-                    isError = preview is StorePreview.Failed && preview.input == text.trim(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go, autoCorrectEnabled = false),
-                    keyboardActions = KeyboardActions(onGo = { submit() }),
-                    trailingIcon = {
-                        if (text.isEmpty()) {
-                            IconButton(onClick = {
-                                clipboardText(context)?.trim()?.takeIf { it.isNotEmpty() }?.let { pasted ->
-                                    text = pasted
-                                    onCheck(pasted)
-                                }
-                            }) {
-                                Icon(Icons.Filled.ContentPaste, stringResource(R.string.ext_repo_paste))
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s),
+    ) {
+        Column(Modifier.padding(Dimens.l), verticalArrangement = Arrangement.spacedBy(Dimens.s)) {
+            Text(stringResource(R.string.ext_add_repo), style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text(stringResource(R.string.ext_repo_url)) },
+                placeholder = { Text(stringResource(R.string.ext_repo_url_hint)) },
+                supportingText = { Text(stringResource(R.string.ext_repo_url_help)) },
+                singleLine = true,
+                isError = preview is StorePreview.Failed && preview.input == text.trim(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go, autoCorrectEnabled = false),
+                keyboardActions = KeyboardActions(onGo = { submit() }),
+                trailingIcon = {
+                    if (text.isEmpty()) {
+                        IconButton(onClick = {
+                            clipboardText(context)?.trim()?.takeIf { it.isNotEmpty() }?.let { pasted ->
+                                text = pasted
+                                onCheck(pasted)
                             }
-                        } else {
-                            IconButton(onClick = { text = "" }) { Icon(Icons.Filled.Close, stringResource(CoreR.string.clear)) }
+                        }) {
+                            Icon(Icons.Filled.ContentPaste, stringResource(R.string.ext_repo_paste))
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
+                    } else {
+                        IconButton(onClick = { text = ""; onDismiss() }) { Icon(Icons.Filled.Close, stringResource(CoreR.string.clear)) }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            when {
+                preview is StorePreview.Loading && preview.input == text.trim() -> Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Dimens.m),
+                ) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text(stringResource(R.string.ext_repo_checking), style = MaterialTheme.typography.bodyMedium)
+                }
+                ready != null -> Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(Dimens.m), horizontalArrangement = Arrangement.spacedBy(Dimens.m)) {
+                        Icon(Icons.Outlined.VerifiedUser, null)
+                        Column(verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
+                            Text(stringResource(R.string.ext_repo_found, ready.info.name, ready.count.toString()), style = MaterialTheme.typography.titleSmall)
+                            if (ready.nsfwCount > 0) Text(stringResource(R.string.ext_repo_found_nsfw, ready.nsfwCount.toString()), style = MaterialTheme.typography.bodySmall)
+                            val key = ready.info.signingKey
+                            if (key != null) {
+                                Text(stringResource(R.string.ext_repo_key, key.take(16)), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                            } else {
+                                Text(stringResource(R.string.ext_repo_no_key), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+                preview is StorePreview.Failed && preview.input == text.trim() -> Text(
+                    stringResource(preview.message, preview.detail.orEmpty()),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
                 )
-                when {
-                    preview is StorePreview.Loading -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Dimens.m)) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Text(stringResource(R.string.ext_repo_checking), style = MaterialTheme.typography.bodyMedium)
-                    }
-                    ready != null -> Surface(
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        shape = RoundedCornerShape(12.dp),
-                    ) {
-                        Row(Modifier.fillMaxWidth().padding(Dimens.m), horizontalArrangement = Arrangement.spacedBy(Dimens.m)) {
-                            Icon(Icons.Outlined.VerifiedUser, null)
-                            Column(verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
-                                Text(stringResource(R.string.ext_repo_found, ready.info.name, ready.count.toString()), style = MaterialTheme.typography.titleSmall)
-                                if (ready.nsfwCount > 0) Text(stringResource(R.string.ext_repo_found_nsfw, ready.nsfwCount.toString()), style = MaterialTheme.typography.bodySmall)
-                                val key = ready.info.signingKey
-                                if (key != null) {
-                                    Text(stringResource(R.string.ext_repo_key, key.take(16)), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
-                                } else {
-                                    Text(stringResource(R.string.ext_repo_no_key), style = MaterialTheme.typography.bodySmall)
-                                }
-                            }
-                        }
-                    }
-                    preview is StorePreview.Failed && preview.input == text.trim() -> Text(
-                        stringResource(preview.message, preview.detail.orEmpty()),
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    else -> Text(stringResource(R.string.ext_repo_warning), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else -> Text(
+                    stringResource(R.string.ext_repo_popular_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                if (text.isNotEmpty() || preview != null) {
+                    TextButton(onClick = { text = ""; onDismiss() }) { Text(stringResource(CoreR.string.cancel)) }
+                }
+                Button(onClick = { submit() }, enabled = ready != null || canCheck) {
+                    Text(stringResource(if (ready != null) R.string.ext_add_repo else R.string.ext_repo_check))
                 }
             }
-        },
-        confirmButton = {
-            if (ready != null) {
-                TextButton(onClick = onConfirm) { Text(stringResource(R.string.ext_add_repo)) }
-            } else {
-                TextButton(onClick = { onCheck(text) }, enabled = canCheck) { Text(stringResource(R.string.ext_repo_check)) }
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(CoreR.string.cancel)) } },
-    )
+        }
+    }
 }
 
 private fun clipboardText(context: Context): String? = runCatching {

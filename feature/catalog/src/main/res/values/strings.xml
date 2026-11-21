@@ -330,6 +330,7 @@
     <string name="ext_broken_failed_explain">The extension failed to start. It may be outdated or not compatible with this version of Yomu: try updating it. If that doesn’t help, send the details below to its authors.</string>
     <string name="ext_error_details">Error details</string>
     <string name="ext_repo_url_help">A link to index.min.json, a GitHub folder or an “Add to Mihon” link</string>
+    <string name="ext_repo_popular_hint">The popular repositories below can be added in one tap.</string>
     <string name="ext_store_unreachable">Couldn’t open the address: %1$s</string>
     <!-- 1.3.0: chapter sort and filters, downloads, library and source sorting -->
     <string name="sort_and_filter">Sort and filter</string>

@@ -34,14 +34,27 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -55,6 +68,7 @@ import androidx.compose.ui.semantics.text
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import app.yomu.core.ui.R
 import app.yomu.core.ui.theme.Dimens
@@ -64,7 +78,8 @@ data class PillTab(val key: String, val label: String, val count: Int? = null, v
 
 /**
  * A row of rounded tabs (the library's All · Online · user tabs): the selected one is filled with the accent, the
- * others sit on a soft surface. [onLongPress] opens a tab's actions, [onAdd] draws a trailing "+" pill.
+ * others sit on a soft surface. [onLongPress] opens a tab's actions, [onAdd] draws a trailing "+" pill. The row
+ * scrolls the selected tab into view (back from a reader it can sit past the edge) and fades its overflowing edges.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -78,8 +93,41 @@ fun PillTabRow(
     onAdd: (() -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(horizontal = Dimens.l),
 ) {
+    val scroll = rememberScrollState()
+    // Every tab's bounds in the row's content coordinates, so the selected one can be scrolled into view.
+    val bounds = remember { mutableStateMapOf<String, IntRect>() }
+    var viewportWidth by remember { mutableIntStateOf(0) }
+    // The selected tab scrolls into view once its bounds exist (back from a reader it can sit past the edge).
+    // The flow only emits when the bounds actually change, so a manual scroll is never fought back.
+    LaunchedEffect(selected) {
+        snapshotFlow { bounds[selected]?.center?.x }.collect { centerX ->
+            val x = centerX ?: return@collect
+            if (viewportWidth <= 0 || scroll.maxValue <= 0) return@collect
+            val target = (x - viewportWidth / 2).coerceIn(0, scroll.maxValue)
+            if (kotlin.math.abs(target - scroll.value) > viewportWidth / 20) scroll.animateScrollTo(target)
+        }
+    }
+    val fade = 24.dp
     Row(
-        modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(contentPadding),
+        modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { if (it.isAttached) viewportWidth = it.size.width }
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                // A soft fade on an overflowing edge: the row is scrollable, but the cut-off pill still reads.
+                if (scroll.value > 0) {
+                    drawRect(Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), endX = fade.toPx()), blendMode = BlendMode.DstIn)
+                }
+                if (scroll.value < scroll.maxValue) {
+                    drawRect(
+                        Brush.horizontalGradient(listOf(Color.Transparent, Color.Black), startX = size.width - fade.toPx()),
+                        blendMode = BlendMode.DstIn,
+                    )
+                }
+            }
+            .horizontalScroll(scroll)
+            .padding(contentPadding),
         horizontalArrangement = Arrangement.spacedBy(Dimens.s),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -92,6 +140,12 @@ fun PillTabRow(
             Row(
                 Modifier
                     .heightIn(min = Dimens.touch)
+                    .onGloballyPositioned {
+                        if (it.isAttached) {
+                            val r = it.boundsInParent()
+                            bounds[tab.key] = IntRect(r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt())
+                        }
+                    }
                     .clip(CircleShape)
                     .background(bg)
                     .combinedClickable(onClick = { onSelect(tab.key) }, onLongClick = longPress)
@@ -102,7 +156,7 @@ fun PillTabRow(
                         onClick { onSelect(tab.key); true }
                         if (longPress != null) onLongClick { longPress(); true }
                     }
-                    .padding(horizontal = Dimens.l, vertical = Dimens.s),
+                    .padding(horizontal = Dimens.m, vertical = Dimens.xs),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -165,17 +219,24 @@ fun ToolbarPill(icon: ImageVector, label: String, onClick: () -> Unit, modifier:
     }
 }
 
-/** A round tonal icon button (screen headers). */
+/** A round tonal icon button (screen headers). [size] keeps the touch target at 48 dp even when the visual is smaller. */
 @Composable
-fun CircleIconButton(icon: ImageVector, contentDescription: String, onClick: () -> Unit, modifier: Modifier = Modifier, highlighted: Boolean = false) {
+fun CircleIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    highlighted: Boolean = false,
+    size: androidx.compose.ui.unit.Dp = Dimens.touch - 4.dp,
+) {
     Surface(
         onClick = onClick,
         shape = CircleShape,
         color = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
         contentColor = if (highlighted) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-        modifier = modifier.minimumInteractiveComponentSize().size(Dimens.touch - 4.dp).semantics { this.contentDescription = contentDescription },
+        modifier = modifier.minimumInteractiveComponentSize().size(size).semantics { this.contentDescription = contentDescription },
     ) {
-        Box(contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(22.dp)) }
+        Box(contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(if (size >= Dimens.touch) 22.dp else 20.dp)) }
     }
 }
 

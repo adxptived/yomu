@@ -168,6 +168,9 @@ fun SettingsScreen(
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     var askRestart by remember { mutableStateOf(false) }
     val updateAvailable by viewModel.updates.available.collectAsStateWithLifecycle(null)
+    val updateState by viewModel.updates.state.collectAsStateWithLifecycle()
+    // An APK that is already downloaded is no longer "available": the card offers the install instead.
+    val updateReady = updateState is UpdateState.ReadyToInstall && updateAvailable != null
     val updateDialog by viewModel.updates.dialog.collectAsStateWithLifecycle()
 
     LaunchedEffect(viewModel) {
@@ -220,6 +223,7 @@ fun SettingsScreen(
                     query = query,
                     onQuery = { query = it },
                     update = updateAvailable,
+                    updateReady = updateReady,
                     onUpdate = {
                         if (onSelectSection != null) onSelectSection(SettingsSection.ABOUT, null) else section = SettingsSection.ABOUT
                         viewModel.updates.openDetails()
@@ -256,6 +260,7 @@ private fun SettingsRoot(
     query: String,
     onQuery: (String) -> Unit,
     update: String?,
+    updateReady: Boolean,
     onUpdate: () -> Unit,
     onOpen: (SettingsSection) -> Unit,
     onOpenResult: (SettingsSearchEntry) -> Unit,
@@ -286,7 +291,7 @@ private fun SettingsRoot(
                 }
             }
         } else {
-            if (update != null) item(key = "update") { UpdateCard(update, onUpdate) }
+            if (update != null) item(key = "update") { UpdateCard(update, ready = updateReady, onClick = onUpdate) }
             item(key = "quick") {
                 SettingsGroup {
                     Row(
