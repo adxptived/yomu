@@ -32,6 +32,14 @@ class SessionPageSourceTest {
     )
 
     @Test
+    fun `controller never falls back to a different chapter when resolving an anchor`() {
+        val controller = MangaController(session())
+        assertEquals(4, controller.globalIndex(30, 1))
+        assertNull(controller.globalIndex(99, 1))
+        assertNull(controller.globalIndex(30, 2))
+    }
+
+    @Test
     fun `pages of the loaded chapters are flattened in reading order`() {
         val s = session()
         assertEquals(9, s.count)

@@ -16,6 +16,8 @@ import app.yomu.domain.model.PdfSettings
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -26,6 +28,8 @@ data class PdfSelection(val page: Int, val start: Int, val end: Int, val text: S
 class PdfController(val pdf: PdfSource) {
     val pageCount: Int get() = pdf.pageCount
     var page by mutableIntStateOf(0)
+    var dualPageLayout by mutableStateOf(false)
+        internal set
     var settings by mutableStateOf(PdfSettings())
     var selection by mutableStateOf<PdfSelection?>(null)
     var highlights by mutableStateOf<List<Highlight>>(emptyList())
@@ -35,6 +39,15 @@ class PdfController(val pdf: PdfSource) {
 
     /** Zoom kept for the next pages while [PdfSettings.zoomLock] is on. */
     var lockedZoom by mutableFloatStateOf(1f)
+
+    /** Bumped by "fit the page": the views drop their temporary zoom and keep the locked one, if any. */
+    var zoomReset by mutableIntStateOf(0)
+        private set
+
+    fun resetZoom() {
+        lockedZoom = 1f
+        zoomReset++
+    }
 
     private val requests = Channel<Int>(Channel.CONFLATED)
     val pageRequests: Flow<Int> = requests.receiveAsFlow()
@@ -49,6 +62,22 @@ class PdfController(val pdf: PdfSource) {
 
     fun goTo(index: Int) {
         requests.trySend(index.coerceIn(0, (pageCount - 1).coerceAtLeast(0)))
+    }
+
+    fun turnPage(forward: Boolean) {
+        val target = adjacentPdfPage(page, pageCount, dualPageLayout, forward)
+        if (target != page && (!dualPageLayout || target / 2 != page / 2)) goTo(target)
+    }
+
+    fun canTurnPage(forward: Boolean): Boolean {
+        val target = adjacentPdfPage(page, pageCount, dualPageLayout, forward)
+        return if (dualPageLayout) target / 2 != page / 2 else target != page
+    }
+
+    fun visiblePages(page: Int): IntRange {
+        if (!dualPageLayout) return page..page
+        val left = page / 2 * 2
+        return left..minOf(left + 1, pageCount - 1)
     }
 
     /** Crop applied to [index]: manual margins or detected ones in auto mode. */
@@ -136,6 +165,7 @@ class PdfController(val pdf: PdfSource) {
         val b = maxOf(start, end).coerceIn(0, text.length)
         if (b <= a) return null
         val rects = runCatching { pdf.rects(index, a, b - a) }.getOrDefault(emptyList())
+        currentCoroutineContext().ensureActive()
         return PdfSelection(index, a, b, text.substring(a, b), rects).also { selection = it }
     }
 

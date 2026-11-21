@@ -75,6 +75,8 @@
     <string name="import_failure_unknown">The import failed</string>
     <string name="library_all">All</string>
     <string name="library_continue">Continue reading</string>
+    <string name="library_continue_page">Page %1$d · %2$d%%</string>
+    <string name="library_continue_chapter">Chapter %1$d · %2$d%%</string>
     <string name="library_empty_title">Your library is empty</string>
     <string name="library_empty_text">Import books and comics from the device or find free books in the catalog.</string>
     <string name="library_nothing_found">Nothing found</string>

@@ -91,11 +91,12 @@ fun SelectionMenu(
         }
         if (onDelete != null) add(QuickMenuItem("delete", Icons.Default.Delete, stringResource(R.string.action_delete_highlight)) { onDelete() })
     }
-    // A selected item closes the menu without clearing the selection (the action decides); a tap outside clears it.
+    // Commands own the selection lifetime. Notes keep the selected text until the dialog is saved or cancelled.
     QuickActionMenu(
         radial = style == QuickMenuStyle.RADIAL,
         anchor = Offset(anchor.center.x, anchor.bottom),
         items = items,
         onDismiss = onDismiss,
+        onActionChosen = {},
     )
 }

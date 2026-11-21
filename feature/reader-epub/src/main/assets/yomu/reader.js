@@ -344,11 +344,16 @@
   function progression() {
     if (cfg.vertical) { var mx = se.scrollWidth - pageW; return mx <= 0 ? 1 : Math.min(1, Math.abs(se.scrollLeft) / mx); }
     if (cfg.paged) { var n = pageCount(); return n <= 1 ? 1 : currentPage() / (n - 1); }
-    var m = se.scrollHeight - pageH; return m <= 0 ? 1 : Math.min(1, se.scrollTop / m);
+    var m = scrollExtent(); return m <= 0 ? 1 : Math.max(0, Math.min(1, se.scrollTop / m));
   }
+  function scrollExtent() { return Math.max(0, se.scrollHeight - se.clientHeight); }
   /** Pages of a scrolling whole-book document: one screen is one page. */
-  function scrollPageCount() { return Math.max(1, Math.round((se.scrollHeight - pageH) / pageH) + 1); }
-  function currentScrollPage() { return Math.max(0, Math.min(scrollPageCount() - 1, Math.round(se.scrollTop / pageH))); }
+  function scrollPageCount() { return Math.ceil(scrollExtent() / Math.max(1, pageH)) + 1; }
+  function scrollPageAt(top) {
+    var extent = scrollExtent();
+    return extent === 0 ? 0 : Math.round(Math.max(0, Math.min(1, top / extent)) * (scrollPageCount() - 1));
+  }
+  function currentScrollPage() { return scrollPageAt(se.scrollTop); }
   function indexOfSection(sec) {
     var secs = nodes().sections;
     for (var i = 0; i < secs.length; i++) if (secs[i] === sec) return i;
@@ -424,7 +429,7 @@
     } else if (cfg.book) {
       var secs = nodes().sections;
       for (var i = 0; i < secs.length; i++) {
-        starts.push(Math.max(0, Math.round((secs[i].el.getBoundingClientRect().top + se.scrollTop) / pageH)));
+        starts.push(scrollPageAt(secs[i].el.getBoundingClientRect().top + se.scrollTop));
       }
       pages = scrollPageCount();
     } else if (cfg.paged) {
@@ -526,6 +531,7 @@
             bookPages: cfg.book ? scrollPageCount() : 0,
             bookOffset: g,
             bookTotal: nodes().total,
+            bookScrollProgression: cfg.book && !cfg.vertical ? progression() : null,
           };
         }
       }
@@ -573,7 +579,7 @@
     p = Math.max(0, Math.min(1, p || 0));
     if (isSectioned()) {
       // A whole-book document scrolls by the whole book; the long strip stays inside the chapter it shows.
-      if (!cfg.paged && cfg.book) { se.scrollTop = p * (se.scrollHeight - pageH); setTimeout(report, 30); return; }
+      if (!cfg.paged && cfg.book && !cfg.vertical) { se.scrollTop = p * scrollExtent(); setTimeout(report, 30); return; }
       var s = currentSection();
       if (!s) { setTimeout(report, 30); return; }
       goToOffset(Math.round(p * Math.max(0, s.len - 1)), false, s.chapter);
@@ -581,7 +587,7 @@
     }
     if (cfg.vertical) se.scrollLeft = -p * (se.scrollWidth - pageW);
     else if (cfg.paged) { setPage(Math.round(p * (pageCount() - 1)), false); return; }
-    else se.scrollTop = p * (se.scrollHeight - pageH);
+    else se.scrollTop = p * scrollExtent();
     setTimeout(report, 30);
   }
   function anchorIn(root, id) {
@@ -1271,7 +1277,10 @@
   window.yomu = {
     next: next, prev: prev,
     goToOffset: function (o) { goToOffset(o, false); },
-    goToPage: function (p) { if (cfg.paged && !cfg.vertical) setPage(p, false); },
+    goToPage: function (p) {
+      if (cfg.paged && !cfg.vertical) setPage(p, false);
+      else if (cfg.book && !cfg.vertical && !cfg.fixed) goToProgression(p / Math.max(1, scrollPageCount() - 1));
+    },
     goToProgression: goToProgression,
     goToAnchor: goToAnchor,
     goToChapter: goToChapter,
@@ -1298,6 +1307,21 @@
     select: select,
     expand: expand,
     selection: function () { return json(selectionInfo()); },
+    scrollBookmarkFractions: function (positions) {
+      var extent = scrollExtent();
+      if (!cfg.book || cfg.paged || cfg.vertical || extent === 0) return '[]';
+      var sections = nodes().sections;
+      var fractions = [];
+      positions.forEach(function (position) {
+        var sec = sections.find(function (section) { return section.chapter === position.chapter; });
+        if (!sec) return;
+        var local = position.offset == null ? Math.round(position.progression * Math.max(0, sec.len - 1)) : position.offset;
+        var offset = sec.start + Math.max(0, Math.min(sec.len - 1, local));
+        var rect = sec.len > 0 ? rectOfOffset(offset) : sec.el.getBoundingClientRect();
+        if (rect) fractions.push(Math.max(0, Math.min(1, (se.scrollTop + rect.top - (cfg.marginV || 28)) / extent)));
+      });
+      return json(fractions);
+    },
     blocks: function (from) { return json(blocks(from)); },
     insertTranslation: function (i, t) { insertTranslation(i, t); },
     commitTranslations: function () { var keep = firstVisibleOffset(); invalidate(); if (anchorOffset != null) keep = anchorOffset; setTimeout(function () { goToGlobal(keep, false); drawAll(); if (isSectioned()) B.onLayout(json(layoutInfo())); }, 60); },

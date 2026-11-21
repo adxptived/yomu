@@ -54,6 +54,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_10_0">
+        <item>Contents, Search and View are always in the bottom row; Back closes the match bar, the resume note and the controls before leaving the book.</item>
+        <item>Search results keep a “3 of 12” bar on the page, recent jumps have their own list, and the contents show where you are and where your bookmarks are.</item>
+        <item>Fit the page in one tap, a page grid with bookmark marks, and a settings sample that uses the page you are reading.</item>
+        <item>Add a book or audio source by pasting a link: Yomu says what it found, offers the feeds a web page links to, and opens the result after saving.</item>
+    </string-array>
     <string-array name="whats_new_2_9_4">
         <item>Clearing one site now really signs it out: cookies on nested paths are removed, other sites keep their sessions, and the screen reports what was found.</item>
         <item>Repairing the download index only trusts real chapters; switching the manga layout keeps your place; each chapter keeps its own CSS in a whole-book document.</item>

@@ -45,6 +45,7 @@ import app.yomu.domain.model.CatalogEntry
 import app.yomu.domain.model.LibraryFilter
 import app.yomu.domain.model.LibraryQuery
 import app.yomu.domain.model.LibrarySort
+import app.yomu.domain.model.Locator
 import app.yomu.domain.model.ReadingStatus
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -447,6 +448,19 @@ class LibraryViewModel(
         // that composes the grid.
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * The saved place of every "Continue" book, so the card can say "Chapter 12 · 34%" instead of only a percentage.
+     * The query is small (a handful of books) and reads only the progress table.
+     */
+    val continuePositions: StateFlow<Map<Long, Locator>> = continueReading
+        .map { list ->
+            list.mapNotNull { book ->
+                runCatching { books.getProgress(book.id) }.getOrNull()?.let { book.id to it }
+            }.toMap()
+        }
+        .flowOn(Dispatchers.IO)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /** Books and online titles in progress, the most recent first. */
     val continueItems: StateFlow<List<ContinueItem>> = combine(continueReading, onlineAll) { b, o ->

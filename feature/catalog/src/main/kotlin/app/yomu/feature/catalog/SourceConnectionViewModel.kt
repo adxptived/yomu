@@ -25,8 +25,11 @@ import kotlinx.coroutines.launch
 
 /** One-shot results of the wizard. */
 sealed interface SourceConnectionEvent {
-    /** The connection was saved and is usable: the screen closes and the caller may open it. */
-    data class Saved(val sourceId: Long?, val title: String) : SourceConnectionEvent
+    /**
+     * The connection was saved and is usable: [sourceId] for a catalogue, [bookId] for an audio link or a podcast
+     * subscription. The caller can open the exact result instead of guessing from the title.
+     */
+    data class Saved(val sourceId: Long?, val title: String, val bookId: Long? = null) : SourceConnectionEvent
 }
 
 /**
@@ -88,8 +91,68 @@ class SourceConnectionViewModel(
                 password = next.password.ifBlank { null },
                 supported = supported(next.method),
             )
-            _state.update { SourceConnectionFlow.checked(it, result) }
+            // A late answer to an address the user already replaced must not overwrite the current one.
+            _state.update {
+                if (it.step is ConnectionStep.Probing && it.checkedAddress == probing.address) {
+                    SourceConnectionFlow.checked(it, result)
+                } else {
+                    it
+                }
+            }
         }
+    }
+
+    /**
+     * "Paste a link": checks the address without asking what it is and lets the document choose the method. Ordinary
+     * web pages come back with the feeds they advertise, if any, for a second, explicit check.
+     */
+    fun checkLink(address: String) {
+        checkJob?.cancel()
+        val next = SourceConnectionFlow.startPastedLink(_state.value, address)
+        _state.value = next
+        val probing = next.step as? ConnectionStep.Probing ?: return
+        // A direct audio file is often served as octet-stream, which says nothing about its kind. The extension is
+        // enough for the audio importer, so the link is not rejected before it had a chance to open.
+        if (looksLikeAudioFile(probing.address)) {
+            _state.update { SourceConnectionFlow.detected(it, ProbeResult.Recognised(ConnectionKind.AUDIO)) }
+            return
+        }
+        checkJob = viewModelScope.launch(ScreenErrors) {
+            val result = catalog.probeConnection(
+                url = probing.address,
+                supported = AUTO_SUPPORTED,
+            )
+            _state.update {
+                if (it.step is ConnectionStep.Probing && it.checkedAddress == probing.address) {
+                    SourceConnectionFlow.detected(it, result)
+                } else {
+                    it
+                }
+            }
+        }
+    }
+
+    /**
+     * A web page that is not a catalogue can still be a YouTube video or another page the audio importer knows how to
+     * turn into an audiobook. The reader chooses that explicitly; the import then says whether it worked.
+     */
+    fun useAsAudioLink() {
+        val state = _state.value
+        val checked = state.checked ?: return
+        val audio = checked.copy(kind = ConnectionKind.AUDIO)
+        _state.value = state.copy(
+            method = ConnectionMethod.AUDIO_LINK,
+            checked = audio,
+            checkedTitle = state.checkedTitle ?: SourceConnectionFlow.suggestedName(state),
+            step = ConnectionStep.Preview(audio),
+        )
+    }
+
+    /** Repeats the check of the address that failed, without retyping it. */
+    fun retry() {
+        val state = _state.value
+        if (state.address.isBlank()) return
+        if (state.method == null) checkLink(state.address) else check()
     }
 
     /** Saves the checked connection exactly once; a second call while saving is ignored. */
@@ -99,35 +162,41 @@ class SourceConnectionViewModel(
         _state.value = next
         saveJob = viewModelScope.launch(ScreenErrors) {
             try {
-                val id = when (next.method) {
+                val sourceId: Long?
+                val bookId: Long?
+                when (next.method) {
                     ConnectionMethod.OPDS -> {
                         // The probe already answered for this address; the source is saved with the same name the
                         // preview showed.
-                        sources.addOpds(
+                        sourceId = sources.addOpds(
                             name = SourceConnectionFlow.suggestedName(next),
                             url = next.checkedAddress,
                             username = next.username.ifBlank { null },
                             password = next.password.ifBlank { null },
                         )
+                        bookId = null
                     }
                     ConnectionMethod.AUDIO_LINK -> {
-                        when (val outcome = audiobooks.addLink(next.checkedAddress)) {
+                        sourceId = null
+                        bookId = when (val outcome = audiobooks.addLink(next.checkedAddress)) {
+                            is ImportOutcome.Added -> outcome.bookId
+                            is ImportOutcome.Duplicate -> outcome.bookId
                             is ImportOutcome.Failed -> throw outcome.error
-                            else -> null
                         }
                     }
                     ConnectionMethod.RSS -> {
                         // A subscription keeps the address and updates the book; the feed was already parsed by the
                         // check, and `subscribe` parses it once more before anything is written.
-                        subscriptions.subscribe(next.checkedAddress, SourceConnectionFlow.suggestedName(next))
+                        sourceId = null
+                        bookId = subscriptions.subscribe(next.checkedAddress, SourceConnectionFlow.suggestedName(next))
                             .getOrElse { throw it }
-                            .let { null }
+                            .bookId
                     }
                     else -> return@launch
                 }
                 val title = SourceConnectionFlow.suggestedName(next)
                 _state.update { SourceConnectionFlow.saved(it) }
-                _events.send(SourceConnectionEvent.Saved(id, title))
+                _events.send(SourceConnectionEvent.Saved(sourceId, title, bookId))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -186,5 +255,22 @@ class SourceConnectionViewModel(
         ConnectionMethod.RSS -> setOf(ConnectionKind.RSS)
         ConnectionMethod.AUDIO_LINK -> setOf(ConnectionKind.AUDIO, ConnectionKind.RSS, ConnectionKind.OPDS)
         else -> emptySet()
+    }
+
+    private fun looksLikeAudioFile(url: String): Boolean {
+        val path = url.substringBefore('?').substringBefore('#').lowercase()
+        return AUDIO_EXTENSIONS.any { path.endsWith(it) }
+    }
+
+    private companion object {
+        val AUDIO_EXTENSIONS = listOf(".mp3", ".m4a", ".m4b", ".aac", ".ogg", ".opus", ".flac", ".wav", ".mp4")
+
+        /** Every kind "paste a link" can recognise; a web page is included so its feed links can be offered. */
+        val AUTO_SUPPORTED: Set<ConnectionKind> = setOf(
+            ConnectionKind.OPDS,
+            ConnectionKind.RSS,
+            ConnectionKind.AUDIO,
+            ConnectionKind.WEB_PAGE,
+        )
     }
 }

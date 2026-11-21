@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.WbTwilight
@@ -38,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -45,7 +47,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.yomu.core.ui.components.PreferenceChoice
 import app.yomu.core.ui.components.PreferenceItem
+import app.yomu.core.ui.components.PreferenceSlider
 import app.yomu.core.ui.components.PreferenceSwitch
 import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.theme.Dimens
@@ -81,11 +85,13 @@ internal fun ReaderQuickPanel(
     text: TextReaderSettings?,
     manga: MangaSettings?,
     pdf: PdfSettings?,
+    perBook: Boolean,
     vm: ReaderViewModel,
     onOpenAll: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val panelHeight = (LocalConfiguration.current.screenHeightDp * 0.46f).coerceIn(100f, 340f).dp
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -95,14 +101,38 @@ internal fun ReaderQuickPanel(
     ) {
         Column(Modifier.padding(vertical = 8.dp)) {
             Row(Modifier.fillMaxWidth().padding(start = Dimens.l, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.reader_quick_display), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.reader_quick_display), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        stringResource(if (perBook) R.string.rs_scope_book else R.string.rs_scope_global),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (vm.bookId > 0 || vm.isOnline) {
+                    // The scope is visible right where the first change is made; turning it on never throws away the
+                    // global values, and the full sheet keeps the explicit reset with undo.
+                    FilterChip(
+                        selected = perBook,
+                        onClick = { if (!perBook) vm.setPerBook(true) },
+                        label = { Text(stringResource(R.string.rs_scope_book)) },
+                    )
+                }
                 IconButton(onClick = onClose) { Icon(Icons.Default.Close, stringResource(CoreR.string.close)) }
             }
-            Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
+            Column(Modifier.weight(1f, fill = false).heightIn(max = panelHeight).verticalScroll(rememberScrollState())) {
                 when {
                     text != null && content is ReaderContent.Text -> TextQuick(text, vm)
                     manga != null && content is ReaderContent.Manga -> MangaQuick(manga, vm)
                     pdf != null && content is ReaderContent.Pdf -> PdfQuick(pdf, vm)
+                }
+                if (perBook) {
+                    Text(
+                        stringResource(R.string.rs_scope_common_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+                    )
                 }
                 CommonQuick(common, vm)
             }
@@ -125,11 +155,6 @@ internal fun ReaderQuickPanel(
 private fun TextQuick(s: TextReaderSettings, vm: ReaderViewModel) {
     FontSizeRow(s, vm)
     var fontsOpen by remember { mutableStateOf(false) }
-    PreferenceItem(
-        title = stringResource(R.string.rs_font_current, fontLabelText(s.fontFamily)),
-        icon = Icons.Filled.TextFields,
-        onClick = { fontsOpen = true },
-    )
     ThemePicker(s, { t -> vm.updateText { it.copy(theme = t) } }, themes = TextPresets.quickThemes, title = "")
     Text(
         stringResource(R.string.rs_mode),
@@ -151,6 +176,33 @@ private fun TextQuick(s: TextReaderSettings, vm: ReaderViewModel) {
             ) { Text(stringResource(label)) }
         }
     }
+    Text(
+        stringResource(
+            when {
+                s.longStrip -> R.string.rs_mode_strip_sum
+                s.paged -> R.string.rs_mode_paged_sum
+                else -> R.string.rs_mode_scroll_sum
+            },
+        ),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+    )
+    PreferenceItem(
+        title = stringResource(R.string.rs_font_current, fontLabelText(s.fontFamily)),
+        icon = Icons.Filled.TextFields,
+        onClick = { fontsOpen = true },
+    )
+    PreferenceSlider(
+        stringResource(R.string.rs_line_height), s.lineHeight, 1f..2.5f,
+        { value -> vm.updateText { it.copy(lineHeight = value) } },
+        { "%.2f".format(it) }, steps = 29,
+    )
+    PreferenceSlider(
+        stringResource(R.string.rs_margin_h), s.marginHorizontal.toFloat(), 0f..80f,
+        { value -> vm.updateText { it.copy(marginHorizontal = value.toInt()) } },
+        { it.toInt().toString() }, steps = 15,
+    )
     if (fontsOpen) BookFontDialog(s.fontFamily, vm) { fontsOpen = false }
 }
 
@@ -211,6 +263,7 @@ private fun MangaQuick(s: MangaSettings, vm: ReaderViewModel) {
         )
         Text("${(brightness * 100).toInt()}", style = MaterialTheme.typography.labelMedium)
     }
+    FitPageRow(vm)
 }
 
 @Composable
@@ -230,7 +283,7 @@ private fun PdfQuick(s: PdfSettings, vm: ReaderViewModel) {
             ) { Text(stringResource(label)) }
         }
     }
-    if (ReaderOptions.shows(ReaderEngine.PDF, ReaderOptions.mode(s), ReaderOption.MODE)) {
+    if (!s.reflow) {
         Text(
             stringResource(R.string.rs_pdf_mode),
             style = MaterialTheme.typography.titleSmall,
@@ -250,8 +303,51 @@ private fun PdfQuick(s: PdfSettings, vm: ReaderViewModel) {
                 ) { Text(stringResource(label)) }
             }
         }
+        if (s.mode == PdfMode.DUAL) {
+            Text(
+                stringResource(R.string.rs_pdf_dual_landscape_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+            )
+        }
+        if (s.mode == PdfMode.PAGED) {
+            PreferenceChoice(
+                stringResource(R.string.rs_pdf_fit),
+                listOf(false to stringResource(R.string.rs_scale_screen), true to stringResource(R.string.rs_scale_width)),
+                s.fitWidth,
+                { v -> vm.updatePdf { it.copy(fitWidth = v) } },
+            )
+        }
+        PreferenceSwitch(stringResource(R.string.rs_pdf_crop), s.autoCrop, { v -> vm.updatePdf { it.copy(autoCrop = v) } })
+        PreferenceSwitch(stringResource(R.string.rs_pdf_zoom_lock), s.zoomLock, { v -> vm.updatePdf { it.copy(zoomLock = v) } })
+        PreferenceSwitch(stringResource(R.string.rs_pdf_night), s.night, { v -> vm.updatePdf { it.copy(night = v) } })
+        // Reflow has no page zoom to reset: the text is laid out to the screen width.
+        FitPageRow(vm)
     }
-    PreferenceSwitch(stringResource(R.string.rs_pdf_night), s.night, { v -> vm.updatePdf { it.copy(night = v) } })
+}
+
+/**
+ * "Fit the page" sits next to the zoom-related switches of PDF and comics: one tap returns from a pinch or a pan to
+ * the whole page without touching the reading position or the saved layout.
+ */
+@Composable
+private fun FitPageRow(vm: ReaderViewModel) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(onClick = vm::fitPage, modifier = Modifier.heightIn(min = Dimens.touch)) {
+            Icon(Icons.Default.FitScreen, null, Modifier.size(20.dp))
+            Spacer(Modifier.size(8.dp))
+            Text(stringResource(R.string.rs_fit_page))
+        }
+        Text(
+            stringResource(R.string.rs_fit_page_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable

@@ -78,8 +78,19 @@ internal fun pageOfText(page: Int, pages: Int, approximate: Boolean): String =
 
 /** The current page; a tap opens "Go to page". */
 @Composable
-internal fun PageChip(page: Int, pages: Int, approximate: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val label = pageOfText(page, pages, approximate)
+internal fun PageChip(
+    page: Int,
+    pages: Int,
+    approximate: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    spread: IntRange? = null,
+) {
+    val label = if (spread != null) {
+        stringResource(R.string.reader_spread_short, spread.first + 1, spread.last + 1, pages)
+    } else {
+        pageOfText(page, pages, approximate)
+    }
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.small,
@@ -115,7 +126,7 @@ internal fun SeekPreviewCard(preview: SeekPreview, value: Float, modifier: Modif
                 )
                 Spacer(Modifier.height(8.dp))
             }
-            Text("${preview.page}", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Medium)
+            Text(preview.spread ?: "${preview.page}", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Medium)
             Text(
                 stringResource(R.string.reader_of_pages, if (preview.approximate) "≈${preview.pages}" else "${preview.pages}"),
                 style = MaterialTheme.typography.labelLarge,
@@ -247,7 +258,7 @@ internal fun ReaderFooter(
             append(position.bookPages)
             append(" · ")
         }
-        append((position.total * 100).toInt().coerceIn(0, 100)).append('%')
+        append((position.seekFraction * 100).toInt().coerceIn(0, 100)).append('%')
     }
     val clock = if (showClock) rememberClockText() else null
     val battery = if (showClock) rememberBatteryPercent() else null

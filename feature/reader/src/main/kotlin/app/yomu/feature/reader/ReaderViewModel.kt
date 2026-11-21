@@ -150,18 +150,40 @@ data class ReaderPosition(
     val bookPage: Int = 0,
     val bookPages: Int = 0,
     val approximate: Boolean = false,
+    /** Position of the navigation thumb; can differ from the persisted text progress. */
+    val seekFraction: Float = total,
+    val seekPageCount: Int = bookPages,
+    val viewportSeek: Boolean = false,
 )
 
 /** Where a slider position would lead: shown in the bubble while dragging. */
-data class SeekPreview(val page: Int, val pages: Int, val approximate: Boolean, val chapterTitle: String?, val minutesLeft: Int? = null)
+data class SeekPreview(
+    val page: Int,
+    val pages: Int,
+    val approximate: Boolean,
+    val chapterTitle: String?,
+    val minutesLeft: Int? = null,
+    val spread: String? = null,
+)
 
 /** The place before a jump (slider, contents, search, "go to page"), to return with one tap. */
 data class JumpBack(val locator: Locator, val page: Int)
 
+internal data class PageNoteTarget(val locator: Locator, val page: Int)
+
 /** How many jump positions the "back" button remembers; older ones fall off the front. */
 private const val JUMP_STACK_MAX = 50
 
-data class SearchState(val query: String = "", val loading: Boolean = false, val hits: List<SearchHit> = emptyList(), val done: Boolean = false)
+data class SearchState(
+    val query: String = "",
+    val loading: Boolean = false,
+    val hits: List<SearchHit> = emptyList(),
+    val done: Boolean = false,
+    /** The hit the page is showing now; the compact match bar is built from it. */
+    val active: Int? = null,
+) {
+    val current: SearchHit? get() = active?.let(hits::getOrNull)
+}
 
 sealed interface ReaderEvent {
     data class BookmarkAdded(val bookmark: Bookmark) : ReaderEvent
@@ -175,7 +197,7 @@ sealed interface ReaderEvent {
     data object Finished : ReaderEvent
 
     /** Open the note dialog for the current page (long-press menu). */
-    data object PageNote : ReaderEvent
+    data class PageNote(val locator: Locator, val page: Int) : ReaderEvent
 
     /** Saving to the gallery is not possible here (Android 9 and older): ask where to save the page. */
     data class SavePageAs(val file: java.io.File, val name: String, val mime: String) : ReaderEvent
@@ -579,9 +601,8 @@ class ReaderViewModel(
                         withContext(Dispatchers.IO) { EpubTextDocument.open(Containers.open(context, uri, BookFormat.EPUB)) }
                     // An empty or unreadable book would show a blank page with no explanation.
                     if (doc.chapterCount < 1) throw AppError.CorruptedFile("The book has no readable chapters")
-                    // The whole publication as one document: pages cross chapters, page numbers are exact.
-                    // A book that cannot fit in one document — or is set to vertical text, which pages along the
-                    // other axis — keeps the per-chapter engine (null here).
+                    // Keep the whole-book layout available when the user switches into pages or the long strip.
+                    // Vertical text pages along the other axis and never uses that document, so it is not built.
                     val text = bookOverride.value.text ?: runCatching { settings.textSettings.get() }.getOrDefault(TextReaderSettings())
                     val sourceKey = BookHtml.sourceKey(context, uri)
                     _preparing.value = 0f
@@ -693,7 +714,7 @@ class ReaderViewModel(
         (current() as? ReaderContent.Manga)?.controller?.showTapZones()
     }
 
-    private suspend fun openOnline(chapterId: Long) {
+    private suspend fun openOnline(chapterId: Long, mangaPage: Int? = null) {
         val ch = catalog.chapter(chapterId) ?: throw AppError.CorruptedFile("Chapter not found")
         val entry = catalog.entry(ch.entryId) ?: throw AppError.CorruptedFile("Entry not found")
         _chapterId.value = chapterId
@@ -713,7 +734,7 @@ class ReaderViewModel(
             SourceConnectionResolver.WindowMode.TEXT -> check(openTextWindow(chapterId, null)) { "The chapter has no text" }
             // The reader holds the chapter and its neighbours: crossing an ordinary chapter boundary must not show
             // the loading screen again. A chapter that cannot be opened is a real error only for the one being read.
-            SourceConnectionResolver.WindowMode.PAGES -> check(openMangaWindow(chapterId, ch.lastPageRead.takeIf { !ch.read } ?: 0)) { "No pages" }
+            SourceConnectionResolver.WindowMode.PAGES -> check(openMangaWindow(chapterId, mangaPage ?: ch.lastPageRead.takeIf { !ch.read } ?: 0)) { "No pages" }
         }
         sessionStart = System.currentTimeMillis()
         lastActivity = sessionStart
@@ -829,12 +850,12 @@ class ReaderViewModel(
      * Moves to a chapter already loaded in the window; the reader turns there without fetching it again. False when
      * the chapter is outside the window and must be opened instead.
      */
-    private fun moveToLoadedChapter(targetId: Long): Boolean {
+    private fun moveToLoadedChapter(targetId: Long, page: Int = 0): Boolean {
         when (val content = current()) {
             is ReaderContent.Manga -> {
                 val controller = content.controller
                 if (controller.session == null) return false
-                val index = controller.globalIndex(targetId, 0) ?: return false
+                val index = controller.globalIndex(targetId, page) ?: return false
                 chapterNavigator.cancelNavigation()
                 controller.goTo(index)
                 return true
@@ -873,7 +894,8 @@ class ReaderViewModel(
      * A newer request replaces the older one instead of running beside it. Inside an online window the current
      * content stays on screen until the next one is ready; only a reader with nothing to show gets the loading state.
      */
-    private fun openChapter(targetId: Long, finished: Boolean) {
+    private fun openChapter(targetId: Long, finished: Boolean, mangaPage: Int? = null) {
+        windowJob?.cancel()
         chapterNavigator.navigate {
             chapterOpenMutex.withLock {
                 flushStats()
@@ -887,14 +909,14 @@ class ReaderViewModel(
                 runCatching {
                     when {
                         mode == SourceConnectionResolver.WindowMode.PAGES && windowed ->
-                            if (!openMangaWindow(targetId, target!!.lastPageRead.takeIf { !target.read } ?: 0)) {
+                            if (!openMangaWindow(targetId, mangaPage ?: target!!.lastPageRead.takeIf { !target.read } ?: 0)) {
                                 throw AppError.CorruptedFile("No pages")
                             }
                         mode == SourceConnectionResolver.WindowMode.TEXT && windowed ->
                             if (!openTextWindow(targetId, null)) {
                                 throw AppError.CorruptedFile("The chapter has no text")
                             }
-                        else -> openOnline(targetId)
+                        else -> openOnline(targetId, mangaPage)
                     }
                 }.onFailure { e ->
                     if (windowed) events.send(ReaderEvent.Error(e)) else _content.value = UiState.Error(AppError.from(e))
@@ -1093,7 +1115,8 @@ class ReaderViewModel(
             marks.filterIndexed { index, _ -> index % step == 0 }
         }
         // The page chip is right before the first scroll report after a reflow.
-        _position.value = _position.value.copy(bookPages = layout.pages, approximate = false)
+        val position = _position.value
+        _position.value = position.copy(bookPages = layout.pages)
     }
 
     override fun onProgress(chapter: Int, progress: EpubProgress) {
@@ -1116,15 +1139,16 @@ class ReaderViewModel(
         lastOffset = progress.offset
         lastPage = progress.page
         val whole = c.wholeBook
-        val exactPages = whole && progress.bookPages > 0 && progress.bookPage >= 0
+        val measuredPages = whole && progress.bookPages > 0 && progress.bookPage >= 0
+        val scrollFraction = progress.bookScrollProgression?.coerceIn(0f, 1f)
         val exactChars = whole && progress.bookTotal > 0
         val total = when {
-            exactPages && c.pagedBook -> progress.bookPage.toFloat() / (progress.bookPages - 1).coerceAtLeast(1)
+            measuredPages && c.pagedBook -> pageSeekFraction(progress.bookPage, progress.bookPages)
             exactChars -> progress.bookOffset.toFloat() / progress.bookTotal.coerceAtLeast(1)
             else -> doc.totalProgression(chapter, progress.progression)
         }.coerceIn(0f, 1f)
         val charsLeft = (progress.total - progress.offset).coerceAtLeast(0)
-        val (bookPage, bookPages) = if (exactPages) progress.bookPage + 1 to progress.bookPages else estimatePages(doc, chapter, progress)
+        val (bookPage, bookPages) = if (measuredPages) progress.bookPage + 1 to progress.bookPages else estimatePages(doc, chapter, progress)
         // The weights of every chapter are only needed for the estimate; a whole-book document knows the exact rest.
         val leftInBook = if (exactChars) {
             (progress.bookTotal - progress.bookOffset).coerceAtLeast(0).toLong()
@@ -1137,13 +1161,16 @@ class ReaderViewModel(
         _position.value = ReaderPosition(
             bookPage = bookPage,
             bookPages = bookPages,
-            approximate = if (whole) false else doc.chapterCount > 1,
+            approximate = scrollFraction != null || (!whole && doc.chapterCount > 1),
             chapter = chapter,
             chapterCount = doc.chapterCount,
             page = progress.page,
             pages = progress.pages,
             progression = progress.progression,
             total = total,
+            seekFraction = scrollFraction ?: total,
+            seekPageCount = if (measuredPages && c.pagedBook) bookPages else 0,
+            viewportSeek = scrollFraction != null,
             chapterTitle = title,
             charsLeftInChapter = charsLeft,
             charsLeftInBook = leftInBook,
@@ -1195,14 +1222,18 @@ class ReaderViewModel(
 
     var density = 1f
 
-    private fun cssRect(l: Float, t: Float, r: Float, b: Float) = Rect(l * density, t * density, r * density, b * density)
+    private fun cssRect(controller: EpubController, l: Float, t: Float, r: Float, b: Float): Rect {
+        val origin = IntArray(2)
+        controller.webView?.getLocationInWindow(origin)
+        return Rect(l * density + origin[0], t * density + origin[1], r * density + origin[0], b * density + origin[1])
+    }
 
     override fun onSelection(selection: EpubSelection?) {
         val c = (current() as? ReaderContent.Text)?.controller ?: return
         this.selection.value = selection?.takeIf { it.text.isNotBlank() }?.let {
             // A long strip spans several chapters: the runtime says which one the selection is in.
             val chapter = it.chapter.takeIf { ch -> ch >= 0 } ?: c.chapter
-            ReaderSelection(it.text, cssRect(it.left, it.top, it.right, it.bottom), chapter, it.start, it.end, it.sentence)
+            ReaderSelection(it.text, cssRect(c, it.left, it.top, it.right, it.bottom), chapter, it.start, it.end, it.sentence)
         }
     }
 
@@ -1212,7 +1243,7 @@ class ReaderViewModel(
         wordTap.value = WordTap(
             word = word.word,
             sentence = word.sentence,
-            anchor = cssRect(word.left, word.top, word.right, word.bottom),
+            anchor = cssRect(c, word.left, word.top, word.right, word.bottom),
             locator = Locator(chapter = chapter, offset = word.start, endOffset = word.end, text = word.word, chapterTitle = c.document.chapterTitle(chapter)),
         )
     }
@@ -1230,8 +1261,12 @@ class ReaderViewModel(
     }
 
     override fun onHighlightTap(id: Long, x: Float, y: Float) {
+        val controller = (current() as? ReaderContent.Text)?.controller ?: return
         val h = highlights.value.firstOrNull { it.id == id } ?: return
-        selection.value = ReaderSelection(h.text, cssRect(x, y, x, y), h.locator.chapter, h.locator.offset ?: 0, h.locator.endOffset ?: 0, highlightId = id)
+        selection.value = ReaderSelection(
+            h.text, cssRect(controller, x, y, x, y), h.locator.chapter,
+            h.locator.offset ?: 0, h.locator.endOffset ?: 0, highlightId = id,
+        )
     }
 
     override fun onEdgeReached(forward: Boolean) {
@@ -1274,11 +1309,12 @@ class ReaderViewModel(
     }
 
     private fun onPdfPageChanged(content: ReaderContent.Pdf, page: Int) {
-        val count = content.controller.pageCount
+        val controller = content.controller
+        val count = controller.pageCount
         markActivity()
         if (page != lastPage) sessionPages++
         lastPage = page
-        val total = if (count <= 1) 1f else page / (count - 1).toFloat()
+        val total = pageSeekFraction(page, count)
         hereLocator = Locator(chapter = page, progression = 0f, totalProgression = total)
         _position.value = ReaderPosition(
             chapter = page, chapterCount = count, page = page, pages = count, progression = total, total = total,
@@ -1293,8 +1329,11 @@ class ReaderViewModel(
         } else {
             scheduleSave(Locator(chapter = page, progression = 0f, totalProgression = total))
         }
-        if (page >= count - 1 && !isOnline) {
-            viewModelScope.launch(ScreenErrors) { delay(400); if (lastPage >= count - 1) markFinishedQuietly() }
+        if (controller.visiblePages(page).last >= count - 1 && !isOnline) {
+            viewModelScope.launch(ScreenErrors) {
+                delay(400)
+                if (current() == content && controller.visiblePages(controller.page).last >= count - 1) markFinishedQuietly()
+            }
         }
         if (_ttsActive.value && ttsChapter != page) speakPdfPage(page)
     }
@@ -1331,7 +1370,7 @@ class ReaderViewModel(
                 lastChapterCount = count
             }
             val total = if (count <= 1) 1f else local / (count - 1).toFloat()
-            hereLocator = Locator(chapter = local, progression = 0f, totalProgression = total)
+            hereLocator = Locator(chapter = local, progression = 0f, totalProgression = total, onlineChapterId = chapter.id)
             _position.value = ReaderPosition(
                 chapter = local, chapterCount = count, page = local, pages = count, progression = total, total = total,
                 bookPage = local + 1, bookPages = count, chapterTitle = chapterOf,
@@ -1364,9 +1403,7 @@ class ReaderViewModel(
     /** A long press on a manga page opens the long-press menu; with the menu off, its first action runs at once. */
     override fun onLongPressAt(page: Int, windowPosition: Offset) {
         viewModelScope.launch(ScreenErrors) {
-            // The pager reports the flat page of the window; the page menu is about the physical page of a chapter.
-            val local = (current() as? ReaderContent.Manga)?.controller?.localOf(page) ?: page
-            val context = pageContext(PageEngine.MANGA, local) ?: return@launch
+            val context = pageContext(PageEngine.MANGA, page) ?: return@launch
             openPageMenu(context, windowPosition)
         }
     }
@@ -1379,6 +1416,19 @@ class ReaderViewModel(
         viewModelScope.launch(ScreenErrors) {
             val context = pageContext(PageEngine.PDF, page) ?: return@launch
             openPageMenu(context, windowPosition)
+        }
+    }
+
+    fun showCurrentPageActions() {
+        val content = current()
+        val target = when (content) {
+            is ReaderContent.Pdf -> PageEngine.PDF to content.controller.page
+            is ReaderContent.Manga -> PageEngine.MANGA to content.controller.page
+            else -> return
+        }
+        viewModelScope.launch(ScreenErrors) {
+            val context = pageContext(target.first, target.second) ?: return@launch
+            if (current() == content) pageMenu.value = PageMenuRequest(context, Offset.Unspecified)
         }
     }
 
@@ -1402,14 +1452,15 @@ class ReaderViewModel(
      */
     private suspend fun pageContext(engine: PageEngine, page: Int): PageContext? = when (val c = current()) {
         is ReaderContent.Manga -> {
-            val count = c.controller.localCount
+            val controller = c.controller
+            val chapter = controller.chapterAt(page)
             PageContext(
                 engine = PageEngine.MANGA,
                 bookId = args.bookId,
                 entryId = 0,
-                chapterId = _chapterId.value,
-                page = page,
-                pageCount = count,
+                chapterId = chapter?.id ?: _chapterId.value,
+                page = controller.localOf(page),
+                pageCount = chapter?.count ?: controller.count,
                 capabilities = PageCapabilitiesOf.manga(args.bookId),
             ).takeIf { it.isValid }
         }
@@ -1427,7 +1478,7 @@ class ReaderViewModel(
         }
         is ReaderContent.Text -> null
         null -> null
-    }
+    }.takeIf { it?.engine == engine }
 
     /**
      * True when the page carries selectable text, so export uses the text layer instead of OCR. A scanned page
@@ -1444,13 +1495,21 @@ class ReaderViewModel(
             return
         }
         when (action) {
-            PageAction.TRANSLATE -> if (context.engine == PageEngine.MANGA) translateMangaPage(context.page) else translatePdfPage(context)
+            PageAction.TRANSLATE -> if (context.engine == PageEngine.MANGA) {
+                translateMangaPage(context.page, context.chapterId)
+            } else {
+                translatePdfPage(context)
+            }
             PageAction.SAVE -> savePage(context)
             PageAction.SHARE -> sharePage(context)
             PageAction.COPY_TEXT -> copyPageText(context)
-            PageAction.BOOKMARK -> bookmarkPage()
+            PageAction.BOOKMARK -> bookmarkPage(context)
             PageAction.SET_COVER -> setPageAsCover(context)
-            PageAction.NOTE -> if (context.acceptsNote) events.trySend(ReaderEvent.PageNote) else events.trySend(ReaderEvent.Message(R.string.reader_online_no_annotations))
+            PageAction.NOTE -> if (context.acceptsNote) {
+                events.trySend(ReaderEvent.PageNote(physicalPageLocator(context), context.page))
+            } else {
+                events.trySend(ReaderEvent.Message(R.string.reader_online_no_annotations))
+            }
         }
     }
 
@@ -1462,7 +1521,7 @@ class ReaderViewModel(
      */
     private suspend fun pageImage(context: PageContext): android.graphics.Bitmap? = when (context.engine) {
         PageEngine.MANGA -> {
-            val file = pageFile(context.page)
+            val file = pageFile(context)
             file?.let { withContext(Dispatchers.IO) { decodeForOcr(it) } }
         }
         PageEngine.PDF -> {
@@ -1472,8 +1531,9 @@ class ReaderViewModel(
         PageEngine.TEXT -> null
     }
 
-    private suspend fun pageFile(page: Int): java.io.File? = (current() as? ReaderContent.Manga)?.controller?.let { c ->
-        withContext(Dispatchers.IO) { c.file(c.globalOfCurrent(page)) }
+    private suspend fun pageFile(context: PageContext): java.io.File? = (current() as? ReaderContent.Manga)?.controller?.let { c ->
+        val index = c.globalIndex(context.chapterId, context.page) ?: return null
+        withContext(Dispatchers.IO) { c.file(index) }
     }
 
     /**
@@ -1512,7 +1572,7 @@ class ReaderViewModel(
      */
     private suspend fun pageBytes(context: PageContext, ext: String): Pair<java.io.File, String>? = when (context.engine) {
         PageEngine.MANGA -> {
-            val file = pageFile(context.page) ?: return null
+            val file = pageFile(context) ?: return null
             val mime = withContext(Dispatchers.IO) { imageType(file) }.first
             file to mime
         }
@@ -1603,7 +1663,7 @@ class ReaderViewModel(
                             .ifEmpty { ocrPdfPage(c.controller.pdf, context.page) }
                     }
                     PageEngine.MANGA -> {
-                        val file = pageFile(context.page) ?: return@runCatching
+                        val file = pageFile(context) ?: return@runCatching
                         ocrMutex.withLock {
                             val bmp = withContext(Dispatchers.IO) { decodeForOcr(file) } ?: error("Cannot decode page")
                             try {
@@ -1630,17 +1690,22 @@ class ReaderViewModel(
     }
 
     /** A bookmark at the page (books) or on the chapter (online titles). */
-    private fun bookmarkPage() {
+    private fun bookmarkPage(context: PageContext) {
         if (args.bookId > 0) {
-            toggleBookmark()
+            toggleBookmark(physicalPageLocator(context), context.page)
             return
         }
         pageActionExecutor.execute {
-            val id = _chapterId.value
+            val id = context.chapterId
             val ch = catalog.chapter(id) ?: return@execute
             catalog.setBookmarked(listOf(id), !ch.bookmarked)
             events.send(ReaderEvent.Message(if (ch.bookmarked) R.string.reader_chapter_unbookmarked else R.string.reader_chapter_bookmarked))
         }
+    }
+
+    private fun physicalPageLocator(context: PageContext): Locator {
+        val fraction = pageSeekFraction(context.page, context.pageCount)
+        return Locator(context.page, progression = fraction, totalProgression = fraction)
     }
 
     private fun setPageAsCover(context: PageContext) {
@@ -1651,7 +1716,7 @@ class ReaderViewModel(
         pageActionExecutor.execute {
             runCatching {
                 val file = when (context.engine) {
-                    PageEngine.MANGA -> pageFile(context.page) ?: return@execute
+                    PageEngine.MANGA -> pageFile(context) ?: return@execute
                     else -> pageBytes(context, "png")?.first ?: return@execute
                 }
                 val bytes = withContext(Dispatchers.IO) { file.readBytes() }
@@ -1806,7 +1871,14 @@ class ReaderViewModel(
         when (val c = current()) {
             is ReaderContent.Text -> c.controller.goTo(l.chapter, l.offset?.let { EpubTarget.Offset(it) } ?: EpubTarget.Progression(l.progression))
             is ReaderContent.Pdf -> c.controller.goTo(l.chapter)
-            is ReaderContent.Manga -> c.controller.goTo(c.controller.globalOfCurrent(l.chapter))
+            is ReaderContent.Manga -> {
+                val chapterId = l.onlineChapterId
+                if (chapterId == null) {
+                    c.controller.goTo(c.controller.globalOfCurrent(l.chapter))
+                } else if (!moveToLoadedChapter(chapterId, l.chapter)) {
+                    openChapter(chapterId, finished = false, mangaPage = l.chapter)
+                }
+            }
             null -> Unit
         }
     }
@@ -1829,6 +1901,15 @@ class ReaderViewModel(
     private val jumpStack = ArrayDeque<JumpBack>()
     private val _jumpBack = MutableStateFlow<JumpBack?>(null)
     val jumpBack: StateFlow<JumpBack?> = _jumpBack
+
+    /** Every remembered place, newest first, for the "recent jumps" list in "More". */
+    private val _jumpHistory = MutableStateFlow<List<JumpBack>>(emptyList())
+    val jumpHistory: StateFlow<List<JumpBack>> = _jumpHistory
+
+    private fun syncJumpState() {
+        _jumpBack.value = jumpStack.lastOrNull()
+        _jumpHistory.value = jumpStack.toList().asReversed()
+    }
 
     /** Page of the whole book and page count, from the exact pages of this chapter and the sizes of the others. */
     private fun estimatePages(doc: app.yomu.feature.reader.epub.TextDocument, chapter: Int, progress: app.yomu.feature.reader.epub.EpubProgress): Pair<Int, Int> {
@@ -1857,7 +1938,7 @@ class ReaderViewModel(
             is ReaderContent.Text -> {
                 val doc = c.controller.document
                 val pages = p.bookPages.coerceAtLeast(1)
-                val page = ((value.coerceIn(0f, 1f) * (pages - 1)).toInt() + 1).coerceAtMost(pages)
+                val page = pageAtSeekFraction(value, pages) + 1
                 val title = if (c.controller.wholeBook) {
                     val starts = _chapterStartPages.value
                     val ch = if (starts.isEmpty()) p.chapter else starts.indexOfLast { it <= page - 1 }.coerceAtLeast(0)
@@ -1865,12 +1946,19 @@ class ReaderViewModel(
                 } else {
                     doc.chapterTitle(doc.locate(value.coerceIn(0f, 1f)).first)
                 }
-                SeekPreview(page, pages, p.approximate, title, minutesLeft)
+                SeekPreview(page, pages, p.approximate, title, minutesLeft.takeUnless { p.viewportSeek })
+            }
+            is ReaderContent.Pdf -> {
+                val pages = c.controller.pageCount
+                val page = pageAtSeekFraction(value, pages)
+                val spread = c.controller.visiblePages(page).takeIf { it.first < it.last }
+                    ?.let { "${it.first + 1}–${it.last + 1}" }
+                SeekPreview(page + 1, pages, false, _toc.value.lastOrNull { it.chapter <= page }?.title, spread = spread)
             }
             else -> {
                 val pages = p.pages.coerceAtLeast(1)
-                val page = (value * (pages - 1)).toInt()
-                SeekPreview(page + 1, pages, false, _toc.value.lastOrNull { it.chapter <= page }?.title, minutesLeft)
+                val page = pageAtSeekFraction(value, pages)
+                SeekPreview(page + 1, pages, false, p.chapterTitle)
             }
         }
     }
@@ -1880,7 +1968,7 @@ class ReaderViewModel(
         val p = _position.value
         when (val c = current()) {
             is ReaderContent.Text -> {
-                if (c.controller.pagedBook && p.bookPages > 1) {
+                if ((c.controller.pagedBook || p.viewportSeek) && p.bookPages > 0) {
                     rememberJump()
                     c.controller.goToPage((page - 1).coerceIn(0, p.bookPages - 1))
                 } else {
@@ -1903,35 +1991,43 @@ class ReaderViewModel(
         val page = _position.value.bookPage
         if (page <= 0) return
         val jump = JumpBack(l, page)
-        if (jumpStack.lastOrNull()?.locator == jump.locator) return
+        if (jumpStack.lastOrNull() == jump) return
         jumpStack.addLast(jump)
         while (jumpStack.size > JUMP_STACK_MAX) jumpStack.removeFirst()
-        _jumpBack.value = jumpStack.last()
+        syncJumpState()
     }
 
     /** Returns to where the reader was before the last jump; another tap goes one jump further back. */
     fun jumpBack() {
         val jump = jumpStack.removeLastOrNull() ?: return
-        _jumpBack.value = jumpStack.lastOrNull()
+        syncJumpState()
+        navigate(jump.locator)
+    }
+
+    /** Opens one place from the history; the current place stays available through the same history. */
+    fun openJump(jump: JumpBack) {
+        rememberJump()
+        jumpStack.remove(jump)
+        syncJumpState()
         navigate(jump.locator)
     }
 
     fun dismissJumpBack() {
         jumpStack.clear()
-        _jumpBack.value = null
+        syncJumpState()
     }
 
     /** Slider: 0..1 over the whole publication. */
     fun seekTotal(value: Float) {
         // A nudge of a percent is not a jump worth a "back" chip; a real move still is.
-        if (kotlin.math.abs(value - _position.value.total) > 0.03f) rememberJump()
+        if (kotlin.math.abs(value - _position.value.seekFraction) > 0.03f) rememberJump()
         when (val c = current()) {
             is ReaderContent.Text -> {
                 val pages = _position.value.bookPages
                 when {
                     // A whole book laid out as pages: the thumb is a page, the jump is a page, both exact.
                     c.controller.pagedBook && pages > 0 ->
-                        c.controller.goToPage((value.coerceIn(0f, 1f) * (pages - 1)).toInt().coerceIn(0, pages - 1))
+                        c.controller.goToPage(pageAtSeekFraction(value, pages))
                     // A whole book scrolled as one document: the thumb is the text position.
                     c.controller.wholeBook -> c.controller.goToProgression(value.coerceIn(0f, 1f))
                     else -> {
@@ -1940,9 +2036,9 @@ class ReaderViewModel(
                     }
                 }
             }
-            is ReaderContent.Pdf -> c.controller.goTo((value * (c.controller.pageCount - 1)).toInt())
+            is ReaderContent.Pdf -> c.controller.goTo(pageAtSeekFraction(value, c.controller.pageCount))
             is ReaderContent.Manga -> c.controller.goTo(
-                c.controller.globalOfCurrent((value * (c.controller.localCount - 1)).toInt().coerceIn(0, (c.controller.localCount - 1).coerceAtLeast(0))),
+                c.controller.globalOfCurrent(pageAtSeekFraction(value, c.controller.localCount)),
             )
             null -> Unit
         }
@@ -1951,7 +2047,7 @@ class ReaderViewModel(
     fun nextPage() {
         when (val c = current()) {
             is ReaderContent.Text -> c.controller.next()
-            is ReaderContent.Pdf -> c.controller.goTo(c.controller.page + 1)
+            is ReaderContent.Pdf -> c.controller.turnPage(forward = true)
             is ReaderContent.Manga -> c.controller.next()
             null -> Unit
         }
@@ -1960,7 +2056,7 @@ class ReaderViewModel(
     fun prevPage() {
         when (val c = current()) {
             is ReaderContent.Text -> c.controller.prev()
-            is ReaderContent.Pdf -> c.controller.goTo(c.controller.page - 1)
+            is ReaderContent.Pdf -> c.controller.turnPage(forward = false)
             is ReaderContent.Manga -> c.controller.prev()
             null -> Unit
         }
@@ -1969,9 +2065,9 @@ class ReaderViewModel(
     fun nextChapter() {
         when (val c = current()) {
             is ReaderContent.Text -> if (isOnline) openAdjacentChapter(true) else c.controller.nextChapter()
-            is ReaderContent.Manga -> if (isOnline) openAdjacentChapter(true)
+            is ReaderContent.Manga -> if (isOnline) openAdjacentChapter(true) else c.controller.next()
             // For a PDF "chapter" is the page: the bottom bar's chapter buttons must still do something.
-            is ReaderContent.Pdf -> if (c.controller.page < c.controller.pageCount - 1) c.controller.goTo(c.controller.page + 1)
+            is ReaderContent.Pdf -> c.controller.turnPage(forward = true)
             null -> Unit
         }
     }
@@ -1988,8 +2084,8 @@ class ReaderViewModel(
                     }
                 }
             }
-            is ReaderContent.Manga -> if (isOnline) openAdjacentChapter(false)
-            is ReaderContent.Pdf -> if (c.controller.page > 0) c.controller.goTo(c.controller.page - 1)
+            is ReaderContent.Manga -> if (isOnline) openAdjacentChapter(false) else c.controller.prev()
+            is ReaderContent.Pdf -> c.controller.turnPage(forward = false)
             null -> Unit
         }
     }
@@ -2049,17 +2145,16 @@ class ReaderViewModel(
 
     fun noteDraft(key: String): String? = drafts.get(key)
 
-    fun saveNoteDraft(key: String, text: String) {
-        val sel = selection.value ?: return
-        drafts.put(key, args.bookId, sel.chapter, sel.start, text)
+    fun saveNoteDraft(sel: ReaderSelection, text: String) {
+        drafts.put(noteDraftKey(sel), args.bookId, sel.chapter, sel.start, text)
     }
 
     /** Removing the annotation also removes its unsaved text: a deleted note must not come back from a draft. */
     fun discardNoteDraft(key: String) = drafts.remove(key)
 
     /** Writes the note and returns whether the row was really saved; only then is the draft removed. */
-    suspend fun saveNote(text: String): Boolean {
-        val s = selection.value ?: return false
+    suspend fun saveNote(s: ReaderSelection, text: String): Boolean {
+        if (args.bookId <= 0) return false
         val key = noteDraftKey(s)
         val ok = runCatching {
             val existing = s.highlightId?.let { id -> highlights.value.firstOrNull { it.id == id } }
@@ -2084,8 +2179,8 @@ class ReaderViewModel(
         return ok
     }
 
-    fun deleteHighlight() {
-        val id = selection.value?.highlightId ?: return
+    fun deleteHighlight(id: Long? = selection.value?.highlightId) {
+        if (id == null) return
         val h = highlights.value.firstOrNull { it.id == id } ?: return
         viewModelScope.launch(ScreenErrors) {
             annotations.deleteHighlight(id)
@@ -2096,7 +2191,7 @@ class ReaderViewModel(
 
     fun restoreHighlight(h: Highlight) = viewModelScope.launch(ScreenErrors) { annotations.restore(highlight = h) }
 
-    fun noteOfSelection(): String? = selection.value?.highlightId?.let { id -> highlights.value.firstOrNull { it.id == id }?.note }
+    fun noteOfSelection(sel: ReaderSelection): String? = sel.highlightId?.let { id -> highlights.value.firstOrNull { it.id == id }?.note }
 
     fun clearSelection() {
         selection.value = null
@@ -2110,7 +2205,16 @@ class ReaderViewModel(
     fun expandSelection(paragraph: Boolean) {
         when (val c = current()) {
             is ReaderContent.Text -> c.controller.expand(paragraph)
-            is ReaderContent.Pdf -> viewModelScope.launch(ScreenErrors) { c.controller.expand(paragraph) }
+            is ReaderContent.Pdf -> viewModelScope.launch(ScreenErrors) {
+                val original = selection.value ?: return@launch
+                val controller = c.controller
+                if (controller.selection?.page != original.chapter && controller.select(original.chapter, original.start, original.end) == null) return@launch
+                controller.expand(paragraph)
+                val expanded = controller.selection ?: return@launch
+                if (selection.value === original && current() == c) {
+                    selection.value = original.copy(text = expanded.text, start = expanded.start, end = expanded.end, highlightId = null)
+                }
+            }
             else -> Unit
         }
     }
@@ -2118,55 +2222,62 @@ class ReaderViewModel(
     /** Current bookmark at this position, if any. */
     fun bookmarkHere(): Bookmark? {
         val p = _position.value
+        return bookmarkAt(p.chapter, p.progression)
+    }
+
+    private fun bookmarkAt(chapter: Int, progression: Float): Bookmark? {
         return bookmarks.value.firstOrNull { b ->
-            b.locator.chapter == p.chapter && when (current()) {
-                is ReaderContent.Text -> kotlin.math.abs(b.locator.progression - p.progression) < 0.5f / p.pages.coerceAtLeast(1)
+            b.locator.chapter == chapter && when (current()) {
+                is ReaderContent.Text -> kotlin.math.abs(b.locator.progression - progression) < 0.5f / _position.value.pages.coerceAtLeast(1)
                 else -> true
             }
         }
     }
 
     fun toggleBookmark() {
+        val target = pageNoteTarget()
+        toggleBookmark(target.locator, target.page)
+    }
+
+    private fun toggleBookmark(locator: Locator, page: Int) {
         if (args.bookId <= 0) {
             events.trySend(ReaderEvent.Message(R.string.reader_online_no_annotations))
             return
         }
-        val existing = bookmarkHere()
+        val existing = bookmarkAt(locator.chapter, locator.progression)
         viewModelScope.launch(ScreenErrors) {
             if (existing != null) {
                 annotations.deleteBookmark(existing.id)
                 events.send(ReaderEvent.BookmarkRemoved(existing))
             } else {
-                val p = _position.value
                 val text = (current() as? ReaderContent.Text)?.controller?.let { c -> runCatching { c.visibleText() }.getOrNull()?.take(120) }
-                val title = text?.trim()?.ifBlank { null } ?: p.chapterTitle ?: context.getString(R.string.reader_page_n, p.page + 1)
-                val offset = (current() as? ReaderContent.Text)?.controller?.progress?.offset
-                val b =
-                    Bookmark(bookId = args.bookId, locator = Locator(p.chapter, p.progression, p.total, offset = offset, chapterTitle = p.chapterTitle), title = title)
+                val title = text?.trim()?.ifBlank { null } ?: locator.chapterTitle ?: context.getString(R.string.reader_page_n, page + 1)
+                val b = Bookmark(bookId = args.bookId, locator = locator, title = title)
                 val id = annotations.saveBookmark(b)
                 events.send(ReaderEvent.BookmarkAdded(b.copy(id = id)))
             }
         }
     }
 
-    fun pageNoteDraftKey(): String {
-        val p = _position.value
-        return "${args.bookId}:p:${p.chapter}:${p.page}"
-    }
-
-    fun pageNoteDraft(): String? = drafts.get(pageNoteDraftKey())
-
-    fun savePageNoteDraft(text: String) = drafts.put(pageNoteDraftKey(), args.bookId, _position.value.chapter, 0, text)
-
-    /** Free note attached to the current position (useful for PDF and comics, where there is no text selection). */
-    suspend fun addPageNote(text: String): Boolean {
-        if (args.bookId <= 0 || text.isBlank()) return false
+    internal fun pageNoteTarget(): PageNoteTarget {
         val p = _position.value
         val offset = (current() as? ReaderContent.Text)?.controller?.progress?.offset
-        val key = pageNoteDraftKey()
+        return PageNoteTarget(Locator(p.chapter, p.progression, p.total, offset = offset, chapterTitle = p.chapterTitle), p.page)
+    }
+
+    private fun pageNoteDraftKey(target: PageNoteTarget): String = "${args.bookId}:p:${target.locator.chapter}:${target.page}"
+
+    internal fun pageNoteDraft(target: PageNoteTarget): String? = drafts.get(pageNoteDraftKey(target))
+
+    internal fun savePageNoteDraft(target: PageNoteTarget, text: String) =
+        drafts.put(pageNoteDraftKey(target), args.bookId, target.locator.chapter, 0, text)
+
+    /** Free note attached to the current position (useful for PDF and comics, where there is no text selection). */
+    internal suspend fun addPageNote(target: PageNoteTarget, text: String): Boolean {
+        if (args.bookId <= 0 || text.isBlank()) return false
+        val key = pageNoteDraftKey(target)
         val ok = runCatching {
-            val locator = Locator(p.chapter, p.progression, p.total, offset = offset, chapterTitle = p.chapterTitle)
-            annotations.saveNote(Note(bookId = args.bookId, locator = locator, text = text.trim(), tags = TextTools.hashtags(text)))
+            annotations.saveNote(Note(bookId = args.bookId, locator = target.locator, text = text.trim(), tags = TextTools.hashtags(text)))
             drafts.remove(key)
         }.isSuccess
         if (ok) events.send(ReaderEvent.Message(R.string.reader_note_saved))
@@ -2238,6 +2349,7 @@ class ReaderViewModel(
         data class Manga(val value: MangaSettings, val perBook: Boolean) : SettingsChange
         data class Pdf(val value: PdfSettings, val perBook: Boolean) : SettingsChange
         data class Common(val value: CommonReaderSettings) : SettingsChange
+        data class Scope(val value: BookReaderSettings) : SettingsChange
 
         /**
          * The E-ink preset changes the text and the manga group at once in the global scope, and only the engine of
@@ -2305,6 +2417,28 @@ class ReaderViewModel(
         writePdf(after)
     }
 
+    /**
+     * "Fit the page": drops the pinch zoom and pan of the current PDF or comic page. The page itself, its reading
+     * position and every format setting stay as they are; a locked page starts again at the fit scale.
+     */
+    fun fitPage() {
+        when (val c = current()) {
+            is ReaderContent.Pdf -> c.controller.resetZoom()
+            is ReaderContent.Manga -> c.controller.resetZoom()
+            else -> Unit
+        }
+    }
+
+    /**
+     * "Apply as the default": writes the settings this book uses into the global reading settings. The book keeps its
+     * own copy, so a later global change still does not silently rewrite this book.
+     */
+    fun applyBookSettingsAsGlobal() = viewModelScope.launch(ScreenErrors) {
+        settings.textSettings.set(textSettings.value)
+        settings.mangaSettings.set(mangaSettings.value)
+        settings.pdfSettings.set(pdfSettings.value)
+    }
+
     /** Takes back the last change made in the reading settings ("Undo the last change"). */
     fun undoLastChange() = viewModelScope.launch(ScreenErrors) {
         when (val change = undo.removeLastOrNull()) {
@@ -2312,6 +2446,7 @@ class ReaderViewModel(
             is SettingsChange.Manga -> writeManga(change.value, change.perBook)
             is SettingsChange.Pdf -> writePdf(change.value, change.perBook)
             is SettingsChange.Common -> settings.commonReader.set(change.value)
+            is SettingsChange.Scope -> saveOverride(change.value)
             is SettingsChange.Eink -> {
                 // The preset never touched the common group; writing it here would revert changes made after it.
                 val targets = app.yomu.domain.reader.EinkPreset.targets(
@@ -2388,6 +2523,14 @@ class ReaderViewModel(
 
     fun setWordTap(g: app.yomu.domain.model.WordTapGesture) = viewModelScope.launch(ScreenErrors) { settings.wordTap.set(g) }
 
+    fun setSelectionMenuStyle(style: QuickMenuStyle) = viewModelScope.launch(ScreenErrors) {
+        settings.selectionMenuStyle.set(style)
+    }
+
+    fun setPageMenuStyle(style: QuickMenuStyle) = viewModelScope.launch(ScreenErrors) {
+        settings.pageMenuStyle.set(style)
+    }
+
     fun updateCommon(transform: (CommonReaderSettings) -> CommonReaderSettings) = viewModelScope.launch(ScreenErrors) {
         val before = common.value
         val after = transform(before)
@@ -2408,7 +2551,10 @@ class ReaderViewModel(
             is ReaderContent.Manga -> o.copy(manga = if (enabled) mangaSettings.value else null)
             null -> o
         }
-        saveOverride(next)
+        if (next != o) {
+            saveOverride(next)
+            push(SettingsChange.Scope(o))
+        }
     }
 
     private suspend fun saveOverride(o: BookReaderSettings) {
@@ -2466,9 +2612,26 @@ class ReaderViewModel(
         }
     }
 
-    /** Positions the reader at a hit and marks it. */
+    /**
+     * Positions the reader at a hit and marks it. Only the first hit of a search remembers the place to return to:
+     * walking "next match" across the results must leave one "back" target, not a stack of every match visited.
+     */
     fun openHit(hit: SearchHit) {
-        rememberJump()
+        val state = searchState.value
+        if (state.active == null) rememberJump()
+        val index = state.hits.indexOf(hit)
+        if (index >= 0) searchState.value = state.copy(active = index)
+        navigateToHit(hit)
+    }
+
+    /** The next or previous result of the current search, wrapping at the ends. */
+    fun stepHit(delta: Int) {
+        val state = searchState.value
+        val next = nextHitIndex(state.active, state.hits.size, delta) ?: return
+        openHit(state.hits[next])
+    }
+
+    private fun navigateToHit(hit: SearchHit) {
         when (val c = current()) {
             is ReaderContent.Text -> pageActionExecutor.execute {
                 val doc = c.controller.document
@@ -2492,6 +2655,16 @@ class ReaderViewModel(
             }
             else -> Unit
         }
+    }
+
+    /** A short piece of the page the reader is looking at, for the "Sample" card in the reading settings. */
+    suspend fun visibleSnippet(maxChars: Int = 320): String? = when (val c = current()) {
+        is ReaderContent.Text -> c.controller.visibleText()
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(maxChars)
+            .takeIf { it.length >= 40 }
+        else -> null
     }
 
     fun clearSearch() {
@@ -2671,7 +2844,7 @@ class ReaderViewModel(
                         delay(32)
                         c.controller.scrollStep((speed / 12f).coerceAtLeast(1f).toInt().coerceAtLeast(1))
                     }
-                    is ReaderContent.Pdf -> { delay(pageInterval(speed)); c.controller.goTo(c.controller.page + 1) }
+                    is ReaderContent.Pdf -> { delay(pageInterval(speed)); c.controller.turnPage(forward = true) }
                     is ReaderContent.Manga -> { delay(pageInterval(speed)); c.controller.next() }
                     null -> delay(500)
                 }
@@ -2755,11 +2928,11 @@ class ReaderViewModel(
     }
 
     /** Runs OCR on a manga page, translates the text blocks and shows them as an overlay. */
-    fun translateMangaPage(page: Int) {
+    fun translateMangaPage(page: Int, chapterId: Long = _chapterId.value) {
         val c = (current() as? ReaderContent.Manga)?.controller ?: return
         // Overlays belong to the flat page of the window, so a chapter next door never reuses the previous page's
-        // blocks; the caller (screen, page menu) speaks in physical pages of the current chapter.
-        val flat = c.globalOfCurrent(page)
+        // blocks; the caller supplies the physical page and its chapter.
+        val flat = c.globalIndex(chapterId, page) ?: return
         if (c.overlays.containsKey(flat)) {
             c.overlayVisible = !c.overlayVisible
             return
@@ -2775,7 +2948,7 @@ class ReaderViewModel(
                             val width = bmp.width.toFloat()
                             val height = bmp.height.toFloat()
                             val lang = settings.ocrLanguage.get()
-                            Triple(ocr.recognize(bmp, lang, cacheKey = "${args.bookId}_${_chapterId.value}_$page"), width, height)
+                            Triple(ocr.recognize(bmp, lang, cacheKey = "${args.bookId}_${chapterId}_$page"), width, height)
                         } finally {
                             bmp.recycle()
                         }

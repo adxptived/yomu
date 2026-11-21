@@ -24,8 +24,11 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -35,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.domain.model.Bookmark
@@ -56,32 +60,75 @@ internal fun TocSheet(
     onDismiss: () -> Unit,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    var query by rememberSaveable { mutableStateOf("") }
     YomuSheet(onDismiss = onDismiss) {
         PrimaryTabRow(selectedTabIndex = tab) {
             YomuTab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(R.string.reader_toc)) })
             YomuTab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.reader_bookmarks_n, bookmarks.size)) })
             YomuTab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.reader_highlights_n, highlights.size)) })
         }
-        Box(Modifier.fillMaxWidth().heightIn(min = 240.dp, max = 560.dp)) {
+        if (tab == 0 && toc.size >= 12) {
+            // A book with hundreds of sections needs the same find-by-title as the title screen's chapter list.
+            SearchField(
+                query = query,
+                onQueryChange = { query = it },
+                placeholder = stringResource(R.string.reader_toc_search),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+        }
+        Box(Modifier.fillMaxWidth().heightIn(min = 200.dp, max = if (tab == 0 && toc.size >= 12) 460.dp else 560.dp)) {
             when (tab) {
                 0 -> if (toc.isEmpty()) {
                     SheetEmpty(stringResource(R.string.reader_toc_empty))
                 } else {
                     val currentIndex = toc.indexOfLast { it.chapter <= currentChapter }.coerceAtLeast(0)
+                    val shown = remember(toc, query) {
+                        if (query.isBlank()) {
+                            toc.indices.toList()
+                        } else {
+                            toc.indices.filter { toc[it].title.contains(query.trim(), ignoreCase = true) }
+                        }
+                    }
                     val listState =
                         rememberLazyListState(initialFirstVisibleItemIndex = (currentIndex - 3).coerceAtLeast(0))
-                    LazyColumn(state = listState) {
-                        items(toc.size) { i ->
-                            val item = toc[i]
-                            val current = i == currentIndex
-                            ListItem(
-                                headlineContent = {
-                                    Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                                        fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                                },
-                                modifier = Modifier.clickable { onToc(item) }.padding(start = (item.level * 16).dp),
-                            )
+                    LaunchedEffect(query) { if (query.isNotBlank()) listState.scrollToItem(0) }
+                    if (shown.isEmpty()) {
+                        SheetEmpty(stringResource(R.string.reader_toc_search_none))
+                    } else {
+                        LazyColumn(state = listState) {
+                            items(shown.size) { at ->
+                                val i = shown[at]
+                                val item = toc[i]
+                                val current = i == currentIndex
+                                val marks = bookmarks.count { it.locator.chapter == item.chapter }
+                                ListItem(
+                                    headlineContent = {
+                                        Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                            fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                                    },
+                                    supportingContent = if (current) {
+                                        { Text(stringResource(R.string.reader_map_here), style = MaterialTheme.typography.labelSmall) }
+                                    } else {
+                                        null
+                                    },
+                                    trailingContent = if (marks > 0) {
+                                        {
+                                            // The mark opens the bookmark list, where the quoted place can be read before jumping.
+                                            IconButton(onClick = { tab = 1 }) {
+                                                Icon(
+                                                    Icons.Outlined.Bookmarks,
+                                                    stringResource(R.string.reader_bookmarks_n, marks),
+                                                    tint = MaterialTheme.colorScheme.tertiary,
+                                                )
+                                            }
+                                        }
+                                    } else {
+                                        null
+                                    },
+                                    modifier = Modifier.clickable { onToc(item) }.padding(start = (item.level * 16).dp),
+                                )
+                            }
                         }
                     }
                 }

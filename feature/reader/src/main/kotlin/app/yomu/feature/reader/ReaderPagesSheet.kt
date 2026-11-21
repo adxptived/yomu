@@ -7,20 +7,31 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
@@ -46,18 +57,43 @@ internal fun PagesSheet(
     current: Int,
     onPick: (Int) -> Unit,
     onDismiss: () -> Unit,
+    /** Pages with a bookmark, drawn as a mark over the thumbnail. */
+    marked: Set<Int> = emptySet(),
     thumb: @Composable (Int) -> Unit,
 ) {
+    var onlyMarked by rememberSaveable { mutableStateOf(false) }
+    val pages = if (onlyMarked) marked.sorted() else (0 until count).toList()
+    // The grid opens on the page being read, so a 300-page scan does not start at its cover.
+    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = current.coerceIn(0, (count - 1).coerceAtLeast(0)))
     YomuSheet(onDismiss = onDismiss) {
         SheetTitle(stringResource(R.string.reader_pages))
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(stringResource(R.string.reader_page_n, current + 1), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+            if (marked.isNotEmpty()) {
+                FilterChip(
+                    selected = onlyMarked,
+                    onClick = { onlyMarked = !onlyMarked },
+                    label = { Text(stringResource(R.string.reader_pages_marked)) },
+                    leadingIcon = { Icon(Icons.Default.Bookmark, null, Modifier.padding(0.dp)) },
+                )
+            }
+        }
         LazyVerticalGrid(
+            state = gridState,
             columns = GridCells.Adaptive(84.dp),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
         ) {
-            items(count, key = { it }) { index ->
+            if (pages.isEmpty()) {
+                item { Text(stringResource(R.string.reader_pages_marked_empty), Modifier.padding(12.dp)) }
+            }
+            items(pages, key = { it }) { index ->
                 val selected = index == current
                 Column(Modifier.clickable { onPick(index) }, horizontalAlignment = Alignment.CenterHorizontally) {
                     Surface(
@@ -66,7 +102,17 @@ internal fun PagesSheet(
                         border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
                         modifier = Modifier.fillMaxWidth().aspectRatio(0.72f),
                     ) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { thumb(index) }
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            thumb(index)
+                            if (index in marked) {
+                                Icon(
+                                    Icons.Default.Bookmark,
+                                    stringResource(R.string.reader_page_bookmarked),
+                                    tint = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.align(Alignment.TopEnd).padding(3.dp).size(16.dp),
+                                )
+                            }
+                        }
                     }
                     Text(
                         "${index + 1}",

@@ -2,6 +2,7 @@ package app.yomu.feature.reader
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -49,12 +50,12 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.SlowMotionVideo
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.ViewAgenda
@@ -66,7 +67,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -74,10 +74,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TooltipAnchorPosition
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.rememberTooltipState
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -91,6 +88,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -102,6 +101,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -110,7 +111,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
@@ -127,6 +130,7 @@ import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.ErrorState
 import app.yomu.core.ui.components.KeyBus
 import app.yomu.core.ui.components.OneTimeHint
+import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.QuickActionMenu
 import app.yomu.core.ui.components.QuickMenuItem
 import app.yomu.core.ui.components.SkeletonBox
@@ -168,7 +172,7 @@ import java.net.URLEncoder
 import java.util.Locale
 import app.yomu.core.ui.R as CoreR
 
-internal enum class ReaderSheet { NONE, TOC, SEARCH, SETTINGS, TTS, PAGES }
+internal enum class ReaderSheet { NONE, TOC, SEARCH, SETTINGS, TTS, PAGES, JUMPS }
 
 /**
  * The reader: hosts one of the three engines and the shared chrome (top/bottom bars that auto-hide),
@@ -214,7 +218,7 @@ fun ReaderScreen(
     val perBook by viewModel.perBook.collectAsStateWithLifecycle()
     val wordTapSetting by viewModel.wordTapSetting.collectAsStateWithLifecycle()
     val actions by viewModel.selectionActions.collectAsStateWithLifecycle()
-    val customActions by viewModel.customActions.collectAsStateWithLifecycle()
+    val selectionCustomActions by viewModel.customActions.collectAsStateWithLifecycle()
     val highlights by viewModel.highlights.collectAsStateWithLifecycle()
     val bookmarks by viewModel.bookmarks.collectAsStateWithLifecycle()
     val hasPrev by viewModel.hasPrevChapter.collectAsStateWithLifecycle()
@@ -228,6 +232,9 @@ fun ReaderScreen(
     val customSearchUrl by viewModel.settings.customSearchUrl.flow.collectAsStateWithLifecycle("")
     val cpm by produceState(1000f) { value = viewModel.readingSpeed() }
     val jumpBack by viewModel.jumpBack.collectAsStateWithLifecycle()
+    val jumpHistory by viewModel.jumpHistory.collectAsStateWithLifecycle()
+    val linkedEditionId by viewModel.linkedEditionId.collectAsStateWithLifecycle()
+    val searchState by viewModel.searchState.collectAsStateWithLifecycle()
     val chapterStarts by viewModel.chapterStarts.collectAsStateWithLifecycle()
     val preparing by viewModel.preparing.collectAsStateWithLifecycle()
     val textReady by viewModel.textReady.collectAsStateWithLifecycle()
@@ -245,7 +252,7 @@ fun ReaderScreen(
 
     var sheet by rememberSaveable { mutableStateOf(ReaderSheet.NONE) }
     var noteFor by remember { mutableStateOf<ReaderSelection?>(null) }
-    var pageNote by rememberSaveable { mutableStateOf(false) }
+    var pageNote by remember { mutableStateOf<PageNoteTarget?>(null) }
     var lookup by remember { mutableStateOf<LookupRequest?>(null) }
     var lookupAnchor by remember { mutableStateOf<Rect?>(null) }
     var searchSeed by rememberSaveable { mutableStateOf("") }
@@ -268,6 +275,10 @@ fun ReaderScreen(
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
     LaunchedEffect(landscape) { viewModel.setLandscape(landscape) }
     val data = (content as? UiState.Data)?.value
+    // The settings sample shows the open page, not a generic paragraph; it is read once when the sheet opens.
+    val previewSnippet by produceState<String?>(null, sheet, data) {
+        value = if (sheet == ReaderSheet.SETTINGS) viewModel.visibleSnippet() else null
+    }
     val bookLang = viewModel.book?.language
     val author = viewModel.book?.authors?.joinToString()
 
@@ -304,8 +315,9 @@ fun ReaderScreen(
     ReaderWindowEffects(liveCommon, chrome || sheet != ReaderSheet.NONE, lastInteraction)
 
     // Panels hide by themselves after a few seconds of inactivity: reading comes first.
-    LaunchedEffect(chrome, lastInteraction, sheet, quickPanel) {
-        if (chrome && sheet == ReaderSheet.NONE && !quickPanel && common.autoHideMenuSeconds > 0) {
+    LaunchedEffect(chrome, lastInteraction, sheet, quickPanel, seekDrag != null, selection != null, wordTap != null) {
+        val busy = selection != null || wordTap != null
+        if (chrome && sheet == ReaderSheet.NONE && !quickPanel && seekDrag == null && !busy && common.autoHideMenuSeconds > 0) {
             delay(common.autoHideMenuSeconds * 1000L)
             viewModel.chromeVisible.value = false
         }
@@ -316,6 +328,33 @@ fun ReaderScreen(
         if (jumpBack != null) {
             delay(6_000)
             viewModel.dismissJumpBack()
+        }
+    }
+    // Android Back closes the layer that is actually on top: the match bar, then the chrome, then the book. Sheets,
+    // dialogs and menus are separate windows and dismiss themselves before this handler is reached.
+    // "You stopped here": one quiet mark after the saved place is confirmed for the first time in this session. A new
+    // book, an unread one and a book opened at the very beginning stay silent.
+    var resumeFrom by remember { mutableStateOf<Int?>(null) }
+    var resumeChecked by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(data, textReady, position.bookPage, resumeChecked) {
+        if (resumeChecked || data == null) return@LaunchedEffect
+        val saved = viewModel.book?.progress ?: 0f
+        if (saved < 0.02f) {
+            resumeChecked = true
+            return@LaunchedEffect
+        }
+        if (position.bookPage <= 1) return@LaunchedEffect
+        resumeChecked = true
+        resumeFrom = position.bookPage
+        delay(6_000)
+        resumeFrom = null
+    }
+    BackHandler(enabled = sheet == ReaderSheet.NONE && (chrome || searchState.active != null || jumpBack != null || resumeFrom != null)) {
+        when {
+            searchState.active != null -> viewModel.clearSearch()
+            resumeFrom != null -> resumeFrom = null
+            jumpBack != null -> viewModel.dismissJumpBack()
+            else -> viewModel.chromeVisible.value = false
         }
     }
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { viewModel.onPause() }
@@ -377,7 +416,7 @@ fun ReaderScreen(
                 is ReaderEvent.OpenUrl -> Share.openUrl(context, e.url)
                 is ReaderEvent.OpenBook -> onOpenLinked?.invoke(e.id)
                 ReaderEvent.Finished -> showFinished = true
-                ReaderEvent.PageNote -> pageNote = true
+                is ReaderEvent.PageNote -> pageNote = PageNoteTarget(e.locator, e.page)
                 is ReaderEvent.SavePageAs -> {
                     savePageAs = e
                     runCatching { savePageLauncher.launch(e.name) }
@@ -458,11 +497,37 @@ fun ReaderScreen(
         }
     }
 
+    val displayControls: @Composable () -> Unit = {
+        ReaderQuickPanel(
+            content = data,
+            common = common,
+            text = textSettings.takeIf { data is ReaderContent.Text },
+            manga = mangaSettings.takeIf { data is ReaderContent.Manga },
+            pdf = pdfSettings.takeIf { data is ReaderContent.Pdf },
+            perBook = perBook,
+            vm = viewModel,
+            onOpenAll = { quickPanel = false; sheet = ReaderSheet.SETTINGS },
+            onClose = { quickPanel = false },
+        )
+    }
+
+    val showControlsLabel = stringResource(R.string.reader_show_controls)
     Box(
         Modifier
             .fillMaxSize()
             // Loading, errors and "no text" use the page colours too: no black flash before a light page, readable messages.
             .background(if (data is ReaderContent.Text || (data == null && !imageCanvas)) Color(readerText.background) else Color.Black)
+            // With the chrome hidden, a central tap is invisible to TalkBack: its actions menu offers the same command.
+            .semantics {
+                if (!chrome) {
+                    customActions = listOf(
+                        CustomAccessibilityAction(showControlsLabel) {
+                            viewModel.chromeVisible.value = true
+                            true
+                        },
+                    )
+                }
+            }
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -681,7 +746,7 @@ fun ReaderScreen(
             val pages = position.bookPages.coerceAtLeast(1)
             VerticalNavigator(
                 side = common.navigator,
-                progress = position.total,
+                progress = position.seekFraction,
                 current = position.bookPage,
                 total = pages,
                 onCommit = { fraction -> viewModel.goToPage(navigatorPage(fraction, pages)) },
@@ -692,7 +757,7 @@ fun ReaderScreen(
         }
 
         seekDrag?.let { v ->
-            val preview = remember(v, position.bookPages, position.total, cpm) { viewModel.seekPreview(v, cpm) }
+            val preview = viewModel.seekPreview(v, cpm)
             val manga = (data as? ReaderContent.Manga)?.controller
             // A short pause first: dragging across the book must not fetch every page on the way.
             val thumbnail by produceState<File?>(null, manga, preview.page) {
@@ -720,15 +785,36 @@ fun ReaderScreen(
                 onBack = onBack,
                 onBookmark = { haptic.perform(); viewModel.toggleBookmark() },
                 menu = { dismiss ->
+                    DropdownMenuItem(text = { Text(stringResource(R.string.reader_search)) }, leadingIcon = { Icon(Icons.Default.Search, null) },
+                        onClick = { dismiss(); sheet = ReaderSheet.SEARCH })
+                    if (data is ReaderContent.Text || data is ReaderContent.Pdf) {
+                        DropdownMenuItem(text = { Text(stringResource(R.string.reader_tts)) }, leadingIcon = { Icon(Icons.Default.Headphones, null) },
+                            onClick = {
+                                dismiss()
+                                if (!ttsActive) viewModel.startTts()
+                                sheet = ReaderSheet.TTS
+                            })
+                    }
+                    DropdownMenuItem(text = { Text(stringResource(R.string.reader_autoscroll)) },
+                        leadingIcon = { Icon(if (autoScroll) Icons.Default.Pause else Icons.Default.SlowMotionVideo, null) },
+                        enabled = data != null, onClick = { dismiss(); viewModel.toggleAutoScroll(); viewModel.chromeVisible.value = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.reader_translate_page)) }, leadingIcon = { Icon(Icons.Default.Translate, null) },
+                        enabled = data != null, onClick = { dismiss(); viewModel.translatePage() })
+                    if (jumpHistory.isNotEmpty()) {
+                        DropdownMenuItem(text = { Text(stringResource(R.string.reader_recent_jumps)) }, leadingIcon = { Icon(Icons.Outlined.History, null) },
+                            onClick = { dismiss(); sheet = ReaderSheet.JUMPS })
+                    }
                     if (viewModel.bookId > 0) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.reader_annotations)) }, leadingIcon = { Icon(Icons.Outlined.EditNote, null) },
                             onClick = { dismiss(); onOpenAnnotations(viewModel.bookId) })
                         DropdownMenuItem(text = { Text(stringResource(R.string.reader_page_note)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.NoteAdd, null) },
-                            onClick = { dismiss(); pageNote = true })
+                            onClick = { dismiss(); pageNote = viewModel.pageNoteTarget() })
                     }
                     DropdownMenuItem(text = { Text(stringResource(R.string.reader_dictionary)) }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.MenuBook, null) },
                         onClick = { dismiss(); onOpenDictionary("") })
                     if (data is ReaderContent.Pdf || data is ReaderContent.Manga) {
+                        DropdownMenuItem(text = { Text(stringResource(R.string.reader_page_actions)) }, leadingIcon = { Icon(Icons.Outlined.TouchApp, null) },
+                            onClick = { dismiss(); viewModel.showCurrentPageActions() })
                         DropdownMenuItem(text = { Text(stringResource(R.string.reader_pages)) }, leadingIcon = { Icon(Icons.Default.GridView, null) },
                             onClick = { dismiss(); sheet = ReaderSheet.PAGES })
                     }
@@ -756,7 +842,7 @@ fun ReaderScreen(
                         DropdownMenuItem(text = { Text(stringResource(R.string.reader_edit_book)) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) },
                             onClick = { dismiss(); onOpenEditor(viewModel.bookId) })
                     }
-                    val linkedEdition = viewModel.linkedEditionId.value
+                    val linkedEdition = linkedEditionId
                     if (onOpenLinked != null && linkedEdition != null) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.reader_open_linked)) },
@@ -798,19 +884,43 @@ fun ReaderScreen(
                 }
             }
             AnimatedVisibility(
-                visible = chrome && quickPanel && data != null && seekDrag == null,
+                visible = !landscape && chrome && quickPanel && data != null && seekDrag == null,
                 enter = fadeIn(tween(180)) + slideInVertically(tween(180)) { it / 2 },
                 exit = fadeOut(tween(120)),
+                modifier = Modifier.weight(1f, fill = false),
             ) {
-                ReaderQuickPanel(
-                    content = data,
-                    common = common,
-                    text = textSettings.takeIf { data is ReaderContent.Text },
-                    manga = mangaSettings.takeIf { data is ReaderContent.Manga },
-                    pdf = pdfSettings.takeIf { data is ReaderContent.Pdf },
-                    vm = viewModel,
-                    onOpenAll = { quickPanel = false; sheet = ReaderSheet.SETTINGS },
-                    onClose = { quickPanel = false },
+                displayControls()
+            }
+            resumeFrom?.let { page ->
+                AnimatedVisibility(
+                    visible = seekDrag == null,
+                    enter = fadeIn(tween(200)),
+                    exit = fadeOut(tween(200)),
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                ) {
+                    MiniPill {
+                        Text(
+                            stringResource(R.string.reader_resumed_at, page),
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(start = 12.dp),
+                        )
+                        TextButton(onClick = { resumeFrom = null }) { Text(stringResource(R.string.reader_resumed_dismiss)) }
+                    }
+                }
+            }
+            // The result of a search stays on the page: previous / next / all results, without reopening the sheet.
+            AnimatedVisibility(
+                visible = searchState.active != null && sheet == ReaderSheet.NONE && seekDrag == null,
+                enter = fadeIn(tween(160)) + slideInVertically(tween(160)) { it / 2 },
+                exit = fadeOut(tween(120)),
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            ) {
+                SearchMatchBar(
+                    state = searchState,
+                    onPrev = { viewModel.stepHit(-1) },
+                    onNext = { viewModel.stepHit(1) },
+                    onList = { searchSeed = searchState.query; sheet = ReaderSheet.SEARCH },
+                    onClose = viewModel::clearSearch,
                 )
             }
             val jump = jumpBack
@@ -827,34 +937,39 @@ fun ReaderScreen(
                 enter = slideInVertically(tween(220)) { it } + fadeIn(tween(220)),
                 exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(200)),
             ) {
+                val pdfController = (data as? ReaderContent.Pdf)?.controller
+                val textController = (data as? ReaderContent.Text)?.controller
+                val viewportBookmarkMarks by produceState(
+                    emptyList<Float>(), textController, bookmarks, position.viewportSeek, textReady, chapterStarts, position.bookPages,
+                ) {
+                    value = if (position.viewportSeek && textReady && textController != null) {
+                        textController.scrollBookmarkFractions(bookmarks.map { it.locator })
+                    } else {
+                        emptyList()
+                    }
+                }
+                val spread = pdfController?.visiblePages(position.page)?.takeIf { it.first < it.last }
                 ReaderBottomBar(
                     position = position,
-                    marks = remember(bookmarks) { bookmarks.map { it.locator.totalProgression } },
+                    marks = if (position.viewportSeek) viewportBookmarkMarks else remember(bookmarks) { bookmarks.map { it.locator.totalProgression } },
                     chapterMarks = chapterStarts,
                     isText = data is ReaderContent.Text,
+                    pageArrows = pdfController != null || (data is ReaderContent.Manga && !viewModel.isOnline),
+                    isOnlineManga = data is ReaderContent.Manga && viewModel.isOnline,
+                    spread = spread,
                     reversed = data is ReaderContent.Manga && mangaSettings.direction == MangaDirection.RTL,
-                    canPrev = position.chapter > 0 || hasPrev,
-                    canNext = position.chapter < position.chapterCount - 1 || hasNext,
+                    canPrev = pdfController?.canTurnPage(false) ?: (position.chapter > 0 || hasPrev),
+                    canNext = pdfController?.canTurnPage(true) ?: (position.chapter < position.chapterCount - 1 || hasNext),
                     cpm = cpm,
-                    ttsAvailable = data is ReaderContent.Text || data is ReaderContent.Pdf,
-                    autoScroll = autoScroll,
                     onDrag = { seekDrag = it },
                     onSeek = viewModel::seekTotal,
+                    onSeekFailed = { scope.launch { snackbar.showSnackbar(resources.getString(R.string.reader_seek_failed)) } },
                     onGoToPage = { goToPage = true },
                     onPrevChapter = viewModel::prevChapter,
                     onNextChapter = viewModel::nextChapter,
                     onToc = { sheet = ReaderSheet.TOC },
-                    onSearch = { sheet = ReaderSheet.SEARCH },
-                    onSettings = { sheet = ReaderSheet.SETTINGS },
+                    onSearch = { searchSeed = ""; sheet = ReaderSheet.SEARCH },
                     onQuick = { quickPanel = !quickPanel },
-                    onTts = {
-                        if (!ttsActive) viewModel.startTts()
-                        sheet = ReaderSheet.TTS
-                    },
-                    onAutoScroll = { viewModel.toggleAutoScroll(); viewModel.chromeVisible.value = false },
-                    onTranslate = {
-                        if (data is ReaderContent.Manga) viewModel.translateMangaPage(position.page) else viewModel.translatePage()
-                    },
                 )
             }
         }
@@ -867,7 +982,7 @@ fun ReaderScreen(
                 style = selectionMenuStyle,
                 anchor = sel.anchor,
                 actions = actions,
-                customActions = customActions,
+                customActions = selectionCustomActions,
                 currentColor = currentColor,
                 onHighlight = { color, style -> haptic.perform(); viewModel.highlight(color, style) },
                 onAction = { onAction(it, sel) },
@@ -896,18 +1011,22 @@ fun ReaderScreen(
         }
     }
 
+    if (landscape && chrome && quickPanel && data != null) {
+        YomuSheet(onDismiss = { quickPanel = false }) { displayControls() }
+    }
+
     noteFor?.let { sel ->
         val key = remember(sel) { viewModel.noteDraftKey(sel) }
         NoteDialog(
-            initial = remember(sel) { viewModel.noteOfSelection().orEmpty() },
+            initial = remember(sel) { viewModel.noteOfSelection(sel).orEmpty() },
             quote = sel.text,
             draft = remember(key) { viewModel.noteDraft(key) },
-            onDraft = { viewModel.saveNoteDraft(key, it) },
-            onSave = { viewModel.saveNote(it) },
-            onDelete = sel.highlightId?.let {
+            onDraft = { viewModel.saveNoteDraft(sel, it) },
+            onSave = { viewModel.saveNote(sel, it) },
+            onDelete = sel.highlightId?.let { id ->
                 {
                     viewModel.discardNoteDraft(key)
-                    viewModel.deleteHighlight()
+                    viewModel.deleteHighlight(id)
                     noteFor = null
                 }
             },
@@ -915,16 +1034,15 @@ fun ReaderScreen(
         )
     }
 
-    if (pageNote) {
-        val key = remember { viewModel.pageNoteDraftKey() }
+    pageNote?.let { target ->
         NoteDialog(
             initial = "",
             quote = null,
-            draft = remember(key) { viewModel.pageNoteDraft() },
-            onDraft = { viewModel.savePageNoteDraft(it) },
-            onSave = { viewModel.addPageNote(it) },
+            draft = remember(target) { viewModel.pageNoteDraft(target) },
+            onDraft = { viewModel.savePageNoteDraft(target, it) },
+            onSave = { viewModel.addPageNote(target, it) },
             onDelete = null,
-            onDismiss = { pageNote = false },
+            onDismiss = { pageNote = null },
         )
     }
 
@@ -952,6 +1070,7 @@ fun ReaderScreen(
         )
     }
 
+    val markedPages = remember(bookmarks) { bookmarks.map { it.locator.chapter }.toSet() }
     when (sheet) {
         ReaderSheet.NONE -> Unit
         ReaderSheet.TOC -> TocSheet(
@@ -966,21 +1085,26 @@ fun ReaderScreen(
             onDismiss = { sheet = ReaderSheet.NONE },
         )
         ReaderSheet.SEARCH -> {
-            val state by viewModel.searchState.collectAsStateWithLifecycle()
             SearchSheet(
-                state = state,
-                initial = searchSeed.ifBlank { state.query },
+                state = searchState,
+                initial = searchSeed.ifBlank { searchState.query },
                 onSearch = viewModel::search,
                 onHit = { viewModel.openHit(it); sheet = ReaderSheet.NONE },
                 onDismiss = { sheet = ReaderSheet.NONE; searchSeed = "" },
                 onClear = viewModel::clearSearch,
             )
         }
+        ReaderSheet.JUMPS -> RecentJumpsSheet(
+            history = jumpHistory,
+            onOpen = { viewModel.openJump(it); sheet = ReaderSheet.NONE },
+            onDismiss = { sheet = ReaderSheet.NONE },
+        )
         ReaderSheet.SETTINGS -> data?.let { c ->
             ReaderSettingsSheet(
                 viewModel, c, textSettings, mangaSettings, pdfSettings, common, perBook, wordTapSetting,
                 onDismiss = { sheet = ReaderSheet.NONE },
                 previewText = readerText,
+                previewSnippet = previewSnippet,
             )
         }
         ReaderSheet.TTS -> TtsSheet(viewModel, common, onDismiss = { sheet = ReaderSheet.NONE })
@@ -990,12 +1114,14 @@ fun ReaderScreen(
                 current = position.page,
                 onPick = { viewModel.goToPage(it + 1); sheet = ReaderSheet.NONE },
                 onDismiss = { sheet = ReaderSheet.NONE },
+                marked = markedPages,
             ) { index -> PdfPageThumb(c.controller, index) }
             is ReaderContent.Manga -> PagesSheet(
                 count = c.controller.localCount,
                 current = position.page,
                 onPick = { viewModel.goToPage(it + 1); sheet = ReaderSheet.NONE },
                 onDismiss = { sheet = ReaderSheet.NONE },
+                marked = if (viewModel.isOnline) emptySet() else markedPages,
             ) { index -> MangaPageThumb(c.controller, c.controller.globalOfCurrent(index)) }
             else -> Unit
         }
@@ -1010,7 +1136,7 @@ fun ReaderScreen(
             page = position.bookPage,
             pages = position.bookPages.coerceAtLeast(1),
             approximate = position.approximate,
-            percent = (position.total * 100).toInt().coerceIn(0, 100),
+            percent = (position.seekFraction * 100).toInt().coerceIn(0, 100),
             onPage = { viewModel.goToPage(it); goToPage = false },
             onPercent = { viewModel.seekTotal(it); goToPage = false },
             onDismiss = { goToPage = false },
@@ -1058,65 +1184,79 @@ private fun ReaderBottomBar(
     /** Chapter boundaries on the slider, 0..1 of the book. */
     chapterMarks: List<Float>,
     isText: Boolean,
+    pageArrows: Boolean,
+    isOnlineManga: Boolean,
+    spread: IntRange?,
     /** Right-to-left manga: the slider starts on the right, like the pages. */
     reversed: Boolean,
     canPrev: Boolean,
     canNext: Boolean,
     cpm: Float,
-    ttsAvailable: Boolean,
-    autoScroll: Boolean,
     onDrag: (Float?) -> Unit,
     onSeek: (Float) -> Unit,
+    onSeekFailed: () -> Unit,
     onGoToPage: () -> Unit,
     onPrevChapter: () -> Unit,
     onNextChapter: () -> Unit,
     onToc: () -> Unit,
     onSearch: () -> Unit,
-    onSettings: () -> Unit,
     onQuick: () -> Unit,
-    onTts: () -> Unit,
-    onAutoScroll: () -> Unit,
-    onTranslate: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp)) {
             var dragging by remember { mutableStateOf<Float?>(null) }
-            // The engine answers a seek asynchronously: keep showing the chosen spot until it reports back, otherwise
-            // the thumb jumps to the old place for a moment and the drag looks ignored.
-            var pending by remember { mutableStateOf<Float?>(null) }
-            LaunchedEffect(pending) {
-                if (pending != null) {
-                    delay(1_500)
-                    pending = null
+            var pending by remember { mutableStateOf<PendingReaderSeek?>(null) }
+            val interactionSource = remember { MutableInteractionSource() }
+            val reportDrag by rememberUpdatedState(onDrag)
+            val seekFailed by rememberUpdatedState(onSeekFailed)
+            LaunchedEffect(interactionSource) {
+                interactionSource.interactions.collect {
+                    if (it is DragInteraction.Cancel) {
+                        dragging = null
+                        reportDrag(null)
+                    }
                 }
             }
-            LaunchedEffect(position.total, position.bookPages) {
-                val p = pending
-                // A page seek lands on the nearest page, so a short book can differ by more than 2 %: allow one page.
-                val tolerance = if (position.bookPages > 1) maxOf(0.02f, 0.75f / (position.bookPages - 1)) else 0.02f
-                if (p != null && kotlin.math.abs(position.total - p) < tolerance) pending = null
+            DisposableEffect(Unit) { onDispose { reportDrag(null) } }
+            LaunchedEffect(pending) {
+                if (pending != null) {
+                    delay(3_000)
+                    pending = null
+                    seekFailed()
+                }
             }
-            val shown = dragging ?: pending ?: position.total
+            LaunchedEffect(pending, position.seekFraction, position.seekPageCount) {
+                val target = pending?.fraction ?: return@LaunchedEffect
+                val tolerance = if (position.seekPageCount > 0) 0.0001f else 0.02f
+                if (kotlin.math.abs(position.seekFraction - target) <= tolerance) pending = null
+            }
+            val shown = dragging ?: pending?.fraction ?: position.seekFraction
             val percent = (shown * 100).toInt().coerceIn(0, 100)
             val progressLabel = stringResource(R.string.reader_progress_percent, percent)
+            val scopeLabel = if (isOnlineManga) stringResource(R.string.reader_chapter_progress, percent) else progressLabel
             // Where am I: page of the book (tap to jump to a page) and how much is left.
-            Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 12.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onPrevChapter, enabled = canPrev) {
+                    Icon(Icons.Default.SkipPrevious, stringResource(if (pageArrows) R.string.reader_prev_page else R.string.reader_prev_chapter))
+                }
                 if (position.bookPages > 0) {
-                    PageChip(position.bookPage, position.bookPages, position.approximate, onGoToPage)
+                    PageChip(position.bookPage, position.bookPages, position.approximate, onGoToPage, spread = spread)
                 } else {
                     Text(stringResource(R.string.reader_page_of, position.page + 1, position.pages.coerceAtLeast(1)), style = MaterialTheme.typography.labelLarge)
                 }
-                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.width(8.dp))
                 val minutesLeft = (position.charsLeftInBook / cpm.coerceAtLeast(1f)).toInt()
                 val left = if (isText && minutesLeft in 1..6000) {
                     stringResource(R.string.reader_left_book, formatMinutes(minutesLeft))
                 } else null
-                Text(listOfNotNull(left, progressLabel).joinToString(" · "), style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                Text(listOfNotNull(left, scopeLabel).joinToString(" · "), style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+                IconButton(onClick = onNextChapter, enabled = canNext) {
+                    Icon(Icons.Default.SkipNext, stringResource(if (pageArrows) R.string.reader_next_page else R.string.reader_next_chapter))
+                }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onPrevChapter, enabled = canPrev) { Icon(Icons.Default.SkipPrevious, stringResource(R.string.reader_prev_chapter)) }
-                Box(Modifier.weight(1f)) {
+            Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
                     if (chapterMarks.isNotEmpty()) {
                         // Chapter starts, so the book's structure is visible on the track.
                         val tick = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
@@ -1136,12 +1276,19 @@ private fun ReaderBottomBar(
                                 val v = dragging
                                 dragging = null
                                 if (v != null) {
-                                    pending = v
-                                    onSeek(v)
+                                    val target = if (position.seekPageCount > 0) {
+                                        pageSeekFraction(pageAtSeekFraction(v, position.seekPageCount), position.seekPageCount)
+                                    } else {
+                                        v
+                                    }
+                                    pending = PendingReaderSeek(target)
+                                    onSeek(target)
                                 }
                                 onDrag(null)
                             },
-                            modifier = Modifier.fillMaxWidth().semantics { contentDescription = progressLabel },
+                            enabled = position.bookPages > 1,
+                            interactionSource = interactionSource,
+                            modifier = Modifier.fillMaxWidth().semantics { contentDescription = scopeLabel },
                         )
                     }
                     if (marks.isNotEmpty()) {
@@ -1156,8 +1303,6 @@ private fun ReaderBottomBar(
                             }
                         }
                     }
-                }
-                IconButton(onClick = onNextChapter, enabled = canNext) { Icon(Icons.Default.SkipNext, stringResource(R.string.reader_next_chapter)) }
             }
             // Chapter and page details of a book; comics and PDFs have the page chip above and no chapter of their own.
             if (isText) {
@@ -1174,17 +1319,10 @@ private fun ReaderBottomBar(
                 }
             }
             Spacer(Modifier.height(4.dp))
-            // One row of the same buttons in the same order for every format: books, PDFs and comics differ only in
-            // which engines answer behind them, never in where a button is. The DOCX page layout stays in the top
-            // menu, so no format needs its own extra button or a sideways scrolling row here.
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                ChromeButton(Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.reader_toc), onToc)
-                ChromeButton(Icons.Default.Search, stringResource(CoreR.string.search), onSearch)
-                ChromeButton(Icons.Default.TextFields, stringResource(R.string.reader_settings), onSettings)
-                ChromeButton(Icons.Default.BrightnessMedium, stringResource(R.string.reader_quick_display), onQuick)
-                ChromeButton(Icons.Default.Headphones, stringResource(R.string.reader_tts), onTts, enabled = ttsAvailable)
-                ChromeButton(if (autoScroll) Icons.Default.Pause else Icons.Default.SlowMotionVideo, stringResource(R.string.reader_autoscroll), onAutoScroll)
-                ChromeButton(Icons.Default.Translate, stringResource(R.string.reader_translate_page), onTranslate)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                ChromeButton(Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.reader_toc), onToc, Modifier.weight(1f))
+                ChromeButton(Icons.Default.Search, stringResource(R.string.reader_search), onSearch, Modifier.weight(1f))
+                ChromeButton(Icons.Default.BrightnessMedium, stringResource(R.string.reader_quick_display), onQuick, Modifier.weight(1f))
             }
         }
     }
@@ -1195,15 +1333,21 @@ private fun formatMinutes(min: Int): String =
     if (min >= 60) stringResource(R.string.reader_hours_minutes, min / 60, min % 60) else stringResource(R.string.reader_minutes, min.coerceAtLeast(1))
 
 @Composable
-private fun ChromeButton(icon: ImageVector, label: String, onClick: () -> Unit, enabled: Boolean = true) {
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
-        tooltip = { PlainTooltip { Text(label) } },
-        state = rememberTooltipState(),
+private fun ChromeButton(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    // Three labelled entries share one 320 dp row: a tight content padding and a single-line label keep every word
+    // readable without turning the bottom bar into a scrolling strip.
+    TextButton(
+        onClick = onClick,
+        modifier = modifier,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp),
     ) {
-        IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) { Icon(icon, label) }
+        Icon(icon, null, Modifier.size(18.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
     }
 }
+
+private class PendingReaderSeek(val fraction: Float)
 
 @Composable
 private fun MiniPill(modifier: Modifier = Modifier, content: @Composable () -> Unit) {

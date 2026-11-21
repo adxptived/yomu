@@ -18,6 +18,12 @@ sealed interface ProbeResult {
         val title: String? = null,
         /** How many items the preview actually parsed, which is what the user sees before saving. */
         val sampleItems: Int = 0,
+        /**
+         * For a web page: the feeds and catalogues it links to. An ordinary site is not a connection, but a blog or a
+         * library landing page often advertises its RSS or OPDS document explicitly; the user picks one instead of
+         * hunting for the address.
+         */
+        val candidates: List<LinkCandidate> = emptyList(),
     ) : ProbeResult
 
     /** The address is valid but the document is not a type this build can read. */
@@ -96,6 +102,8 @@ object ConnectionProbe {
         // 403 is not a password request by itself: a browser check is the common cause.
         if (status == 403) return ProbeResult.NeedsBrowser
         if (status == 404 || status == 410) return ProbeResult.InvalidUrl("not found")
+        // A timeout or a rate limit is temporary: the address is not wrong, and "try again" is the useful action.
+        if (status == 408 || status == 429) return ProbeResult.NetworkError
         if (status in 500..599) return ProbeResult.NetworkError
         if (status !in 200..299) return ProbeResult.InvalidUrl("status $status")
         val kind = classify(contentType, bodyPrefix)
@@ -118,6 +126,13 @@ object ConnectionProbe {
         return null
     }
 }
+
+/** A feed or catalogue advertised by a web page, with the kind it declared. */
+data class LinkCandidate(
+    val url: String,
+    val kind: ConnectionKind,
+    val title: String? = null,
+)
 
 /** Limits of one probe request, shared by every connection wizard. */
 object ProbeLimits {

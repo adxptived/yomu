@@ -58,6 +58,8 @@ data class EpubProgress(
     /** Character offset and length of the whole document, for an exact "time left". */
     val bookOffset: Int = 0,
     val bookTotal: Int = 0,
+    /** Viewport fraction of a scrolling whole book. Text offsets remain the persisted locator. */
+    val bookScrollProgression: Float? = null,
 )
 
 /** Page starts of all chapters after a layout (whole-book mode); index = chapter. */
@@ -137,7 +139,8 @@ class EpubController(
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     /** True when every chapter is a section of the loaded document: pages cross chapters without a reload. */
-    val wholeBook: Boolean get() = wholeBookHtml != null
+    val wholeBook: Boolean
+        get() = wholeBookHtml != null && !settings.verticalText && (settings.paged || settings.longStrip)
 
     /** True when the whole book is laid out as pages: the bottom slider and the page chip are exact. */
     val pagedBook: Boolean get() = wholeBook && settings.paged && !settings.verticalText && !settings.longStrip
@@ -309,10 +312,11 @@ class EpubController(
 
     fun updateSettings(value: TextReaderSettings, relayout: Boolean = true) {
         val structural = value.paged != settings.paged || value.verticalText != settings.verticalText || value.longStrip != settings.longStrip
+        val wasWholeBook = wholeBook
         settings = value
         webView?.setBackgroundColor(value.background.toInt())
         if (!relayout) return
-        if (structural && !wholeBook) {
+        if (wasWholeBook != wholeBook || (structural && !wholeBook)) {
             open(chapter, EpubTarget.Offset(progress.offset))
         } else {
             // The whole book is already in the document: a new layout is a reflow, not a page load.
@@ -341,7 +345,7 @@ class EpubController(
     fun next() = js("yomu.next()")
     fun prev() = js("yomu.prev()")
 
-    /** Whole-book paged mode: jump straight to a 0-based page of the document. */
+    /** Jump to a 0-based page or viewport step of a whole-book document. */
     fun goToPage(page: Int) = js("yomu.goToPage(${page.coerceAtLeast(0)})")
 
     /** Whole-book scrolling mode: jump to a 0..1 progression of the whole document. */
@@ -464,6 +468,19 @@ class EpubController(
         eval("yomu.sentences($from)")?.let { runCatching { json.decodeFromString<List<EpubSentence>>(it) }.getOrNull() }.orEmpty()
 
     suspend fun visibleText(): String = eval("yomu.visibleText()").orEmpty()
+
+    suspend fun scrollBookmarkFractions(locators: List<app.yomu.domain.model.Locator>): List<Float> {
+        if (locators.isEmpty()) return emptyList()
+        val positions = buildJsonArray {
+            for (locator in locators) add(buildJsonObject {
+                put("chapter", locator.chapter)
+                locator.offset?.let { put("offset", it) }
+                put("progression", locator.progression)
+            })
+        }
+        return eval("yomu.scrollBookmarkFractions($positions)")
+            ?.let { runCatching { json.decodeFromString<List<Float>>(it) }.getOrNull() }.orEmpty()
+    }
 
     suspend fun text(start: Int, end: Int): String = eval("yomu.text($start, $end)").orEmpty()
 

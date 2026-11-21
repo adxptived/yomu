@@ -140,6 +140,44 @@ class SourceConnectionFlowTest {
     }
 
     @Test
+    fun `a pasted link starts a check without a chosen method`() {
+        val state = SourceConnectionFlow.startPastedLink(SourceConnectionFlow.initial, "  https://example.org/feed.xml  ")
+        assertEquals(ConnectionStep.Probing("https://example.org/feed.xml"), state.step)
+        assertEquals("https://example.org/feed.xml", state.checkedAddress)
+        assertNull(state.method)
+        val detected = SourceConnectionFlow.detected(state, ProbeResult.Recognised(ConnectionKind.RSS, title = "A feed"))
+        assertEquals(ConnectionMethod.RSS, detected.method)
+        assertEquals(ConnectionStep.Preview(ProbeResult.Recognised(ConnectionKind.RSS, title = "A feed")), detected.step)
+    }
+
+    @Test
+    fun `back from a pasted link returns to the first screen, not an empty method list`() {
+        val pasted = SourceConnectionFlow.startPastedLink(SourceConnectionFlow.initial, "https://example.org/opds")
+        val address = SourceConnectionFlow.back(pasted)
+        assertTrue(address.step is ConnectionStep.Address)
+        assertEquals(ConnectionStep.Content, SourceConnectionFlow.back(address).step)
+    }
+
+    @Test
+    fun `a pasted blank link fails at once`() {
+        val state = SourceConnectionFlow.startPastedLink(SourceConnectionFlow.initial, "   ")
+        val failure = state.step as ConnectionStep.Failed
+        assertEquals("empty", ((failure.reason as ConnectionFailure.Check).result as ProbeResult.InvalidUrl).reason)
+    }
+
+    @Test
+    fun `a web page is a set of candidates, not a saveable connection`() {
+        val page = ProbeResult.Recognised(
+            ConnectionKind.WEB_PAGE,
+            title = "A library",
+            candidates = listOf(app.yomu.source.LinkCandidate("https://example.org/feed", ConnectionKind.RSS, "News")),
+        )
+        val state = SourceConnectionFlow.detected(SourceConnectionFlow.startPastedLink(SourceConnectionFlow.initial, "https://example.org/"), page)
+        assertNull(state.method)
+        assertNull(SourceConnectionFlow.startSave(state))
+    }
+
+    @Test
     fun `a blank title from the document does not become a name`() {
         val state = SourceConnectionFlow.checked(SourceConnectionFlow.startCheck(atAddress()), ProbeResult.Recognised(ConnectionKind.OPDS, title = "   "))
         assertEquals("example.org", SourceConnectionFlow.suggestedName(state))

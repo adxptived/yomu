@@ -25,6 +25,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
@@ -43,6 +46,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -139,6 +143,95 @@ internal fun SearchSheet(
                     headlineContent = { Text(snippet(hit, highlight), maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium) },
                     modifier = Modifier.clickable { onHit(hit) },
                 )
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+/**
+ * The compact "3 of 12" bar shown on the page after a result is opened: previous, next, the whole list and close.
+ * It stays until the reader closes it, changes the query or jumps elsewhere with the slider.
+ */
+@Composable
+internal fun SearchMatchBar(
+    state: SearchState,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onList: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val current = state.current ?: return
+    Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        tonalElevation = 4.dp,
+        shadowElevation = 4.dp,
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        Row(Modifier.heightIn(min = 48.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onPrev) {
+                Icon(Icons.Default.KeyboardArrowUp, stringResource(R.string.reader_match_prev))
+            }
+            Column(Modifier.padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    stringResource(R.string.reader_match_n_of, (state.active ?: 0) + 1, state.hits.size),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                current.chapterTitle?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            IconButton(onClick = onNext) {
+                Icon(Icons.Default.KeyboardArrowDown, stringResource(R.string.reader_match_next))
+            }
+            IconButton(onClick = onList) {
+                Icon(Icons.Default.FormatListBulleted, stringResource(R.string.reader_match_list))
+            }
+            IconButton(onClick = onClose) {
+                Icon(Icons.Default.Close, stringResource(R.string.reader_match_close))
+            }
+        }
+    }
+}
+
+/** Every place the reader jumped from, newest first: one tap returns to it without another search. */
+@Composable
+internal fun RecentJumpsSheet(history: List<JumpBack>, onOpen: (JumpBack) -> Unit, onDismiss: () -> Unit) {
+    YomuSheet(onDismiss = onDismiss) {
+        SheetTitle(stringResource(R.string.reader_recent_jumps))
+        Text(
+            stringResource(R.string.reader_recent_jumps_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+        if (history.isEmpty()) {
+            EmptyLine(stringResource(R.string.reader_recent_jumps_empty))
+        } else {
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 520.dp)) {
+                items(history) { jump ->
+                    val place = jump.locator
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                place.chapterTitle?.takeIf { it.isNotBlank() } ?: stringResource(R.string.reader_page_of, jump.page, place.chapter + 1),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        supportingContent = {
+                            Text(
+                                listOfNotNull(
+                                    jump.page.takeIf { it > 0 }?.let { stringResource(R.string.reader_page_n, it) },
+                                    "${(place.totalProgression * 100).toInt()}%",
+                                ).joinToString(" · "),
+                                maxLines = 1,
+                            )
+                        },
+                        modifier = Modifier.clickable { onOpen(jump) },
+                    )
+                }
             }
         }
         Spacer(Modifier.height(16.dp))

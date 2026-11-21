@@ -2,6 +2,7 @@ package app.yomu.data.source
 
 import app.yomu.source.ConnectionKind
 import app.yomu.source.ConnectionProbe
+import app.yomu.source.LinkCandidate
 import app.yomu.source.ProbeLimits
 import app.yomu.source.ProbeResult
 import kotlinx.coroutines.Dispatchers
@@ -35,15 +36,20 @@ class SourceConnectionProbe(private val client: () -> OkHttpClient) {
             .callTimeout(ProbeLimits.TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .build()
         var url = rawUrl.trim()
+        // Credentials belong to the server the user typed. A redirect to another scheme, host or port must not get them.
+        val credentialOrigin = runCatching { origin(java.net.URI(rawUrl.trim())) }.getOrNull()
         var followedRedirects = false
         var hops = 0
         try {
             while (true) {
+                val sameOrigin = runCatching { origin(java.net.URI(url)) }.getOrNull() == credentialOrigin
                 val request = Request.Builder()
                     .url(url)
                     .header("Accept", "application/atom+xml, application/xml, text/xml, application/rss+xml, application/json;q=0.9, */*;q=0.8")
                     .apply {
-                        if (!username.isNullOrBlank()) header("Authorization", Credentials.basic(username, password.orEmpty()))
+                        if (!username.isNullOrBlank() && sameOrigin) {
+                            header("Authorization", Credentials.basic(username, password.orEmpty()))
+                        }
                     }
                     .build()
                 http.newCall(request).execute().use { response ->
@@ -74,6 +80,7 @@ class SourceConnectionProbe(private val client: () -> OkHttpClient) {
                         result.copy(
                             title = result.title ?: leadingTitle(prefix),
                             sampleItems = sampleItems(prefix, result.kind),
+                            candidates = if (result.kind == ConnectionKind.WEB_PAGE) linkCandidates(prefix, url) else emptyList(),
                         )
                     } else {
                         result
@@ -84,6 +91,14 @@ class SourceConnectionProbe(private val client: () -> OkHttpClient) {
         } catch (e: IOException) {
             ProbeResult.NetworkError
         }
+    }
+
+    /** Scheme, host and effective port: the origin that may receive the typed server's credentials. */
+    private fun origin(uri: java.net.URI): String? {
+        val scheme = uri.scheme?.lowercase() ?: return null
+        val host = uri.host?.lowercase() ?: return null
+        val port = if (uri.port > 0) uri.port else if (scheme == "https") 443 else 80
+        return "$scheme://$host:$port"
     }
 
     /** The first `<title>` of a feed or catalogue, trimmed; null when the document has none. */
@@ -103,6 +118,26 @@ class SourceConnectionProbe(private val client: () -> OkHttpClient) {
         else -> 0
     }
 
+    /**
+     * Feeds and catalogues a web page advertises: `<link rel="alternate" type="application/rss+xml" href="…">` and its
+     * Atom/OPDS counterparts. Only the declared type decides the kind; anchors to arbitrary pages are not proposed.
+     */
+    internal fun linkCandidates(body: String, baseUrl: String): List<LinkCandidate> {
+        val base = runCatching { java.net.URI(baseUrl) }.getOrNull() ?: return emptyList()
+        return LINK.findAll(body).mapNotNull { match ->
+            val attrs = ATTRIBUTE.findAll(match.value).associate { it.groupValues[1].lowercase() to it.groupValues[2].ifEmpty { it.groupValues[3] } }
+            val href = attrs["href"]?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val type = attrs["type"]?.substringBefore(';')?.trim()?.lowercase().orEmpty()
+            val kind = when (type) {
+                "application/rss+xml", "application/rdf+xml", "text/rss+xml" -> ConnectionKind.RSS
+                "application/atom+xml", "application/opds+xml", "application/opds+json" -> ConnectionKind.OPDS
+                else -> return@mapNotNull null
+            }
+            val url = runCatching { base.resolve(href).toString() }.getOrNull() ?: return@mapNotNull null
+            LinkCandidate(url, kind, attrs["title"]?.trim()?.takeIf { it.isNotEmpty() })
+        }.distinctBy { it.url }.take(6).toList()
+    }
+
     companion object {
         /** What the catalogue wizard can save: an OPDS catalogue. Audio and RSS are handled by the audio flow. */
         val DEFAULT_SUPPORTED: Set<ConnectionKind> = setOf(ConnectionKind.OPDS)
@@ -111,5 +146,7 @@ class SourceConnectionProbe(private val client: () -> OkHttpClient) {
         // `<entry>`, `<entry attr=…>` and `<entry/>` are all entries; a closing tag is not.
         private val ENTRY = Regex("<entry[\\s/>]", RegexOption.IGNORE_CASE)
         private val ITEM = Regex("<item[\\s/>]", RegexOption.IGNORE_CASE)
+        private val LINK = Regex("<link\\b[^>]*>", setOf(RegexOption.IGNORE_CASE))
+        private val ATTRIBUTE = Regex("([a-zA-Z-]+)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')")
     }
 }

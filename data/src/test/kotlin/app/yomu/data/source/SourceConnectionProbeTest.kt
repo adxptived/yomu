@@ -69,6 +69,31 @@ class SourceConnectionProbeTest {
     }
 
     @Test
+    fun `a web page offers the feeds it declares when a page is supported`() = runBlocking {
+        answer(
+            """<!doctype html><html><head>
+                <link rel="alternate" type="application/rss+xml" title="News" href="/feed.xml">
+                <link rel="alternate" type="application/atom+xml" href="catalogue.opds">
+                <link rel="stylesheet" href="/style.css">
+            </head><body>A library</body></html>""",
+            "text/html",
+        )
+        val result = probe.probe(url(), supported = setOf(ConnectionKind.WEB_PAGE, ConnectionKind.OPDS, ConnectionKind.RSS)) as ProbeResult.Recognised
+        assertEquals(ConnectionKind.WEB_PAGE, result.kind)
+        assertEquals(listOf(ConnectionKind.RSS, ConnectionKind.OPDS), result.candidates.map { it.kind })
+        assertEquals("News", result.candidates.first().title)
+        assertTrue(result.candidates.first().url.endsWith("/feed.xml"))
+        assertTrue(result.candidates.last().url.endsWith("/catalogue.opds"))
+    }
+
+    @Test
+    fun `a page without declared feeds has no candidates`() = runBlocking {
+        answer("<!doctype html><html><body><a href=\"/feed.xml\">RSS</a></body></html>", "text/html")
+        val result = probe.probe(url(), supported = setOf(ConnectionKind.WEB_PAGE)) as ProbeResult.Recognised
+        assertTrue(result.candidates.isEmpty())
+    }
+
+    @Test
     fun `401 asks for a login and 403 is a browser check`() = runBlocking {
         answer("", "text/plain", 401)
         assertEquals(ProbeResult.NeedsAuth, probe.probe(url()))
@@ -85,6 +110,22 @@ class SourceConnectionProbeTest {
         answer(opds, "application/atom+xml")
         probe.probe(url())
         assertEquals(null, server.takeRequest().getHeader("Authorization"))
+    }
+
+    @Test
+    fun `a redirect to another host receives no credentials`() = runBlocking {
+        val other = MockWebServer()
+        other.start()
+        try {
+            server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", other.url("/feed").toString()))
+            other.enqueue(MockResponse().setResponseCode(200).setHeader("Content-Type", "application/atom+xml").setBody(opds))
+            val result = probe.probe(url(), username = "reader", password = "secret")
+            assertTrue("cross-host redirect was rejected: $result", result is ProbeResult.Recognised)
+            assertTrue(server.takeRequest().getHeader("Authorization")?.startsWith("Basic ") == true)
+            assertEquals(null, other.takeRequest().getHeader("Authorization"))
+        } finally {
+            other.shutdown()
+        }
     }
 
     @Test

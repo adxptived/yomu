@@ -53,6 +53,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -573,6 +574,9 @@ private fun PageImage(
                 val image = pageSize?.let { if (half != null) ImageSize(it.width / 2, it.height) else it }
                 val viewport = if (rotation == WidePageRotation.NONE) boxSize else IntSize(boxSize.height, boxSize.width)
                 val target = image?.let { MangaFit.decodeSize(it.width, it.height, viewport.width, viewport.height, s.scale) }
+                // "Fit the page" gives the page a fresh zoom state; a pinch, pan or the smart-fit zoom of the page
+                // that was reset must not survive into the next view of it.
+                key(controller.zoomReset) {
                 val zoomable = rememberZoomableState(zoomSpec = ZoomSpec(maximum = ZoomLimit(factor = 6f)))
                 val zoomState = rememberZoomableImageState(zoomable)
                 if (s.zoomLock) {
@@ -663,6 +667,7 @@ private fun PageImage(
                             }
                         }
                     }
+                }
                 }
             }
         }
@@ -773,6 +778,11 @@ private fun Webtoon(controller: MangaController, listener: MangaListener, hasPre
     var zoom by rememberSaveable { mutableFloatStateOf(1f) }
     var finishedReported by remember { mutableStateOf(false) }
     val hScroll = rememberScrollState()
+    // "Fit the page" in the webtoon returns the strip to its normal width and the left edge.
+    LaunchedEffect(controller.zoomReset) {
+        zoom = 1f
+        hScroll.scrollTo(0)
+    }
     val scope = rememberCoroutineScope()
     val animate by rememberUpdatedState(s.pageAnimation)
     val speed by rememberUpdatedState(animationSpeed.coerceIn(0.25f, 3f))

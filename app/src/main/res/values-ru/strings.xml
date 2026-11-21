@@ -55,6 +55,12 @@
     <string name="whats_new_title">Что нового в Yomu</string>
     <string name="whats_new_ok">Понятно</string>
     <string name="whats_new_all">Все изменения</string>
+    <string-array name="whats_new_2_10_0">
+        <item>«Оглавление», «Найти» и «Вид» всегда в нижней строке; Back закрывает строку совпадений, отметку продолжения и управление, и только потом выходит из книги.</item>
+        <item>У результатов поиска остаётся строка «3 из 12», недавние переходы собраны в отдельный список, а оглавление показывает, где вы и где закладки.</item>
+        <item>«Вписать в экран» одним нажатием, сетка страниц с отметками закладок и образец настроек на странице, которую вы читаете.</item>
+        <item>Добавление книги или аудио по ссылке: Yomu показывает, что нашёл, предлагает фиды со страницы и открывает результат после сохранения.</item>
+    </string-array>
     <string-array name="whats_new_2_9_4">
         <item>Очистка одного сайта теперь действительно выводит из него: cookie на вложенных путях удаляются, остальные сайты сохраняют сессии, а экран сообщает, что найдено.</item>
         <item>Восстановление индекса загрузок доверяет только настоящим главам; смена раскладки манги сохраняет место; у каждой главы свой CSS в документе всей книги.</item>
@@ -263,6 +269,13 @@
     <string name="widget_new_chapters_label">Новые главы</string>
     <string name="widget_new_chapters_description">Новые непрочитанные главы тайтлов из библиотеки по последней проверке.</string>
     <string name="widget_new_chapters_empty">Новых глав нет. Последняя проверка не нашла непрочитанного.</string>
+    <string name="widget_audio_label">Аудиоплеер</string>
+    <string name="widget_audio_description">Слушайте, ставьте на паузу и перематывайте аудиокнигу с главного экрана.</string>
+    <string name="widget_audio_empty">Ничего не играет. Запустите аудиокнигу в Yomu.</string>
+    <string name="widget_audio_play">Играть или пауза</string>
+    <string name="widget_audio_back">Назад на несколько секунд</string>
+    <string name="widget_audio_forward">Вперёд на несколько секунд</string>
+    <string name="widget_audio_open">Открыть аудиокнигу</string>
     <plurals name="widget_unread_chapters">
         <item quantity="one">%1$d непрочитанная глава</item>
         <item quantity="few">%1$d непрочитанные главы</item>

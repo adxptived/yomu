@@ -103,6 +103,33 @@ object SourceConnectionFlow {
         return state.copy(step = ConnectionStep.Probing(address), checkedAddress = address)
     }
 
+    /**
+     * "Paste a link" on the first screen: the type is not chosen by the reader, so the method stays open until the
+     * document itself says what it is. The caller probes with every supported kind.
+     */
+    fun startPastedLink(state: SourceConnectionState, address: String): SourceConnectionState = state.copy(
+        address = address.trim(),
+        method = null,
+        content = null,
+        step = ConnectionStep.Probing(address.trim()),
+        checkedAddress = address.trim(),
+        checked = null,
+        saveError = null,
+    ).let { if (it.checkedAddress.isEmpty()) it.copy(step = ConnectionStep.Failed(ConnectionFailure.Check(ProbeResult.InvalidUrl("empty")))) else it }
+
+    /**
+     * The result of a check started without a chosen method: the recognised document selects the method, so the save
+     * step writes the right kind of connection.
+     */
+    fun detected(state: SourceConnectionState, result: ProbeResult): SourceConnectionState {
+        val next = if (state.method == null && result is ProbeResult.Recognised) {
+            state.copy(method = result.kind.method())
+        } else {
+            state
+        }
+        return checked(next, result)
+    }
+
     /** The result of the check: only a recognised document goes on to the preview. */
     fun checked(state: SourceConnectionState, result: ProbeResult): SourceConnectionState = when (result) {
         is ProbeResult.Recognised -> state.copy(
@@ -117,6 +144,9 @@ object SourceConnectionFlow {
     fun startSave(state: SourceConnectionState): SourceConnectionState? = when {
         state.step !is ConnectionStep.Preview -> null
         state.checkedAddress.isBlank() -> null
+        // A web page is a source of candidates, not a connection: one of its feeds has to be checked first.
+        state.method == null -> null
+        state.checked?.kind == ConnectionKind.WEB_PAGE -> null
         else -> state.copy(step = ConnectionStep.Saving, saveError = null)
     }
 
@@ -148,7 +178,13 @@ object SourceConnectionFlow {
     fun back(state: SourceConnectionState): SourceConnectionState = when (state.step) {
         ConnectionStep.Content -> state
         ConnectionStep.Method -> state.copy(step = ConnectionStep.Content, content = null)
-        is ConnectionStep.Address -> state.copy(step = ConnectionStep.Method, method = null)
+        // A link pasted on the first screen never chose a content type: Back returns to that screen instead of an
+        // empty method list.
+        is ConnectionStep.Address -> if (state.content == null) {
+            state.copy(step = ConnectionStep.Content, method = null)
+        } else {
+            state.copy(step = ConnectionStep.Method, method = null)
+        }
         is ConnectionStep.HandOff -> state.copy(step = ConnectionStep.Method, method = null)
         is ConnectionStep.Probing -> state.copy(step = ConnectionStep.Address(state.method ?: ConnectionMethod.OPDS))
         is ConnectionStep.Preview -> state.copy(step = ConnectionStep.Address(state.method ?: ConnectionMethod.OPDS))
@@ -181,4 +217,12 @@ object SourceConnectionFlow {
         ConnectionMethod.RSS -> ConnectionKind.RSS
         else -> null
     }
+}
+
+/** The wizard method a recognised document is saved with; a web page has no method until a candidate is checked. */
+internal fun ConnectionKind.method(): ConnectionMethod? = when (this) {
+    ConnectionKind.OPDS -> ConnectionMethod.OPDS
+    ConnectionKind.RSS -> ConnectionMethod.RSS
+    ConnectionKind.AUDIO -> ConnectionMethod.AUDIO_LINK
+    else -> null
 }

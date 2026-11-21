@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="gloss_index_open_saved">Open book at the saved position</string>
     <string name="dict_title">Dictionary</string>
     <string name="dict_tab_lookup">Lookup</string>
     <string name="dict_tab_words">My words</string>

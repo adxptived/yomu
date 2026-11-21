@@ -48,6 +48,7 @@ class SavedPositionResolutionTest {
         assertNotNull(runCatching { repo.resolveSavedPosition(bookId + 1, "i:N:$noteId") }.exceptionOrNull())
         // A source with no locator (OCR, or a note without one) is a valid hit: null means "use saved progress".
         assertNull(repo.resolveSavedPosition(bookId, "i:O:$bookId:page3"))
+        assertNull(repo.resolveSavedPosition(bookId, "i:T:$bookId:section3"))
         val noLocator = db.annotations().insertNote(NoteEntity(bookId = bookId, highlightId = null, locatorJson = null, text = "no place", tags = "", createdAt = 11, updatedAt = 11))
         assertNull(repo.resolveSavedPosition(bookId, "i:N:$noLocator"))
         assertNotNull(runCatching { repo.resolveSavedPosition(bookId, "i:N:999") }.exceptionOrNull())

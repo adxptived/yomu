@@ -19,7 +19,6 @@ import app.yomu.core.ui.components.NavTab
 import app.yomu.core.ui.theme.Accent
 import app.yomu.core.ui.theme.ThemeConfig
 import app.yomu.core.ui.theme.ThemeMode
-import app.yomu.data.audio.AudiobookStore
 import app.yomu.data.library.ImportOutcome
 import app.yomu.data.library.ImportService
 import app.yomu.data.repository.ReadingHistoryRepository
@@ -66,7 +65,7 @@ val appModule = module {
     }
     single<HintStore> { SettingsHintStore(get()) }
     single { AppLauncherIcons(androidContext()) } bind LauncherIcons::class
-    viewModel { MainViewModel(get(), get(), get(), get(), get()) }
+    viewModel { MainViewModel(get(), get(), get(), get()) }
     // The audiobook notification opens the player of its book (through the widget action that opens a book).
     single<AudioSessionActivity> {
         AudioSessionActivity { context, bookId ->
@@ -160,6 +159,9 @@ sealed interface MainEvent {
     /** An online chapter to read (the "Continue reading" widget). */
     data class OpenChapter(val chapterId: Long) : MainEvent
     data class OpenTitle(val entryId: Long) : MainEvent
+
+    /** A link shared to Yomu: the connection wizard opens on it instead of guessing what the link is. */
+    data class AddSource(val url: String) : MainEvent
 }
 
 /**
@@ -171,7 +173,6 @@ class MainViewModel(
     private val importer: ImportService,
     private val updates: AppUpdates,
     private val history: ReadingHistoryRepository,
-    private val audiobooks: AudiobookStore,
 ) : ViewModel() {
     val state: StateFlow<AppUiState?> = combine(
         combine(settings.themeMode.flow, settings.dynamicColor.flow, settings.amoled.flow, settings.accent.flow, settings.accentCustom.flow) { mode, dynamic, amoled, accent, custom ->
@@ -267,8 +268,13 @@ class MainViewModel(
                 val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.trim().orEmpty()
                 when {
                     stream != null -> importAndOpen(listOf(stream))
-                    // A shared link (YouTube, a podcast, an audio file) becomes an audiobook; other text is looked up.
-                    text.contains("http://") || text.contains("https://") -> addAudioLink(text)
+                    // A shared link opens the connection wizard: it recognises a catalogue, a feed, an audio file or
+                    // a web page that advertises one, and only saves after the reader confirms what was found.
+                    text.contains("http://") || text.contains("https://") -> {
+                        // A browser shares "Title\nhttps://…": only the address itself belongs in the wizard field.
+                        val url = URL_IN_TEXT.find(text)?.value?.trimEnd('.', ',', ')', ']', '>', ';') ?: text
+                        _events.trySend(MainEvent.AddSource(url))
+                    }
                     text.isNotEmpty() -> _events.trySend(MainEvent.Lookup(text.take(MAX_LOOKUP)))
                 }
             }
@@ -291,19 +297,6 @@ class MainViewModel(
     private fun openOnline(itemId: Long) = viewModelScope.launch(ScreenErrors) {
         val chapter = withContext(Dispatchers.IO) { history.resumeChapter(itemId, null) }
         _events.send(if (chapter != null) MainEvent.OpenChapter(chapter) else MainEvent.OpenTitle(itemId))
-    }
-
-    private fun addAudioLink(text: String) = viewModelScope.launch(ScreenErrors) {
-        _importing.value = true
-        val outcome = runCatching { audiobooks.addLink(text) }
-            .onFailure { if (it is kotlinx.coroutines.CancellationException) { _importing.value = false; throw it } }
-            .getOrElse { ImportOutcome.Failed(text, it) }
-        _importing.value = false
-        when (outcome) {
-            is ImportOutcome.Added -> _events.send(MainEvent.OpenBook(outcome.bookId))
-            is ImportOutcome.Duplicate -> _events.send(MainEvent.OpenBook(outcome.bookId))
-            is ImportOutcome.Failed -> _events.send(MainEvent.Imported(0, 1, outcome.error))
-        }
     }
 
     private fun importAndOpen(uris: List<Uri>) = viewModelScope.launch(ScreenErrors) {
@@ -334,6 +327,7 @@ class MainViewModel(
     companion object {
         private const val MAX_LOOKUP = 200
         private const val UPDATE_CHECK_DELAY_MS = 5_000L
+        private val URL_IN_TEXT = Regex("https?://\\S+")
 
         /** The repository address of an extension-store deep link, or null. */
         fun storeLink(data: Uri): String? {

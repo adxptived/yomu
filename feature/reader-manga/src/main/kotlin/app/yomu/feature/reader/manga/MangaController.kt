@@ -39,6 +39,15 @@ class MangaController(
     /** The flat page the pager shows: inside the session for online chapters, inside the file for a local book. */
     var page by mutableIntStateOf(0)
 
+    /** Bumped by "fit the page": every page drops its temporary zoom and pan. */
+    var zoomReset by mutableIntStateOf(0)
+        private set
+
+    fun resetZoom() {
+        lockedZoom = 1f
+        zoomReset++
+    }
+
     /** The chapter loaded at a flat page, or null for a local publication. */
     fun chapterAt(index: Int): MangaChapter? = session?.chapterAt(index)
 
@@ -53,7 +62,7 @@ class MangaController(
 
     /** The flat index of [localPage] in [chapterId]; null when that chapter is not loaded. */
     fun globalIndex(chapterId: Long, localPage: Int): Int? =
-        session?.locate(chapterId, localPage) ?: localPage.takeIf { it in 0 until count }
+        if (session != null) session.locate(chapterId, localPage) else localPage.takeIf { it in 0 until count }
 
     /** The flat index of a page of the current chapter. */
     fun globalOfCurrent(localPage: Int): Int =

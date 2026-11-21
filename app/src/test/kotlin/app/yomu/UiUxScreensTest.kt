@@ -157,7 +157,8 @@ class UiUxScreensTest {
         awaitText("Tap zones")
         shotScreen("302_reader_tap_zones")
         // The settings are collapsible groups now: open the group before its rows can be scrolled to.
-        compose.onAllNodesWithText("Edge swipes")[0].performClick()
+        compose.onAllNodesWithText("Edge swipes")[0].performScrollTo().performClick()
+        awaitText("Edge swipe gestures")
         compose.onAllNodesWithText("Edge swipe gestures")[0].performScrollTo()
         shotScreen("303_reader_edge_gestures")
         compose.onAllNodesWithText("Display")[0].performClick()

@@ -163,6 +163,7 @@ data class PdfSettings(
     val contrast: Float = 1f,
     val grayscale: Boolean = false,
     val zoomLock: Boolean = false,
+    val fitWidth: Boolean = false,
 )
 
 enum class ScreenTimeout(val minutes: Int) { SYSTEM(0), MIN_2(2), MIN_5(5), MIN_10(10), MIN_30(30), ALWAYS(-1) }

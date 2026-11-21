@@ -135,7 +135,7 @@
     <string name="in_library">In library</string>
 
     <string name="global_search">Global search</string>
-    <string name="global_search_hint">Title, author…</string>
+    <string name="global_search_hint">Title, author or catalog…</string>
     <string name="global_search_empty">Search all sources</string>
     <string name="global_search_empty_hint">Results from every enabled source appear here, grouped by source.</string>
     <string name="global_search_loading">Searching…</string>
@@ -496,6 +496,20 @@
 
     <!-- Connection wizard (S01) -->
     <string name="connection_title">Add a source</string>
+    <string name="connection_paste_title">Have a link?</string>
+    <string name="connection_paste_hint">Paste the address of a catalogue, a podcast feed or an audio file. Yomu will say what it found before anything is saved.</string>
+    <string name="connection_paste_label">Link (URL)</string>
+    <string name="connection_paste_button">Check the link</string>
+    <string name="connection_paste_or">Or choose what you are adding:</string>
+    <string name="connection_page_links">This page links to:</string>
+    <string name="connection_page_choose">Choose the catalogue or feed itself:</string>
+    <string name="connection_page_none">This is a web page, not a catalogue or a feed. Find the OPDS or RSS address on the site and paste it here.</string>
+    <string name="connection_use_audio">Add as an audio link</string>
+    <string name="connection_action_login">Enter your login</string>
+    <string name="connection_action_address">Change the address</string>
+    <string name="connection_action_retry">Try again</string>
+    <string name="connection_action_browser">Open in the browser</string>
+    <string name="connection_action_catalog">Use the catalogue address</string>
     <string name="connection_what">What do you want to add?</string>
     <string name="connection_content_books">Books</string>
     <string name="connection_content_books_hint">EPUB, PDF, OPDS catalogues</string>

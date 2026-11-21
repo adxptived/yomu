@@ -80,8 +80,19 @@ class NotificationActionsTest {
     @Test
     fun tapOpensTheQueue() = runBlocking {
         val koin = GlobalContext.get()
-        val main = MainViewModel(koin.get(), koin.get(), koin.get(), koin.get(), koin.get())
+        val main = MainViewModel(koin.get(), koin.get(), koin.get(), koin.get())
         main.handleIntent(Intent(Notifications.ACTION_OPEN_DOWNLOADS))
         assertEquals(MainEvent.OpenDownloads, withTimeout(5_000) { main.events.first() })
+    }
+
+    @Test
+    fun aSharedLinkOpensTheConnectionWizardInsteadOfGuessing() = runBlocking {
+        val koin = GlobalContext.get()
+        val main = MainViewModel(koin.get(), koin.get(), koin.get(), koin.get())
+        main.handleIntent(
+            Intent(Intent.ACTION_SEND).setType("text/plain")
+                .putExtra(Intent.EXTRA_TEXT, "Example library\nhttps://example.org/feed.xml"),
+        )
+        assertEquals(MainEvent.AddSource("https://example.org/feed.xml"), withTimeout(5_000) { main.events.first() })
     }
 }

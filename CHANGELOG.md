@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.10.0 — reading comfort and one-step sources
+
+> **Install.** Installs over 2.9.4 if signed with the same key. No database migration.
+
+### The reader
+
+- **Contents, Search and View stay in the bottom row.** The reading controls no longer hide the two most used commands behind the top menu: from a hidden interface, contents, search and the quick View panel are two taps away. The three labelled entries share one row on a 320 dp screen.
+- **Back closes the layer on top.** The match bar, the "continued from page" note, the "back to page" offer and the reading controls close in that order; only then does Back leave the book. Sheets and dialogs keep their own Back.
+- **Search stays on the page.** After a result is opened, a compact "3 of 12" bar offers previous, next, all results and close. Walking the matches does not create a new "back" target for every hit.
+- **Recent jumps.** "⋮ → Recent jumps" lists every remembered place with its chapter, page and percentage; one tap returns to it.
+- **A quiet resume note.** When a book is continued, "Continued from page N" appears once and fades by itself.
+- **The contents become a map.** The current chapter says "You are here", chapters with bookmarks carry a mark that opens the bookmark list, and long books get a title search.
+- **Page grid with bookmarks.** The PDF and local manga grid opens on the current page, marks bookmarked pages and can show only them.
+- **Fit the page in one tap.** "View → Fit the page" drops a pinch and pan in PDF, local manga and the webtoon strip; a locked zoom starts again at the fit scale.
+- **The settings sample is your page.** The "View" panel previews font, spacing and theme on a fragment of the open page, not a generic paragraph.
+- **Per-book scope is visible where the change is made.** The quick panel shows "This book / All books" and lets the scope be turned on without discarding the shared values. "Apply as the default" copies the current look to new books while this book keeps its own copy.
+
+### Library and settings
+
+- **"Continue reading" says where it leads.** The card shows "Chapter 12 · 34%", "Page 42 · 23%" or the remaining chapters, built from the saved locator; a long press opens the book's details without starting it.
+- **Settings search understands everyday words.** "Where are files", "font", "PDF margins" and "sleep timer" find the expected section or control in Russian and English.
+
+### Sources: paste a link, see what it is, open the result
+
+- **The add screen starts with a link field.** Paste a catalogue, podcast feed or audio address and the check runs without choosing a type first.
+- **Share to Yomu opens the same screen.** A shared link fills the field and starts the check; a browser's "Title + URL" share keeps only the address.
+- **The document selects its own kind.** OPDS, RSS/Atom and audio are recognised from the response. A web page is not saved as a source: only the feeds and catalogues it explicitly advertises are offered, and a page that is not a feed can still be added as an audio link.
+- **The result opens itself.** Saving returns the catalogue ID or the new book ID, so the app opens the catalogue, the player or the created book instead of simply closing the wizard. A repeated tap cannot save the same source twice.
+- **Errors say what to do.** Bad address, missing network, timeout, login required, browser check, rate limit and unsupported answer are separate cases with one action: change the address, enter the login, retry, open the browser or pick the catalogue address. A late answer to a replaced address is ignored, and a check can be cancelled.
+
+### Under the hood
+
+- The connection probe recognises feeds declared by a page, handles 408/429 as temporary failures and keeps HTTP details out of the saved source name. A redirect to another host no longer receives the login and password that belong to the typed server.
+- New tests cover search stepping and wrapping, the pasted-link flow, web-page candidates, everyday settings words and a shared link with a title.
+- 812 tests in the affected debug modules pass (0 failures, 0 errors, 4 skipped); `lintDebug`, `detekt`, debug, fast and signed release builds pass. Device and live-server checks remain listed in [REMAINING.md](docs/REMAINING.md).
+
 ## 2.9.4 — the audit pass: scoped clears, real downloads, private media
 
 > **Install.** Installs over 2.9.1 if signed with the same key. No database migration. 2.9.2 and 2.9.3 were tagged

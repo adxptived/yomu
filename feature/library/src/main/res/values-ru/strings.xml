@@ -36,6 +36,10 @@
     <string name="library_mark_read">Отметить прочитанным</string>
     <string name="library_mark_unread">Отметить непрочитанным</string>
     <string name="library_to_collection">В полку</string>
+    <string name="library_save_shelf">Сохранить полку</string>
+    <string name="library_shelf_delete">Удалить полку</string>
+    <string name="library_shelf_name">Название полки</string>
+    <string name="library_shelf_title">Сохранить текущие фильтры как полку</string>
     <string name="library_add_tag">Добавить тег</string>
     <string name="library_tag">Тег</string>
     <string name="library_tags">Теги</string>
@@ -77,6 +81,8 @@
     <string name="import_failure_unknown">Импорт не удался</string>
     <string name="library_all">Все</string>
     <string name="library_continue">Продолжить чтение</string>
+    <string name="library_continue_page">Стр. %1$d · %2$d%%</string>
+    <string name="library_continue_chapter">Глава %1$d · %2$d%%</string>
     <string name="library_empty_title">Библиотека пуста</string>
     <string name="library_empty_text">Импортируйте книги и комиксы с устройства или найдите бесплатные книги в каталоге.</string>
     <string name="library_nothing_found">Ничего не найдено</string>

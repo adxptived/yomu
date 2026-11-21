@@ -104,14 +104,15 @@ class BookRepositoryImpl(
         if (parts.firstOrNull() == "i") {
             val key = parts.drop(1)
             val id = key.getOrNull(1)?.toLongOrNull()
+            if (key.firstOrNull() in setOf("O", "T") && id == bookId && !key.getOrNull(2).isNullOrBlank()) return null
             val found = when (key.firstOrNull()) {
                 "H" -> id?.let { db.annotations().highlight(it)?.takeIf { row -> row.bookId == bookId }?.let { true to it.locatorJson } }
                 "N" -> id?.let { db.annotations().note(it)?.takeIf { row -> row.bookId == bookId }?.let { true to it.locatorJson } }
                 "W" -> id?.let { db.words().get(it)?.takeIf { row -> row.bookId == bookId }?.let { true to it.locatorJson } }
                 else -> null
             }
-            if (found == null && key.firstOrNull() != "O") throw java.io.IOException("Saved position no longer exists; reopen the list and try again")
-            return decode(found?.second)
+            if (found == null) throw java.io.IOException("Saved position no longer exists; reopen the list and try again")
+            return decode(found.second)
         }
         if (parts.size != 3) throw java.io.IOException("Invalid saved position reference")
         val id = parts[1].toLongOrNull() ?: throw java.io.IOException("Invalid saved position reference")

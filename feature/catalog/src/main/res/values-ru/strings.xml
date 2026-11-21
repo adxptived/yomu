@@ -135,7 +135,7 @@
     <string name="in_library">В библиотеке</string>
 
     <string name="global_search">Глобальный поиск</string>
-    <string name="global_search_hint">Название, автор…</string>
+    <string name="global_search_hint">Название, автор или каталог…</string>
     <string name="global_search_empty">Поиск по всем источникам</string>
     <string name="global_search_empty_hint">Здесь появятся результаты всех включённых источников, сгруппированные по источникам.</string>
     <string name="global_search_loading">Ищем…</string>
@@ -145,6 +145,17 @@
     <string name="migrate_title">Перенос в другой источник</string>
     <string name="migrate_hint">Найдите тот же тайтл в другом источнике и выберите его: прочитанные главы и запись в библиотеке переедут туда.</string>
     <string name="migrate_done">Перенесено</string>
+    <string name="migrate_preview_title">Перенести тайтл?</string>
+    <string name="migrate_preview_target">%1$s → %2$s</string>
+    <string name="migrate_preview_counts">Точных: %1$d · вероятных: %2$d · проверить: %3$d · нет: %4$d</string>
+    <string name="migrate_preview_page_warning">Номера страниц не переносятся между разными релизами; отметки чтения и закладки переносятся.</string>
+    <string name="migrate_preview_old_kept">Старый тайтл и скачанные главы остаются в библиотеке.</string>
+    <string name="migrate_category_progress">Прогресс чтения</string>
+    <string name="migrate_category_bookmarks">Закладки</string>
+    <string name="migrate_category_tabs">Полки</string>
+    <string name="migrate_category_favorite">Избранное</string>
+    <string name="migrate_apply">Перенести</string>
+    <string name="migrate_cancel">Отмена</string>
 
     <string name="title_add_to_library">В библиотеку</string>
     <string name="title_remove_from_library">Убрать из библиотеки</string>
@@ -499,6 +510,20 @@
 
     <!-- Connection wizard (S01) -->
     <string name="connection_title">Добавить источник</string>
+    <string name="connection_paste_title">Есть ссылка?</string>
+    <string name="connection_paste_hint">Вставьте адрес каталога, подкаста или аудиофайла. Yomu покажет, что нашлось, до сохранения.</string>
+    <string name="connection_paste_label">Ссылка (URL)</string>
+    <string name="connection_paste_button">Проверить ссылку</string>
+    <string name="connection_paste_or">Или выберите, что добавляете:</string>
+    <string name="connection_page_links">На странице есть ссылки:</string>
+    <string name="connection_page_choose">Выберите сам каталог или фид:</string>
+    <string name="connection_page_none">Это обычная веб-страница, а не каталог и не фид. Найдите на сайте адрес OPDS или RSS и вставьте его сюда.</string>
+    <string name="connection_use_audio">Добавить как аудиоссылку</string>
+    <string name="connection_action_login">Ввести логин</string>
+    <string name="connection_action_address">Изменить адрес</string>
+    <string name="connection_action_retry">Повторить</string>
+    <string name="connection_action_browser">Открыть в браузере</string>
+    <string name="connection_action_catalog">Указать адрес каталога</string>
     <string name="connection_what">Что вы хотите добавить?</string>
     <string name="connection_content_books">Книги</string>
     <string name="connection_content_books_hint">EPUB, PDF, OPDS-каталоги</string>

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="gloss_index_open_saved">Открыть книгу на сохранённом месте</string>
     <string name="dict_title">Словарь</string>
     <string name="dict_tab_lookup">Поиск</string>
     <string name="dict_tab_words">Мои слова</string>

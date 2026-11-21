@@ -43,8 +43,11 @@ import kotlinx.serialization.Serializable
 
 @Serializable data class ExtensionsRoute(val addStore: String? = null)
 
-/** The connection wizard: what the catalog's "Add" and the library's import sheet lead to (S01). */
-@Serializable data object SourceConnectionRoute
+/**
+ * The connection wizard: what the catalog's "Add" and the library's import sheet lead to (S01). [link] is a shared
+ * address that opens the wizard with the check already running.
+ */
+@Serializable data class SourceConnectionRoute(val link: String? = null)
 
 /** The plan of the next automatic checks (U02). */
 @Serializable data object UpcomingRoute

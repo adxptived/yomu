@@ -8,6 +8,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.activity.ComponentDialog
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
@@ -211,9 +212,10 @@ class AppSmokeTest {
 
         // Reader chrome and settings sheet (only for the screenshots: the chrome may be hidden until a tap).
         runCatching {
-            val settings = compose.onAllNodes(hasContentDescription("All reading settings"))
-            if (settings.fetchSemanticsNodes().isNotEmpty()) {
-                settings[0].performClick()
+            val view = compose.onAllNodes(hasText("View") and hasClickAction())
+            if (view.fetchSemanticsNodes().isNotEmpty()) {
+                view[0].performClick()
+                compose.onNode(hasText("All reading settings") and hasClickAction()).performClick()
                 compose.mainClock.advanceTimeBy(1_000)
                 shot("09_reader_settings")
                 compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
@@ -421,13 +423,13 @@ class AppSmokeTest {
         shot("23_manga_reader")
         compose.mainClock.advanceTimeBy(4_000)
         runCatching {
-            var settings = compose.onAllNodes(hasContentDescription("All reading settings"))
-            if (settings.fetchSemanticsNodes().isEmpty()) {
+            val view = compose.onAllNodes(hasText("View") and hasClickAction())
+            if (view.fetchSemanticsNodes().isEmpty()) {
                 compose.onAllNodes(isRoot())[0].performTouchInput { click(center) }
                 compose.mainClock.advanceTimeBy(1_000)
-                settings = compose.onAllNodes(hasContentDescription("All reading settings"))
             }
-            settings[0].performClick()
+            view[0].performClick()
+            compose.onNode(hasText("All reading settings") and hasClickAction()).performClick()
             compose.mainClock.advanceTimeBy(1_000)
             shotScreen("24_manga_settings")
         }.onFailure { println("manga settings screenshot skipped: $it") }

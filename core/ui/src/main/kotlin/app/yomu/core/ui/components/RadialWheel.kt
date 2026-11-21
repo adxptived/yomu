@@ -159,6 +159,7 @@ fun RadialMenu(
     state: RadialState,
     dragSelect: Boolean,
     onDismiss: () -> Unit,
+    onActionChosen: () -> Unit = onDismiss,
 ) {
     val haptic = rememberHaptic()
     val density = LocalDensity.current
@@ -241,7 +242,7 @@ fun RadialMenu(
                                         if (WheelLayout.isMore(actions.size, index)) {
                                             state.overflow = true
                                         } else {
-                                            onDismiss()
+                                            onActionChosen()
                                             action.onClick()
                                         }
                                     }
@@ -359,7 +360,7 @@ fun RadialMenu(
                                 )
                             }
                             rest.forEach { action ->
-                                Surface(onClick = { onDismiss(); action.onClick() }, color = Color.Transparent) {
+                                Surface(onClick = { onActionChosen(); action.onClick() }, color = Color.Transparent) {
                                     Row(
                                         Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                                         verticalAlignment = Alignment.CenterVertically,

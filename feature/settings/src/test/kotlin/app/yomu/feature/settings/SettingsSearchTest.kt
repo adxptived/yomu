@@ -25,4 +25,12 @@ class SettingsSearchTest {
     @Test fun matchesSectionName() = assertEquals(listOf("Font size"), filterSettings(index, "reader").map { it.title })
 
     @Test fun noMatchIsEmpty() = assertTrue(filterSettings(index, "zzz").isEmpty())
+
+    @Test fun everydayWordsFindTheirSetting() {
+        val withAliases = index + SettingsSearchEntry(
+            SettingsSection.READER, "Reader", "Crop margins automatically", null, anchor = "Crop margins automatically",
+            keywords = listOf("поля pdf"),
+        )
+        assertEquals(listOf("Crop margins automatically"), filterSettings(withAliases, "поля pdf").map { it.title })
+    }
 }

@@ -97,6 +97,7 @@ import app.yomu.domain.model.MangaSettings
 import app.yomu.domain.model.PageTurnAnimation
 import app.yomu.domain.model.PdfMode
 import app.yomu.domain.model.PdfSettings
+import app.yomu.domain.model.QuickMenuStyle
 import app.yomu.domain.model.ReaderOrientation
 import app.yomu.domain.model.ReaderTheme
 import app.yomu.domain.model.ScreenTimeout
@@ -131,6 +132,8 @@ fun ReaderSettingsSheet(
     onDismiss: () -> Unit,
     /** What the page actually shows now (auto-night included), for the sample card. */
     previewText: TextReaderSettings = text,
+    /** A fragment of the open page; the sample shows the reader's own text when it is available. */
+    previewSnippet: String? = null,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -169,12 +172,10 @@ fun ReaderSettingsSheet(
             }
             Column(Modifier.weight(1f).verticalScroll(settingsScroll)) {
                 if (content is ReaderContent.Text && !searching) {
-                    ReaderPreview(previewText)
+                    ReaderPreview(previewText, previewSnippet)
                     PresetsRow(text, presets, viewModel)
                 }
                 if (viewModel.bookId > 0 || viewModel.isOnline) {
-                    // N02: the scope is a visible choice, not a hidden switch. "All books" drops the saved override,
-                    // so the title inherits the app defaults again instead of keeping a copy of its old values.
                     Text(
                         stringResource(R.string.rs_scope_title),
                         style = MaterialTheme.typography.titleSmall,
@@ -183,7 +184,8 @@ fun ReaderSettingsSheet(
                     Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = Dimens.l), horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
                         FilterChip(
                             selected = !perBook,
-                            onClick = { if (perBook) viewModel.setPerBook(false) },
+                            onClick = {},
+                            enabled = !perBook,
                             label = { Text(stringResource(R.string.rs_scope_global)) },
                         )
                         FilterChip(
@@ -198,6 +200,25 @@ fun ReaderSettingsSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
                     )
+                    if (perBook) {
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = Dimens.s),
+                            horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+                        ) {
+                            TextButton(onClick = viewModel::applyBookSettingsAsGlobal) {
+                                Text(stringResource(R.string.rs_book_scope_apply_global))
+                            }
+                            TextButton(onClick = { viewModel.setPerBook(false) }) {
+                                Text(stringResource(R.string.rs_book_scope_reset))
+                            }
+                        }
+                        Text(
+                            stringResource(R.string.rs_book_scope_apply_global_sum),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+                        )
+                    }
                 }
                 if (searching) {
                     // A query searches all three tabs: a setting in another tab must not look absent.
@@ -252,7 +273,7 @@ fun ReaderSettingsSheet(
  * numbers. Shown with the theme colours of the page, so a dark theme previews dark as well.
  */
 @Composable
-private fun ReaderPreview(s: TextReaderSettings) {
+private fun ReaderPreview(s: TextReaderSettings, snippet: String? = null) {
     Surface(
         color = Color(s.background),
         shape = MaterialTheme.shapes.medium,
@@ -265,7 +286,7 @@ private fun ReaderPreview(s: TextReaderSettings) {
                 color = Color(s.foreground).copy(alpha = 0.6f),
             )
             Text(
-                stringResource(R.string.rs_preview_text),
+                snippet?.takeIf { it.isNotBlank() } ?: stringResource(R.string.rs_preview_text),
                 style = androidx.compose.ui.text.TextStyle(
                     color = Color(s.foreground),
                     fontFamily = previewFamily(s.fontFamily),
@@ -297,6 +318,7 @@ private fun groupLabels(content: ReaderContent): List<Pair<Int, Int>> {
         R.string.rs_group_keys to R.string.rs_group_keys_summary,
         R.string.rs_group_word to R.string.rs_group_word_summary,
         R.string.rs_group_scroll to R.string.rs_group_scroll_summary,
+        R.string.rs_group_menus to R.string.rs_menu_gesture,
     )
     return when (content) {
         is ReaderContent.Text -> listOf(
@@ -1096,6 +1118,35 @@ private fun ControlSettings(
     perBook: Boolean,
     query: String,
 ) {
+    val selectionStyle by vm.selectionMenuStyle.collectAsStateWithLifecycle()
+    val pageStyle by vm.pageMenuStyle.collectAsStateWithLifecycle()
+    CollapsibleSection(
+        title = stringResource(R.string.rs_group_menus),
+        summary = stringResource(R.string.rs_menu_gesture),
+        query = query,
+        icon = Icons.Outlined.TouchApp,
+    ) {
+        val menuStyles = listOf(
+            QuickMenuStyle.RADIAL to stringResource(R.string.rs_menu_radial),
+            QuickMenuStyle.LIST to stringResource(R.string.rs_menu_list),
+        )
+        if (content !is ReaderContent.Manga) {
+            PreferenceChoice(
+                stringResource(R.string.rs_menu_selection),
+                listOf(QuickMenuStyle.BAR to stringResource(R.string.rs_menu_bar)) + menuStyles,
+                if (selectionStyle == QuickMenuStyle.OFF) QuickMenuStyle.BAR else selectionStyle,
+                { vm.setSelectionMenuStyle(it) },
+            )
+        }
+        if (content !is ReaderContent.Text) {
+            PreferenceChoice(
+                stringResource(R.string.rs_menu_page),
+                menuStyles + (QuickMenuStyle.OFF to stringResource(R.string.rs_menu_first_action)),
+                if (pageStyle == QuickMenuStyle.BAR) QuickMenuStyle.LIST else pageStyle,
+                { vm.setPageMenuStyle(it) },
+            )
+        }
+    }
     if (content is ReaderContent.Manga) {
         // The manga controls themselves are manga settings and follow the chosen scope.
         MangaControlSettings(m, { transform -> vm.updateManga(transform) }, onPreviewZones = vm::previewTapZones, query = query)

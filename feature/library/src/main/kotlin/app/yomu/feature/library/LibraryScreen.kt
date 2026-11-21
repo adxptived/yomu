@@ -4,8 +4,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -190,8 +192,10 @@ import app.yomu.domain.library.LibraryItemKey
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookCollection
 import app.yomu.domain.model.CatalogEntry
+import app.yomu.domain.model.EngineType
 import app.yomu.domain.model.LibraryFilter
 import app.yomu.domain.model.LibrarySort
+import app.yomu.domain.model.Locator
 import app.yomu.domain.model.ReadingStatus
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.StateFlow
@@ -229,6 +233,7 @@ fun LibraryScreen(
     val resources = LocalResources.current
     val items = viewModel.paged.collectAsLazyPagingItems()
     val continueItems by viewModel.continueItems.collectAsStateWithLifecycle()
+    val continuePositions by viewModel.continuePositions.collectAsStateWithLifecycle()
     val collections by viewModel.collections.collectAsStateWithLifecycle()
     val filter by viewModel.filterState.collectAsStateWithLifecycle()
     val types by viewModel.typeFilter.collectAsStateWithLifecycle()
@@ -647,7 +652,12 @@ fun LibraryScreen(
         },
         floatingActionButton = {
             if (showFab) {
-                YomuFab(text = stringResource(R.string.library_import), icon = Icons.Default.Add, onClick = { showImport = true }, expanded = !grid)
+                YomuFab(
+                    text = stringResource(R.string.library_import_files),
+                    icon = Icons.Default.Add,
+                    onClick = { openDocs.launch(arrayOf("*/*")) },
+                    expanded = !grid,
+                )
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -689,7 +699,7 @@ fun LibraryScreen(
                             onlineSelection = typedSelection.keys.filterIsInstance<LibraryItemKey.OnlineEntry>().mapTo(mutableSetOf()) { it.id },
                             onlineTiles = onlineTiles,
                             header = {
-                                if (continueRow) ContinueReading(continueItems, onOpenBook, viewModel::continueOnline)
+                                if (continueRow) ContinueReading(continueItems, continuePositions, onOpenBook, viewModel::continueOnline, onOpenDetails)
                                 if (shelf) {
                                     OnlineShelf(
                                         onlineShown, onlineTotal, onOpenTitle, onLongPress = { onlineMenu = it }, onShowAll = { onlineTab = true },
@@ -1145,8 +1155,15 @@ private fun ActiveFilters(filter: LibraryFilter, types: Set<FormatGroup>, viewMo
 }
 
 /** The latest book or online title in progress as a large card, the others in a row under it; both resume reading. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ContinueReading(items: List<ContinueItem>, onOpenBook: (Book) -> Unit, onContinueTitle: (Long) -> Unit) {
+private fun ContinueReading(
+    items: List<ContinueItem>,
+    positions: Map<Long, Locator>,
+    onOpenBook: (Book) -> Unit,
+    onContinueTitle: (Long) -> Unit,
+    onDetails: (Book) -> Unit,
+) {
     val first = items.firstOrNull() ?: return
     val open: (ContinueItem) -> Unit = { item ->
         when (item) {
@@ -1156,10 +1173,13 @@ private fun ContinueReading(items: List<ContinueItem>, onOpenBook: (Book) -> Uni
     }
     Column(Modifier.fillMaxWidth().padding(bottom = Dimens.s)) {
         Surface(
-            onClick = { open(first) },
             shape = MaterialTheme.shapes.large,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.s, vertical = Dimens.xs),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.s, vertical = Dimens.xs).combinedClickable(
+                onClick = { open(first) },
+                // The card resumes the book; a long press is the way to its details without opening the reader.
+                onLongClick = { (first as? ContinueItem.BookItem)?.let { onDetails(it.book) } },
+            ),
         ) {
             Row(Modifier.padding(Dimens.l), horizontalArrangement = Arrangement.spacedBy(Dimens.l), verticalAlignment = Alignment.CenterVertically) {
                 val (title, cover) = when (first) {
@@ -1171,7 +1191,10 @@ private fun ContinueReading(items: List<ContinueItem>, onOpenBook: (Book) -> Uni
                     Text(stringResource(R.string.library_continue), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                     Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     val (detail, fraction) = when (first) {
-                        is ContinueItem.BookItem -> first.book.authorsText.ifBlank { null } to first.book.progress
+                        is ContinueItem.BookItem -> {
+                            val place = positions[first.book.id]?.let { continuePlace(first.book, it) }
+                            (place ?: first.book.authorsText.ifBlank { null }) to first.book.progress
+                        }
                         is ContinueItem.OnlineItem -> pluralStringResource(R.plurals.library_unread_chapters, first.entry.unread, first.entry.unread) to first.entry.readFraction()
                     }
                     detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -1222,6 +1245,18 @@ private fun ContinueReading(items: List<ContinueItem>, onOpenBook: (Book) -> Uni
                 }
             }
         }
+    }
+}
+
+/** "Chapter 12 · 34%" or "Page 42 · 23%" for a "Continue" card, from the same locator the reader saves. */
+@Composable
+private fun continuePlace(book: Book, locator: Locator): String {
+    val percent = (locator.totalProgression.coerceIn(0f, 1f) * 100).toInt()
+    val title = locator.chapterTitle?.takeIf { it.isNotBlank() }
+    return when (book.engine) {
+        EngineType.TEXT -> if (title != null) "$title · $percent%" else stringResource(R.string.library_continue_chapter, locator.chapter + 1, percent)
+        EngineType.AUDIO -> stringResource(R.string.library_continue_chapter, locator.chapter + 1, percent)
+        else -> stringResource(R.string.library_continue_page, locator.chapter + 1, percent)
     }
 }
 

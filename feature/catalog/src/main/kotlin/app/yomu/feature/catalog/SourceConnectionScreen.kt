@@ -1,5 +1,7 @@
 package app.yomu.feature.catalog
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -67,6 +70,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.theme.Dimens
+import app.yomu.source.LinkCandidate
 import app.yomu.source.ProbeResult
 import app.yomu.core.ui.R as CoreR
 
@@ -82,19 +86,31 @@ fun SourceConnectionScreen(
     viewModel: SourceConnectionViewModel,
     onBack: () -> Unit,
     onOpenExtensions: () -> Unit,
+    /** A link shared to Yomu: the wizard opens with the field filled and the check already running. */
+    initialLink: String? = null,
+    /** The saved result: a catalogue or the book that was just added. The default simply closes the wizard. */
+    onSaved: (SourceConnectionEvent.Saved) -> Unit = { onBack() },
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var signedIn by rememberSaveable { mutableStateOf(false) }
     // The password is never written to the saved state: a rotation clears it rather than keeping a secret in a Bundle.
     var showPassword by remember { mutableStateOf(false) }
+    var pasted by rememberSaveable { mutableStateOf("") }
 
     // The same document pickers the library's import sheet uses; the files go to the same import service.
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> viewModel.importFiles(uris) }
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(viewModel::importFolder) }
 
     LaunchedEffect(Unit) {
-        viewModel.events.collect { if (it is SourceConnectionEvent.Saved) onBack() }
+        viewModel.events.collect { if (it is SourceConnectionEvent.Saved) onSaved(it) }
+    }
+    LaunchedEffect(initialLink) {
+        val link = initialLink?.trim().orEmpty()
+        if (link.isNotEmpty() && state.step is ConnectionStep.Content) {
+            pasted = link
+            viewModel.checkLink(link)
+        }
     }
 
     Scaffold(
@@ -116,6 +132,33 @@ fun SourceConnectionScreen(
         ) {
             when (val step = state.step) {
                 ConnectionStep.Content -> {
+                    // The quickest path needs no type choice at all: paste the address and let the document say what
+                    // it is. The questions below stay for people who do not have a link yet.
+                    Text(stringResource(R.string.connection_paste_title), style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.connection_paste_hint), style = MaterialTheme.typography.bodyMedium)
+                    OutlinedTextField(
+                        pasted,
+                        { pasted = it },
+                        label = { Text(stringResource(R.string.connection_paste_label)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done, autoCorrectEnabled = false),
+                        keyboardActions = KeyboardActions(onDone = { if (pasted.isNotBlank()) viewModel.checkLink(pasted) }),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        onClick = { viewModel.checkLink(pasted) },
+                        enabled = pasted.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touch),
+                    ) {
+                        Icon(Icons.Default.Link, null, Modifier.size(18.dp))
+                        Text(stringResource(R.string.connection_paste_button), Modifier.padding(start = Dimens.s))
+                    }
+                    Text(
+                        stringResource(R.string.connection_paste_or),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = Dimens.s),
+                    )
                     Text(stringResource(R.string.connection_what), style = MaterialTheme.typography.titleLarge)
                     ChoiceCard(stringResource(R.string.connection_content_books), stringResource(R.string.connection_content_books_hint), Icons.AutoMirrored.Filled.MenuBook) {
                         viewModel.chooseContent(ConnectionContent.BOOKS)
@@ -148,7 +191,13 @@ fun SourceConnectionScreen(
                     onCheck = viewModel::check,
                 )
 
-                is ConnectionStep.Probing -> Busy(stringResource(R.string.connection_checking), step.address)
+                is ConnectionStep.Probing -> {
+                    Busy(stringResource(R.string.connection_checking), step.address)
+                    // Back stops waiting: the late answer is ignored because the step is no longer Probing.
+                    TextButton(onClick = viewModel::back, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(CoreR.string.cancel))
+                    }
+                }
 
                 is ConnectionStep.Preview -> {
                     Text(stringResource(R.string.connection_preview_title), style = MaterialTheme.typography.titleLarge)
@@ -182,19 +231,59 @@ fun SourceConnectionScreen(
                             Text(state.checkedAddress, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
-                    Text(stringResource(R.string.connection_preview_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button(onClick = viewModel::save, modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touch)) {
-                        Text(stringResource(R.string.connection_add))
+                    if (step.result.kind == app.yomu.source.ConnectionKind.WEB_PAGE) {
+                        // A site is not a connection: only the feed or catalogue it advertises can be added. An empty
+                        // answer says what to look for instead of offering a button that cannot work.
+                        val links = step.result.candidates
+                        if (links.isEmpty()) {
+                            Text(stringResource(R.string.connection_page_none), style = MaterialTheme.typography.bodyMedium)
+                        } else {
+                            Text(stringResource(R.string.connection_page_links), style = MaterialTheme.typography.titleSmall)
+                            links.forEach { candidate -> CandidateCard(candidate) { viewModel.checkLink(candidate.url) } }
+                            Text(stringResource(R.string.connection_page_choose), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        // A YouTube video or other supported page is not a catalogue, but the audio importer can still
+                        // add it; the action is explicit so an ordinary site is never saved silently.
+                        TextButton(onClick = viewModel::useAsAudioLink, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.connection_use_audio))
+                        }
+                    } else {
+                        Text(stringResource(R.string.connection_preview_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Button(onClick = viewModel::save, modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touch)) {
+                            Text(stringResource(R.string.connection_add))
+                        }
                     }
                 }
 
                 ConnectionStep.Saving -> Busy(stringResource(R.string.connection_saving), state.checkedAddress)
 
                 is ConnectionStep.Failed -> {
+                    val cause = (step.reason as? ConnectionFailure.Check)?.result
+                    val action = when (cause) {
+                        is ProbeResult.NeedsAuth -> FailureAction.LOGIN
+                        is ProbeResult.NetworkError -> FailureAction.RETRY
+                        is ProbeResult.NeedsBrowser -> FailureAction.BROWSER
+                        is ProbeResult.Unsupported -> if (cause.detected == app.yomu.source.ConnectionKind.WEB_PAGE) FailureAction.CATALOG else FailureAction.RETRY
+                        is ProbeResult.InvalidUrl -> FailureAction.ADDRESS
+                        else -> FailureAction.RETRY
+                    }
                     Text(stringResource(R.string.connection_failed), style = MaterialTheme.typography.titleLarge)
                     Text(failureText(step, context), style = MaterialTheme.typography.bodyMedium)
-                    Button(onClick = viewModel::back, modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touch)) {
-                        Text(stringResource(R.string.connection_retry))
+                    Button(
+                        onClick = {
+                            when (action) {
+                                // The address step is where "The server needs a login" is unfolded.
+                                FailureAction.LOGIN -> { signedIn = true; viewModel.back() }
+                                FailureAction.ADDRESS, FailureAction.CATALOG -> viewModel.back()
+                                FailureAction.RETRY -> viewModel.retry()
+                                FailureAction.BROWSER -> runCatching {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(state.address)))
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touch),
+                    ) {
+                        Text(stringResource(action.label))
                     }
                     TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text(stringResource(CoreR.string.close)) }
                 }
@@ -367,6 +456,28 @@ private fun HandOffStep(
         else -> Unit
     }
     TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.connection_choose_another)) }
+}
+
+/** One feed or catalogue found on a web page: its own name, kind and address, with a check action. */
+@Composable
+private fun CandidateCard(candidate: LinkCandidate, onClick: () -> Unit) {
+    val kind = when (candidate.kind) {
+        app.yomu.source.ConnectionKind.OPDS -> stringResource(R.string.connection_kind_opds)
+        app.yomu.source.ConnectionKind.RSS -> stringResource(R.string.connection_kind_rss)
+        else -> stringResource(R.string.connection_kind_page)
+    }
+    val name = candidate.title?.takeIf { it.isNotBlank() }
+        ?: candidate.url.substringAfter("://").substringBefore('/').takeIf { it.isNotBlank() }
+        ?: candidate.url
+    ChoiceCard(name, "$kind · ${candidate.url}", Icons.Default.Link, onClick)
+}
+
+private enum class FailureAction(val label: Int) {
+    LOGIN(R.string.connection_action_login),
+    ADDRESS(R.string.connection_action_address),
+    RETRY(R.string.connection_action_retry),
+    BROWSER(R.string.connection_action_browser),
+    CATALOG(R.string.connection_action_catalog),
 }
 
 @Composable

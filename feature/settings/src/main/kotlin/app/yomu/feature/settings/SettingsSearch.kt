@@ -34,6 +34,8 @@ internal data class SettingsSearchEntry(
     val title: String,
     val summary: String?,
     val anchor: String?,
+    /** Everyday words that do not appear in the label: "где файлы" for storage, "поля PDF" for automatic crop. */
+    val keywords: List<String> = emptyList(),
 )
 
 /** Title matches come first, then summary and section-name matches; order inside a group follows the index. */
@@ -41,9 +43,28 @@ internal fun filterSettings(entries: List<SettingsSearchEntry>, query: String): 
     val q = query.trim().lowercase()
     if (q.isEmpty()) return emptyList()
     val (byTitle, rest) = entries.partition { it.title.lowercase().contains(q) }
-    val bySummary = rest.filter { it.summary?.lowercase()?.contains(q) == true || it.sectionTitle.lowercase().contains(q) }
+    val bySummary = rest.filter {
+        it.summary?.lowercase()?.contains(q) == true ||
+            it.sectionTitle.lowercase().contains(q) ||
+            it.keywords.any { word -> word.contains(q) }
+    }
     return (byTitle + bySummary).distinctBy { it.section to it.title }
 }
+
+/**
+ * Words people use for a setting that the label itself does not contain. Keyed by string-resource name, so the same
+ * table works in every language; both Russian and English queries are accepted in either locale.
+ */
+private val SEARCH_ALIASES: Map<String, List<String>> = mapOf(
+    "set_font_size" to listOf("шрифт", "размер текста", "font", "text size"),
+    "set_fonts" to listOf("шрифт", "гарнитура", "font", "typeface"),
+    "set_folders" to listOf("где файлы", "папка", "files", "folder", "library files"),
+    "set_import_mode" to listOf("где файлы", "импорт", "import", "files"),
+    "set_storage" to listOf("где файлы", "хранилище", "storage", "files", "space"),
+    "set_pdf_autocrop" to listOf("поля pdf", "обрезка", "pdf margins", "crop"),
+    "set_pdf_mode" to listOf("поля pdf", "pdf layout", "страницы pdf"),
+    "set_reading" to listOf("таймер сна", "sleep timer", "чтение", "reading"),
+)
 
 /** Index built from the same string resources the sections render; `<title>_sum` is used as the summary when present. */
 @Composable
@@ -55,8 +76,14 @@ internal fun rememberSettingsIndex(): List<SettingsSearchEntry> {
             val sectionTitle = resources.getString(s.title)
             val own = SettingsSearchEntry(s, sectionTitle, sectionTitle, resources.getString(s.summary), anchor = null)
             val items = s.items.map { res ->
-                val sumId = resources.getIdentifier(resources.getResourceEntryName(res) + "_sum", "string", pkg)
-                SettingsSearchEntry(s, sectionTitle, resources.getString(res), sumId.takeIf { it != 0 }?.let(resources::getString), anchor = resources.getString(res))
+                val name = resources.getResourceEntryName(res)
+                val sumId = resources.getIdentifier(name + "_sum", "string", pkg)
+                SettingsSearchEntry(
+                    s, sectionTitle, resources.getString(res),
+                    sumId.takeIf { it != 0 }?.let(resources::getString),
+                    anchor = resources.getString(res),
+                    keywords = SEARCH_ALIASES[name].orEmpty(),
+                )
             }
             listOf(own) + items
         }

@@ -23,12 +23,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -58,19 +60,32 @@ private object WindowOrigin : PopupPositionProvider {
  * finger. A tap outside closes it. The wheel is the same one the library, the manga pages and the audio player use.
  */
 @Composable
-fun QuickActionMenu(radial: Boolean, anchor: Offset, items: List<QuickMenuItem>, onDismiss: () -> Unit, title: String? = null) {
+fun QuickActionMenu(
+    radial: Boolean,
+    anchor: Offset,
+    items: List<QuickMenuItem>,
+    onDismiss: () -> Unit,
+    title: String? = null,
+    onActionChosen: () -> Unit = onDismiss,
+) {
     if (items.isEmpty()) return
     if (radial) {
-        val state = remember(items, anchor, title) {
-            RadialState(anchor, items.map { RadialAction(it.icon, it.label, tint = it.tint) { it.onClick() } }, title)
+        val latestItems by rememberUpdatedState(items)
+        val state = remember(items.map { it.copy(onClick = EmptyAction) }, anchor, title) {
+            RadialState(anchor, items.map { item ->
+                RadialAction(item.icon, item.label, tint = item.tint) {
+                    latestItems.firstOrNull { it.key == item.key }?.onClick?.invoke()
+                }
+            }, title)
         }
-        RadialMenu(state = state, dragSelect = false, onDismiss = onDismiss)
+        RadialMenu(state = state, dragSelect = false, onDismiss = onDismiss, onActionChosen = onActionChosen)
         return
     }
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
     val progress by animateFloatAsState(if (shown) 1f else 0f, spring(dampingRatio = 0.7f, stiffness = 500f), label = "quickMenu")
     // The popup must cover the whole window: [anchor] is in window coordinates and the list is placed from it.
+    val dismiss by rememberUpdatedState(onDismiss)
     Popup(
         popupPositionProvider = WindowOrigin,
         onDismissRequest = onDismiss,
@@ -79,15 +94,15 @@ fun QuickActionMenu(radial: Boolean, anchor: Offset, items: List<QuickMenuItem>,
         Box(
             Modifier.fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.12f * progress))
-                .pointerInput(Unit) { detectTapGestures { onDismiss() } },
+                .pointerInput(Unit) { detectTapGestures { dismiss() } },
         ) {
-            ListMenu(anchor, items, progress, title, onDismiss)
+            ListMenu(anchor, items, progress, title, onActionChosen)
         }
     }
 }
 
 @Composable
-private fun ListMenu(anchor: Offset, items: List<QuickMenuItem>, progress: Float, title: String?, onDismiss: () -> Unit) {
+private fun ListMenu(anchor: Offset, items: List<QuickMenuItem>, progress: Float, title: String?, onActionChosen: () -> Unit) {
     val margin = with(LocalDensity.current) { 12.dp.roundToPx() }
     Layout(
         content = {
@@ -102,7 +117,7 @@ private fun ListMenu(anchor: Offset, items: List<QuickMenuItem>, progress: Float
                         Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                     }
                     items.forEach { item ->
-                        Surface(onClick = { onDismiss(); item.onClick() }, color = Color.Transparent) {
+                        Surface(onClick = { onActionChosen(); item.onClick() }, color = Color.Transparent) {
                             Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                 Icon(item.icon, null, tint = item.tint ?: MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(item.label, style = MaterialTheme.typography.bodyLarge)
@@ -115,10 +130,17 @@ private fun ListMenu(anchor: Offset, items: List<QuickMenuItem>, progress: Float
     ) { measurables, constraints ->
         val placeable = measurables.first().measure(constraints.copy(minWidth = 0, minHeight = 0))
         layout(constraints.maxWidth, constraints.maxHeight) {
-            val x = (anchor.x.roundToInt() - placeable.width / 2).coerceIn(margin, (constraints.maxWidth - placeable.width - margin).coerceAtLeast(margin))
-            val below = anchor.y.roundToInt() + margin
-            val y = if (below + placeable.height <= constraints.maxHeight - margin) below else (anchor.y.roundToInt() - placeable.height - margin).coerceAtLeast(margin)
+            val centerX = if (anchor.isSpecified) anchor.x.roundToInt() else constraints.maxWidth / 2
+            val x = (centerX - placeable.width / 2).coerceIn(margin, (constraints.maxWidth - placeable.width - margin).coerceAtLeast(margin))
+            val y = if (anchor.isSpecified) {
+                val below = anchor.y.roundToInt() + margin
+                if (below + placeable.height <= constraints.maxHeight - margin) below else (anchor.y.roundToInt() - placeable.height - margin).coerceAtLeast(margin)
+            } else {
+                (constraints.maxHeight - placeable.height) / 2
+            }
             placeable.place(x, y)
         }
     }
 }
+
+private val EmptyAction: () -> Unit = {}

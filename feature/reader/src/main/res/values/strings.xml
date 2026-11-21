@@ -1,8 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="reader_page_actions">Page actions</string>
+    <string name="reader_seek_failed">The reader did not reach that location. Try again.</string>
+    <string name="reader_spread_short">%1$d–%2$d of %3$d</string>
+    <string name="reader_chapter_progress">Chapter · %1$d%%</string>
+    <string name="reader_prev_page">Previous page</string>
+    <string name="reader_next_page">Next page</string>
+    <string name="rs_menu_selection">Text selection menu</string>
+    <string name="rs_group_menus">Long press menus</string>
+    <string name="rs_menu_page">Page long-press menu</string>
+    <string name="rs_menu_radial">Circle</string>
+    <string name="rs_menu_list">List</string>
+    <string name="rs_menu_bar">Toolbar</string>
+    <string name="rs_menu_first_action">Run the first action</string>
+    <string name="rs_menu_gesture">Touch and hold, lift your finger, then tap an action.</string>
+    <string name="rs_book_scope_reset">Reset this book’s settings</string>
+    <string name="rs_book_scope_apply_global">Apply as the default</string>
+    <string name="rs_book_scope_apply_global_sum">New books open with this look; this book keeps its own copy</string>
+    <string name="rs_pdf_dual_landscape_hint">The spread is shown in landscape.</string>
+    <string name="rs_pdf_fit">Page fit</string>
+    <string name="rs_fit_page">Fit the page</string>
+    <string name="rs_fit_page_hint">Drops the zoom and pan of this page</string>
+    <string name="reader_match_n_of">%1$d of %2$d</string>
+    <string name="reader_match_prev">Previous match</string>
+    <string name="reader_match_next">Next match</string>
+    <string name="reader_match_list">All results</string>
+    <string name="reader_match_close">Close the results</string>
+    <string name="reader_show_controls">Show the reading controls</string>
+    <string name="reader_recent_jumps">Recent jumps</string>
+    <string name="reader_recent_jumps_empty">No jumps yet. Contents, search and the slider add places here.</string>
+    <string name="reader_recent_jumps_hint">Places you jumped from; tap one to go back to it</string>
+    <string name="reader_resumed_at">Continued from page %1$d</string>
+    <string name="reader_resumed_dismiss">Continue reading</string>
     <!-- Reader chrome -->
     <string name="reader_toc">Contents</string>
     <string name="reader_toc_empty">This book has no table of contents</string>
+    <string name="reader_map_here">You are here</string>
+    <string name="reader_toc_search">Find a chapter</string>
+    <string name="reader_toc_search_none">No chapter matches</string>
     <string name="reader_annotations">Annotations</string>
     <string name="reader_all_annotations">All annotations</string>
     <string name="reader_highlights_n">Highlights (%1$d)</string>
@@ -53,7 +88,7 @@
     <string name="reader_app_not_found">No app can handle this action</string>
     <string name="reader_wrong_password">Wrong password</string>
     <string name="hint_reader_gestures">Tap the center to show the menu, the edges to turn pages. Long-press a word to select it.</string>
-    <string name="hint_manga_gestures">Tap the center for the menu, the sides to turn pages. Double-tap or pinch to zoom. Direction and tap zones are in the reading settings (Tt).</string>
+    <string name="hint_manga_gestures">Tap the center for the menu and the sides to turn pages. Double-tap or pinch to zoom. Open View to change the direction and reading settings.</string>
 
     <!-- Search -->
     <string name="reader_search">Search in book</string>
@@ -161,7 +196,7 @@
     <string name="rs_scope_global">All books</string>
     <string name="rs_scope_book">This book</string>
     <string name="rs_scope_global_summary">Every title follows these values; a title with its own settings keeps them until you choose it here.</string>
-    <string name="rs_scope_book_summary">Only this title’s text, theme and pages. Brightness, window behaviour and controls are shared and are marked below. Switching back to “All books” removes the saved override.</string>
+    <string name="rs_scope_book_summary">Text, theme and page layout for this title. Screen brightness, window behaviour and shared controls are marked below.</string>
     <string name="rs_scope_common_note">These settings are shared by every book; this title does not keep its own copy.</string>
     <string name="rs_preset_eink">E-ink</string>
     <string name="rs_flash_pages">E-ink flash</string>
@@ -240,6 +275,9 @@
     <string name="rs_dual_landscape_summary">Two text columns when the screen is wider than it is tall</string>
     <string name="tts_channel">Reading aloud</string>
     <string name="reader_pages">Pages</string>
+    <string name="reader_pages_marked">Only marked</string>
+    <string name="reader_page_bookmarked">Bookmarked page</string>
+    <string name="reader_pages_marked_empty">No bookmarked pages yet</string>
     <string name="reader_time_left_m">≈ %1$d min left</string>
     <string name="reader_time_left_hm">≈ %1$d h %2$d min left</string>
     <string name="reader_zoom_lock_on">View is locked: this zoom stays, page turns are off, only scrolling moves</string>
@@ -462,7 +500,7 @@
     <string name="rs_mode_paged">Page by page</string>
     <string name="rs_mode_scroll">Scroll chapter</string>
     <string name="rs_mode_strip">Long strip</string>
-    <string name="rs_mode_paged_sum">Turn pages like a paper book; the chapter ends at its last page</string>
+    <string name="rs_mode_paged_sum">Turn pages like a paper book.</string>
     <string name="rs_mode_scroll_sum">One continuous page: move down through the chapter without turning pages</string>
     <string name="rs_mode_strip_sum">Continuous scrolling that opens the next chapter at the end, so the text never stops</string>
     <string name="rs_mode_section">Page turning</string>

@@ -185,6 +185,7 @@ fun YomuNavigation(main: MainViewModel, reduceMotion: Boolean, navLabels: Boolea
                 MainEvent.OpenDownloads -> nav.navigate(DownloadsRoute) { launchSingleTop = true }
                 is MainEvent.OpenChapter -> nav.navigate(ReaderRoute(chapterId = e.chapterId))
                 is MainEvent.OpenTitle -> nav.navigate(TitleRoute(e.entryId))
+                is MainEvent.AddSource -> nav.navigate(SourceConnectionRoute(e.url))
                 is MainEvent.Imported -> {
                     val text = when {
                         e.error != null && e.added == 0 -> errorMessage(context, e.error)
@@ -370,7 +371,7 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                             onOpenDownloads = { nav.navigate(DownloadsRoute) },
                             onOpenWebView = { nav.navigate(WebViewRoute(it)) },
                             onOpenSourceSettings = { nav.navigate(SourceSettingsRoute(it)) },
-                            onAddSource = { nav.navigate(SourceConnectionRoute) },
+                            onAddSource = { nav.navigate(SourceConnectionRoute()) },
                             onOpenUpdatesPlan = { nav.navigate(UpcomingRoute) },
                         )
                         TopLevel.DICTIONARY -> DictionaryScreen(
@@ -578,11 +579,27 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
             val r = entry.toRoute<ExtensionsRoute>()
             ExtensionsScreen(koinViewModel(), back, onOpenSourceSettings = { nav.navigate(SourceSettingsRoute(it)) }, addStoreUrl = r.addStore)
         }
-        screen<SourceConnectionRoute> {
+        screen<SourceConnectionRoute> { entry ->
             SourceConnectionScreen(
                 viewModel = koinViewModel(),
                 onBack = back,
                 onOpenExtensions = { nav.navigate(ExtensionsRoute()) },
+                initialLink = entry.toRoute<SourceConnectionRoute>().link,
+                onSaved = { saved ->
+                    // The wizard's own result is the target: the new catalogue opens, an audio link goes straight to
+                    // the player, and a subscription opens the book it created. No guessing from the title.
+                    val book = saved.bookId
+                    val source = saved.sourceId
+                    when {
+                        book != null && book > 0 -> nav.navigate(ReaderRoute(bookId = book)) {
+                            popUpTo<SourceConnectionRoute> { inclusive = true }
+                        }
+                        source != null && source > 0 -> nav.navigate(SourceRoute(source)) {
+                            popUpTo<SourceConnectionRoute> { inclusive = true }
+                        }
+                        else -> back()
+                    }
+                },
             )
         }
         screen<UpcomingRoute> {
@@ -644,7 +661,7 @@ private fun LibraryTab(nav: NavHostController, tabs: TabsState) {
                 onOpenTitle = openTitle,
                 onReadChapter = { nav.navigate(ReaderRoute(chapterId = it)) },
                 onOpenDownloads = { nav.navigate(DownloadsRoute) },
-                onAddSource = { nav.navigate(SourceConnectionRoute) },
+                onAddSource = { nav.navigate(SourceConnectionRoute()) },
                 online = online,
             )
         }

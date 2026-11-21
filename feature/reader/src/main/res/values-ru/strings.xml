@@ -1,7 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="reader_page_actions">Действия со страницей</string>
+    <string name="reader_seek_failed">Не удалось перейти в выбранное место. Попробуйте ещё раз.</string>
+    <string name="reader_spread_short">%1$d–%2$d из %3$d</string>
+    <string name="reader_chapter_progress">Глава · %1$d%%</string>
+    <string name="reader_prev_page">Предыдущая страница</string>
+    <string name="reader_next_page">Следующая страница</string>
+    <string name="rs_menu_selection">Меню выделения текста</string>
+    <string name="rs_group_menus">Меню долгого нажатия</string>
+    <string name="rs_menu_page">Меню долгого нажатия на страницу</string>
+    <string name="rs_menu_radial">Круг</string>
+    <string name="rs_menu_list">Список</string>
+    <string name="rs_menu_bar">Панель</string>
+    <string name="rs_menu_first_action">Выполнить первое действие</string>
+    <string name="rs_menu_gesture">Удерживайте палец, отпустите и нажмите на нужное действие.</string>
+    <string name="rs_book_scope_reset">Сбросить настройки этой книги</string>
+    <string name="rs_book_scope_apply_global">Применить как общие</string>
+    <string name="rs_book_scope_apply_global_sum">Новые книги откроются так же; эта книга сохранит свою копию</string>
+    <string name="rs_pdf_dual_landscape_hint">Разворот отображается в альбомной ориентации.</string>
+    <string name="rs_pdf_fit">Масштаб страницы</string>
+    <string name="rs_fit_page">Вписать в экран</string>
+    <string name="rs_fit_page_hint">Сбрасывает масштаб и сдвиг этой страницы</string>
+    <string name="reader_match_n_of">%1$d из %2$d</string>
+    <string name="reader_match_prev">Предыдущее совпадение</string>
+    <string name="reader_match_next">Следующее совпадение</string>
+    <string name="reader_match_list">Все результаты</string>
+    <string name="reader_match_close">Закрыть результаты</string>
+    <string name="reader_show_controls">Показать управление чтением</string>
+    <string name="reader_recent_jumps">Недавние переходы</string>
+    <string name="reader_recent_jumps_empty">Переходов пока нет. Они появляются после оглавления, поиска и шкалы.</string>
+    <string name="reader_recent_jumps_hint">Места, откуда вы перешли; нажмите, чтобы вернуться</string>
+    <string name="reader_resumed_at">Продолжаем со страницы %1$d</string>
+    <string name="reader_resumed_dismiss">Продолжить чтение</string>
     <string name="reader_toc">Оглавление</string>
     <string name="reader_toc_empty">В этой книге нет оглавления</string>
+    <string name="reader_map_here">Вы здесь</string>
+    <string name="reader_toc_search">Найти главу</string>
+    <string name="reader_toc_search_none">Ни одна глава не совпала</string>
     <string name="reader_annotations">Аннотации</string>
     <string name="reader_all_annotations">Все аннотации</string>
     <string name="reader_highlights_n">Выделения (%1$d)</string>
@@ -31,8 +66,14 @@
     <string name="reader_autoscroll_speed">Скорость %1$d</string>
     <string name="reader_prev_chapter">Предыдущая глава</string>
     <string name="reader_next_chapter">Следующая глава</string>
+    <string name="reader_open_linked">Открыть связанное издание</string>
+    <string name="reader_tts_sample">Так будет звучать чтение.</string>
+    <string name="tts_sample">Послушать голос</string>
+    <string name="tts_sample_summary">Услышать текущий голос, скорость и высоту, не запуская книгу.</string>
     <string name="reader_chapter_of">Глава %1$d из %2$d</string>
     <string name="reader_chapter_n">Глава %1$d</string>
+    <string name="reader_chapter_neighbour_failed">Соседнюю главу не удалось загрузить; следующая попытка будет при переходе к ней</string>
+    <string name="reader_chapter_window_failed">Следующую главу не удалось подготовить; переверните страницу, чтобы повторить</string>
     <string name="reader_page_of">Страница %1$d из %2$d</string>
     <string name="reader_page_n">Страница %1$d</string>
     <string name="reader_progress_percent">%1$d%%</string>
@@ -46,7 +87,7 @@
     <string name="reader_app_not_found">Нет приложения для этого действия</string>
     <string name="reader_wrong_password">Неверный пароль</string>
     <string name="hint_reader_gestures">Тап по центру открывает меню, по краям листает страницы. Удерживайте слово, чтобы выделить его.</string>
-    <string name="hint_manga_gestures">Тап по центру открывает меню, по краям листает страницы. Двойной тап или щипок — масштаб. Направление и тап-зоны — в настройках чтения (Тт).</string>
+    <string name="hint_manga_gestures">Тап по центру открывает меню, по краям листает страницы. Двойной тап или щипок меняет масштаб. Направление и настройки чтения доступны в меню «Вид».</string>
 
     <string name="reader_search">Поиск по книге</string>
     <string name="reader_search_hint">Слово или фраза</string>
@@ -151,7 +192,7 @@
     <string name="rs_scope_global">Всем книгам</string>
     <string name="rs_scope_book">Этой книге</string>
     <string name="rs_scope_global_summary">Все тайтлы используют эти значения; у книги со своими настройками они сохраняются, пока вы не выберете её здесь.</string>
-    <string name="rs_scope_book_summary">Только текст, тема и страницы этой книги. Яркость, поведение окна и управление общие — они помечены ниже. Возврат к «Всем книгам» удаляет сохранённое переопределение.</string>
+    <string name="rs_scope_book_summary">Текст, тема и вид страниц этой книги. Общая яркость экрана, поведение окна и управление помечены ниже.</string>
     <string name="rs_scope_common_note">Эти настройки общие для всех книг; у этой книги своей копии нет.</string>
     <string name="rs_preset_eink">E-ink</string>
     <string name="rs_flash_pages">Вспышка для E-ink</string>
@@ -215,6 +256,8 @@
     <string name="rs_pdf_crop_right">Обрезать справа, %</string>
     <string name="rs_pdf_crop_top">Обрезать сверху, %</string>
     <string name="rs_pdf_crop_bottom">Обрезать снизу, %</string>
+    <string name="rs_pdf_crop_preview_hint">Обведённая область остаётся; заштрихованные поля обрезаются.</string>
+    <string name="rs_pdf_crop_preview_description">Предпросмотр обрезки: слева %1$d%%, сверху %2$d%%, справа %3$d%%, снизу %4$d%%</string>
     <string name="rs_pdf_contrast">Контраст</string>
     <string name="rs_pdf_grayscale">Оттенки серого</string>
     <string name="rs_pdf_zoom_lock">Зафиксировать просмотр</string>
@@ -228,6 +271,9 @@
     <string name="rs_dual_landscape_summary">Две колонки текста, когда экран шире, чем выше</string>
     <string name="tts_channel">Чтение вслух</string>
     <string name="reader_pages">Страницы</string>
+    <string name="reader_pages_marked">Только отмеченные</string>
+    <string name="reader_page_bookmarked">Страница с закладкой</string>
+    <string name="reader_pages_marked_empty">Отмеченных страниц пока нет</string>
     <string name="reader_time_left_m">≈ %1$d мин</string>
     <string name="reader_time_left_hm">≈ %1$d ч %2$d мин</string>
     <string name="reader_zoom_lock_on">Просмотр зафиксирован: увеличение сохраняется, листание отключено, страница только прокручивается</string>
@@ -455,7 +501,7 @@
     <string name="rs_mode_paged">Листание</string>
     <string name="rs_mode_scroll">Прокрутка главы</string>
     <string name="rs_mode_strip">Лента</string>
-    <string name="rs_mode_paged_sum">Страницы, как в бумажной книге; глава кончается на последней странице</string>
+    <string name="rs_mode_paged_sum">Перелистывание как в бумажной книге.</string>
     <string name="rs_mode_scroll_sum">Одна непрерывная страница: глава прокручивается без перелистывания</string>
     <string name="rs_mode_strip_sum">Сплошная прокрутка: в конце главы сразу открывается следующая, текст не прерывается</string>
     <string name="rs_mode_section">Листание</string>

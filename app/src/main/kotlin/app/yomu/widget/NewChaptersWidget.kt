@@ -36,6 +36,8 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
@@ -87,6 +89,7 @@ object NewChaptersWidgets : KoinComponent {
 
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
+    private val refreshMutex = Mutex()
 
     private val rowIds = intArrayOf(R.id.nc_row_0, R.id.nc_row_1, R.id.nc_row_2)
     private val coverIds = intArrayOf(R.id.nc_cover_0, R.id.nc_cover_1, R.id.nc_cover_2)
@@ -102,8 +105,8 @@ object NewChaptersWidgets : KoinComponent {
     fun start(context: Context) {
         if (job?.isActive == true || widgetIds(context).isEmpty()) return
         job = scope.launch {
-            entries().debounce(DEBOUNCE_MS).distinctUntilChanged().collect { list ->
-                runCatching { render(context, list) }.onFailure { Timber.w(it, "New chapters widget update failed") }
+            entries().debounce(DEBOUNCE_MS).distinctUntilChanged().collect {
+                refresh(context)
             }
         }
     }
@@ -115,8 +118,10 @@ object NewChaptersWidgets : KoinComponent {
     }
 
     suspend fun refresh(context: Context) {
-        runCatching { render(context, entries().first()) }
-            .onFailure { Timber.w(it, "New chapters widget update failed") }
+        refreshMutex.withLock {
+            runCatching { render(context, entries().first()) }
+                .onFailure { Timber.w(it, "New chapters widget update failed") }
+        }
     }
 
     private fun entries(): Flow<List<app.yomu.core.database.NewChapterRow>> {
@@ -139,7 +144,9 @@ object NewChaptersWidgets : KoinComponent {
         val covers = list.associate { row ->
             row.chapterId to loadCover(context, row.coverUrl)
         }
-        ids.forEach { id -> manager.updateAppWidget(id, views(context, list, covers, rowsFor(manager.getAppWidgetOptions(id)), id)) }
+        val hidden = get<app.yomu.core.datastore.AppSettings>().incognito.get() || get<AppLockController>().locked.value == true
+        val visible = if (hidden) emptyList() else list
+        ids.forEach { id -> manager.updateAppWidget(id, views(context, visible, covers, rowsFor(manager.getAppWidgetOptions(id)), id)) }
     }
 
     private fun rowsFor(options: Bundle?): Int {

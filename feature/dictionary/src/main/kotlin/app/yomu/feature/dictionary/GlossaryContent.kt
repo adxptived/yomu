@@ -234,7 +234,16 @@ private fun IndexPanel(
                 hits.take(20).forEach { hit ->
                     ListItem(
                         headlineContent = { Text(hit.text, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                        supportingContent = { Text(stringResource(R.string.gloss_index_source, hit.source), style = MaterialTheme.typography.labelSmall) },
+                        supportingContent = {
+                            Text(
+                                if (hit.key.startsWith("O:") || hit.key.startsWith("T:")) {
+                                    stringResource(R.string.gloss_index_open_saved)
+                                } else {
+                                    stringResource(R.string.gloss_index_source, hit.source)
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        },
                         modifier = Modifier.clickable { onOpenBook(hit.bookId, null, "i:${hit.key}") },
                     )
                 }

@@ -367,6 +367,15 @@
     <string name="set_restore_preview_files">Файлов в архиве: %1$d (%2$s)</string>
     <string name="set_restore_preview_no_files">Файлов книг нет: книги восстановятся как записи, файлы нужно будет добавить снова.</string>
     <string name="set_restore_preview_merge">Существующие записи не перезаписываются, а объединяются: конфликт останавливает только этот элемент и попадает в отчёт. Запись начнётся после нажатия «Восстановить».</string>
+    <string name="set_restore_replace">Заменить выбранные категории</string>
+    <string name="set_restore_replace_sum">Всё в выбранных категориях удаляется перед восстановлением копии.</string>
+    <string name="set_restore_category_books">Книги и прогресс</string>
+    <string name="set_restore_category_annotations">Выделения, заметки, закладки</string>
+    <string name="set_restore_category_words">Слова</string>
+    <string name="set_restore_category_catalog">Каталог и трекинг</string>
+    <string name="set_restore_category_sessions">Сеансы чтения</string>
+    <string name="set_restore_category_settings">Настройки</string>
+    <string name="set_restore_category_files">Файлы книг</string>
     <string name="set_restore_category_glossary">Заметки глоссария</string>
     <string name="set_backup_restore">Восстановить из копии</string>
     <string name="set_backup_restore_sum">Восстановить данные из копии, не перезаписывая конфликтующие записи</string>
@@ -613,6 +622,9 @@
     <string name="set_sync_all_devices">Используйте одну и ту же новую версию Yomu на всех устройствах: старые версии могут не сохранить версии страниц папок.</string>
 
     <!-- 2.0: sync conflicts -->
+    <string name="set_sync_summary_ok">Последняя синхронизация прошла без проблем.</string>
+    <string name="set_sync_summary_partial">Последняя синхронизация завершилась с конфликтами: %1$d — проверьте.</string>
+    <string name="set_sync_summary_error">Синхронизация требует внимания: %1$s</string>
     <string name="set_sync_problems">Конфликты синхронизации</string>
     <string name="set_sync_problems_sum">Что остановило последнюю синхронизацию</string>
     <string name="set_sync_problems_hint">Синхронизация остановлена на этих проблемах: ничего не удалено и не перезаписано. Устраните причину и запустите синхронизацию снова. Скрытые записи исчезают, а успешная синхронизация очищает весь список.</string>
