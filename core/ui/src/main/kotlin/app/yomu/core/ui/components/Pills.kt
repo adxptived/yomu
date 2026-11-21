@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.triStateToggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -36,25 +38,14 @@ import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.boundsInParent
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -68,7 +59,6 @@ import androidx.compose.ui.semantics.text
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import app.yomu.core.ui.R
 import app.yomu.core.ui.theme.Dimens
@@ -79,7 +69,7 @@ data class PillTab(val key: String, val label: String, val count: Int? = null, v
 /**
  * A row of rounded tabs (the library's All · Online · user tabs): the selected one is filled with the accent, the
  * others sit on a soft surface. [onLongPress] opens a tab's actions, [onAdd] draws a trailing "+" pill. The row
- * scrolls the selected tab into view (back from a reader it can sit past the edge) and fades its overflowing edges.
+ * scrolls the selected tab into view when it is selected or restored.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -93,41 +83,13 @@ fun PillTabRow(
     onAdd: (() -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(horizontal = Dimens.l),
 ) {
-    val scroll = rememberScrollState()
-    // Every tab's bounds in the row's content coordinates, so the selected one can be scrolled into view.
-    val bounds = remember { mutableStateMapOf<String, IntRect>() }
-    var viewportWidth by remember { mutableIntStateOf(0) }
-    // The selected tab scrolls into view once its bounds exist (back from a reader it can sit past the edge).
-    // The flow only emits when the bounds actually change, so a manual scroll is never fought back.
-    LaunchedEffect(selected) {
-        snapshotFlow { bounds[selected]?.center?.x }.collect { centerX ->
-            val x = centerX ?: return@collect
-            if (viewportWidth <= 0 || scroll.maxValue <= 0) return@collect
-            val target = (x - viewportWidth / 2).coerceIn(0, scroll.maxValue)
-            if (kotlin.math.abs(target - scroll.value) > viewportWidth / 20) scroll.animateScrollTo(target)
-        }
+    val selectedTab = remember(selected) { BringIntoViewRequester() }
+    var selectedPlaced by remember(selected) { mutableStateOf(false) }
+    LaunchedEffect(selectedTab, selectedPlaced) {
+        if (selectedPlaced) selectedTab.bringIntoView()
     }
-    val fade = 24.dp
     Row(
-        modifier
-            .fillMaxWidth()
-            .onGloballyPositioned { if (it.isAttached) viewportWidth = it.size.width }
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            .drawWithContent {
-                drawContent()
-                // A soft fade on an overflowing edge: the row is scrollable, but the cut-off pill still reads.
-                if (scroll.value > 0) {
-                    drawRect(Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), endX = fade.toPx()), blendMode = BlendMode.DstIn)
-                }
-                if (scroll.value < scroll.maxValue) {
-                    drawRect(
-                        Brush.horizontalGradient(listOf(Color.Transparent, Color.Black), startX = size.width - fade.toPx()),
-                        blendMode = BlendMode.DstIn,
-                    )
-                }
-            }
-            .horizontalScroll(scroll)
-            .padding(contentPadding),
+        modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(contentPadding),
         horizontalArrangement = Arrangement.spacedBy(Dimens.s),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -137,15 +99,13 @@ fun PillTabRow(
             val fg = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
             val longPress = onLongPress?.let { { it(tab.key) } }
             val spoken = tab.count?.let { "${tab.label} ($it)" } ?: tab.label
-            Row(
+            val reveal = if (isSelected) {
+                Modifier.bringIntoViewRequester(selectedTab).onPlaced { selectedPlaced = true }
+            } else {
                 Modifier
-                    .heightIn(min = Dimens.touch)
-                    .onGloballyPositioned {
-                        if (it.isAttached) {
-                            val r = it.boundsInParent()
-                            bounds[tab.key] = IntRect(r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt())
-                        }
-                    }
+            }
+            Row(
+                reveal.heightIn(min = Dimens.touch)
                     .clip(CircleShape)
                     .background(bg)
                     .combinedClickable(onClick = { onSelect(tab.key) }, onLongClick = longPress)

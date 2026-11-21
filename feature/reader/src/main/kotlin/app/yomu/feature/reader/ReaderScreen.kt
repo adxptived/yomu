@@ -1368,8 +1368,6 @@ private fun formatMinutes(min: Int): String =
 
 @Composable
 private fun ChromeButton(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    // Three labelled entries share one 320 dp row: a tight content padding and a single-line label keep every word
-    // readable without turning the bottom bar into a scrolling strip.
     TextButton(
         onClick = onClick,
         modifier = modifier,
@@ -1377,7 +1375,7 @@ private fun ChromeButton(icon: ImageVector, label: String, onClick: () -> Unit, 
     ) {
         Icon(icon, null, Modifier.size(18.dp))
         Spacer(Modifier.width(4.dp))
-        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
+        Text(label, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
     }
 }
 

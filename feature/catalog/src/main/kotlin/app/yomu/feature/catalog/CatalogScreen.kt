@@ -50,7 +50,6 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.RssFeed
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.AutoStories
@@ -242,11 +241,13 @@ fun CatalogScreen(
                                 leadingIcon = { Icon(Icons.Filled.Download, null) },
                                 onClick = { showMenu = false; onOpenDownloads() },
                             )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.catalog_add_opds)) },
-                                leadingIcon = { Icon(Icons.Filled.RssFeed, null) },
-                                onClick = { showMenu = false; onAddSource() },
-                            )
+                            if (HomeTab.entries[tab] != HomeTab.SOURCES) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.connection_title)) },
+                                    leadingIcon = { Icon(Icons.Filled.Add, null) },
+                                    onClick = { showMenu = false; onAddSource() },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.catalog_local_folder)) },
                                 leadingIcon = { Icon(Icons.Filled.FolderOpen, null) },
@@ -312,7 +313,7 @@ fun CatalogScreen(
                     onOpenSource = { s ->
                         if (s.kind == SourceInfo.Kind.LOCAL && !viewModel.localConfigured) pickFolder.launch(null) else onOpenSource(s.id)
                     },
-                    onAddOpds = onAddSource,
+                    onAddSource = onAddSource,
                     onPickFolder = { pickFolder.launch(null) },
                     onOpenExtensions = onOpenExtensions,
                     onOpenWebView = onOpenWebView,
@@ -397,7 +398,7 @@ private fun SourcesTab(
     languageCounts: Map<String, Int>,
     viewModel: CatalogHomeViewModel,
     onOpenSource: (SourceInfo) -> Unit,
-    onAddOpds: () -> Unit,
+    onAddSource: () -> Unit,
     onPickFolder: () -> Unit,
     onOpenExtensions: () -> Unit,
     onOpenWebView: (String) -> Unit,
@@ -420,6 +421,15 @@ private fun SourcesTab(
     val (pinned, others) = remember(sources) { sources.partition { it.pinned } }
     val filtered = filter.isActive || SourceManager.ALL_LANGUAGES !in langs
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
+        if (!editing) {
+            item(key = "add-source") {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.connection_title)) },
+                    leadingContent = { Icon(Icons.Filled.Add, null, tint = MaterialTheme.colorScheme.primary) },
+                    modifier = Modifier.clickable(onClick = onAddSource),
+                )
+            }
+        }
         if (total > 0 || query.isNotEmpty()) {
             item(key = "tools") {
                 Column(Modifier.fillMaxWidth().padding(bottom = Dimens.xs)) {
@@ -493,14 +503,6 @@ private fun SourcesTab(
             if (others.isNotEmpty()) item(key = "h-other") { ListHeader(stringResource(R.string.catalog_section_other), Modifier.animateItem()) }
         }
         items(others, key = { it.id }) { row(it) }
-        item(key = "add-opds") {
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.catalog_add_opds)) },
-                supportingContent = { Text(stringResource(R.string.catalog_add_opds_hint)) },
-                leadingContent = { Icon(Icons.Filled.Add, null) },
-                modifier = Modifier.clickable(onClick = onAddOpds),
-            )
-        }
     }
 
     if (showFilters) {

@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
@@ -63,6 +64,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -103,6 +105,14 @@ internal fun SearchSheet(
 ) {
     var query by rememberSaveable { mutableStateOf(initial) }
     val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val matchesQuery = query.trim() == state.query
+    val submit: (String) -> Unit = {
+        if (it.isNotBlank()) {
+            keyboard?.hide()
+            onSearch(it.trim())
+        }
+    }
     LaunchedEffect(Unit) {
         if (initial.isNotBlank() && initial != state.query) onSearch(initial.trim())
         if (initial.isBlank()) runCatching { focus.requestFocus() }
@@ -111,19 +121,22 @@ internal fun SearchSheet(
         SheetTitle(stringResource(R.string.reader_search))
         SearchField(
             query = query,
-            onQueryChange = { query = it },
+            onQueryChange = {
+                query = it
+                if (it.isBlank()) onClear()
+            },
             placeholder = stringResource(R.string.reader_search_hint),
             modifier = Modifier.padding(horizontal = 16.dp),
-            onSearch = { if (it.isNotBlank()) onSearch(it.trim()) },
+            onSearch = submit,
             focusRequester = focus,
             trailing = {
-                if (query.isNotEmpty()) {
-                    IconButton(onClick = { query = ""; onClear() }) { Icon(Icons.Default.Close, stringResource(CoreR.string.clear)) }
+                if (query.isNotBlank() && !matchesQuery) {
+                    IconButton(onClick = { submit(query) }) { Icon(Icons.Default.Search, stringResource(CoreR.string.search)) }
                 }
             },
         )
-        if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp))
-        if (state.query.isNotBlank() && (state.done || state.hits.isNotEmpty())) {
+        if (matchesQuery && state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp))
+        if (matchesQuery && state.query.isNotBlank() && (state.done || state.hits.isNotEmpty())) {
             Text(
                 pluralStringResource(R.plurals.reader_search_results, state.hits.size, state.hits.size),
                 style = MaterialTheme.typography.labelLarge,
@@ -131,13 +144,13 @@ internal fun SearchSheet(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
-        if (state.done && state.hits.isEmpty() && state.query.isNotBlank()) {
+        if (matchesQuery && state.done && state.hits.isEmpty() && state.query.isNotBlank()) {
             EmptyLine(stringResource(R.string.reader_search_none))
         }
         val highlight =
             SpanStyle(fontWeight = FontWeight.Bold, background = MaterialTheme.colorScheme.primaryContainer, color = MaterialTheme.colorScheme.onPrimaryContainer)
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 520.dp)) {
-            items(state.hits, key = { "${it.chapter}:${it.occurrence}:${it.matchStart}" }) { hit ->
+            items(if (matchesQuery) state.hits else emptyList(), key = { "${it.chapter}:${it.occurrence}:${it.matchStart}" }) { hit ->
                 ListItem(
                     overlineContent = { Text(hit.chapterTitle ?: stringResource(R.string.reader_chapter_n, hit.chapter + 1), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     headlineContent = { Text(snippet(hit, highlight), maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium) },

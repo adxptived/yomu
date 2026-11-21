@@ -54,6 +54,11 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_11_1">
+        <item>The library tabs stay visible: the broken edge fade of 2.11.0 is gone, and the selected tab scrolls itself into view.</item>
+        <item>The sleep timer counts down in the player, the reader's search hides old results while you type, and downloads show the queue before storage usage.</item>
+        <item>The catalog opens with one “Add a source” row, “Continue reading” is one compact card, and the library menu is grouped.</item>
+    </string-array>
     <string-array name="whats_new_2_11_0">
         <item>The library top bar is compact, the counts ride on the tabs, and the grid/list toggle and the sort name answer taps.</item>
         <item>Add a repository right in the Repositories tab — paste, check, add — and “Sources” sits in the library menu.</item>

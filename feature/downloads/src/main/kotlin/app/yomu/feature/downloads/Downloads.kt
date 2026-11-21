@@ -301,7 +301,7 @@ fun DownloadsActions(viewModel: DownloadsViewModel) {
 }
 
 /**
- * The storage card and the download queue: running, queued (grouped by title), failed and finished downloads. The bottom
+ * The download queue and storage usage. The bottom
  * padding leaves room for the floating navigation bar when it is shown in the profile.
  */
 @Composable
@@ -319,14 +319,7 @@ fun DownloadsContent(viewModel: DownloadsViewModel, modifier: Modifier = Modifie
 
     CompositionLocalProvider(LocalNetworkWait provides wait) {
         LazyColumn(modifier, contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
-            // Always the first item, also while the sizes are being counted: a card inserted above the queue later would
-            // keep the list scrolled to the queue and leave the card half hidden above it.
-            item(key = "usage") {
-                Column {
-                    QueueSummary(summary, wait, viewModel)
-                    UsageCard(usage, onClearCache = { confirmClearCache = true })
-                }
-            }
+            item(key = "summary") { QueueSummary(summary, wait, viewModel) }
             if (s == null) return@LazyColumn
             if (s.isEmpty && audio.isEmpty()) {
                 item(key = "empty") {
@@ -353,6 +346,7 @@ fun DownloadsContent(viewModel: DownloadsViewModel, modifier: Modifier = Modifie
                 }
             }
             section(R.string.downloads_failed, s.failed, viewModel, titles, maxRetries, actionLabel = R.string.downloads_retry_all, onAction = viewModel::retryFailed)
+            item(key = "usage") { UsageCard(usage, onClearCache = { confirmClearCache = true }) }
             section(R.string.downloads_finished, s.finished, viewModel, titles, maxRetries)
         }
     }

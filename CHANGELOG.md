@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.11.1 — the top bar fix, and a calmer pass over the screens
+
+> **Install.** Installs over 2.11.0 if signed with the same key. No database migration.
+
+### The library top bar
+
+- **The tabs stay visible.** The edge fade of 2.11.0 was painted across the whole row instead of its edges: as soon
+  as the tabs overflowed and the row scrolled, the fade erased the pills and the top bar looked empty. The fade is
+  gone; the selected tab is scrolled into view with the platform's bring-into-view, and a regression test paints the
+  chosen tab and checks its fill on the screenshot.
+- **The toolbar answers taps in the right place.** The sort name has a real 48 dp touch target and no longer grabs
+  the empty space between it and the grid toggle; the grid/list button really switches the view and shows the action.
+- **The ⋮ menu is grouped.** Add and Sources; selection, downloads, collections and rescan; incognito and settings —
+  separated, so eight rows no longer read as one wall.
+
+### Across the screens
+
+- **The sleep timer counts down.** While a sleep timer runs, the audio player shows "Sleep · 24 min" as a live label
+  next to speed and bookmarks (it updates while paused too), and tapping it edits the timer.
+- **Search no longer shows yesterday's results.** In the reader, typing a new query hides the old hits and the old
+  progress; the field gets a search button, and clearing it clears the results.
+- **Sources start at the top.** The catalog's Sources tab opens with one "Add a source" row instead of an OPDS-only
+  row at the bottom, and the ⋮ entry points to the same connection screen.
+- **Downloads read in the right order.** The queue comes first; storage usage moved below it, next to the finished
+  list instead of pushing the queue off the first screen.
+- **"Continue reading" is one card, not a card with a button.** The cover is smaller, the whole card resumes the
+  book, and the progress line already shows the percentage, so the duplicated "Chapter 12 · 34%" became "Chapter 12".
+- **Settings open with controls, not a nameplate.** The app card moved under the update card and incognito switch.
+
+### Under the hood
+
+- The screen tests follow the new catalog row and the renamed reader settings button; a new Robolectric pixel test
+  guards the selected tab's fill.
+- The unit tests of the touched modules (`:core:ui`, `:feature:reader`, `:feature:library`, `:feature:catalog`,
+  `:feature:audio`, `:feature:downloads`, `:feature:settings`, `:app`) pass.
+
 ## 2.11.0 — a calmer library bar, sources at hand, and an honest update card
 
 > **Install.** Installs over 2.10.0 if signed with the same key. No database migration.

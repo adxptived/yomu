@@ -274,7 +274,6 @@ private fun SettingsRoot(
     val context = LocalContext.current
     val (version, code) = remember { appVersion(context) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
-        item(key = "about") { AboutHeader(version, code) { onOpen(SettingsSection.ABOUT) } }
         item(key = "search") {
             SearchField(
                 query = query,
@@ -292,6 +291,7 @@ private fun SettingsRoot(
             }
         } else {
             if (update != null) item(key = "update") { UpdateCard(update, ready = updateReady, onClick = onUpdate) }
+            item(key = "about") { AboutHeader(version, code) { onOpen(SettingsSection.ABOUT) } }
             item(key = "quick") {
                 SettingsGroup {
                     Row(
@@ -323,7 +323,7 @@ private fun SettingsRoot(
     }
 }
 
-/** Sections of the settings root, one rounded card per group. [SettingsSection.ABOUT] is the header card on top. */
+/** Sections of the settings root, one rounded card per group. [SettingsSection.ABOUT] has its own card. */
 private val ROOT_GROUPS = listOf(
     listOf(SettingsSection.APPEARANCE, SettingsSection.NAVIGATION, SettingsSection.LIBRARY, SettingsSection.PROFILE, SettingsSection.READER, SettingsSection.MANGA, SettingsSection.SELECTION, SettingsSection.QUICK_ACTIONS, SettingsSection.FONTS),
     listOf(SettingsSection.TRANSLATION, SettingsSection.CATALOG, SettingsSection.YOUTUBE, SettingsSection.TRACKING, SettingsSection.DOWNLOADS, SettingsSection.NETWORK),

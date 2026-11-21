@@ -82,8 +82,8 @@
     <string name="import_failure_unknown">Импорт не удался</string>
     <string name="library_all">Все</string>
     <string name="library_continue">Продолжить чтение</string>
-    <string name="library_continue_page">Стр. %1$d · %2$d%%</string>
-    <string name="library_continue_chapter">Глава %1$d · %2$d%%</string>
+    <string name="library_continue_page">Стр. %1$d</string>
+    <string name="library_continue_chapter">Глава %1$d</string>
     <string name="library_empty_title">Библиотека пуста</string>
     <string name="library_empty_text">Импортируйте книги и комиксы с устройства или найдите бесплатные книги в каталоге.</string>
     <string name="library_nothing_found">Ничего не найдено</string>

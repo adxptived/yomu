@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -137,6 +138,7 @@ import app.yomu.domain.audio.AudioOfflinePlan
 import app.yomu.domain.model.AudioNavEntry
 import app.yomu.domain.model.AudioOrigin
 import app.yomu.domain.model.AudioPositions
+import kotlinx.coroutines.delay
 import me.saket.telephoto.zoomable.coil3.ZoomableAsyncImage
 import java.io.File
 import java.util.Locale
@@ -810,13 +812,22 @@ private fun PlayerControls(
                 label = { Text(speedLabel(s?.speed ?: 1f)) },
                 leadingIcon = { Icon(Icons.Default.Speed, null) },
             )
-            Spacer(Modifier.weight(1f))
-            val sleepOn = s != null && (s.sleepAt > 0 || s.sleepEndOfChapter)
-            IconButton(onClick = { onSheet("sleep") }) {
-                Icon(
-                    Icons.Default.Bedtime, sleepLabel(s),
-                    tint = if (sleepOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            val timerStatus = sleepTimerStatus(s)
+            val timerLabel = stringResource(R.string.audio_sleep)
+            if (timerStatus == null) {
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = { onSheet("sleep") }) {
+                    Icon(Icons.Default.Bedtime, timerLabel, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                TextButton(
+                    onClick = { onSheet("sleep") },
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+                ) {
+                    Icon(Icons.Default.Bedtime, timerLabel, Modifier.size(18.dp))
+                    Text(timerStatus, Modifier.padding(start = 4.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
             }
             IconButton(onClick = { onSheet("bookmarks") }) {
                 Icon(Icons.Default.Bookmarks, stringResource(R.string.audio_bookmarks), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1195,14 +1206,22 @@ private fun originLabel(origin: AudioOrigin): String? = when (origin) {
 }
 
 @Composable
-private fun sleepLabel(s: PlayerSnapshot?): String = when {
-    s == null -> stringResource(R.string.audio_sleep)
-    s.sleepEndOfChapter -> stringResource(R.string.audio_sleep_chapter)
-    s.sleepAt > 0 -> {
-        val left = ((s.sleepAt - System.currentTimeMillis()) / 60_000L).coerceAtLeast(0) + 1
-        stringResource(R.string.audio_sleep_left, left.toInt())
+private fun sleepTimerStatus(s: PlayerSnapshot?): String? {
+    if (s == null) return null
+    if (s.sleepEndOfChapter) return stringResource(R.string.audio_sleep_chapter)
+    val deadline = s.sleepAt
+    if (deadline <= 0) return null
+
+    var remaining by remember(deadline) { mutableLongStateOf(deadline - System.currentTimeMillis()) }
+    LaunchedEffect(deadline) {
+        remaining = deadline - System.currentTimeMillis()
+        while (remaining > 0) {
+            // The service's timer also runs while playback is paused, when positions stop updating.
+            delay((remaining - 1) % 60_000L + 1)
+            remaining = deadline - System.currentTimeMillis()
+        }
     }
-    else -> stringResource(R.string.audio_sleep)
+    return if (remaining > 0) stringResource(R.string.audio_sleep_left, ((remaining - 1) / 60_000L + 1).toInt()) else null
 }
 
 private fun needsSignIn(message: String): Boolean =

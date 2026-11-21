@@ -1,24 +1,18 @@
 package app.yomu
 
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.activity.ComponentDialog
-import androidx.compose.ui.test.hasAnyAncestor
-import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
-import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.performTouchInput
 import android.graphics.Bitmap
@@ -344,11 +338,7 @@ class AppSmokeTest {
         compose.mainClock.advanceTimeBy(1_000)
         shot("20_catalog_sources")
 
-        // The "Add OPDS catalog" row sits after every source; scroll the lazy list to it before it is composed.
-        compose.onNode(hasScrollAction() and hasAnyDescendant(hasText("MangaDex"))).performScrollToNode(hasText("Add OPDS catalog"))
-        // Since S01 the row opens the connection wizard instead of a one-field dialog: the first question is what is
-        // being added, and Back returns to the source list.
-        compose.onNode(hasText("Add OPDS catalog") and hasAnyAncestor(hasScrollAction())).performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNode(hasText("Add a source") and hasClickAction()).performClick()
         awaitText("What do you want to add?")
         shot("25_add_source")
         back()

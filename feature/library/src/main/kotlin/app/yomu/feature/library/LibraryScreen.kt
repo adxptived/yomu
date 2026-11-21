@@ -83,7 +83,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -497,6 +496,7 @@ fun LibraryScreen(
                                     leadingIcon = { Icon(Icons.Default.TravelExplore, null) },
                                     onClick = { showMenu = false; onOpenSources() },
                                 )
+                                HorizontalDivider()
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.library_select_mode)) },
                                     leadingIcon = { Icon(Icons.Outlined.Checklist, null) },
@@ -517,6 +517,7 @@ fun LibraryScreen(
                                     leadingIcon = { Icon(Icons.Default.Refresh, null) },
                                     onClick = { showMenu = false; viewModel.rescan() },
                                 )
+                                HorizontalDivider()
                                 DropdownMenuItem(
                                     text = { Text(stringResource(CoreR.string.incognito_mode)) },
                                     leadingIcon = { Icon(Icons.Outlined.VisibilityOff, null) },
@@ -1086,7 +1087,8 @@ private fun LibraryToolbar(
         )
         // Tap the sort name to flip its direction; the field itself is picked in the display sheet.
         Row(
-            Modifier.weight(1f, fill = false).clip(CircleShape).clickable(onClick = onSortDirection).padding(horizontal = Dimens.s, vertical = Dimens.xs),
+            Modifier.weight(1f, fill = false).heightIn(min = Dimens.touch).clip(CircleShape)
+                .clickable(onClick = onSortDirection).padding(horizontal = Dimens.s),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Dimens.xxs),
         ) {
@@ -1106,9 +1108,9 @@ private fun LibraryToolbar(
             )
         }
         Spacer(Modifier.weight(1f))
-        IconButton(onClick = onToggleGrid, modifier = Modifier.size(36.dp)) {
+        IconButton(onClick = onToggleGrid, modifier = Modifier.size(Dimens.touch)) {
             Icon(
-                if (grid) Icons.Default.GridView else Icons.AutoMirrored.Filled.ViewList,
+                if (grid) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
                 stringResource(if (grid) R.string.library_view_list else R.string.library_view_grid),
                 Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1173,7 +1175,7 @@ private fun ActiveFilters(filter: LibraryFilter, types: Set<FormatGroup>, viewMo
     }
 }
 
-/** The latest book or online title in progress as a large card, the others in a row under it; both resume reading. */
+/** Resume the latest item from its card, or switch to another book from the row below. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ContinueReading(
@@ -1184,6 +1186,8 @@ private fun ContinueReading(
     onDetails: (Book) -> Unit,
 ) {
     val first = items.firstOrNull() ?: return
+    val localBook = (first as? ContinueItem.BookItem)?.book
+    val resumeLabel = stringResource(R.string.details_continue)
     val open: (ContinueItem) -> Unit = { item ->
         when (item) {
             is ContinueItem.BookItem -> onOpenBook(item.book)
@@ -1194,18 +1198,20 @@ private fun ContinueReading(
         Surface(
             shape = MaterialTheme.shapes.large,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.s, vertical = Dimens.xs).combinedClickable(
-                onClick = { open(first) },
-                // The card resumes the book; a long press is the way to its details without opening the reader.
-                onLongClick = { (first as? ContinueItem.BookItem)?.let { onDetails(it.book) } },
-            ),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.s, vertical = Dimens.xs)
+                .clip(MaterialTheme.shapes.large)
+                .combinedClickable(
+                    onClick = { open(first) },
+                    onClickLabel = resumeLabel,
+                    onLongClick = localBook?.let { book -> { onDetails(book) } },
+                ),
         ) {
-            Row(Modifier.padding(Dimens.l), horizontalArrangement = Arrangement.spacedBy(Dimens.l), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(Dimens.m), horizontalArrangement = Arrangement.spacedBy(Dimens.m), verticalAlignment = Alignment.CenterVertically) {
                 val (title, cover) = when (first) {
                     is ContinueItem.BookItem -> first.book.title to first.book.cover()
                     is ContinueItem.OnlineItem -> first.entry.title to first.entry.coverUrl
                 }
-                CoverImage(cover, title, Modifier.width(76.dp))
+                CoverImage(cover, title, Modifier.width(56.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
                     Text(stringResource(R.string.library_continue), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                     Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -1228,11 +1234,8 @@ private fun ContinueReading(
                         )
                         Text("${(fraction * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    FilledTonalButton(onClick = { open(first) }, modifier = Modifier.padding(top = Dimens.xs).heightIn(min = 40.dp)) {
-                        Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp))
-                        Text(stringResource(R.string.details_continue), Modifier.padding(start = Dimens.xs))
-                    }
                 }
+                Icon(Icons.Default.PlayArrow, null, tint = MaterialTheme.colorScheme.primary)
             }
         }
         val rest = items.drop(1)
@@ -1267,15 +1270,13 @@ private fun ContinueReading(
     }
 }
 
-/** "Chapter 12 · 34%" or "Page 42 · 23%" for a "Continue" card, from the same locator the reader saves. */
+/** The saved chapter or page shown alongside the progress indicator. */
 @Composable
 private fun continuePlace(book: Book, locator: Locator): String {
-    val percent = (locator.totalProgression.coerceIn(0f, 1f) * 100).toInt()
     val title = locator.chapterTitle?.takeIf { it.isNotBlank() }
     return when (book.engine) {
-        EngineType.TEXT -> if (title != null) "$title · $percent%" else stringResource(R.string.library_continue_chapter, locator.chapter + 1, percent)
-        EngineType.AUDIO -> stringResource(R.string.library_continue_chapter, locator.chapter + 1, percent)
-        else -> stringResource(R.string.library_continue_page, locator.chapter + 1, percent)
+        EngineType.TEXT, EngineType.AUDIO -> title ?: stringResource(R.string.library_continue_chapter, locator.chapter + 1)
+        else -> stringResource(R.string.library_continue_page, locator.chapter + 1)
     }
 }
 
