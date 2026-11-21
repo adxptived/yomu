@@ -212,7 +212,7 @@ class AppSmokeTest {
 
         // Reader chrome and settings sheet (only for the screenshots: the chrome may be hidden until a tap).
         runCatching {
-            val view = compose.onAllNodes(hasText("View") and hasClickAction())
+            val view = compose.onAllNodes(hasText("Settings") and hasClickAction())
             if (view.fetchSemanticsNodes().isNotEmpty()) {
                 view[0].performClick()
                 compose.onNode(hasText("All reading settings") and hasClickAction()).performClick()
