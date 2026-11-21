@@ -1,5 +1,53 @@
 # Changelog
 
+## 2.11.0 — a calmer library bar, sources at hand, and an honest update card
+
+> **Install.** Installs over 2.10.0 if signed with the same key. No database migration.
+
+### Library
+
+- **The top bar gives the grid the room it used to eat.** The title is one compact line, the "14 books · 26 online"
+  counts ride on the tabs themselves ("All · 14", "Online · 26"), the tabs and the Display row are slimmer. Nothing
+  moved out of reach: import, sources, downloads, incognito and settings stay in the ⋮ menu.
+- **The toolbar answers taps.** The grid/list icon really switches the view (it used to be a dead picture), and the
+  sort name flips the sort direction on the spot with an arrow; the field itself is picked in Display.
+- **Tabs find themselves.** Returning from a reader with a tab that sits past the row's edge scrolls it into view, and
+  an overflowing edge fades softly instead of being cut mid-pill.
+
+### Sources
+
+- **Adding a repository is a card, not a dialog.** On the Repositories tab the field with paste and a live check sits
+  at the top: the result card shows the name, the number of extensions and the signing key, and one button goes from
+  "Check" to "Add". Popular repositories prefill the card and check in one tap.
+- **"Sources" is in the library's ⋮ menu** — one tap from the shelf, instead of the path through settings or the import
+  sheet.
+
+### Updates
+
+- **"Available" means newer.** The update card and the Settings dot no longer stick after an update installs: a stored
+  latest version that is not actually newer than the installed one is never announced (it used to keep the card
+  forever — the installed 2.10.0 "available" bug).
+- **A downloaded APK says so.** While the update is downloaded and verified, the card reads "ready to install" and
+  installs on tap.
+
+### The reader
+
+- **"View" is "Settings" with a gear.** The bottom row now reads Contents · Search · Settings.
+- **The ⋮ menu became a grouped sheet.** The flat list of fifteen commands is organised into Voice and scrolling,
+  Translate and dictionary, Notes and annotations, Page and More — and a floating circle above the bottom bar opens
+  the same sheet, so the rare commands stay one thumb-tap from the page.
+- **The wheel picks with a slide.** In every radial menu (library books, manga and PDF pages, text selection, audio
+  covers) press the scrim and slide: the sector under the finger highlights with a tick and lifting runs it; sliding
+  back to the centre cancels. A jittering tap near the ring runs nothing, and the library's hold-and-drag behaviour is
+  untouched.
+
+### Under the hood
+
+- The update "available" flow now checks the version comparison itself instead of trusting the skip list.
+- The screen tests match the new surfaces: the inline add-repository card and the renamed reader settings button.
+- The unit tests of the touched modules (`:core:ui`, `:feature:reader`, `:feature:library`, `:feature:catalog`,
+  `:feature:settings`, `:app`) pass, including the updated screen tests.
+
 ## 2.10.0 — reading comfort and one-step sources
 
 > **Install.** Installs over 2.9.4 if signed with the same key. No database migration.

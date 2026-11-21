@@ -54,6 +54,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_11_0">
+        <item>The library top bar is compact, the counts ride on the tabs, and the grid/list toggle and the sort name answer taps.</item>
+        <item>Add a repository right in the Repositories tab — paste, check, add — and “Sources” sits in the library menu.</item>
+        <item>The update card appears only for a genuinely newer version and offers to install the one already downloaded.</item>
+        <item>“View” is “Settings” with a gear, the ⋮ opens a grouped sheet (the floating circle opens it too), and the wheel picks with a slide.</item>
+    </string-array>
     <string-array name="whats_new_2_10_0">
         <item>Contents, Search and View are always in the bottom row; Back closes the match bar, the resume note and the controls before leaving the book.</item>
         <item>Search results keep a “3 of 12” bar on the page, recent jumps have their own list, and the contents show where you are and where your bookmarks are.</item>
