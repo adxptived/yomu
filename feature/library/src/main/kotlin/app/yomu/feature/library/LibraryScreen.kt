@@ -1139,7 +1139,7 @@ private fun DisplaySheet(
                 horizontalArrangement = Arrangement.spacedBy(Dimens.s),
             ) {
                 FilterChip(selected = columns == 0, onClick = { viewModel.setColumns(0) }, label = { Text(stringResource(R.string.library_columns_auto)) }, shape = CircleShape)
-                (2..6).forEach { n ->
+                for (n in 2..6) {
                     FilterChip(selected = columns == n, onClick = { viewModel.setColumns(n) }, label = { Text("$n") }, shape = CircleShape)
                 }
             }
