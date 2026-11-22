@@ -19,6 +19,7 @@ import app.yomu.data.book.EpubBuilder
 import app.yomu.data.book.EpubMeta
 import app.yomu.data.library.ImportOutcome
 import app.yomu.data.library.ImportService
+import app.yomu.feature.dictionary.DictionaryViewModel
 import com.github.takahirom.roborazzi.captureRoboImage
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -89,6 +90,18 @@ class NavigationUxScreensTest {
     }
 
     @Test
+    fun editingLookupClearsThePreviousResult() {
+        skipOnboarding()
+        val model = GlobalContext.get().get<DictionaryViewModel>()
+        compose.runOnIdle {
+            model.search("zz_yomu_lookup_regression_927")
+            assertTrue(model.result.value == app.yomu.core.common.UiState.Loading)
+            model.setQuery("another word")
+            org.junit.Assert.assertNull(model.result.value)
+        }
+    }
+
+    @Test
     @Config(qualifiers = "w1280dp-h800dp-xhdpi")
     fun tabletSettingsTwoPane() {
         skipOnboarding()
@@ -120,7 +133,8 @@ class NavigationUxScreensTest {
         // A tile opens the card; the card's read action opens the reader with the first-run tap zones.
         compose.onAllNodesWithText("Zones")[0].performClick()
         awaitText("Read")
-        compose.onAllNodes(hasContentDescription("Read"))[0].performClick()
+        // The card's read action is the wide "Read" button (the tile itself opens the card, not the reader).
+        compose.onAllNodesWithText("Read")[0].performClick()
         awaitText("Next page")
         shot("324_reader_tap_zones")
         compose.onAllNodesWithText("Got it")[0].performClick()

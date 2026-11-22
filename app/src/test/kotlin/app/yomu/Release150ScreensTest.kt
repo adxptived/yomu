@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -150,7 +151,7 @@ class Release150ScreensTest {
         compose.setContent { YomuTheme(dark) { Library() } }
         awaitText("Solo Leveling")
         // Filters live in the one "Display" sheet now: open it, then the filter section.
-        compose.onAllNodesWithText("Display")[0].performClick()
+        compose.onAllNodes(hasContentDescription("Display"))[0].performClick()
         compose.mainClock.advanceTimeBy(1_000)
         // The pill and the sheet row both read "Filter"; the sheet row comes last.
         compose.onAllNodesWithText("Filter").let { nodes -> nodes[nodes.fetchSemanticsNodes().size - 1].performClick() }

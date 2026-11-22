@@ -38,11 +38,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import app.yomu.data.source.SourceManager
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.ui.components.BookGridItem
@@ -69,6 +72,10 @@ fun GlobalSearchScreen(
 ) {
     val query by viewModel.query.collectAsStateWithLifecycle()
     val content by viewModel.content.collectAsStateWithLifecycle()
+    val activeQuery by viewModel.activeQuery.collectAsStateWithLifecycle()
+    val languages by viewModel.searchLanguages.collectAsStateWithLifecycle()
+    val languageCounts by viewModel.languageCounts.collectAsStateWithLifecycle()
+    var showLanguages by remember { mutableStateOf(false) }
     val results by viewModel.results.collectAsStateWithLifecycle()
     val migrating by viewModel.migrating.collectAsStateWithLifecycle()
     val migrationPlan by viewModel.migrationPlan.collectAsStateWithLifecycle()
@@ -106,6 +113,12 @@ fun GlobalSearchScreen(
                     ),
                     modifier = Modifier.padding(vertical = Dimens.xs),
                 )
+                TextButton(
+                    onClick = { showLanguages = true },
+                    modifier = Modifier.padding(horizontal = Dimens.s),
+                ) {
+                    Text(stringResource(R.string.global_search_languages, languagesSummary(languages)), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
                 val all = results.orEmpty()
                 val answered = all.count { !it.loading }
                 when {
@@ -170,7 +183,7 @@ fun GlobalSearchScreen(
                         if (!r.loading && r.error != null) {
                             IconButton(onClick = { viewModel.retry(r.sourceId) }) { Icon(Icons.Filled.Refresh, stringResource(CoreR.string.retry)) }
                         }
-                        IconButton(onClick = { onOpenSource(r.sourceId, query) }) {
+                        IconButton(onClick = { onOpenSource(r.sourceId, activeQuery) }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowForward, stringResource(R.string.global_search_open_source))
                         }
                     }
@@ -192,6 +205,20 @@ fun GlobalSearchScreen(
                 }
             }
         }
+    }
+
+    if (showLanguages) {
+        SourceLanguagesSheet(
+            all = remember(languageCounts) {
+                languageCounts.keys.filter { it.isNotBlank() && it != "all" }.sortedBy(::languageName)
+            },
+            counts = languageCounts,
+            selected = languages,
+            onToggle = { viewModel.toggleSearchLanguage(it) },
+            onAll = { viewModel.setSearchLanguages(setOf(SourceManager.ALL_LANGUAGES)) },
+            onDefault = { viewModel.setSearchLanguages(emptySet()) },
+            onDismiss = { showLanguages = false },
+        )
     }
 
     migrationPlan?.let { plan ->

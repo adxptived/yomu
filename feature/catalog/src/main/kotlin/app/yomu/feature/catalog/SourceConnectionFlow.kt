@@ -32,7 +32,7 @@ sealed interface ConnectionFailure {
 sealed interface ConnectionStep {
     data object Content : ConnectionStep
     data object Method : ConnectionStep
-    data class Address(val method: ConnectionMethod) : ConnectionStep
+    data class Address(val method: ConnectionMethod?) : ConnectionStep
     data class Probing(val address: String) : ConnectionStep
     data class Preview(val result: ProbeResult.Recognised) : ConnectionStep
     data object Saving : ConnectionStep
@@ -186,10 +186,9 @@ object SourceConnectionFlow {
             state.copy(step = ConnectionStep.Method, method = null)
         }
         is ConnectionStep.HandOff -> state.copy(step = ConnectionStep.Method, method = null)
-        is ConnectionStep.Probing -> state.copy(step = ConnectionStep.Address(state.method ?: ConnectionMethod.OPDS))
-        is ConnectionStep.Preview -> state.copy(step = ConnectionStep.Address(state.method ?: ConnectionMethod.OPDS))
+        is ConnectionStep.Probing, is ConnectionStep.Preview, is ConnectionStep.Failed ->
+            state.copy(step = ConnectionStep.Address(state.method))
         ConnectionStep.Saving -> state.checked?.let { state.copy(step = ConnectionStep.Preview(it)) } ?: state
-        is ConnectionStep.Failed -> state.copy(step = ConnectionStep.Address(state.method ?: ConnectionMethod.OPDS))
         ConnectionStep.Importing -> state.copy(step = ConnectionStep.HandOff(state.method ?: ConnectionMethod.FILES))
         is ConnectionStep.Imported -> state.copy(step = ConnectionStep.HandOff(state.method ?: ConnectionMethod.FILES))
         ConnectionStep.Done -> state

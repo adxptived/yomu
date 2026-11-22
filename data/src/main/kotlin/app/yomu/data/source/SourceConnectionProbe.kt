@@ -1,16 +1,22 @@
 package app.yomu.data.source
 
+import app.yomu.data.audio.PodcastFeed
 import app.yomu.source.ConnectionKind
 import app.yomu.source.ConnectionProbe
 import app.yomu.source.LinkCandidate
 import app.yomu.source.ProbeLimits
 import app.yomu.source.ProbeResult
+import app.yomu.source.await
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.ConnectException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -52,34 +58,45 @@ class SourceConnectionProbe(private val client: () -> OkHttpClient) {
                         }
                     }
                     .build()
-                http.newCall(request).execute().use { response ->
+                http.newCall(request).await().use { response ->
                     if (response.code in 300..399) {
                         val location = response.header("Location")
-                            ?: return@withContext ProbeResult.InvalidUrl("redirect without location")
-                        if (hops++ >= ProbeLimits.MAX_REDIRECTS) return@withContext ProbeResult.NetworkError
+                            ?: return@withContext ProbeResult.TransportFailure(ProbeResult.TransportIssue.REDIRECT)
+                        if (hops++ >= ProbeLimits.MAX_REDIRECTS) return@withContext ProbeResult.TransportFailure(ProbeResult.TransportIssue.REDIRECT)
                         url = response.request.url.resolve(location)?.toString()
-                            ?: return@withContext ProbeResult.InvalidUrl("bad redirect")
+                            ?: return@withContext ProbeResult.TransportFailure(ProbeResult.TransportIssue.REDIRECT)
                         followedRedirects = true
                         return@use
                     }
-                    val body = response.body
-                    // At most the probe window is read; a huge document is never buffered whole.
-                    val prefix = if (body == null) {
-                        ""
-                    } else {
-                        runCatching { response.peekBody(ProbeLimits.MAX_BYTES).string() }.getOrDefault("")
+                    val prefix = when {
+                        response.code in 200..299 -> response.peekBody(ProbeLimits.MAX_BYTES).string()
+                        response.code == 403 || response.code == 503 -> response.peekBody(2048).string()
+                        else -> ""
                     }
+                    val browserChallenge = response.header("cf-mitigated").equals("challenge", ignoreCase = true) ||
+                        (response.header("Server").orEmpty().contains("cloudflare", ignoreCase = true) &&
+                            prefix.contains("challenge-platform", ignoreCase = true))
+                    val declaredType = response.header("Content-Type")
+                    val kind = ConnectionProbe.classify(declaredType, prefix)
+                    val mayBeAtom = kind == ConnectionKind.OPDS &&
+                        prefix.take(2048).contains("<feed", ignoreCase = true) &&
+                        !prefix.contains("http://opds-spec.org/acquisition", ignoreCase = true)
+                    val audio = if (kind == ConnectionKind.RSS || mayBeAtom) PodcastFeed.parse(prefix, url) else null
                     val result = ConnectionProbe.verdict(
                         status = response.code,
-                        contentType = response.header("Content-Type"),
+                        contentType = if (audio != null && mayBeAtom) "application/rss+xml" else declaredType,
                         bodyPrefix = prefix,
                         supported = supported,
                         followedRedirects = followedRedirects,
+                        browserChallenge = browserChallenge,
                     )
                     return@withContext if (result is ProbeResult.Recognised) {
+                        if (result.kind == ConnectionKind.RSS && audio == null) {
+                            return@withContext ProbeResult.NoAudioEpisodes
+                        }
                         result.copy(
                             title = result.title ?: leadingTitle(prefix),
-                            sampleItems = sampleItems(prefix, result.kind),
+                            sampleItems = audio?.tracks?.size ?: sampleItems(prefix, result.kind),
                             candidates = if (result.kind == ConnectionKind.WEB_PAGE) linkCandidates(prefix, url) else emptyList(),
                         )
                     } else {
@@ -89,7 +106,15 @@ class SourceConnectionProbe(private val client: () -> OkHttpClient) {
             }
             @Suppress("UNREACHABLE_CODE") ProbeResult.NetworkError
         } catch (e: IOException) {
-            ProbeResult.NetworkError
+            when (e) {
+                is InterruptedIOException -> ProbeResult.TransportFailure(ProbeResult.TransportIssue.TIMEOUT)
+                is UnknownHostException -> ProbeResult.TransportFailure(ProbeResult.TransportIssue.DNS)
+                is ConnectException -> ProbeResult.TransportFailure(ProbeResult.TransportIssue.CONNECTION)
+                is SSLException -> ProbeResult.TransportFailure(ProbeResult.TransportIssue.TLS)
+                else -> ProbeResult.NetworkError
+            }
+        } catch (_: IllegalArgumentException) {
+            ProbeResult.InvalidUrl("malformed address")
         }
     }
 

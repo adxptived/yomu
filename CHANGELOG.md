@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.12.0 — better source connections and library controls
+
+### Catalog and sources
+
+- Browse and search installed sources with separate controls for language, sorting and filters. Active filters can be cleared individually, and the result count stays visible.
+- Bottom navigation stays available while browsing a source or adding one. The search action sits above the navigation bar.
+- The connection wizard explains HTTP errors, timeouts, DNS failures, certificate problems and invalid redirects. Correcting a pasted link keeps automatic detection active.
+- Name a custom OPDS catalog before saving it. Download links survive opening a book from the catalog, and saved credentials work for downloads from the same server.
+- RSS and Atom previews show the number of playable episodes. Subscribed episodes appear as audiobook chapters, including episodes linked by relative URLs.
+
+### Library and reader
+
+- Removing a book by swiping asks for confirmation. Undo restores the book and updates the library count.
+- The library toolbar and import button take up less space. Book details put the reading action first and group status, rating, tags and tabs.
+- Reader quick settings can be dismissed with Back or by tapping outside. The floating More button opens the reader menu.
+- Incognito hides app previews in Android Recents and blocks screenshots while active.
+
+### Other screens
+
+- Refined the profile, reading history, downloads, dictionary and settings screens to make their main actions easier to find.
+
 ## 2.11.1 — the top bar fix, and a calmer pass over the screens
 
 > **Install.** Installs over 2.11.0 if signed with the same key. No database migration.

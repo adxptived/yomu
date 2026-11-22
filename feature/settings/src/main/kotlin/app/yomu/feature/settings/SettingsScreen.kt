@@ -87,6 +87,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.datastore.Pref
@@ -271,8 +273,6 @@ private fun SettingsRoot(
     val q = query.trim()
     val results = remember(q, index) { filterSettings(index, q) }
     val root = stringResource(CoreR.string.settings)
-    val context = LocalContext.current
-    val (version, code) = remember { appVersion(context) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
         item(key = "search") {
             SearchField(
@@ -291,7 +291,6 @@ private fun SettingsRoot(
             }
         } else {
             if (update != null) item(key = "update") { UpdateCard(update, ready = updateReady, onClick = onUpdate) }
-            item(key = "about") { AboutHeader(version, code) { onOpen(SettingsSection.ABOUT) } }
             item(key = "quick") {
                 SettingsGroup {
                     Row(
@@ -310,12 +309,18 @@ private fun SettingsRoot(
                     }
                 }
             }
-            val visible = SettingsSection.entries.filter { it.visible }
-            val groups = ROOT_GROUPS.map { g -> g.filter { it in visible } } + listOf(visible.filter { s -> ROOT_GROUPS.none { s in it } })
-            groups.filter { it.isNotEmpty() }.forEachIndexed { i, group ->
-                item(key = "group$i") {
+            ROOT_GROUPS.forEach { (title, sections) ->
+                item(key = title) {
+                    Text(
+                        stringResource(title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = Dimens.xl, top = Dimens.m, bottom = Dimens.xxs).semantics { heading() },
+                    )
                     SettingsGroup {
-                        group.forEach { s -> SettingsRow(s.icon, stringResource(s.title), stringResource(s.summary)) { onOpen(s) } }
+                        sections.forEach { section ->
+                            SettingsRow(section.icon, stringResource(section.title), stringResource(section.summary)) { onOpen(section) }
+                        }
                     }
                 }
             }
@@ -323,11 +328,11 @@ private fun SettingsRoot(
     }
 }
 
-/** Sections of the settings root, one rounded card per group. [SettingsSection.ABOUT] has its own card. */
 private val ROOT_GROUPS = listOf(
-    listOf(SettingsSection.APPEARANCE, SettingsSection.NAVIGATION, SettingsSection.LIBRARY, SettingsSection.PROFILE, SettingsSection.READER, SettingsSection.MANGA, SettingsSection.SELECTION, SettingsSection.QUICK_ACTIONS, SettingsSection.FONTS),
-    listOf(SettingsSection.TRANSLATION, SettingsSection.CATALOG, SettingsSection.YOUTUBE, SettingsSection.TRACKING, SettingsSection.DOWNLOADS, SettingsSection.NETWORK),
-    listOf(SettingsSection.BACKUP, SettingsSection.SYNC, SettingsSection.NOTIFICATIONS, SettingsSection.SECURITY, SettingsSection.ADVANCED),
+    R.string.set_group_reading to listOf(SettingsSection.LIBRARY, SettingsSection.READER, SettingsSection.MANGA, SettingsSection.SELECTION, SettingsSection.QUICK_ACTIONS, SettingsSection.FONTS),
+    R.string.set_group_personalization to listOf(SettingsSection.APPEARANCE, SettingsSection.NAVIGATION, SettingsSection.PROFILE),
+    R.string.set_group_online to listOf(SettingsSection.CATALOG, SettingsSection.DOWNLOADS, SettingsSection.TRANSLATION, SettingsSection.TRACKING, SettingsSection.YOUTUBE, SettingsSection.NETWORK),
+    R.string.set_group_app to listOf(SettingsSection.BACKUP, SettingsSection.SYNC, SettingsSection.SECURITY, SettingsSection.NOTIFICATIONS, SettingsSection.ADVANCED, SettingsSection.ABOUT),
 )
 
 @Composable

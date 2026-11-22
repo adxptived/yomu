@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -60,6 +59,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -180,7 +180,7 @@ fun ProfileScreen(
                         ProfilePage.STATS -> ReadingStatsActions(statsViewModel)
                         ProfilePage.TRACKING -> trackingViewModel?.let { vm -> TrackingActions(vm, onOpenSettings = { onOpenSettings(SettingsSection.TRACKING) }) }
                         ProfilePage.NONE -> when (tab) {
-                            ProfileTab.OVERVIEW -> IconButton(onClick = { editing = true }) { Icon(Icons.Outlined.Edit, stringResource(R.string.profile_edit)) }
+                            ProfileTab.OVERVIEW -> Unit
                             ProfileTab.HISTORY -> HistoryActions(historyViewModel, searching, onSearching = { searching = it })
                         }
                     }
@@ -262,18 +262,6 @@ fun ProfileScreen(
     }
 }
 
-/** A compact tile of the overview: icon, title and one line of explanation; two fit in a row. */
-@Composable
-private fun RowScope.EntryTile(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    ElevatedCard(onClick = onClick, modifier = modifier) {
-        Column(Modifier.padding(Dimens.l), verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-    }
-}
-
 @Composable
 private fun ProfileOverview(
     state: ProfileUi?,
@@ -293,10 +281,7 @@ private fun ProfileOverview(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val days by historyViewModel.days.collectAsStateWithLifecycle()
-    val query by historyViewModel.query.collectAsStateWithLifecycle()
-    val recent =
-        remember(days, query) { if (query.isBlank()) days.orEmpty().asSequence().flatMap { it.items }.take(3).toList() else emptyList() }
+    val recent by historyViewModel.recent.collectAsStateWithLifecycle()
     var busy by remember { mutableStateOf(false) }
     val settings: AppSettings = koinInject()
     val showStats by settings.profileShowStats.flow.collectAsStateWithLifecycle(initialValue = true)
@@ -350,38 +335,38 @@ private fun ProfileOverview(
             }
             return@LazyColumn
         }
-        // The two pages people open most often sit right under the header, not at the end of a long scroll.
+        if (showRecent && recent.isNotEmpty()) {
+            item(key = "recent") { RecentCard(recent, onOpen = ::openRecent, onOpenHistory = onOpenHistory) }
+        }
+        item(key = "time") { TimeCard(state, onOpenStats) }
         item(key = "entries") {
-            Row(horizontalArrangement = Arrangement.spacedBy(Dimens.m)) {
-                EntryTile(
-                    Icons.Outlined.Sync,
-                    stringResource(R.string.profile_tab_tracking),
-                    stringResource(R.string.profile_tracking_entry),
-                    onOpenTracking,
-                    Modifier.weight(1f),
-                )
-                if (onOpenDownloads != null) {
-                    EntryTile(
-                        Icons.Outlined.Download,
-                        stringResource(R.string.profile_tab_downloads),
-                        stringResource(R.string.profile_downloads_entry),
-                        onOpenDownloads,
-                        Modifier.weight(1f),
+            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
+                Column {
+                    PreferenceItem(
+                        stringResource(R.string.profile_tab_tracking),
+                        stringResource(R.string.profile_tracking_entry),
+                        icon = Icons.Outlined.Sync,
+                        onClick = onOpenTracking,
                     )
+                    if (onOpenDownloads != null) {
+                        PreferenceItem(
+                            stringResource(R.string.profile_tab_downloads),
+                            stringResource(R.string.profile_downloads_entry),
+                            icon = Icons.Outlined.Download,
+                            onClick = onOpenDownloads,
+                        )
+                    }
+                    if (onOpenNotes != null) {
+                        PreferenceItem(
+                            stringResource(R.string.profile_notes),
+                            stringResource(R.string.profile_notes_entry),
+                            icon = Icons.Outlined.EditNote,
+                            onClick = onOpenNotes,
+                        )
+                    }
                 }
             }
         }
-        if (onOpenNotes != null) {
-            item(key = "notes") {
-                PreferenceItem(
-                    stringResource(R.string.profile_notes),
-                    stringResource(R.string.profile_notes_entry),
-                    icon = Icons.Outlined.EditNote,
-                    onClick = onOpenNotes,
-                )
-            }
-        }
-        item(key = "time") { TimeCard(state, onOpenStats) }
         // The numbers and milestones are a reference, not the headline: folded away until asked for.
         val hasStats = showStats || showMilestones || (showTop && state.topTitles.isNotEmpty())
         if (hasStats) {
@@ -406,7 +391,6 @@ private fun ProfileOverview(
                 }
             }
         }
-        if (showRecent && recent.isNotEmpty()) item(key = "recent") { RecentCard(recent, onOpen = ::openRecent, onOpenHistory = onOpenHistory) }
         if (showShare) {
             item(key = "share") {
                 CollapsibleSection(
@@ -438,8 +422,9 @@ private fun ProfileOverview(
 @Composable
 private fun ProfileHeader(state: ProfileUi?, onEdit: () -> Unit) {
     val name = state?.name?.ifBlank { null } ?: stringResource(R.string.profile_default_name)
+    val editLabel = stringResource(R.string.profile_edit)
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onEdit, role = Role.Button).padding(vertical = Dimens.s),
+        Modifier.fillMaxWidth().clickable(onClick = onEdit, onClickLabel = editLabel, role = Role.Button).padding(vertical = Dimens.s),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Avatar(state?.avatar.orEmpty(), state?.name.orEmpty(), Modifier.size(72.dp))
@@ -479,6 +464,7 @@ private fun ProfileHeader(state: ProfileUi?, onEdit: () -> Unit) {
                 }
             }
         }
+        Icon(Icons.Outlined.Edit, null, Modifier.padding(start = Dimens.s), tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

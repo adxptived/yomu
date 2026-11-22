@@ -80,6 +80,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -122,6 +123,21 @@ internal fun ProbeResult.message(): Int = when (this) {
     ProbeResult.NeedsBrowser -> R.string.catalog_opds_probe_browser
     is ProbeResult.InvalidUrl -> R.string.opds_url_invalid
     ProbeResult.NetworkError -> R.string.catalog_opds_probe_network
+    ProbeResult.NoAudioEpisodes -> R.string.connection_error_no_episodes
+    is ProbeResult.HttpFailure -> when (status) {
+        403 -> R.string.connection_error_access
+        404, 410 -> R.string.connection_error_missing
+        429 -> R.string.connection_error_rate
+        in 500..599 -> R.string.connection_error_server
+        else -> R.string.connection_error_http
+    }
+    is ProbeResult.TransportFailure -> when (issue) {
+        ProbeResult.TransportIssue.TIMEOUT -> R.string.connection_error_timeout
+        ProbeResult.TransportIssue.DNS -> R.string.connection_error_dns
+        ProbeResult.TransportIssue.CONNECTION -> R.string.connection_error_connect
+        ProbeResult.TransportIssue.TLS -> R.string.connection_error_tls
+        ProbeResult.TransportIssue.REDIRECT -> R.string.connection_error_redirect
+    }
     is ProbeResult.ApiMismatch -> R.string.catalog_opds_probe_unsupported
 }
 
@@ -149,8 +165,18 @@ class CatalogHomeViewModel(
     val events = _events.receiveAsFlow()
 
     /** Shown languages; contains [SourceManager.ALL_LANGUAGES] when every language is shown. */
-    val languages: StateFlow<Set<String>> = sources.languages
-    val ready: StateFlow<Boolean> = sources.ready
+    private val catalogLanguages = settings.catalogLanguages.flow
+        .map { it.ifEmpty { setOf(SourceManager.ALL_LANGUAGES) } }
+    val languages: StateFlow<Set<String>> = catalogLanguages.state(this, setOf(SourceManager.ALL_LANGUAGES))
+
+    /**
+     * The screen may draw its content: [SourceManager.ready] and the source list having produced its first value.
+     * The manager can report ready a moment before the combined list flow emits, and a skeleton that flips to the
+     * "No sources" empty state and then to the list reads like the sources had disappeared.
+     */
+    private val sourceListLoaded = MutableStateFlow(false)
+    val ready: StateFlow<Boolean> = combine(sources.ready, sourceListLoaded) { r, l -> r && l }
+        .state(this, false)
 
     /** Device language and English first, then the others by name: the chips do not jump around when toggled. */
     val allLanguages: StateFlow<List<String>> = sources.infos
@@ -179,6 +205,19 @@ class CatalogHomeViewModel(
     /** Filter of the source list by name. */
     val sourceQuery = MutableStateFlow("")
 
+    private val _refreshingSources = MutableStateFlow(false)
+    val refreshingSources = _refreshingSources.asStateFlow()
+
+    fun refreshSources() = viewModelScope.launch(ScreenErrors) {
+        if (!_refreshingSources.compareAndSet(expect = false, update = true)) return@launch
+        try {
+            runCatchingApp { sources.refreshExtensions() }
+                .onFailure { _events.send(CatalogEvent.Failure(it)) }
+        } finally {
+            _refreshingSources.value = false
+        }
+    }
+
     /** Recent failures per source, for the "not responding" hint. */
     val health: StateFlow<Map<Long, SourceHealth>> = catalog.health
 
@@ -187,18 +226,25 @@ class CatalogHomeViewModel(
 
     val sourceList: StateFlow<List<SourceInfo>> = combine(
         sources.infos,
-        sources.languages,
+        catalogLanguages,
         settings.sourceSort.flow,
         sourceQuery.debounceTyping(),
         combine(settings.catalogSourceFilter.flow, unstableIds) { f, u -> f to u },
     ) { infos, langs, sort, q, (filter, unstable) ->
-        val query = q.trim()
+        val tokens = q.trim().split(Regex("\\s+")).filter(String::isNotEmpty)
         infos.filter { s ->
             sources.isShown(s, langs) &&
                 filter.matches(s.content.name, s.kind.name, s.pinned, s.enabled, s.isNsfw, s.id in unstable, s.hidden) &&
-                (query.isEmpty() || s.name.contains(query, ignoreCase = true) || s.extensionName?.contains(query, ignoreCase = true) == true)
+                tokens.all { word ->
+                    s.name.contains(word, ignoreCase = true) ||
+                        s.extensionName?.contains(word, ignoreCase = true) == true ||
+                        s.lang.equals(word, ignoreCase = true) ||
+                        languageName(s.lang).contains(word, ignoreCase = true)
+                }
         }.sortedWith(sourceComparator(sort))
-    }.state(this, emptyList())
+    }
+        .onEach { sourceListLoaded.value = true }
+        .state(this, emptyList())
 
     /** Number of sources before any filter: "12 of 340" in the filter bar. */
     val sourceTotal: StateFlow<Int> = sources.infos.map { it.size }.state(this, 0)
@@ -226,7 +272,7 @@ class CatalogHomeViewModel(
 
     fun toggleLanguage(lang: String) = viewModelScope.launch(ScreenErrors) {
         settings.catalogLanguages.update { stored ->
-            val base = SourceManager.effectiveLanguages(stored, allLanguages.value) - SourceManager.ALL_LANGUAGES
+            val base = stored - SourceManager.ALL_LANGUAGES
             (if (lang in base) base - lang else base + lang).ifEmpty { setOf(SourceManager.ALL_LANGUAGES) }
         }
     }
@@ -239,8 +285,10 @@ class CatalogHomeViewModel(
         settings.catalogLanguages.set(langs.ifEmpty { setOf(SourceManager.ALL_LANGUAGES) })
     }
 
-    /** The device language and English, as on the first start. */
-    fun defaultLanguages() = viewModelScope.launch(ScreenErrors) { settings.catalogLanguages.set(emptySet()) }
+    /** The device language and English. */
+    fun defaultLanguages() = viewModelScope.launch(ScreenErrors) {
+        settings.catalogLanguages.set(SourceManager.effectiveLanguages(emptySet(), allLanguages.value))
+    }
 
     fun updateSourceFilter(transform: (SourceListFilter) -> SourceListFilter) = viewModelScope.launch(ScreenErrors) {
         settings.catalogSourceFilter.update(transform)
@@ -260,6 +308,9 @@ class CatalogHomeViewModel(
     fun setEnabled(ids: Collection<Long>, enabled: Boolean) = viewModelScope.launch(ScreenErrors) { sources.setEnabled(ids, enabled) }
     fun setHidden(ids: Collection<Long>, hidden: Boolean) = viewModelScope.launch(ScreenErrors) { sources.setHidden(ids, hidden) }
     fun setExtensionHidden(pkg: String, hidden: Boolean) = viewModelScope.launch(ScreenErrors) { sources.setExtensionHidden(pkg, hidden) }
+    fun setExtensionsHidden(packages: Set<String>, hidden: Boolean) = viewModelScope.launch(ScreenErrors) {
+        sources.setExtensionsHidden(packages, hidden)
+    }
     fun unhideAllSources() = viewModelScope.launch(ScreenErrors) { sources.unhideAll() }
     fun setIncognito(value: Boolean) = viewModelScope.launch(ScreenErrors) { settings.incognito.set(value) }
 
@@ -272,7 +323,7 @@ class CatalogHomeViewModel(
             password = password?.ifBlank { null },
         )
         if (probe !is ProbeResult.Recognised) {
-            _events.send(CatalogEvent.Message(probe.message()))
+            _events.send(CatalogEvent.Message(probe.message(), (probe as? ProbeResult.HttpFailure)?.status?.toString()))
             return@launch
         }
         runCatchingApp { sources.addOpds(name.trim().ifBlank { url.substringAfter("://").substringBefore('/') }, url.trim(), user?.ifBlank { null }, password?.ifBlank { null }) }
@@ -814,7 +865,11 @@ class GlobalSearchViewModel(
     val sourceInfos: StateFlow<Map<Long, SourceInfo>> = sources.infos.map { list -> list.associateBy { it.id } }.state(this, emptyMap())
     val query = MutableStateFlow(initialQuery.orEmpty())
     val content = MutableStateFlow<SourceContent?>(null)
-    private val submitted = MutableStateFlow(initialQuery.orEmpty())
+    private data class SearchRequest(val query: String, val content: SourceContent?, val revision: Long = 0)
+    private val submitted = MutableStateFlow(SearchRequest(initialQuery.orEmpty().trim(), null))
+    val activeQuery = submitted.map { it.query }.state(this, submitted.value.query)
+    val searchLanguages = sources.languages
+    val languageCounts = sources.infos.map { list -> list.groupingBy { it.lang }.eachCount() }.state(this, emptyMap())
     val migrating = MutableStateFlow(false)
 
     /** A source migration waiting for the reader's confirmation; null when no preview is open. */
@@ -833,23 +888,43 @@ class GlobalSearchViewModel(
     private val retried = MutableStateFlow<Map<Long, GlobalSearchResult>>(emptyMap())
     private val retryJobs = mutableListOf<Job>()
 
-    val results: StateFlow<List<GlobalSearchResult>?> = combine(submitted, content) { q, c -> q to c }
-        .flatMapLatest { (q, c) -> if (q.isBlank()) flowOf(null) else catalog.globalSearch(q, c) }
+    val results: StateFlow<List<GlobalSearchResult>?> = combine(submitted, searchLanguages) { request, languages -> request to languages }
+        .flatMapLatest { (request, languages) ->
+            if (request.query.isBlank()) flowOf(null) else catalog.globalSearch(request.query, request.content, languages)
+        }
         .let { base -> combine(base, retried) { list, overrides -> list?.map { overrides[it.sourceId] ?: it } } }
         .state(this, null)
 
-    fun submit() {
+    private fun clearRetries() {
         retryJobs.forEach { it.cancel() }
         retryJobs.clear()
         retried.value = emptyMap()
-        submitted.value = query.value.trim()
+    }
+
+    fun submit() {
+        clearRetries()
+        submitted.update { SearchRequest(query.value.trim(), content.value, it.revision + 1) }
+    }
+
+    fun setSearchLanguages(languages: Set<String>) = viewModelScope.launch(ScreenErrors) {
+        clearRetries()
+        settings.catalogLanguages.set(languages)
+    }
+
+    fun toggleSearchLanguage(language: String) = viewModelScope.launch(ScreenErrors) {
+        clearRetries()
+        settings.catalogLanguages.update { stored ->
+            val chosen = stored.ifEmpty { searchLanguages.value } - SourceManager.ALL_LANGUAGES
+            val next = if (language in chosen) chosen - language else chosen + language
+            next.ifEmpty { setOf(SourceManager.ALL_LANGUAGES) }
+        }
     }
 
     fun setOnlyWithResults(value: Boolean) = viewModelScope.launch(ScreenErrors) { settings.globalSearchOnlyResults.set(value) }
 
     /** Searches one source again (after an error or a timeout). */
     fun retry(sourceId: Long) {
-        val q = submitted.value
+        val q = submitted.value.query
         val row = results.value?.firstOrNull { it.sourceId == sourceId } ?: return
         if (q.isBlank() || row.loading) return
         retryJobs += viewModelScope.launch(ScreenErrors) {
@@ -1298,7 +1373,7 @@ class TitleViewModel(
             return@launch
         }
         runCatchingApp {
-            val headers = runCatching { catalog.source(e.sourceId).imageHeaders() }.getOrDefault(emptyMap())
+            val headers = runCatching { catalog.bookDownloadHeaders(e.sourceId, link.url) }.getOrDefault(emptyMap())
             downloads.enqueueBook(e.title, link.url, link.mimeType, e.sourceId, headers)
         }.onSuccess { _events.send(CatalogEvent.Message(R.string.title_book_queued)) }
             .onFailure { _events.send(CatalogEvent.Failure(it)) }

@@ -1,5 +1,6 @@
 package app.yomu.feature.dictionary
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -99,7 +100,7 @@ fun WordSort.label(): Int = when (this) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun WordsContent(viewModel: WordsViewModel, onOpenBook: (Long, Locator?, String) -> Unit, onStartReview: () -> Unit) {
+fun WordsContent(viewModel: WordsViewModel, onOpenBook: (Long, Locator?, String) -> Unit) {
     val items by viewModel.items.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     val level by viewModel.level.collectAsStateWithLifecycle()
@@ -109,6 +110,14 @@ fun WordsContent(viewModel: WordsViewModel, onOpenBook: (Long, Locator?, String)
     val bookFilter by viewModel.bookFilter.collectAsStateWithLifecycle()
     val booksWithWords by viewModel.booksWithWords.collectAsStateWithLifecycle()
     val selection by viewModel.selection.collectAsStateWithLifecycle()
+    val filtered = query.isNotBlank() || tag != null || level != LevelFilter.ALL || bookFilter != null
+    val clearFilters = {
+        viewModel.query.value = ""
+        viewModel.tag.value = null
+        viewModel.level.value = LevelFilter.ALL
+        viewModel.bookFilter.value = null
+    }
+    BackHandler(enabled = selection.isNotEmpty(), onBack = viewModel::clearSelection)
     val context = LocalContext.current
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
@@ -192,6 +201,9 @@ fun WordsContent(viewModel: WordsViewModel, onOpenBook: (Long, Locator?, String)
                     }
                 }
                 val chips = buildList {
+                    booksWithWords.firstOrNull { it.first == bookFilter }?.let { (_, title) ->
+                        add(ChipItem(title, selected = true, onClick = { viewModel.bookFilter.value = null }, icon = Icons.Default.Close))
+                    }
                     LevelFilter.entries.forEach { l -> add(ChipItem(stringResource(l.label()), level == l, { viewModel.level.value = l })) }
                     tags.forEach { t -> add(ChipItem("#$t", tag == t, { viewModel.tag.value = if (tag == t) null else t })) }
                 }
@@ -200,9 +212,11 @@ fun WordsContent(viewModel: WordsViewModel, onOpenBook: (Long, Locator?, String)
             when (val s = items) {
                 UiState.Loading -> SkeletonList()
                 UiState.Empty -> EmptyState(
-                    title = stringResource(if (query.isBlank() && tag == null && level == LevelFilter.ALL) R.string.words_empty_title else R.string.words_no_results),
-                    message = if (query.isBlank()) stringResource(R.string.words_empty_text) else null,
+                    title = stringResource(if (filtered) R.string.words_no_results else R.string.words_empty_title),
+                    message = if (filtered) null else stringResource(R.string.words_empty_text),
                     icon = Icons.Outlined.Spellcheck,
+                    actionLabel = if (filtered) stringResource(UiR.string.clear) else null,
+                    onAction = if (filtered) clearFilters else null,
                 )
                 is UiState.Error -> ErrorState(s.error, onRetry = viewModel::retry)
                 is UiState.Data -> LazyColumn(contentPadding = PaddingValues(bottom = navBarBottomPadding(88.dp))) {

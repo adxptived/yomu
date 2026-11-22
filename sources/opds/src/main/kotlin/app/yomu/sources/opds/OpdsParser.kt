@@ -17,6 +17,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.parser.Parser
 import java.net.URI
+import kotlinx.serialization.SerializationException
 
 /** Parsed OPDS feed (1.x Atom or 2.0 JSON). */
 data class OpdsFeed(
@@ -48,7 +49,8 @@ object OpdsParser {
 
     fun parseAtom(xml: String, baseUrl: String): OpdsFeed {
         val doc = Jsoup.parse(xml, baseUrl, Parser.xmlParser())
-        val feed = doc.selectFirst("feed") ?: doc
+        val feed = doc.children().firstOrNull { it.tagName().substringAfter(':') == "feed" }
+            ?: throw SerializationException("Expected an OPDS Atom feed")
         val feedLinks = feed.children().filter { it.tagName() == "link" }
         fun feedLink(predicate: (Element) -> Boolean) = feedLinks.firstOrNull(predicate)?.attr("href")?.let { resolve(baseUrl, it) }
         val search = feedLinks.firstOrNull { it.attr("rel") == "search" }
@@ -119,6 +121,9 @@ object OpdsParser {
 
     fun parseJson(body: String, base: String): OpdsFeed {
         val root = json.parseToJsonElement(body).jsonObject
+        if (root["metadata"] !is JsonObject || listOf("links", "navigation", "publications", "groups").none(root::containsKey)) {
+            throw SerializationException("Expected an OPDS 2.0 catalog")
+        }
         val links = root["links"]?.jsonArray.orEmpty().map { it.jsonObject }
         fun link(rel: String) = links.firstOrNull { l -> relOf(l).contains(rel) }?.get("href")?.jsonPrimitive?.contentOrNull?.let { resolve(base, it) }
         val items = mutableListOf<SItem>()
@@ -126,7 +131,8 @@ object OpdsParser {
             obj["navigation"]?.jsonArray?.forEach { n ->
                 val o = n.jsonObject
                 val href = o["href"]?.jsonPrimitive?.contentOrNull ?: return@forEach
-                items += SItem(url = resolve(base, href)!!, title = o["title"]?.jsonPrimitive?.contentOrNull ?: href, type = SourceContent.BOOK, isNavigation = true, initialized = true)
+                val url = resolve(base, href) ?: return@forEach
+                items += SItem(url = url, title = o["title"]?.jsonPrimitive?.contentOrNull ?: href, type = SourceContent.BOOK, isNavigation = true, initialized = true)
             }
             obj["publications"]?.jsonArray?.forEach { p -> parsePublication(p.jsonObject, base)?.let { items += it } }
         }

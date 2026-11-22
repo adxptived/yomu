@@ -91,7 +91,7 @@ internal fun ReaderQuickPanel(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val panelHeight = (LocalConfiguration.current.screenHeightDp * 0.46f).coerceIn(100f, 340f).dp
+    val panelHeight = (LocalConfiguration.current.screenHeightDp * 0.56f).coerceIn(100f, 440f).dp
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -261,7 +261,7 @@ private fun MangaQuick(s: MangaSettings, vm: ReaderViewModel) {
             valueRange = -0.5f..0.5f,
             modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
         )
-        Text("${(brightness * 100).toInt()}", style = MaterialTheme.typography.labelMedium)
+        Text("${(brightness * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
     }
     FitPageRow(vm)
 }
@@ -357,22 +357,38 @@ private fun CommonQuick(common: CommonReaderSettings, vm: ReaderViewModel) {
         style = MaterialTheme.typography.titleSmall,
         modifier = Modifier.padding(start = Dimens.l, top = Dimens.s),
     )
-    val brightnessLabel = stringResource(R.string.rs_brightness)
-    var brightness by remember(common.brightness) { mutableFloatStateOf(if (common.brightness < 0f) 0.5f else common.brightness) }
-    Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.l), verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Default.BrightnessMedium, null, Modifier.size(20.dp))
-        Slider(
-            value = brightness,
-            onValueChange = { brightness = it },
-            onValueChangeFinished = { vm.updateCommon { it.copy(brightness = brightness.coerceAtLeast(0.01f)) } },
-            enabled = common.brightness >= 0f,
-            modifier = Modifier.weight(1f).padding(horizontal = 8.dp).semantics { contentDescription = brightnessLabel },
-        )
-        FilterChip(
-            selected = common.brightness < 0f,
-            onClick = { vm.updateCommon { it.copy(brightness = if (it.brightness < 0f) 0.5f else -1f) } },
-            label = { Text(stringResource(R.string.reader_brightness_auto)) },
-        )
+    val auto = common.brightness < 0f
+    if (auto) {
+        // In "Auto" the system brightness rules: a disabled slider that looked like a divider only confused.
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = Dimens.l),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+        ) {
+            Icon(Icons.Default.BrightnessMedium, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            FilterChip(
+                selected = true,
+                onClick = { vm.updateCommon { it.copy(brightness = 0.5f) } },
+                label = { Text(stringResource(R.string.reader_brightness_auto)) },
+            )
+        }
+    } else {
+        val brightnessLabel = stringResource(R.string.rs_brightness)
+        var brightness by remember(common.brightness) { mutableFloatStateOf(common.brightness) }
+        Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.l), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.BrightnessMedium, null, Modifier.size(20.dp))
+            Slider(
+                value = brightness,
+                onValueChange = { brightness = it },
+                onValueChangeFinished = { vm.updateCommon { it.copy(brightness = brightness.coerceAtLeast(0.01f)) } },
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp).semantics { contentDescription = brightnessLabel },
+            )
+            FilterChip(
+                selected = false,
+                onClick = { vm.updateCommon { it.copy(brightness = -1f) } },
+                label = { Text(stringResource(R.string.reader_brightness_auto)) },
+            )
+        }
     }
     val warmLabel = stringResource(R.string.rs_warm)
     var warm by remember(common.warmFilter) { mutableFloatStateOf(common.warmFilter) }

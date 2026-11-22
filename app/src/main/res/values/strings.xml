@@ -54,6 +54,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_12_0">
+        <item>Catalog filters are easier to adjust, and bottom navigation stays available while browsing and adding sources.</item>
+        <item>Connect custom OPDS catalogs and audiobook feeds with clearer error messages, previews and working download links.</item>
+        <item>Swipe to remove books with confirmation and Undo. Book details and reader controls are easier to scan.</item>
+        <item>Incognito hides the app preview in Android Recents and blocks screenshots while active.</item>
+    </string-array>
     <string-array name="whats_new_2_11_1">
         <item>The library tabs stay visible: the broken edge fade of 2.11.0 is gone, and the selected tab scrolls itself into view.</item>
         <item>The sleep timer counts down in the player, the reader\'s search hides old results while you type, and downloads show the queue before storage usage.</item>

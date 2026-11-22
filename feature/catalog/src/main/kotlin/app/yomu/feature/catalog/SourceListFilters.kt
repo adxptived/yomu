@@ -13,7 +13,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -24,7 +23,6 @@ import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -82,7 +80,7 @@ private fun nsfwLabel(mode: NsfwFilter): String = stringResource(
 
 /** "All languages", "English", "English, Русский" or "5 languages". */
 @Composable
-private fun languagesSummary(langs: Set<String>): String = when {
+internal fun languagesSummary(langs: Set<String>): String = when {
     SourceManager.ALL_LANGUAGES in langs || langs.isEmpty() -> stringResource(R.string.catalog_all_languages)
     langs.size <= 2 -> langs.map { langLabel(it) }.sortedBy { it.lowercase() }.joinToString(", ")
     else -> pluralStringResource(R.plurals.source_filter_languages, langs.size, langs.size)
@@ -106,53 +104,58 @@ internal fun SourceFilterBar(
 ) {
     val context = LocalContext.current
     val allLanguages = SourceManager.ALL_LANGUAGES in langs
-    LazyRow(
-        modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = Dimens.l),
-        horizontalArrangement = Arrangement.spacedBy(Dimens.s),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        item(key = "filters") {
-            ToolbarPill(Icons.Filled.FilterList, stringResource(R.string.source_filters), onClick = onOpenFilters, badge = filter.activeCount)
+    Column(modifier.fillMaxWidth()) {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = Dimens.l),
+            horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            item(key = "filters") {
+                ToolbarPill(Icons.Filled.FilterList, stringResource(R.string.source_filters), onClick = onOpenFilters, badge = filter.activeCount)
+            }
+            item(key = "languages") {
+                ToolbarPill(Icons.Filled.Translate, languagesSummary(langs), onClick = onOpenLanguages, badge = if (allLanguages) 0 else langs.size)
+            }
+            item(key = "sort") {
+                ToolbarPill(Icons.AutoMirrored.Filled.Sort, sourceSortLabel(sort), onClick = onOpenFilters)
+            }
         }
-        item(key = "languages") {
-            ToolbarPill(Icons.Filled.Translate, languagesSummary(langs), onClick = onOpenLanguages, badge = if (allLanguages) 0 else langs.size)
-        }
-        item(key = "sort") {
-            ToolbarPill(Icons.AutoMirrored.Filled.Sort, sourceSortLabel(sort), onClick = onOpenFilters)
-        }
-        filter.content.sorted().forEach { name ->
-            val content = SourceContent.entries.firstOrNull { it.name == name } ?: return@forEach
-            item(key = "content-$name") { RemovableChip(contentLabel(context, content), onRemove = { onUpdate { it.copy(content = it.content - name) } }) }
-        }
-        filter.kinds.sorted().forEach { name ->
-            val kind = SourceInfo.Kind.entries.firstOrNull { it.name == name } ?: return@forEach
-            item(key = "kind-$name") { RemovableChip(kindLabel(kind), onRemove = { onUpdate { it.copy(kinds = it.kinds - name) } }) }
-        }
-        if (filter.nsfw != NsfwFilter.ALL) {
-            item(key = "nsfw") { RemovableChip(nsfwLabel(filter.nsfw), onRemove = { onUpdate { it.copy(nsfw = NsfwFilter.ALL) } }) }
-        }
-        if (filter.pinnedOnly) {
-            item(key = "pinned") { RemovableChip(stringResource(R.string.source_filter_pinned), onRemove = { onUpdate { it.copy(pinnedOnly = false) } }) }
-        }
-        if (filter.hideDisabled) {
-            item(key = "disabled") { RemovableChip(stringResource(R.string.source_filter_hide_disabled), onRemove = { onUpdate { it.copy(hideDisabled = false) } }) }
-        }
-        if (filter.hideUnstable) {
-            item(key = "unstable") { RemovableChip(stringResource(R.string.source_filter_hide_unstable), onRemove = { onUpdate { it.copy(hideUnstable = false) } }) }
-        }
-        if (filter.showHidden) {
-            item(key = "hidden") { RemovableChip(stringResource(R.string.source_filter_show_hidden), onRemove = { onUpdate { it.copy(showHidden = false) } }) }
+        if (filter.isActive) LazyRow(
+            Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = Dimens.l),
+            horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+        ) {
+            filter.content.sorted().forEach { name ->
+                val content = SourceContent.entries.firstOrNull { it.name == name } ?: return@forEach
+                item(key = "content-$name") { RemovableChip(contentLabel(context, content), onRemove = { onUpdate { it.copy(content = it.content - name) } }) }
+            }
+            filter.kinds.sorted().forEach { name ->
+                val kind = SourceInfo.Kind.entries.firstOrNull { it.name == name } ?: return@forEach
+                item(key = "kind-$name") { RemovableChip(kindLabel(kind), onRemove = { onUpdate { it.copy(kinds = it.kinds - name) } }) }
+            }
+            if (filter.nsfw != NsfwFilter.ALL) {
+                item(key = "nsfw") { RemovableChip(nsfwLabel(filter.nsfw), onRemove = { onUpdate { it.copy(nsfw = NsfwFilter.ALL) } }) }
+            }
+            if (filter.pinnedOnly) {
+                item(key = "pinned") { RemovableChip(stringResource(R.string.source_filter_pinned), onRemove = { onUpdate { it.copy(pinnedOnly = false) } }) }
+            }
+            if (filter.hideDisabled) {
+                item(key = "disabled") { RemovableChip(stringResource(R.string.source_filter_hide_disabled), onRemove = { onUpdate { it.copy(hideDisabled = false) } }) }
+            }
+            if (filter.hideUnstable) {
+                item(key = "unstable") { RemovableChip(stringResource(R.string.source_filter_hide_unstable), onRemove = { onUpdate { it.copy(hideUnstable = false) } }) }
+            }
+            if (filter.showHidden) {
+                item(key = "hidden") { RemovableChip(stringResource(R.string.source_filter_show_hidden), onRemove = { onUpdate { it.copy(showHidden = false) } }) }
+            }
         }
         if (shown < total) {
-            item(key = "count") {
-                Text(
-                    stringResource(R.string.source_filter_shown, shown, total),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = Dimens.xs),
-                )
-            }
+            Text(
+                stringResource(R.string.source_filter_shown, shown, total),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
+            )
         }
     }
 }
@@ -199,15 +202,9 @@ internal fun SourceFilterSheet(
                 TextButton(enabled = filter.isActive, onClick = { onUpdate { SourceListFilter() } }) { Text(stringResource(R.string.chapter_filters_reset)) }
             }
             SheetLabel(stringResource(R.string.source_sort))
-            SourceSortMode.entries.forEach { mode ->
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = Dimens.touch)
-                        .selectable(selected = mode == sort, role = Role.RadioButton, onClick = { onSort(mode) })
-                        .padding(horizontal = Dimens.xl),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    RadioButton(selected = mode == sort, onClick = null)
-                    Text(sourceSortLabel(mode), Modifier.padding(start = Dimens.m))
+            FlowRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.xl), horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
+                SourceSortMode.entries.forEach { mode ->
+                    FilterChip(selected = mode == sort, onClick = { onSort(mode) }, label = { Text(sourceSortLabel(mode)) })
                 }
             }
             SheetLabel(stringResource(R.string.source_filter_content))

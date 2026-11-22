@@ -17,6 +17,7 @@ import app.yomu.data.source.SourceConnectionProbe
 import app.yomu.data.source.SourceHealth
 import app.yomu.data.source.SourceHealthTracker
 import app.yomu.data.source.SourceManager
+import app.yomu.data.source.SourceInfo
 import app.yomu.domain.catalog.ChapterDisplay
 import app.yomu.domain.catalog.ChapterNavigation
 import app.yomu.domain.catalog.ChapterOrder
@@ -43,10 +44,13 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import app.yomu.sources.opds.OpdsSource
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -475,13 +479,12 @@ class CatalogRepository(
     }
 
     /** Sources asked by global search, in the order of the source list: pinned, recently used, then by name. */
-    private fun searchTargets(onlyContent: SourceContent?): List<CatalogSource> {
-        // Only the languages the catalog shows: every MangaDex language would otherwise be asked the same question.
-        val langs = sources.languages.value
-        return sources.infos.value.filter { it.enabled && !it.hidden && sources.isShown(it, langs) && (onlyContent == null || it.content == onlyContent) }
-            .sortedWith(compareByDescending<app.yomu.data.source.SourceInfo> { it.pinned }.thenByDescending { it.lastUsedAt }.thenBy { it.name.lowercase() })
-            .mapNotNull { info -> sources.get(info.id)?.takeIf { sources.capabilitiesOf(it).search } }
-            .filter { it.id != sources.local.id || sources.local.isConfigured }
+    private fun searchTargets(onlyContent: SourceContent?, langs: Set<String>): List<SourceInfo> {
+        return sources.infos.value.filter { info ->
+            info.enabled && !info.hidden && info.capabilities.search && sources.isShown(info, langs) &&
+                (onlyContent == null || info.content == onlyContent) &&
+                (info.kind != SourceInfo.Kind.LOCAL || sources.local.isConfigured)
+        }.sortedWith(compareByDescending<SourceInfo> { it.pinned }.thenByDescending { it.lastUsedAt }.thenBy { it.name.lowercase() })
     }
 
     /** First page of [query] in one source, without duplicates and with the best title matches first. */
@@ -495,24 +498,32 @@ class CatalogRepository(
      * Searches all enabled sources in parallel. Rows keep the order of the source list while results arrive (the list
      * does not jump); the screen may hide empty rows.
      */
-    fun globalSearch(query: String, onlyContent: SourceContent? = null): Flow<List<GlobalSearchResult>> = channelFlow {
-        val targets = searchTargets(onlyContent)
+    fun globalSearch(
+        query: String,
+        onlyContent: SourceContent? = null,
+        languages: Set<String>? = null,
+    ): Flow<List<GlobalSearchResult>> = channelFlow {
+        sources.ready.first { it }
+        val targets = searchTargets(onlyContent, languages ?: sources.languages.value)
         val results = LinkedHashMap<Long, GlobalSearchResult>()
-        targets.forEach { results[it.id] = GlobalSearchResult(it.id, "${it.name} (${it.lang})", emptyList(), loading = true) }
+        targets.forEach { info ->
+            val name = info.lang.takeIf { it.isNotBlank() && it != "all" && it != "multi" }
+                ?.let { "${info.name} ($it)" } ?: info.name
+            results[info.id] = GlobalSearchResult(info.id, name, emptyList(), loading = true)
+        }
         send(results.values.toList())
         val semaphore = Semaphore(5)
         targets.forEach { s ->
             launch(Dispatchers.IO) {
                 val r = semaphore.withPermit { runCatching { searchSource(s.id, query) } }
                 ensureActive() // the search was cancelled (new query, screen closed); otherwise any error belongs to this row
-                val snapshot = synchronized(results) {
-                    results[s.id] = GlobalSearchResult(s.id, "${s.name} (${s.lang})", r.getOrNull().orEmpty(), r.exceptionOrNull())
-                    results.values.toList()
+                synchronized(results) {
+                    results[s.id] = results.getValue(s.id).copy(items = r.getOrNull().orEmpty(), error = r.exceptionOrNull(), loading = false)
+                    trySend(results.values.toList())
                 }
-                send(snapshot)
             }
         }
-    }
+    }.conflate()
 
     suspend fun browse(sourceId: Long, mode: BrowseMode, page: Int, query: String = "", filters: app.yomu.source.FilterList? = null, url: String? = null): ItemsPage {
         val s = source(sourceId)
@@ -525,6 +536,11 @@ class CatalogRepository(
                 BrowseMode.NAVIGATE -> s.browse(url.orEmpty(), page)
             }
         }
+    }
+
+    fun bookDownloadHeaders(sourceId: Long, url: String): Map<String, String> = when (val source = source(sourceId)) {
+        is OpdsSource -> source.downloadHeaders(url)
+        else -> source.imageHeaders()
     }
 
     /** Download links of a catalog book: duplicates removed, preferred formats first (EPUB, FB2, MOBI/AZW3, PDF…). */

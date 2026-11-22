@@ -123,4 +123,35 @@ class OpdsSourceTest {
         assertEquals("Basic dXNlcjpwYXNz", root.headers["Authorization"])
         assertTrue(root.headers["Accept"].orEmpty().contains("application/atom+xml"))
     }
+
+    @Test
+    fun `acquisition links survive storing the title without transient fields`() = runBlocking {
+        val source = source("user", "pass")
+        val listed = source.getPopular(1).items.first()
+        val stored = listed.copy(links = emptyList())
+        val links = source.getDownloadLinks(stored)
+        assertEquals(listed.links, links)
+        assertEquals("Basic dXNlcjpwYXNz", source.downloadHeaders(links.single().url)["Authorization"])
+    }
+
+    @Test
+    fun `a web login page cannot masquerade as an empty subcatalog`() = runBlocking {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest) =
+                MockResponse.Builder().setHeader("Content-Type", "text/html").body("<html><title>Sign in</title></html>").build()
+        }
+        val result = runCatching { source().getPopular(1) }
+        assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun `a cross origin catalog link does not receive the saved login`() = runBlocking {
+        MockWebServer().use { other ->
+            other.enqueue(MockResponse.Builder().body(feed("External", "", 3)).build())
+            other.start()
+            val page = source("user", "pass").browse(other.url("/external").toString(), 1)
+            assertEquals("Book 3", page.items.single().title)
+            assertEquals(null, other.takeRequest().headers["Authorization"])
+        }
+    }
 }

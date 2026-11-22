@@ -28,6 +28,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
@@ -42,6 +43,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -73,6 +75,7 @@ fun DictionaryScreen(
     initialQuery: String? = null,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    val wordCount by viewModel.wordCount.collectAsStateWithLifecycle()
     val glossaryViewModel: GlossaryViewModel = koinViewModel()
     androidx.compose.runtime.LaunchedEffect(initialQuery) { if (!initialQuery.isNullOrBlank()) { tab = 0; viewModel.search(initialQuery) } }
     Scaffold(
@@ -81,7 +84,9 @@ fun DictionaryScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.dict_title)) },
                 actions = {
-                    IconButton(onClick = onStartReview) { Icon(Icons.Default.School, stringResource(R.string.review_title)) }
+                    if (tab == 1 && wordCount > 0) {
+                        IconButton(onClick = onStartReview) { Icon(Icons.Default.School, stringResource(R.string.review_title)) }
+                    }
                     IconButton(onClick = onOpenDictionaries) { Icon(Icons.AutoMirrored.Filled.LibraryBooks, stringResource(R.string.dicts_title)) }
                 },
             )
@@ -95,32 +100,10 @@ fun DictionaryScreen(
             }
             when (tab) {
                 0 -> LookupTab(viewModel, onStartReview, onOpenDictionaries)
-                1 -> WordsContent(wordsViewModel, onOpenBook, onStartReview)
+                1 -> WordsContent(wordsViewModel, onOpenBook)
                 else -> GlossaryContent(glossaryViewModel, onOpenBook)
             }
         } }
-    }
-}
-
-/** The first useful result without a dictionary: language, one import and a word to check, in that order. */
-@Composable
-private fun FirstDictionaryCard(onOpenDictionaries: () -> Unit, onTranslate: () -> Unit) {
-    Card(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s)) {
-        Column(Modifier.padding(Dimens.l), verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
-            Text(stringResource(R.string.dict_first_title), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.dict_first_step_lang), style = MaterialTheme.typography.bodyMedium)
-            Text(stringResource(R.string.dict_first_step_add), style = MaterialTheme.typography.bodyMedium)
-            Text(stringResource(R.string.dict_first_step_check), style = MaterialTheme.typography.bodyMedium)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                FilledTonalButton(onClick = onOpenDictionaries) { Text(stringResource(R.string.dicts_import)) }
-                TextButton(onClick = onTranslate) { Text(stringResource(R.string.dict_translate)) }
-            }
-            Text(
-                stringResource(R.string.dict_first_meaning_vs_translation),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 
@@ -131,6 +114,12 @@ private fun LookupTab(viewModel: DictionaryViewModel, onStartReview: () -> Unit,
     val history by viewModel.history.collectAsStateWithLifecycle()
     val suggestions by viewModel.suggestions.collectAsStateWithLifecycle()
     val due by viewModel.dueCount.collectAsStateWithLifecycle()
+    val wordCount by viewModel.wordCount.collectAsStateWithLifecycle()
+    val keyboard = LocalSoftwareKeyboardController.current
+    val submit: (String) -> Unit = { text ->
+        keyboard?.hide()
+        viewModel.search(text)
+    }
     val dicts by viewModel.dictionaries.collectAsStateWithLifecycle()
     val saved by viewModel.savedId.collectAsStateWithLifecycle()
     val speaker: Speaker = koinInject()
@@ -141,29 +130,42 @@ private fun LookupTab(viewModel: DictionaryViewModel, onStartReview: () -> Unit,
             query = query,
             onQueryChange = viewModel::setQuery,
             placeholder = stringResource(R.string.dict_search_hint),
-            onSearch = { viewModel.search() },
+            onSearch = submit,
             modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s),
         )
         val r = result
         when {
-            r == null && query.isNotBlank() && suggestions.isNotEmpty() -> LazyColumn(contentPadding = PaddingValues(bottom = navBarBottomPadding())) {
-                items(suggestions) { s ->
-                    ListItem(headlineContent = { Text(s) }, leadingContent = { Icon(Icons.Default.Search, null) }, modifier = Modifier.clickable { viewModel.search(s) })
+            r == null && query.isNotBlank() -> LazyColumn(contentPadding = PaddingValues(bottom = navBarBottomPadding())) {
+                val term = query.trim()
+                item(key = "lookup") {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.dict_search_for, term)) },
+                        leadingContent = { Icon(Icons.Default.Search, null) },
+                        modifier = Modifier.clickable { submit(term) },
+                    )
+                }
+                items(suggestions.filterNot { it.equals(term, ignoreCase = true) }) { suggestion ->
+                    ListItem(
+                        headlineContent = { Text(suggestion) },
+                        leadingContent = { Icon(Icons.AutoMirrored.Outlined.MenuBook, null) },
+                        modifier = Modifier.clickable { submit(suggestion) },
+                    )
                 }
             }
             r == null -> LazyColumn(contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
-                item {
-                    Card(
-                        Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-                    ) {
-                        Row(Modifier.padding(Dimens.l), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.School, null)
-                            Column(Modifier.weight(1f).padding(horizontal = Dimens.m)) {
-                                Text(stringResource(R.string.review_title), style = MaterialTheme.typography.titleMedium)
-                                Text(pluralStringResource(R.plurals.review_due, due, due), style = MaterialTheme.typography.bodyMedium)
-                            }
-                            FilledTonalButton(onClick = onStartReview) { Text(stringResource(R.string.review_start)) }
+                if (wordCount > 0) {
+                    item {
+                        Card(
+                            Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                        ) {
+                            ListItem(
+                                headlineContent = { Text(stringResource(R.string.review_title)) },
+                                supportingContent = { Text(pluralStringResource(R.plurals.review_due, due, due)) },
+                                leadingContent = { Icon(Icons.Default.School, null) },
+                                trailingContent = { FilledTonalButton(onClick = onStartReview) { Text(stringResource(R.string.review_start)) } },
+                                colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                            )
                         }
                     }
                 }
@@ -186,15 +188,12 @@ private fun LookupTab(viewModel: DictionaryViewModel, onStartReview: () -> Unit,
                         }
                     }
                     items(history.take(50)) { h ->
-                        ListItem(headlineContent = { Text(h) }, leadingContent = { Icon(Icons.Default.History, null) }, modifier = Modifier.clickable { viewModel.search(h) })
+                        ListItem(headlineContent = { Text(h) }, leadingContent = { Icon(Icons.Default.History, null) }, modifier = Modifier.clickable { submit(h) })
                     }
                 }
             }
             r is UiState.Loading -> SkeletonList()
             r is UiState.Empty -> LazyColumn(contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.s))) {
-                if (dicts?.isEmpty() == true) {
-                    item { FirstDictionaryCard(onOpenDictionaries = onOpenDictionaries, onTranslate = { translate = query }) }
-                }
                 item {
                     EmptyState(
                         title = stringResource(R.string.dict_not_found),
@@ -203,6 +202,13 @@ private fun LookupTab(viewModel: DictionaryViewModel, onStartReview: () -> Unit,
                         actionLabel = stringResource(R.string.dict_translate),
                         onAction = { translate = query },
                     )
+                }
+                if (dicts?.isEmpty() == true) {
+                    item {
+                        TextButton(onClick = onOpenDictionaries, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.dicts_import))
+                        }
+                    }
                 }
             }
             r is UiState.Error -> ErrorState(r.error, onRetry = { viewModel.search() })

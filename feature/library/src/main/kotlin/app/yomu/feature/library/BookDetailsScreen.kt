@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -54,6 +55,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -95,7 +97,7 @@ import app.yomu.core.ui.components.CoverImage
 import app.yomu.core.ui.components.CoverTheme
 import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.TextInputDialog
-import app.yomu.core.ui.components.YomuFab
+import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.coverTint
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.rememberCoverColor
@@ -156,6 +158,8 @@ private fun BookDetailsContent(
     var translateDialog by rememberSaveable { mutableStateOf(false) }
     var showTracking by rememberSaveable { mutableStateOf(false) }
     var descriptionExpanded by rememberSaveable { mutableStateOf(false) }
+    var showRating by rememberSaveable { mutableStateOf(false) }
+    var showOrganization by rememberSaveable { mutableStateOf(false) }
     var statusMenu by remember { mutableStateOf(false) }
     val pickCover =
         rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { it?.let(viewModel::setCover) }
@@ -163,7 +167,6 @@ private fun BookDetailsContent(
     val current = book
     LaunchedEffect(current) { if (current === BookDetailsViewModel.MISSING) onBack() }
     Scaffold(
-        // Keeps the "Continue" button above the floating bar; the scroll body runs on under the bar below.
         contentWindowInsets = topLevelContentInsets(),
         topBar = {
             TopAppBar(
@@ -235,21 +238,6 @@ private fun BookDetailsContent(
                 },
             )
         },
-        floatingActionButton = {
-            if (current != null && current.id > 0) {
-                YomuFab(
-                    text = stringResource(
-                        when {
-                            current.format.isAudio -> if (current.progress > 0f) R.string.details_continue_listening else R.string.details_listen
-                            current.progress > 0f -> R.string.details_continue
-                            else -> R.string.details_read
-                        },
-                    ),
-                    icon = if (current.format.isAudio) Icons.Default.Headphones else Icons.AutoMirrored.Filled.MenuBook,
-                    onClick = { onRead(current) },
-                )
-            }
-        },
     ) { padding ->
         if (current == null || current.id <= 0) {
             SkeletonList(Modifier.padding(padding))
@@ -259,7 +247,7 @@ private fun BookDetailsContent(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 .padding(bottom = navBarBottomPadding(Dimens.xl)),
         ) {
-            Box(Modifier.fillMaxWidth().heightIn(min = 300.dp)) {
+            Box(Modifier.fillMaxWidth()) {
                 val cover = current.coverPath?.takeIf { !app.yomu.core.ui.components.LocalHideCovers.current }?.let { File(it) }
                 val tint = app.yomu.core.ui.components.rememberCoverColor(cover, app.yomu.core.ui.components.coverPlaceholderColor(current.title))
                 if (cover != null) {
@@ -275,8 +263,11 @@ private fun BookDetailsContent(
                 )
                 // Over the scrim, or it would wash the colour out.
                 Box(Modifier.matchParentSize().coverTint(tint))
-                Row(Modifier.align(Alignment.BottomStart).padding(Dimens.l), verticalAlignment = Alignment.Bottom) {
-                    CoverImage(cover, current.title, Modifier.width(120.dp).then(if (inPane) Modifier else Modifier.sharedCover("book-${current.id}")))
+                Row(
+                    Modifier.fillMaxWidth().padding(top = padding.calculateTopPadding()).padding(Dimens.l),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CoverImage(cover, current.title, Modifier.width(96.dp).then(if (inPane) Modifier else Modifier.sharedCover("book-${current.id}")))
                     Column(Modifier.padding(start = Dimens.l).weight(1f)) {
                         Text(current.title, style = MaterialTheme.typography.titleLarge, maxLines = 4, overflow = TextOverflow.Ellipsis)
                         if (current.authors.isNotEmpty()) Text(current.authorsText, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -292,12 +283,18 @@ private fun BookDetailsContent(
                 }
             }
             Column(Modifier.padding(horizontal = Dimens.l), verticalArrangement = Arrangement.spacedBy(Dimens.m)) {
-                // Content first, personal data after it: what the book is, then what the reader marked on it.
-                if (current.progress > 0f) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        LinearProgressIndicator(progress = { current.progress }, modifier = Modifier.weight(1f))
-                        Text("  ${(current.progress * 100).toInt()}%", style = MaterialTheme.typography.labelLarge)
-                    }
+                Button(onClick = { onRead(current) }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(if (current.format.isAudio) Icons.Default.Headphones else Icons.AutoMirrored.Filled.MenuBook, null)
+                    Text(
+                        stringResource(
+                            when {
+                                current.format.isAudio -> if (current.progress > 0f) R.string.details_continue_listening else R.string.details_listen
+                                current.progress > 0f -> R.string.details_continue
+                                else -> R.string.details_read
+                            },
+                        ),
+                        Modifier.padding(start = Dimens.s),
+                    )
                 }
                 // An audio book's length and track count come from its own manifest; an unknown length says so
                 // instead of showing a zero.
@@ -353,58 +350,79 @@ private fun BookDetailsContent(
                         }
                     }
                 }
-                Text(stringResource(R.string.library_status), style = MaterialTheme.typography.titleSmall)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
-                    Box {
-                        AssistChip(
-                            onClick = { statusMenu = true },
-                            label = { Text(stringResource(current.status.label())) },
-                            trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null) },
-                        )
-                        DropdownMenu(expanded = statusMenu, onDismissRequest = { statusMenu = false }) {
-                            ReadingStatus.entries.forEach { s ->
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(s.label())) },
-                                    leadingIcon = {
-                                        if (current.status == s) Icon(Icons.Filled.Check, null) else Spacer(Modifier.width(24.dp))
-                                    },
-                                    onClick = { statusMenu = false; viewModel.setStatus(s) },
-                                )
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(Dimens.m)) {
+                        if (current.progress > 0f) {
+                            val progress = current.progress.coerceIn(0f, 1f)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+                            ) {
+                                LinearProgressIndicator(progress = { progress }, modifier = Modifier.weight(1f))
+                                Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelLarge)
                             }
                         }
-                    }
-                    TrackingButton(tracks.size) { showTracking = true }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.library_action_rate), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                    for (star in 1..5) {
-                        IconButton(onClick = { viewModel.setRating(if (current.rating == star) 0 else star) }, modifier = Modifier.size(36.dp)) {
-                            Icon(
-                                if (star <= current.rating) Icons.Filled.Star else Icons.Filled.StarOutline,
-                                stringResource(R.string.library_rate_n, star),
-                                Modifier.size(24.dp),
-                                tint = if (star <= current.rating) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        FlowRow(verticalArrangement = Arrangement.Center, horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
+                            Box(Modifier.align(Alignment.CenterVertically)) {
+                                AssistChip(
+                                    onClick = { statusMenu = true },
+                                    label = { Text(stringResource(current.status.label())) },
+                                    trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null) },
+                                )
+                                DropdownMenu(expanded = statusMenu, onDismissRequest = { statusMenu = false }) {
+                                    ReadingStatus.entries.forEach { s ->
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(s.label())) },
+                                            leadingIcon = {
+                                                if (current.status == s) Icon(Icons.Filled.Check, null) else Spacer(Modifier.width(24.dp))
+                                            },
+                                            onClick = { statusMenu = false; viewModel.setStatus(s) },
+                                        )
+                                    }
+                                }
+                            }
+                            Box(Modifier.align(Alignment.CenterVertically)) {
+                                TrackingButton(tracks.size) { showTracking = true }
+                            }
+                        }
+                        if (extras.readingMs > 0) {
+                            Text(
+                                stringResource(R.string.details_reading_time, formatDuration(extras.readingMs)),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
                 }
-                if (extras.readingMs > 0) {
-                    Text(stringResource(R.string.details_reading_time, formatDuration(extras.readingMs)), style = MaterialTheme.typography.bodyMedium)
-                }
-                Text(stringResource(R.string.library_tags), style = MaterialTheme.typography.titleSmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
-                    current.tags.forEach { t ->
-                        InputChip(selected = false, onClick = { viewModel.setTags(current.tags - t) }, label = { Text("#$t") }, trailingIcon = { Text("×") })
-                    }
-                    AssistChip(onClick = { tagDialog = true }, label = { Text(stringResource(R.string.library_add_tag)) })
-                }
-                if (collections.isNotEmpty()) {
-                    Text(stringResource(R.string.details_collections), style = MaterialTheme.typography.titleSmall)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
-                        collections.forEach { c ->
-                            val member = c.id in extras.collections
-                            FilterChip(selected = member, onClick = { viewModel.toggleCollection(c.id, member) }, label = { Text(c.name) }, leadingIcon = { Icon(Icons.Outlined.Collections, null) })
-                        }
+                val personalRating = if (current.rating > 0) "${current.rating}/5" else null
+                val assignedCollections = collections.filter { it.id in extras.collections }.map { it.name }
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column {
+                        val rowColors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.library_action_rate)) },
+                            leadingContent = { Icon(Icons.Filled.StarOutline, null) },
+                            trailingContent = personalRating?.let { rating -> { Text(rating) } },
+                            colors = rowColors,
+                            modifier = Modifier.clickable { showRating = true },
+                        )
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.details_organize)) },
+                            supportingContent = (assignedCollections + current.tags.map { "#$it" }).takeIf { it.isNotEmpty() }?.let { labels ->
+                                { Text(labels.joinToString(" · "), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            },
+                            leadingContent = { Icon(Icons.Outlined.Collections, null) },
+                            colors = rowColors,
+                            modifier = Modifier.clickable { showOrganization = true },
+                        )
                     }
                 }
                 ListItem(
@@ -413,11 +431,43 @@ private fun BookDetailsContent(
                     leadingContent = { Icon(Icons.Outlined.Bookmarks, null) },
                     modifier = Modifier.clickable { onOpenAnnotations(current) },
                 )
-                Spacer(Modifier.height(96.dp))
             }
         }
     }
 
+    if (showRating && current != null) {
+        RatingDialog(title = current.title, current = current.rating, onRate = viewModel::setRating, onDismiss = { showRating = false })
+    }
+    if (showOrganization && current != null) {
+        YomuSheet(onDismiss = { showOrganization = false }) {
+            Column(
+                Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()).padding(horizontal = Dimens.l),
+                verticalArrangement = Arrangement.spacedBy(Dimens.s),
+            ) {
+                Text(stringResource(R.string.library_tags), style = MaterialTheme.typography.titleSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
+                    current.tags.forEach { tag ->
+                        InputChip(selected = false, onClick = { viewModel.setTags(current.tags - tag) }, label = { Text("#$tag") }, trailingIcon = { Text("×") })
+                    }
+                    AssistChip(onClick = { tagDialog = true }, label = { Text(stringResource(R.string.library_add_tag)) })
+                }
+                if (collections.isNotEmpty()) {
+                    Text(stringResource(R.string.details_collections), style = MaterialTheme.typography.titleSmall)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
+                        collections.forEach { collection ->
+                            val member = collection.id in extras.collections
+                            FilterChip(
+                                selected = member,
+                                onClick = { viewModel.toggleCollection(collection.id, member) },
+                                label = { Text(collection.name) },
+                                leadingIcon = if (member) ({ Icon(Icons.Filled.Check, null) }) else null,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
     if (showTracking) TrackingSheet(viewModel, onDismiss = { showTracking = false })
     if (editing && current != null) {
         MetadataDialog(current, onDismiss = { editing = false }, onSave = { viewModel.save(it); editing = false })

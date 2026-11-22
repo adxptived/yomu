@@ -23,6 +23,8 @@
     <string name="library_search_hint">Поиск по названию, автору или серии</string>
     <string name="library_search_syntax_hint">Попробуйте title:Dune &amp;&amp; unread:&gt;2 · || — или · -слово — исключить</string>
     <string name="library_sort">Сортировка</string>
+    <string name="library_sort_ascending">По возрастанию</string>
+    <string name="library_sort_descending">По убыванию</string>
     <string name="library_view_list">Показать списком</string>
     <string name="library_view_grid">Показать сеткой</string>
     <string name="library_filters">Фильтр и вид</string>
@@ -125,6 +127,7 @@
     <string name="details_description_collapse">Свернуть</string>
     <string name="details_duration_unknown">Длительность неизвестна</string>
     <string name="library_bulk_partial">Применено к %1$d из %2$d</string>
+    <string name="details_organize">Теги и вкладки</string>
     <string name="details_collections">Вкладки</string>
     <string name="details_annotations">Выделения, заметки и закладки</string>
     <string name="details_annotations_summary">Выделений: %1$d · заметок: %2$d · закладок: %3$d</string>

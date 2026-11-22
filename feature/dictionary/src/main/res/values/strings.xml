@@ -4,6 +4,7 @@
     <string name="dict_title">Dictionary</string>
     <string name="dict_tab_lookup">Lookup</string>
     <string name="dict_tab_words">My words</string>
+    <string name="dict_search_for">Look up “%s”</string>
     <string name="dict_search_hint">Look up a word</string>
     <string name="dict_history">Recent lookups</string>
     <string name="dict_speak">Pronounce</string>

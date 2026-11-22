@@ -64,12 +64,19 @@ class SourceConnectionViewModel(
         SourceConnectionFlow.editAddress(it, address ?: it.address, username ?: it.username, password ?: it.password)
     }
 
-    fun back() = _state.update { SourceConnectionFlow.back(it) }
+    fun back() {
+        checkJob?.cancel()
+        checkJob = null
+        _state.update { SourceConnectionFlow.back(it) }
+    }
 
     /** Checks the address and advances to the preview only when the document was recognised. */
     fun check() {
         if (checkJob?.isActive == true) return
-        val next = SourceConnectionFlow.startCheck(_state.value)
+        check(SourceConnectionFlow.startCheck(_state.value))
+    }
+
+    private fun check(next: SourceConnectionState) {
         _state.value = next
         val probing = next.step as? ConnectionStep.Probing ?: return
         // An audio link is resolved by the audio importer itself (YouTube, a podcast feed, a file): here only the
@@ -84,6 +91,10 @@ class SourceConnectionViewModel(
             }
             return
         }
+        if (next.method == null && looksLikeAudioFile(probing.address) && ConnectionProbe.validateUrl(probing.address) == null) {
+            _state.update { SourceConnectionFlow.detected(it, ProbeResult.Recognised(ConnectionKind.AUDIO)) }
+            return
+        }
         checkJob = viewModelScope.launch(ScreenErrors) {
             val result = catalog.probeConnection(
                 url = probing.address,
@@ -94,7 +105,7 @@ class SourceConnectionViewModel(
             // A late answer to an address the user already replaced must not overwrite the current one.
             _state.update {
                 if (it.step is ConnectionStep.Probing && it.checkedAddress == probing.address) {
-                    SourceConnectionFlow.checked(it, result)
+                    SourceConnectionFlow.detected(it, result)
                 } else {
                     it
                 }
@@ -108,28 +119,8 @@ class SourceConnectionViewModel(
      */
     fun checkLink(address: String) {
         checkJob?.cancel()
-        val next = SourceConnectionFlow.startPastedLink(_state.value, address)
-        _state.value = next
-        val probing = next.step as? ConnectionStep.Probing ?: return
-        // A direct audio file is often served as octet-stream, which says nothing about its kind. The extension is
-        // enough for the audio importer, so the link is not rejected before it had a chance to open.
-        if (looksLikeAudioFile(probing.address)) {
-            _state.update { SourceConnectionFlow.detected(it, ProbeResult.Recognised(ConnectionKind.AUDIO)) }
-            return
-        }
-        checkJob = viewModelScope.launch(ScreenErrors) {
-            val result = catalog.probeConnection(
-                url = probing.address,
-                supported = AUTO_SUPPORTED,
-            )
-            _state.update {
-                if (it.step is ConnectionStep.Probing && it.checkedAddress == probing.address) {
-                    SourceConnectionFlow.detected(it, result)
-                } else {
-                    it
-                }
-            }
-        }
+        val fresh = _state.value.copy(username = "", password = "")
+        check(SourceConnectionFlow.startPastedLink(fresh, address))
     }
 
     /**
@@ -150,15 +141,15 @@ class SourceConnectionViewModel(
 
     /** Repeats the check of the address that failed, without retyping it. */
     fun retry() {
-        val state = _state.value
-        if (state.address.isBlank()) return
-        if (state.method == null) checkLink(state.address) else check()
+        if (_state.value.address.isNotBlank()) check()
     }
 
     /** Saves the checked connection exactly once; a second call while saving is ignored. */
-    fun save() {
+    fun save(catalogName: String = "") {
         if (saveJob?.isActive == true) return
         val next = SourceConnectionFlow.startSave(_state.value) ?: return
+        val name = catalogName.trim().takeIf { next.method == ConnectionMethod.OPDS && it.isNotEmpty() }
+            ?: SourceConnectionFlow.suggestedName(next)
         _state.value = next
         saveJob = viewModelScope.launch(ScreenErrors) {
             try {
@@ -169,7 +160,7 @@ class SourceConnectionViewModel(
                         // The probe already answered for this address; the source is saved with the same name the
                         // preview showed.
                         sourceId = sources.addOpds(
-                            name = SourceConnectionFlow.suggestedName(next),
+                            name = name,
                             url = next.checkedAddress,
                             username = next.username.ifBlank { null },
                             password = next.password.ifBlank { null },
@@ -194,9 +185,8 @@ class SourceConnectionViewModel(
                     }
                     else -> return@launch
                 }
-                val title = SourceConnectionFlow.suggestedName(next)
                 _state.update { SourceConnectionFlow.saved(it) }
-                _events.send(SourceConnectionEvent.Saved(sourceId, title, bookId))
+                _events.send(SourceConnectionEvent.Saved(sourceId, name, bookId))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -251,6 +241,7 @@ class SourceConnectionViewModel(
 
     /** The document kinds a save can accept for [method]; an audio link is not probed (the audio importer resolves it). */
     private fun supported(method: ConnectionMethod?): Set<ConnectionKind> = when (method) {
+        null -> AUTO_SUPPORTED
         ConnectionMethod.OPDS -> setOf(ConnectionKind.OPDS)
         ConnectionMethod.RSS -> setOf(ConnectionKind.RSS)
         ConnectionMethod.AUDIO_LINK -> setOf(ConnectionKind.AUDIO, ConnectionKind.RSS, ConnectionKind.OPDS)

@@ -9,6 +9,7 @@ import app.yomu.domain.model.ChapterMarks
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.parser.Parser
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
@@ -29,8 +30,10 @@ object PodcastFeed {
         val doc = Jsoup.parse(xml, feedUrl, Parser.xmlParser())
         val channel = doc.selectFirst("channel") ?: doc.selectFirst("feed") ?: return null
         val items = channel.select("> item").ifEmpty { channel.select("> entry") }
+        val base = feedUrl.toHttpUrlOrNull()
         val dated = items.mapNotNull { item ->
-            val url = enclosure(item) ?: return@mapNotNull null
+            val address = enclosure(item) ?: return@mapNotNull null
+            val url = (base?.resolve(address) ?: address.toHttpUrlOrNull())?.toString() ?: return@mapNotNull null
             val title = child(item, "title") ?: url.substringAfterLast('/').substringBefore('?')
             val durationMs = child(item, "itunes:duration")?.let(::duration) ?: 0
             val chapters = ChapterMarks.parse(child(item, "description")?.let { Jsoup.parse(it).wholeText() }, durationMs)

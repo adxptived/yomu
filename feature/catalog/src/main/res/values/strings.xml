@@ -73,6 +73,9 @@
     <string name="source_bulk_disable">Disable</string>
     <string name="source_bulk_hide">Hide from the catalog</string>
     <string name="source_bulk_show">Show in the catalog</string>
+    <string name="source_unhide_extension">Show extension %s</string>
+    <string name="source_bulk_hide_extensions">Hide selected extensions</string>
+    <string name="source_bulk_show_extensions">Show selected extensions</string>
     <string name="source_unhide_all">Show all hidden sources</string>
     <string name="source_open_browser">Open in browser</string>
     <string name="source_settings">Source settings</string>
@@ -134,8 +137,9 @@
 
     <string name="global_search">Global search</string>
     <string name="global_search_hint">Title, author or catalog…</string>
-    <string name="global_search_empty">Search all sources</string>
-    <string name="global_search_empty_hint">Results from every enabled source appear here, grouped by source.</string>
+    <string name="global_search_empty">Search online titles</string>
+    <string name="global_search_languages">Search languages: %s</string>
+    <string name="global_search_empty_hint">Results are grouped by source. Change the search languages to include more sources.</string>
     <string name="global_search_loading">Searching…</string>
     <string name="global_search_found">Found: %1$d</string>
     <string name="global_search_open_source">Open in source</string>
@@ -302,6 +306,8 @@
     <string name="ext_lang_other">Other</string>
     <string name="catalog_section_pinned">Pinned</string>
     <string name="catalog_section_other">All sources</string>
+    <!-- Sources without a language of their own (local folders, OPDS, multilingual built-ins). -->
+    <string name="catalog_section_universal">Universal</string>
     <string name="opds_url_invalid">This doesn’t look like a web address</string>
     <string name="opds_url_will_use">Will open %1$s</string>
     <string name="opds_show_password">Show password</string>
@@ -382,7 +388,7 @@
     <string name="library_filter_completed">Completed</string>
     <string name="library_filtered_empty">No titles match the filters</string>
     <string name="library_download_unread">Download unread chapters</string>
-    <string name="sources_search_hint">Find a source</string>
+    <string name="sources_search_hint">Find a source by name or language</string>
     <string name="sources_not_found">No sources match “%1$s”</string>
     <string name="source_sort">Sort sources</string>
     <string name="source_sort_recent">Recently used</string>
@@ -550,6 +556,12 @@
     <string name="connection_kind_audio">Audio</string>
     <string name="connection_kind_page">A web page, not a catalogue</string>
     <string name="connection_preview_note">The first page is checked; a catalogue with several pages is shown completely when opened.</string>
+    <string name="connection_feed_preview_note">The episodes appear as chapters of an audiobook in your library.</string>
+    <string name="connection_subscribe">Subscribe</string>
+    <plurals name="connection_audio_samples">
+        <item quantity="one">%d playable episode found</item>
+        <item quantity="other">%d playable episodes found</item>
+    </plurals>
     <string name="connection_add">Add</string>
     <string name="connection_saving">Adding…</string>
     <string name="connection_failed">The source was not added</string>
@@ -574,4 +586,17 @@
         <item quantity="one">%1$d entry is visible in the first page</item>
         <item quantity="other">%1$d entries are visible in the first page</item>
     </plurals>
+    <string name="connection_error_access">Access denied (HTTP %s). Check the server permissions or sign-in requirements.</string>
+    <string name="connection_error_missing">The server could not find this feed (HTTP %s). Check the full catalog address.</string>
+    <string name="connection_error_rate">The server is limiting requests (HTTP %s). Wait a moment and try again.</string>
+    <string name="connection_error_server">The source server returned HTTP %s. Try again later.</string>
+    <string name="connection_error_http">The source returned HTTP %s. Check the address or try again.</string>
+    <string name="connection_error_timeout">The source did not answer in time. Try again.</string>
+    <string name="connection_error_dns">The server name could not be resolved. Check the hostname and your DNS connection.</string>
+    <string name="connection_error_connect">Could not connect to the server. Check that it is running and the port is correct.</string>
+    <string name="connection_error_tls">Could not verify the HTTPS connection. Check the server certificate and the device date.</string>
+    <string name="connection_error_redirect">The source returned an invalid redirect or redirected too many times. Use the direct feed address.</string>
+    <string name="connection_catalog_name">Catalog name</string>
+    <string name="browse_append_error">Could not load the next page. %s</string>
+    <string name="connection_error_no_episodes">This feed contains no playable audio episodes. Use an RSS or Atom feed with audio files.</string>
 </resources>

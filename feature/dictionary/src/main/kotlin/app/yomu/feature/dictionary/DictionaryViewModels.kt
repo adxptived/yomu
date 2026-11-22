@@ -9,6 +9,7 @@ import app.yomu.core.common.AppError
 import app.yomu.core.common.ScreenErrors
 import app.yomu.core.common.Share
 import app.yomu.core.common.UiState
+import app.yomu.core.common.runCatchingApp
 import app.yomu.core.datastore.AppSettings
 import app.yomu.core.datastore.stateIn
 import app.yomu.data.dictionary.DictionaryRepository
@@ -33,6 +34,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -54,8 +56,15 @@ class DictionaryViewModel(private val dict: DictionaryRepository, private val wo
     val result: StateFlow<UiState<LookupResult>?> = _result
     val history: StateFlow<List<String>> = dict.observeHistory().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val dictionaries: StateFlow<List<DictionaryInfo>?> = dict.observeDictionaries().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-    val suggestions: StateFlow<List<String>> = query.debounce(150).map { q -> runCatching { dict.suggest(q.trim()).take(8) }.getOrDefault(emptyList()) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val suggestions: StateFlow<List<String>> = query.flatMapLatest { q ->
+        flow {
+            emit(emptyList())
+            if (q.isNotBlank()) {
+                delay(150)
+                emit(runCatchingApp { dict.suggest(q.trim()).take(8) }.getOrDefault(emptyList()))
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val dueCount: StateFlow<Int> = words.observeDueCount(System.currentTimeMillis()).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
     val wordCount: StateFlow<Int> = words.observeCount().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
     private val _savedId = MutableStateFlow<Long?>(null)
@@ -63,8 +72,11 @@ class DictionaryViewModel(private val dict: DictionaryRepository, private val wo
     private var job: Job? = null
 
     fun setQuery(q: String) {
+        if (q == query.value) return
+        job?.cancel()
         query.value = q
-        if (q.isBlank()) _result.value = null
+        _result.value = null
+        _savedId.value = null
     }
 
     fun search(q: String = query.value) {
@@ -74,24 +86,29 @@ class DictionaryViewModel(private val dict: DictionaryRepository, private val wo
         job?.cancel()
         job = viewModelScope.launch(ScreenErrors) {
             _result.value = UiState.Loading
-            _savedId.value = words.find(text, null)?.id
-            _result.value = runCatching { dict.lookup(text) }.fold(
-                { if (it.entries.isEmpty()) UiState.Empty else UiState.Data(it) },
-                { UiState.Error(AppError.from(it)) },
-            )
+            _savedId.value = null
+            _result.value = runCatchingApp {
+                val result = dict.lookup(text)
+                if (result.entries.isEmpty()) UiState.Empty else {
+                    _savedId.value = words.find(result.matched ?: result.query, null)?.id
+                    UiState.Data(result)
+                }
+            }.getOrElse { UiState.Error(AppError.from(it)) }
         }
     }
 
     fun toggleSave() = viewModelScope.launch(ScreenErrors) {
-        val r = (_result.value as? UiState.Data)?.value ?: return@launch
+        val current = _result.value as? UiState.Data ?: return@launch
+        val r = current.value
         val id = _savedId.value
-        if (id != null) {
+        val saved = if (id != null) {
             words.delete(listOf(id))
-            _savedId.value = null
+            null
         } else {
             val e = r.entries.firstOrNull()
-            _savedId.value = words.save(Word(term = r.matched ?: r.query, definition = e?.definitions?.take(3)?.joinToString("; "), context = e?.examples?.firstOrNull()))
+            words.save(Word(term = r.matched ?: r.query, definition = e?.definitions?.take(3)?.joinToString("; "), context = e?.examples?.firstOrNull()))
         }
+        if (_result.value === current) _savedId.value = saved
     }
 
     fun clearHistory() = viewModelScope.launch(ScreenErrors) { dict.clearHistory() }

@@ -803,4 +803,8 @@
     <string name="set_notify_test_text">Так Yomu сообщает о новых главах, загрузках и синхронизации.</string>
     <string name="set_secret_show">Показать</string>
     <string name="set_secret_hide">Скрыть</string>
+    <string name="set_group_reading">Чтение и библиотека</string>
+    <string name="set_group_personalization">Персонализация</string>
+    <string name="set_group_online">Онлайн-сервисы</string>
+    <string name="set_group_app">Данные и приложение</string>
 </resources>

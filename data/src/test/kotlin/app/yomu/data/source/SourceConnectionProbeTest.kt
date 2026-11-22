@@ -94,11 +94,47 @@ class SourceConnectionProbeTest {
     }
 
     @Test
-    fun `401 asks for a login and 403 is a browser check`() = runBlocking {
+    fun `401 asks for a login and a browser challenge differs from forbidden access`() = runBlocking {
         answer("", "text/plain", 401)
         assertEquals(ProbeResult.NeedsAuth, probe.probe(url()))
         answer("", "text/plain", 403)
+        assertEquals(ProbeResult.HttpFailure(403), probe.probe(url()))
+        server.enqueue(MockResponse().setResponseCode(403).setHeader("cf-mitigated", "challenge"))
         assertEquals(ProbeResult.NeedsBrowser, probe.probe(url()))
+    }
+
+    @Test
+    fun `missing feed rate limit and unavailable server keep their status`() = runBlocking {
+        for (status in listOf(404, 429, 503)) {
+            answer("", "text/plain", status)
+            assertEquals(ProbeResult.HttpFailure(status), probe.probe(url()))
+        }
+    }
+
+    @Test
+    fun `an audiobook feed and a direct audio file are recognized`() = runBlocking {
+        answer(
+            """<rss version="2.0"><channel><title>Test audiobook</title><item><title>Chapter 1</title><enclosure url="/chapter.mp3" type="audio/mpeg"/></item></channel></rss>""",
+            "application/rss+xml",
+        )
+        val rss = probe.probe(url(), supported = setOf(ConnectionKind.RSS)) as ProbeResult.Recognised
+        assertEquals(ConnectionKind.RSS, rss.kind)
+        assertEquals("Test audiobook", rss.title)
+        assertEquals(1, rss.sampleItems)
+        answer("ID3", "audio/mpeg")
+        val audio = probe.probe(url("/chapter.mp3"), supported = setOf(ConnectionKind.AUDIO)) as ProbeResult.Recognised
+        assertEquals(ConnectionKind.AUDIO, audio.kind)
+    }
+
+    @Test
+    fun `atom audio is distinguished from a catalog and text only rss is rejected`() = runBlocking {
+        answer(
+            """<feed xmlns="http://www.w3.org/2005/Atom"><title>Audio book</title><entry><link href="/track.wav" type="audio/wav" rel="enclosure"/></entry></feed>""",
+            "application/atom+xml",
+        )
+        assertEquals(ConnectionKind.RSS, (probe.probe(url(), supported = setOf(ConnectionKind.RSS)) as ProbeResult.Recognised).kind)
+        answer("""<rss><channel><title>News</title><item><title>Text only</title></item></channel></rss>""", "application/rss+xml")
+        assertEquals(ProbeResult.NoAudioEpisodes, probe.probe(url(), supported = setOf(ConnectionKind.RSS)))
     }
 
     @Test
@@ -150,7 +186,7 @@ class SourceConnectionProbeTest {
     @Test
     fun `an endless redirect chain stops`() = runBlocking {
         repeat(10) { server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", server.url("/again").toString())) }
-        assertEquals(ProbeResult.NetworkError, probe.probe(url()))
+        assertEquals(ProbeResult.TransportFailure(ProbeResult.TransportIssue.REDIRECT), probe.probe(url()))
     }
 
     @Test
@@ -178,7 +214,7 @@ class SourceConnectionProbeTest {
     fun `an unreachable server is a network error, not a broken catalogue`() = runBlocking {
         val address = url()
         server.shutdown()
-        assertEquals(ProbeResult.NetworkError, probe.probe(address))
+        assertEquals(ProbeResult.TransportFailure(ProbeResult.TransportIssue.CONNECTION), probe.probe(address))
     }
 
     @Test

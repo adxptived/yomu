@@ -73,6 +73,9 @@
     <string name="source_bulk_disable">Отключить</string>
     <string name="source_bulk_hide">Скрыть из каталога</string>
     <string name="source_bulk_show">Показать в каталоге</string>
+    <string name="source_unhide_extension">Показать расширение %s</string>
+    <string name="source_bulk_hide_extensions">Скрыть выбранные расширения</string>
+    <string name="source_bulk_show_extensions">Показать выбранные расширения</string>
     <string name="source_unhide_all">Показать все скрытые источники</string>
     <string name="source_open_browser">Открыть в браузере</string>
     <string name="source_settings">Настройки источника</string>
@@ -134,8 +137,9 @@
 
     <string name="global_search">Глобальный поиск</string>
     <string name="global_search_hint">Название, автор или каталог…</string>
-    <string name="global_search_empty">Поиск по всем источникам</string>
-    <string name="global_search_empty_hint">Здесь появятся результаты всех включённых источников, сгруппированные по источникам.</string>
+    <string name="global_search_empty">Поиск онлайн-книг</string>
+    <string name="global_search_languages">Языки поиска: %s</string>
+    <string name="global_search_empty_hint">Результаты сгруппированы по источникам. Измените языки поиска, чтобы добавить другие источники.</string>
     <string name="global_search_loading">Ищем…</string>
     <string name="global_search_found">Найдено: %1$d</string>
     <string name="global_search_open_source">Открыть в источнике</string>
@@ -306,6 +310,8 @@
     <string name="ext_lang_other">Другие</string>
     <string name="catalog_section_pinned">Закреплённые</string>
     <string name="catalog_section_other">Все источники</string>
+    <!-- Источники без своего языка (локальные папки, OPDS, многоязычные встроенные). -->
+    <string name="catalog_section_universal">Универсальные</string>
     <string name="opds_url_invalid">Это не похоже на адрес сайта</string>
     <string name="opds_url_will_use">Будет открыт %1$s</string>
     <string name="opds_show_password">Показать пароль</string>
@@ -394,7 +400,7 @@
     <string name="library_filter_completed">Завершённые</string>
     <string name="library_filtered_empty">Нет тайтлов, подходящих под фильтры</string>
     <string name="library_download_unread">Скачать непрочитанные главы</string>
-    <string name="sources_search_hint">Найти источник</string>
+    <string name="sources_search_hint">Имя или язык источника</string>
     <string name="sources_not_found">Нет источников по запросу «%1$s»</string>
     <string name="source_sort">Сортировка источников</string>
     <string name="source_sort_recent">Недавние</string>
@@ -564,6 +570,14 @@
     <string name="connection_kind_audio">Аудио</string>
     <string name="connection_kind_page">Веб-страница, а не каталог</string>
     <string name="connection_preview_note">Проверяется первая страница; каталог из нескольких страниц откроется целиком.</string>
+    <string name="connection_feed_preview_note">В библиотеке эпизоды появятся как главы аудиокниги.</string>
+    <string name="connection_subscribe">Подписаться</string>
+    <plurals name="connection_audio_samples">
+        <item quantity="one">Найден %d аудиоэпизод</item>
+        <item quantity="few">Найдено %d аудиоэпизода</item>
+        <item quantity="many">Найдено %d аудиоэпизодов</item>
+        <item quantity="other">Найдено %d аудиоэпизода</item>
+    </plurals>
     <string name="connection_add">Добавить</string>
     <string name="connection_saving">Добавляю…</string>
     <string name="connection_failed">Источник не добавлен</string>
@@ -590,4 +604,17 @@
         <item quantity="many">В первой странице видно %1$d элементов</item>
         <item quantity="other">В первой странице видно %1$d элемента</item>
     </plurals>
+    <string name="connection_error_access">Доступ запрещён (HTTP %s). Проверьте права на сервере и требования ко входу.</string>
+    <string name="connection_error_missing">Сервер не нашёл этот каталог (HTTP %s). Проверьте полный адрес.</string>
+    <string name="connection_error_rate">Сервер ограничил запросы (HTTP %s). Подождите немного и повторите.</string>
+    <string name="connection_error_server">Сервер источника вернул HTTP %s. Попробуйте позже.</string>
+    <string name="connection_error_http">Источник вернул HTTP %s. Проверьте адрес или повторите запрос.</string>
+    <string name="connection_error_timeout">Источник не ответил вовремя. Попробуйте ещё раз.</string>
+    <string name="connection_error_dns">Не удалось найти сервер. Проверьте имя хоста и работу DNS.</string>
+    <string name="connection_error_connect">Не удалось подключиться. Проверьте, что сервер запущен и порт указан верно.</string>
+    <string name="connection_error_tls">Не удалось проверить HTTPS-соединение. Проверьте сертификат сервера и дату на устройстве.</string>
+    <string name="connection_error_redirect">Источник перенаправляет по неверному адресу или слишком много раз. Укажите прямую ссылку на каталог.</string>
+    <string name="connection_catalog_name">Название каталога</string>
+    <string name="browse_append_error">Не удалось загрузить следующую страницу. %s</string>
+    <string name="connection_error_no_episodes">В этой ленте нет аудиоэпизодов. Укажите RSS или Atom с аудиофайлами.</string>
 </resources>

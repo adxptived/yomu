@@ -81,6 +81,8 @@ import app.yomu.core.ui.components.PreferenceHeader
 import app.yomu.core.ui.components.SwipeAction
 import app.yomu.core.ui.components.SwipeActionsBox
 import app.yomu.core.ui.components.motionItem
+import app.yomu.core.ui.components.TopLevelBody
+import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.audio.AudiobookDownloader
@@ -88,6 +90,7 @@ import app.yomu.data.download.AudioDownload
 import app.yomu.data.download.DownloadOverview
 import app.yomu.data.download.DownloadRepository
 import app.yomu.data.download.DownloadSummary
+import app.yomu.data.download.TaskProgress
 import app.yomu.data.download.NetworkWait
 import app.yomu.data.download.StorageUsage
 import app.yomu.domain.model.DownloadItem
@@ -172,7 +175,6 @@ class DownloadsViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val usage = MutableStateFlow<StorageUsage?>(null)
     val maxRetries: StateFlow<Int> = settings.downloadRetries.stateIn(viewModelScope)
-    val summary: StateFlow<DownloadSummary> = overview.summary.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DownloadSummary())
     val networkWait: StateFlow<NetworkWait> = overview.networkWait.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NetworkWait.NONE)
     val audio: StateFlow<List<AudioDownload>> = overview.audioQueue.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private val _events = MutableSharedFlow<DownloadsEvent>(extraBufferCapacity = 1)
@@ -200,7 +202,10 @@ class DownloadsViewModel(
     fun moveToTop(items: List<DownloadItem>) = viewModelScope.launch(ScreenErrors) { repo.moveToTop(items.map { it.id }) }
     fun remove(item: DownloadItem) = viewModelScope.launch(ScreenErrors) { repo.remove(listOf(item.id)) }
     fun pauseAll() = viewModelScope.launch(ScreenErrors) { repo.pauseAll() }
-    fun resumeAll() = viewModelScope.launch(ScreenErrors) { repo.resumeAll() }
+    fun resumePaused() = viewModelScope.launch(ScreenErrors) {
+        val paused = sections.value?.queued.orEmpty().filter { it.status == DownloadStatus.PAUSED }
+        if (paused.isNotEmpty()) repo.resume(paused.map { it.id })
+    }
     fun retryFailed() = viewModelScope.launch(ScreenErrors) { repo.retryFailed() }
     fun clearQueue() = viewModelScope.launch(ScreenErrors) { repo.clearQueue() }
     fun clearFinished() = viewModelScope.launch(ScreenErrors) {
@@ -236,6 +241,7 @@ fun DownloadsScreen(viewModel: DownloadsViewModel, onBack: () -> Unit) {
         }
     }
     Scaffold(
+        contentWindowInsets = topLevelContentInsets(),
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.downloads_title)) },
@@ -245,33 +251,23 @@ fun DownloadsScreen(viewModel: DownloadsViewModel, onBack: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        DownloadsContent(viewModel, Modifier.padding(padding).fillMaxSize())
+        TopLevelBody(padding, Modifier.fillMaxSize()) {
+            DownloadsContent(viewModel, Modifier.fillMaxSize())
+        }
     }
 }
 
-/** Top-bar actions of the downloads (pause or resume all, retry, clear): on their screen and in the profile's tab. */
+/** Destructive and housekeeping actions for the downloads screen. */
 @Composable
 fun DownloadsActions(viewModel: DownloadsViewModel) {
     val sections by viewModel.sections.collectAsStateWithLifecycle()
     var showMenu by remember { mutableStateOf(false) }
     var confirmClearQueue by remember { mutableStateOf(false) }
     val s = sections ?: return
-    if (s.hasActive) {
-        IconButton(onClick = viewModel::pauseAll) { Icon(Icons.Filled.Pause, stringResource(R.string.downloads_pause_all)) }
-    } else if (s.hasPaused) {
-        IconButton(onClick = viewModel::resumeAll) { Icon(Icons.Filled.PlayArrow, stringResource(R.string.downloads_resume_all)) }
-    }
     if (s.hasPending || s.finished.isNotEmpty()) {
         Box {
             IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, stringResource(CoreR.string.more)) }
             DropdownMenu(showMenu, onDismissRequest = { showMenu = false }) {
-                if (s.failed.isNotEmpty()) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.downloads_retry_failed)) },
-                        leadingIcon = { Icon(Icons.Filled.Refresh, null) },
-                        onClick = { showMenu = false; viewModel.retryFailed() },
-                    )
-                }
                 if (s.finished.isNotEmpty()) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.downloads_clear_finished)) },
@@ -310,16 +306,18 @@ fun DownloadsContent(viewModel: DownloadsViewModel, modifier: Modifier = Modifie
     val usage by viewModel.usage.collectAsStateWithLifecycle()
     val titles by viewModel.entryTitles.collectAsStateWithLifecycle()
     val maxRetries by viewModel.maxRetries.collectAsStateWithLifecycle()
-    val summary by viewModel.summary.collectAsStateWithLifecycle()
     val wait by viewModel.networkWait.collectAsStateWithLifecycle()
     val audio by viewModel.audio.collectAsStateWithLifecycle()
     var confirmClearCache by remember { mutableStateOf(false) }
     val s = sections
+    val summary = remember(s) {
+        s?.let { DownloadSummary.of((it.running + it.queued + it.failed + it.finished).mapNotNull(TaskProgress::of)) }
+    }
     LaunchedEffect(s?.finished?.size) { viewModel.refreshUsage() }
 
     CompositionLocalProvider(LocalNetworkWait provides wait) {
         LazyColumn(modifier, contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
-            item(key = "summary") { QueueSummary(summary, wait, viewModel) }
+            if (summary?.visible == true) item(key = "summary") { QueueSummary(summary, wait, viewModel) }
             if (s == null) return@LazyColumn
             if (s.isEmpty && audio.isEmpty()) {
                 item(key = "empty") {
@@ -345,9 +343,9 @@ fun DownloadsContent(viewModel: DownloadsViewModel, modifier: Modifier = Modifie
                     }
                 }
             }
-            section(R.string.downloads_failed, s.failed, viewModel, titles, maxRetries, actionLabel = R.string.downloads_retry_all, onAction = viewModel::retryFailed)
-            item(key = "usage") { UsageCard(usage, onClearCache = { confirmClearCache = true }) }
+            section(R.string.downloads_failed, s.failed, viewModel, titles, maxRetries)
             section(R.string.downloads_finished, s.finished, viewModel, titles, maxRetries)
+            item(key = "usage") { UsageCard(usage, onClearCache = { confirmClearCache = true }) }
         }
     }
 
@@ -368,22 +366,17 @@ private fun androidx.compose.foundation.lazy.LazyListScope.section(
     vm: DownloadsViewModel,
     titles: Map<Long, String>,
     maxRetries: Int,
-    actionLabel: Int? = null,
-    onAction: (() -> Unit)? = null,
 ) {
     if (list.isEmpty()) return
     item(key = "h-$title") {
-        SectionHeader("${stringResource(title)} (${list.size})", action = if (actionLabel != null && onAction != null) stringResource(actionLabel) to onAction else null)
+        SectionHeader("${stringResource(title)} (${list.size})")
     }
     items(list, key = { it.id }) { d -> DownloadRow(d, vm, d.title, maxRetries, motionItem()) }
 }
 
 @Composable
-private fun SectionHeader(text: String, action: Pair<String, () -> Unit>? = null) {
-    Row(Modifier.fillMaxWidth().padding(end = Dimens.s), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.weight(1f)) { PreferenceHeader(text) }
-        action?.let { (label, onClick) -> TextButton(onClick = onClick) { Text(label) } }
-    }
+private fun SectionHeader(text: String) {
+    PreferenceHeader(text)
 }
 
 /** Header of the waiting chapters of one title: move them to the top of the queue, pause, resume or cancel them. */
@@ -585,8 +578,6 @@ private fun StateLine(state: RowState) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun QueueSummary(s: DownloadSummary, wait: NetworkWait, vm: DownloadsViewModel) {
-    if (!s.visible) return
-    var confirmCancel by remember { mutableStateOf(false) }
     val problem = !s.active && s.failed > 0
     Card(
         Modifier.fillMaxWidth().padding(start = Dimens.l, end = Dimens.l, top = Dimens.l),
@@ -621,22 +612,13 @@ private fun QueueSummary(s: DownloadSummary, wait: NetworkWait, vm: DownloadsVie
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Dimens.xs)) {
                 if (s.active) {
                     TextButton(onClick = vm::pauseAll) { ButtonLabel(Icons.Filled.Pause, R.string.downloads_pause_all) }
-                } else if (s.paused > 0) {
-                    TextButton(onClick = vm::resumeAll) { ButtonLabel(Icons.Filled.PlayArrow, R.string.downloads_resume_all) }
+                }
+                if (s.paused > 0) {
+                    TextButton(onClick = vm::resumePaused) { ButtonLabel(Icons.Filled.PlayArrow, R.string.downloads_resume_paused) }
                 }
                 if (s.failed > 0) TextButton(onClick = vm::retryFailed) { ButtonLabel(Icons.Filled.Refresh, R.string.downloads_retry_all) }
-                TextButton(onClick = { confirmCancel = true }) { ButtonLabel(Icons.Filled.Close, R.string.downloads_cancel_all) }
             }
         }
-    }
-    if (confirmCancel) {
-        ConfirmDialog(
-            title = stringResource(R.string.downloads_clear_queue),
-            text = stringResource(R.string.downloads_clear_queue_text),
-            confirmLabel = stringResource(R.string.downloads_cancel_all),
-            onConfirm = vm::clearQueue,
-            onDismiss = { confirmCancel = false },
-        )
     }
 }
 

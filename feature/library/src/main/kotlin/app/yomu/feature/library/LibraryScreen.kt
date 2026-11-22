@@ -12,6 +12,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -78,6 +79,7 @@ import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -90,9 +92,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -142,7 +141,6 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import app.yomu.core.ui.components.BookGridItem
 import app.yomu.core.ui.components.BookListItem
-import app.yomu.core.ui.components.CircleIconButton
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.CoverImage
 import app.yomu.core.ui.components.EmptyState
@@ -167,7 +165,6 @@ import app.yomu.core.ui.components.TabActionsSheet
 import app.yomu.core.ui.components.TabOption
 import app.yomu.core.ui.components.TabsPickerSheet
 import app.yomu.core.ui.components.TextInputDialog
-import app.yomu.core.ui.components.ToolbarPill
 import app.yomu.core.ui.components.TopLevelBody
 import app.yomu.core.ui.components.WheelLayout
 import app.yomu.core.ui.components.YomuFab
@@ -198,6 +195,7 @@ import app.yomu.domain.model.Locator
 import app.yomu.domain.model.ReadingStatus
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.io.File
 import app.yomu.core.ui.R as CoreR
@@ -255,6 +253,9 @@ fun LibraryScreen(
     val ascending by viewModel.ascending.collectAsStateWithLifecycle()
     val onlineCount by viewModel.onlineCount.collectAsStateWithLifecycle()
     val onlineShown by viewModel.onlineShown.collectAsStateWithLifecycle()
+    // The count the "All" tab shows: the books that are visible now (a deletion pending its undo is still in the
+    // database, but not on the screen) — the tab must not claim a book the list does not show.
+    val visibleTotal by viewModel.visibleTotal.collectAsStateWithLifecycle()
     val tabPick by viewModel.tabPick.collectAsStateWithLifecycle()
     val incognito by viewModel.incognito.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
@@ -298,6 +299,8 @@ fun LibraryScreen(
     var bulkStatus by remember { mutableStateOf(false) }
     var bulkMenu by remember { mutableStateOf(false) }
     var tagDialog by remember { mutableStateOf<Set<Long>?>(null) }
+    var swipeDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var swipeDeleteTitle by rememberSaveable { mutableStateOf("") }
     var deleteFilesDialog by remember { mutableStateOf<Set<Long>?>(null) }
     // The "Online" tab: every title added with the heart in the catalog.
     var onlineTab by rememberSaveable { mutableStateOf(false) }
@@ -372,7 +375,6 @@ fun LibraryScreen(
                     }
                     scope.launch { snackbar.showSnackbar(msg, withDismissAction = true) }
                 }
-                is LibraryEvent.Deleted -> Unit
                 // A partial bulk result names both numbers: the user must not read "done" over a half-finished set.
                 is LibraryEvent.BulkPartial -> scope.launch {
                     snackbar.showSnackbar(resources.getString(R.string.library_bulk_partial, e.succeeded, e.succeeded + e.failed + e.unsupported))
@@ -387,11 +389,13 @@ fun LibraryScreen(
     // Deletions are owned by the ViewModel: if the screen was left while the undo prompt was showing, the prompt
     // comes back instead of the deletion silently completing (or silently waiting forever).
     LaunchedEffect(viewModel) {
-        viewModel.pendingDeletions.collect { pending ->
-            if (pending.isEmpty()) return@collect
+        viewModel.pendingDeletions.collectLatest { pending ->
+            if (pending.isEmpty()) return@collectLatest
+            // The prompt waits for an answer (Undo or the ✕): a timeout used to commit the deletion after ten
+            // seconds, so an Undo tapped a moment too late deleted the book for good with no warning.
             val r = snackbar.showSnackbar(
                 resources.getQuantityString(R.plurals.library_deleted, pending.size, pending.size),
-                actionLabel = strUndo, withDismissAction = true, duration = SnackbarDuration.Long,
+                actionLabel = strUndo, withDismissAction = true, duration = SnackbarDuration.Indefinite,
             )
             if (r == SnackbarResult.ActionPerformed) viewModel.undoDelete(pending) else viewModel.commitDelete(pending)
         }
@@ -469,6 +473,11 @@ fun LibraryScreen(
                                     }
                                 },
                             )
+                            if (!inOnline) {
+                                IconButton(onClick = { showDisplay = true }) {
+                                    Icon(Icons.Default.SwapVert, stringResource(R.string.library_display))
+                                }
+                            }
                         }
                         Text(
                             stringResource(R.string.library_search_syntax_hint),
@@ -480,11 +489,13 @@ fun LibraryScreen(
                     }
                     else -> LibraryHeader(
                         onSearch = { searching = true },
+                        onDisplay = if (inOnline) null else ({ showDisplay = true }),
+                        activeFilters = activeFilters,
                         downloads = viewModel.downloadSummary,
                         onDownloads = onOpenDownloads,
                     ) {
                         Box {
-                            CircleIconButton(Icons.Default.MoreVert, stringResource(CoreR.string.more), onClick = { showMenu = true }, size = 44.dp)
+                            IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, stringResource(CoreR.string.more)) }
                             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.library_import)) },
@@ -540,7 +551,7 @@ fun LibraryScreen(
                 PillTabRow(
                     tabs = buildList {
                         // The book total rides on the "All" tab: the header's subtitle line is gone with the compact top bar.
-                        add(PillTab(TAB_ALL, stringResource(R.string.library_all), total.takeIf { it > 0 }))
+                        add(PillTab(TAB_ALL, stringResource(R.string.library_all), visibleTotal.takeIf { it > 0 }))
                         if (onlineShownTab) add(PillTab(TAB_ONLINE, stringResource(R.string.library_online), onlineTotal, Icons.Outlined.Public))
                         collections.forEach { add(PillTab(it.id.toString(), it.name, it.count)) }
                     },
@@ -555,18 +566,9 @@ fun LibraryScreen(
                     onLongPress = { key -> key.toLongOrNull()?.let { id -> tabActions = collections.firstOrNull { it.id == id } } },
                     addLabel = stringResource(R.string.library_new_collection),
                     onAdd = { newTab = true },
-                    modifier = Modifier.padding(top = Dimens.xs, bottom = Dimens.xs),
+                    modifier = Modifier.padding(bottom = Dimens.xs),
                 )
-                if (!inOnline) {
-                    LibraryToolbar(
-                        activeFilters = activeFilters,
-                        sortLabel = stringResource(sort.label()),
-                        ascending = ascending,
-                        grid = grid,
-                        onDisplay = { showDisplay = true },
-                        onSortDirection = { viewModel.setAscending(!ascending) },
-                        onToggleGrid = { viewModel.setGrid(!grid) },
-                    )
+                if (!inOnline && !selecting && !searching) {
                     if (activeFilters > 0) ActiveFilters(filter, types, viewModel)
                     if (shelves.isNotEmpty() || activeFilters > 0 || search.isNotBlank()) {
                         LazyRow(
@@ -574,24 +576,19 @@ fun LibraryScreen(
                             horizontalArrangement = Arrangement.spacedBy(Dimens.xs),
                         ) {
                             items(shelves, key = { it.id }) { shelf ->
-                                FilterChip(
-                                    selected = false,
-                                    onClick = { onlineTab = false; viewModel.applyShelf(shelf) },
-                                    label = { Text(shelf.name) },
-                                    trailingIcon = {
-                                        Icon(
-                                            Icons.Default.Close,
-                                            stringResource(R.string.library_shelf_delete),
-                                            modifier = Modifier.size(18.dp).clickable { viewModel.deleteShelf(shelf.id) },
-                                        )
-                                    },
+                                ShelfChip(
+                                    name = shelf.name,
+                                    removeLabel = stringResource(R.string.library_shelf_delete),
+                                    onApply = { onlineTab = false; viewModel.applyShelf(shelf) },
+                                    onRemove = { viewModel.deleteShelf(shelf.id) },
                                 )
                             }
                             item(key = "save-shelf") {
-                                FilterChip(
-                                    selected = false,
-                                    onClick = { showSaveShelf = true },
-                                    label = { Text(stringResource(R.string.library_save_shelf)) },
+                                ShelfChip(
+                                    name = stringResource(R.string.library_save_shelf),
+                                    removeLabel = stringResource(R.string.library_save_shelf),
+                                    onApply = { showSaveShelf = true },
+                                    onRemove = null,
                                 )
                             }
                         }
@@ -661,10 +658,10 @@ fun LibraryScreen(
         floatingActionButton = {
             if (showFab) {
                 YomuFab(
-                    text = stringResource(R.string.library_import_files),
+                    text = stringResource(R.string.library_import),
                     icon = Icons.Default.Add,
                     onClick = { openDocs.launch(arrayOf("*/*")) },
-                    expanded = !grid,
+                    expanded = false,
                 )
             }
         },
@@ -788,7 +785,10 @@ fun LibraryScreen(
                                 haptic.confirm()
                                 viewModel.setStatus(setOf(book.id), if (book.status == ReadingStatus.FINISHED) ReadingStatus.NEW else ReadingStatus.FINISHED)
                             },
-                            onRemove = { book -> haptic.confirm(); viewModel.requestDelete(setOf(book.id)) },
+                            onRemove = { book ->
+                                swipeDeleteTitle = book.title
+                                swipeDeleteId = book.id
+                            },
                         )
                     }
                 }
@@ -875,6 +875,7 @@ fun LibraryScreen(
             sort = sort,
             ascending = ascending,
             grid = grid,
+            columns = columns,
             activeFilters = activeFilters,
             onFilters = { showFilters = true },
             onDismiss = { showDisplay = false },
@@ -973,6 +974,15 @@ fun LibraryScreen(
             onDismiss = { tagDialog = null },
         )
     }
+    swipeDeleteId?.let { id ->
+        ConfirmDialog(
+            title = stringResource(R.string.details_delete_title),
+            text = swipeDeleteTitle,
+            confirmLabel = stringResource(R.string.library_remove_book),
+            onConfirm = { haptic.confirm(); viewModel.requestDelete(setOf(id)) },
+            onDismiss = { swipeDeleteId = null },
+        )
+    }
     deleteFilesDialog?.let { ids ->
         ConfirmDialog(
             title = stringResource(R.string.library_delete_files),
@@ -988,6 +998,8 @@ fun LibraryScreen(
 @Composable
 private fun LibraryHeader(
     onSearch: () -> Unit,
+    onDisplay: (() -> Unit)?,
+    activeFilters: Int,
     downloads: StateFlow<DownloadSummary>,
     onDownloads: () -> Unit,
     menu: @Composable () -> Unit,
@@ -996,18 +1008,21 @@ private fun LibraryHeader(
     val summary by downloads.collectAsStateWithLifecycle()
     Column {
         Row(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(start = Dimens.xl, end = Dimens.l, top = Dimens.xs, bottom = Dimens.xs),
+            Modifier.fillMaxWidth().statusBarsPadding().padding(start = Dimens.l, end = Dimens.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(stringResource(R.string.library_title), style = MaterialTheme.typography.titleLarge, maxLines = 1, modifier = Modifier.weight(1f))
-            // At most three visible commands: search and the overflow menu, and the download button while a queue
-            // is active. Selection, refresh, shelves, sources and settings live in the menu.
-            if (summary.visible) {
-                DownloadsButton(summary, onDownloads)
-                Spacer(Modifier.width(Dimens.s))
+            if (summary.visible) DownloadsButton(summary, onDownloads)
+            if (onDisplay != null) {
+                BadgedBox(badge = {
+                    if (activeFilters > 0) Badge()
+                }) {
+                    IconButton(onClick = onDisplay) {
+                        Icon(Icons.Default.SwapVert, stringResource(R.string.library_display))
+                    }
+                }
             }
-            CircleIconButton(Icons.Default.Search, stringResource(CoreR.string.search), onClick = onSearch, size = 44.dp)
-            Spacer(Modifier.width(Dimens.s))
+            IconButton(onClick = onSearch) { Icon(Icons.Default.Search, stringResource(CoreR.string.search)) }
             menu()
         }
         // A thin strip stays visible under the title while data is flowing, also when the button is out of sight.
@@ -1059,73 +1074,19 @@ private fun DownloadsButton(s: DownloadSummary, onClick: () -> Unit) {
 }
 
 /**
- * The single entry to display options: filters, sorting and the view.
+ * The single entry to display options: filters, sorting, the view and the grid columns.
  *
- * The pill opens the display sheet (filters, the sort field, the view); the sort name toggles the direction right
- * here, and the grid/list icon toggles the view — all three were dead displays before, and tapping them did nothing.
+ * The chosen sort shows its direction (an arrow) and, tapped again, flips it; the view and the columns stay visible so
+ * options can be compared without reopening the sheet. Nothing here closes the sheet but "Filter" (which opens the
+ * filter sheet) and the ✕ — before, sort rows closed the sheet and the view toggle did not.
  */
-@Composable
-private fun LibraryToolbar(
-    activeFilters: Int,
-    sortLabel: String,
-    ascending: Boolean,
-    grid: Boolean,
-    onDisplay: () -> Unit,
-    onSortDirection: () -> Unit,
-    onToggleGrid: () -> Unit,
-) {
-    Row(
-        Modifier.fillMaxWidth().padding(start = Dimens.l, end = Dimens.l, top = Dimens.xs, bottom = Dimens.s),
-        horizontalArrangement = Arrangement.spacedBy(Dimens.s),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ToolbarPill(
-            Icons.Default.SwapVert,
-            stringResource(R.string.library_display),
-            onClick = onDisplay,
-            badge = activeFilters,
-        )
-        // Tap the sort name to flip its direction; the field itself is picked in the display sheet.
-        Row(
-            Modifier.weight(1f, fill = false).heightIn(min = Dimens.touch).clip(CircleShape)
-                .clickable(onClick = onSortDirection).padding(horizontal = Dimens.s),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Dimens.xxs),
-        ) {
-            Text(
-                sortLabel,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            Icon(
-                if (ascending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
-                stringResource(R.string.library_sort_direction),
-                Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = onToggleGrid, modifier = Modifier.size(Dimens.touch)) {
-            Icon(
-                if (grid) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
-                stringResource(if (grid) R.string.library_view_list else R.string.library_view_grid),
-                Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-/** Filters, sort order and the view in one place; each group is a small set of obvious choices. */
 @Composable
 private fun DisplaySheet(
     viewModel: LibraryViewModel,
     sort: LibrarySort,
     ascending: Boolean,
     grid: Boolean,
+    columns: Int,
     activeFilters: Int,
     onFilters: () -> Unit,
     onDismiss: () -> Unit,
@@ -1136,22 +1097,53 @@ private fun DisplaySheet(
             onDismiss()
             onFilters()
         }
-        SheetAction(
-            if (ascending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
-            stringResource(R.string.library_sort_direction),
-        ) { viewModel.setAscending(!ascending) }
-        // The chosen sort is first and marked, so the sheet shows the current state without a second control.
-        val ordered = listOf(sort) + LibrarySort.entries.filter { it != sort }
-        ordered.forEach { s ->
-            SheetAction(
-                if (s == sort) Icons.Default.Check else Icons.Default.SwapVert,
-                stringResource(s.label()),
-            ) { viewModel.chooseSort(s); onDismiss() }
+        LibrarySort.entries.forEach { s ->
+            val selected = s == sort
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = Dimens.touch)
+                    .clickable { if (selected) viewModel.setAscending(!ascending) else viewModel.chooseSort(s) }
+                    .padding(horizontal = Dimens.xl, vertical = Dimens.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (selected) {
+                    Icon(
+                        if (ascending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                        stringResource(if (ascending) R.string.library_sort_ascending else R.string.library_sort_descending),
+                        Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    Spacer(Modifier.size(20.dp))
+                }
+                Text(
+                    stringResource(s.label()),
+                    Modifier.padding(start = Dimens.m),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                )
+            }
         }
         SheetAction(
             if (grid) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
             stringResource(if (grid) R.string.library_view_list else R.string.library_view_grid),
         ) { viewModel.setGrid(!grid) }
+        if (grid) {
+            Text(
+                stringResource(R.string.library_columns),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = Dimens.xl, top = Dimens.m, bottom = Dimens.xs),
+            )
+            FlowRow(
+                Modifier.fillMaxWidth().padding(horizontal = Dimens.xl),
+                horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+            ) {
+                FilterChip(selected = columns == 0, onClick = { viewModel.setColumns(0) }, label = { Text(stringResource(R.string.library_columns_auto)) }, shape = CircleShape)
+                (2..6).forEach { n ->
+                    FilterChip(selected = columns == n, onClick = { viewModel.setColumns(n) }, label = { Text("$n") }, shape = CircleShape)
+                }
+            }
+        }
         if (activeFilters > 0) {
             SheetAction(Icons.Default.FilterList, stringResource(R.string.library_clear_filters)) { viewModel.clearFilters() }
         }
@@ -1402,6 +1394,36 @@ private fun BulkActionLabeled(icon: ImageVector, label: String, modifier: Modifi
     }
 }
 
+/**
+ * A saved shelf: tapping the chip applies the shelf, the ✕ (a full 48 dp target inside) deletes it. Both actions are
+ * too different to sit under one tap, and a [FilterChip]'s trailing icon is too small to be a usable delete button.
+ */
+@Composable
+private fun ShelfChip(name: String, removeLabel: String, onApply: () -> Unit, onRemove: (() -> Unit)?) {
+    Surface(
+        onClick = onApply,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.heightIn(min = Dimens.touch),
+    ) {
+        Row(
+            Modifier.padding(start = Dimens.l, end = if (onRemove != null) Dimens.xs else Dimens.l),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(name, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (onRemove != null) {
+                Box(
+                    Modifier.minimumInteractiveComponentSize().clickable(onClickLabel = removeLabel) { onRemove() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.Close, removeLabel, Modifier.size(18.dp))
+                }
+            }
+        }
+    }
+}
+
 private fun LibrarySort.label(): Int = when (this) {
     LibrarySort.TITLE -> R.string.sort_title
     LibrarySort.AUTHOR -> R.string.sort_author
@@ -1513,7 +1535,9 @@ private fun LibraryGrid(
                         onClick = { onClick(book) },
                         onLongClick = { onLongClick(book) },
                         onInfoClick = { onInfoClick(book) },
-                        readLabel = stringResource(R.string.library_read_book),
+                        // Both targets open the card: the a11y label must not promise the reader ("Read") that
+                        // neither tap reaches.
+                        readLabel = stringResource(R.string.library_details),
                         infoLabel = stringResource(R.string.library_details),
                         modifier = motionItem().then(bookDrag(book)),
                     )
@@ -1563,7 +1587,12 @@ private fun LibraryGrid(
                             if (finished) Icons.Outlined.AutoStories else Icons.Default.DoneAll,
                             stringResource(if (finished) R.string.library_mark_unread else R.string.library_mark_read),
                         ) { onToggleRead(book) },
-                        end = SwipeAction.destructive(stringResource(R.string.library_remove_book)) { onRemove(book) },
+                        end = SwipeAction(
+                            icon = Icons.Default.Delete,
+                            label = stringResource(R.string.library_remove_book),
+                            container = MaterialTheme.colorScheme.errorContainer,
+                            onContainer = MaterialTheme.colorScheme.onErrorContainer,
+                        ) { onRemove(book) },
                     ) {
                         BookListItem(
                             title = book.title,
@@ -1577,7 +1606,7 @@ private fun LibraryGrid(
                             onClick = { onClick(book) },
                             onLongClick = { onLongClick(book) },
                             onInfoClick = { onInfoClick(book) },
-                            readLabel = stringResource(R.string.library_read_book),
+                            readLabel = stringResource(R.string.library_details),
                             infoLabel = stringResource(R.string.library_details),
                             trailing = {
                                 IconButton(onClick = { onDetails(book) }) {
@@ -1663,17 +1692,13 @@ private fun importFailureLabel(failure: app.yomu.domain.library.ImportFailure?):
     },
 )
 
-/** Type, status, tags, language, sort and view of the library in one sheet. */
+/** Type, status, tags and language of the library in one sheet; sorting, the view and the columns live in "Display". */
 @Composable
 private fun FiltersSheet(viewModel: LibraryViewModel, onDismiss: () -> Unit) {
     val tags by viewModel.tags.collectAsStateWithLifecycle()
     val languages by viewModel.languages.collectAsStateWithLifecycle()
     val filter by viewModel.filterState.collectAsStateWithLifecycle()
     val types by viewModel.typeFilter.collectAsStateWithLifecycle()
-    val sort by viewModel.sort.collectAsStateWithLifecycle()
-    val ascending by viewModel.ascending.collectAsStateWithLifecycle()
-    val grid by viewModel.grid.collectAsStateWithLifecycle()
-    val columns by viewModel.columns.collectAsStateWithLifecycle()
     val active by viewModel.activeFilters.collectAsStateWithLifecycle()
     YomuSheet(onDismiss = onDismiss) {
         Row(Modifier.fillMaxWidth().padding(end = Dimens.l), verticalAlignment = Alignment.CenterVertically) {
@@ -1698,43 +1723,6 @@ private fun FiltersSheet(viewModel: LibraryViewModel, onDismiss: () -> Unit) {
             if (languages.isNotEmpty()) {
                 FilterSection(stringResource(R.string.library_languages)) {
                     languages.forEach { l -> Choice(l.uppercase(), filter.language == l) { viewModel.setLanguage(if (filter.language == l) null else l) } }
-                }
-            }
-            FilterSection(stringResource(R.string.library_sort)) {
-                LibrarySort.entries.forEach { s ->
-                    FilterChip(
-                        selected = s == sort,
-                        onClick = { viewModel.setSort(s) },
-                        label = { Text(stringResource(s.label())) },
-                        trailingIcon = if (s == sort) {
-                            { Icon(if (ascending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, null, Modifier.size(18.dp)) }
-                        } else {
-                            null
-                        },
-                        shape = CircleShape,
-                    )
-                }
-            }
-            Text(
-                stringResource(R.string.library_view),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = Dimens.xl, end = Dimens.xl, top = Dimens.m, bottom = Dimens.s),
-            )
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.xl)) {
-                SegmentedButton(selected = grid, onClick = { viewModel.setGrid(true) }, shape = SegmentedButtonDefaults.itemShape(0, 2)) {
-                    Text(stringResource(R.string.library_view_grid))
-                }
-                SegmentedButton(selected = !grid, onClick = { viewModel.setGrid(false) }, shape = SegmentedButtonDefaults.itemShape(1, 2)) {
-                    Text(stringResource(R.string.library_view_list))
-                }
-            }
-            if (grid) {
-                FilterSection(stringResource(R.string.library_columns)) {
-                    repeat(6) { n ->
-                        val value = if (n == 0) 0 else n + 1
-                        Choice(if (n == 0) stringResource(R.string.library_columns_auto) else "$value", columns == value) { viewModel.setColumns(value) }
-                    }
                 }
             }
         }

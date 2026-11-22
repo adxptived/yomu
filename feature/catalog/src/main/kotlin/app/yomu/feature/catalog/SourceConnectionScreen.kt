@@ -1,5 +1,7 @@
 package app.yomu.feature.catalog
 
+import androidx.activity.compose.BackHandler
+
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -97,6 +99,12 @@ fun SourceConnectionScreen(
     // The password is never written to the saved state: a rotation clears it rather than keeping a secret in a Bundle.
     var showPassword by remember { mutableStateOf(false) }
     var pasted by rememberSaveable { mutableStateOf("") }
+    var catalogName by rememberSaveable(state.checkedAddress) { mutableStateOf("") }
+    val back = {
+        if (state.step is ConnectionStep.Content || state.step is ConnectionStep.Done) onBack() else viewModel.back()
+    }
+    val saving = state.step is ConnectionStep.Saving || state.step is ConnectionStep.Importing
+    BackHandler(enabled = state.step !is ConnectionStep.Content) { if (!saving) back() }
 
     // The same document pickers the library's import sheet uses; the files go to the same import service.
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> viewModel.importFiles(uris) }
@@ -119,7 +127,7 @@ fun SourceConnectionScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.connection_title)) },
                 navigationIcon = {
-                    IconButton(onClick = { if (state.step is ConnectionStep.Content) onBack() else viewModel.back() }) {
+                    IconButton(onClick = back, enabled = !saving) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back))
                     }
                 },
@@ -183,7 +191,7 @@ fun SourceConnectionScreen(
 
                 is ConnectionStep.Address -> AddressStep(
                     state = state,
-                    signedIn = signedIn || step.method == ConnectionMethod.OPDS && state.username.isNotBlank(),
+                    signedIn = signedIn || state.username.isNotBlank(),
                     showPassword = showPassword,
                     onToggleSignIn = { signedIn = !signedIn; if (!signedIn) viewModel.editAddress(username = "", password = "") },
                     onTogglePassword = { showPassword = !showPassword },
@@ -200,6 +208,8 @@ fun SourceConnectionScreen(
                 }
 
                 is ConnectionStep.Preview -> {
+                    val isCatalog = step.result.kind == app.yomu.source.ConnectionKind.OPDS
+                    val isFeed = step.result.kind == app.yomu.source.ConnectionKind.RSS
                     Text(stringResource(R.string.connection_preview_title), style = MaterialTheme.typography.titleLarge)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
@@ -223,7 +233,11 @@ fun SourceConnectionScreen(
                             )
                             if (step.result.sampleItems > 0) {
                                 Text(
-                                    pluralStringResource(R.plurals.connection_samples, step.result.sampleItems, step.result.sampleItems),
+                                    pluralStringResource(
+                                        if (isFeed) R.plurals.connection_audio_samples else R.plurals.connection_samples,
+                                        step.result.sampleItems,
+                                        step.result.sampleItems,
+                                    ),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -248,9 +262,25 @@ fun SourceConnectionScreen(
                             Text(stringResource(R.string.connection_use_audio))
                         }
                     } else {
-                        Text(stringResource(R.string.connection_preview_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Button(onClick = viewModel::save, modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touch)) {
-                            Text(stringResource(R.string.connection_add))
+                        if (isCatalog) {
+                            OutlinedTextField(
+                                value = catalogName,
+                                onValueChange = { catalogName = it },
+                                label = { Text(stringResource(R.string.connection_catalog_name)) },
+                                placeholder = { Text(SourceConnectionFlow.suggestedName(state)) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        if (isCatalog || isFeed) {
+                            Text(
+                                stringResource(if (isFeed) R.string.connection_feed_preview_note else R.string.connection_preview_note),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Button(onClick = { viewModel.save(catalogName) }, modifier = Modifier.fillMaxWidth().heightIn(min = Dimens.touch)) {
+                            Text(stringResource(if (isFeed) R.string.connection_subscribe else R.string.connection_add))
                         }
                     }
                 }
@@ -260,8 +290,11 @@ fun SourceConnectionScreen(
                 is ConnectionStep.Failed -> {
                     val cause = (step.reason as? ConnectionFailure.Check)?.result
                     val action = when (cause) {
+                        ProbeResult.NoAudioEpisodes -> FailureAction.ADDRESS
                         is ProbeResult.NeedsAuth -> FailureAction.LOGIN
                         is ProbeResult.NetworkError -> FailureAction.RETRY
+                        is ProbeResult.HttpFailure -> if (cause.status in setOf(403, 404, 410)) FailureAction.ADDRESS else FailureAction.RETRY
+                        is ProbeResult.TransportFailure -> if (cause.issue == ProbeResult.TransportIssue.REDIRECT) FailureAction.ADDRESS else FailureAction.RETRY
                         is ProbeResult.NeedsBrowser -> FailureAction.BROWSER
                         is ProbeResult.Unsupported -> if (cause.detected == app.yomu.source.ConnectionKind.WEB_PAGE) FailureAction.CATALOG else FailureAction.RETRY
                         is ProbeResult.InvalidUrl -> FailureAction.ADDRESS
@@ -285,7 +318,11 @@ fun SourceConnectionScreen(
                     ) {
                         Text(stringResource(action.label))
                     }
-                    TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text(stringResource(CoreR.string.close)) }
+                    if (action != FailureAction.ADDRESS && action != FailureAction.CATALOG && action != FailureAction.LOGIN) {
+                        TextButton(onClick = viewModel::back, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.connection_action_address))
+                        }
+                    }
                 }
 
                 ConnectionStep.Done -> {
@@ -339,12 +376,14 @@ private fun AddressStep(
     onAddress: (String?, String?, String?) -> Unit,
     onCheck: () -> Unit,
 ) {
-    val method = state.method ?: ConnectionMethod.OPDS
+    val method = state.method
+    val auto = method == null
     val booking = method == ConnectionMethod.OPDS
     val feed = method == ConnectionMethod.RSS
     Text(
         stringResource(
             when {
+                auto -> R.string.connection_paste_title
                 booking -> R.string.connection_address_title
                 feed -> R.string.connection_feed_title
                 else -> R.string.connection_audio_title
@@ -355,6 +394,7 @@ private fun AddressStep(
     Text(
         stringResource(
             when {
+                auto -> R.string.connection_paste_hint
                 booking -> R.string.connection_help_opds
                 feed -> R.string.connection_help_feed
                 else -> R.string.connection_help_audio
@@ -369,6 +409,7 @@ private fun AddressStep(
             Text(
                 stringResource(
                     when {
+                        auto -> R.string.connection_paste_label
                         booking -> R.string.opds_url
                         feed -> R.string.connection_feed_url
                         else -> R.string.connection_audio_url
@@ -380,7 +421,7 @@ private fun AddressStep(
             Text(
                 stringResource(
                     when {
-                        booking -> R.string.opds_url_placeholder
+                        auto || booking -> R.string.opds_url_placeholder
                         feed -> R.string.connection_feed_placeholder
                         else -> R.string.connection_audio_placeholder
                     },
@@ -391,7 +432,7 @@ private fun AddressStep(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done, autoCorrectEnabled = false),
         modifier = Modifier.fillMaxWidth(),
     )
-    if (booking) {
+    if (auto || booking) {
         TextButton(onClick = onToggleSignIn) { Text(stringResource(R.string.connection_signin)) }
         if (signedIn) {
             OutlinedTextField(
@@ -513,12 +554,10 @@ private fun Busy(text: String, detail: String) {
 
 @Composable
 private fun failureText(step: ConnectionStep.Failed, context: android.content.Context): String = when (val reason = step.reason) {
-    is ConnectionFailure.Check -> stringResource(
-        when (val result = reason.result) {
-            is ProbeResult.InvalidUrl -> R.string.opds_url_invalid
-            else -> result.message()
-        },
-    )
+    is ConnectionFailure.Check -> when (val result = reason.result) {
+        is ProbeResult.HttpFailure -> stringResource(result.message(), result.status.toString())
+        else -> stringResource(result.message())
+    }
     is ConnectionFailure.Save -> errorMessage(context, reason.error)
 }
 

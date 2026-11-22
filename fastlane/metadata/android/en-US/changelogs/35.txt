@@ -1,0 +1,1 @@
+Improved catalog filters and kept bottom navigation available while browsing and adding sources. Custom OPDS catalogs retain book download links, and audio feed previews show playable episodes. Swipe removal asks for confirmation and supports Undo. Streamlined book details and reader controls. Incognito hides previews in Android Recents.

@@ -254,7 +254,6 @@ internal fun CatalogEntry.readFraction(): Float = if (chapterCount <= 0) 0f else
 
 sealed interface LibraryEvent {
     data class Imported(val added: Int, val duplicates: Int, val failed: Int, val firstError: Throwable?, val singleBookId: Long?) : LibraryEvent
-    data class Deleted(val ids: Set<Long>) : LibraryEvent
 
     /** A bulk command reached only part of the selection; the UI names both numbers instead of saying "done". */
     data class BulkPartial(val action: String, val succeeded: Int, val failed: Int, val unsupported: Int) : LibraryEvent
@@ -402,8 +401,11 @@ class LibraryViewModel(
             LibraryQuery(s, so, asc, f)
         }
 
-    val paged: Flow<PagingData<Book>> = query.flatMapLatest { books.pagedBooks(it) }.cachedIn(viewModelScope)
-        .combine(pendingDelete) { data, pending -> if (pending.isEmpty()) data else data.filter { it.id !in pending } }
+    val paged: Flow<PagingData<Book>> = query.combine(pendingDelete) { query, pending -> query to pending }
+        .flatMapLatest { (query, pending) ->
+            books.pagedBooks(query).map { data -> data.filter { it.id !in pending } }
+        }
+        .cachedIn(viewModelScope)
         .combine(parsedSearch) { data, snapshot ->
             if (snapshot.query.usesAdvanced) data.filter { snapshot.query.expression.matches(it.toSearchFields()) } else data
         }
@@ -415,6 +417,11 @@ class LibraryViewModel(
     val tags = books.observeTags().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val languages = books.observeLanguages().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val total: StateFlow<Int> = books.observeCount().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), -1)
+
+    /** What the "All" tab counts: the books on the screen (a deletion pending its undo is out of the list). */
+    val visibleTotal: StateFlow<Int> = books.observeCount()
+        .combine(pendingDelete) { count, pending -> count - pending.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), -1)
 
     /** The "Type" filter (book formats and online titles); empty shows everything. */
     val typeFilter: StateFlow<Set<FormatGroup>> = types
@@ -846,7 +853,6 @@ class LibraryViewModel(
     fun requestDelete(ids: Set<Long>) {
         pendingDelete.update { it + ids }
         clearSelection()
-        _events.trySend(LibraryEvent.Deleted(ids))
     }
 
     /** Books hidden by [requestDelete] whose undo snackbar is still pending (shown again when the screen returns). */
@@ -857,9 +863,12 @@ class LibraryViewModel(
     }
 
     fun commitDelete(ids: Set<Long>, deleteFiles: Boolean = false) = viewModelScope.launch(ScreenErrors) {
-        pendingDelete.update { it - ids }
-        books.delete(ids, deleteFiles)
-        clearSelection()
+        try {
+            books.delete(ids, deleteFiles)
+            if (deleteFiles) clearSelection()
+        } finally {
+            pendingDelete.update { it - ids }
+        }
     }
 
     override fun onCleared() {

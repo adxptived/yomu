@@ -4,6 +4,7 @@
     <string name="dict_title">Словарь</string>
     <string name="dict_tab_lookup">Поиск</string>
     <string name="dict_tab_words">Мои слова</string>
+    <string name="dict_search_for">Найти «%s»</string>
     <string name="dict_search_hint">Найти слово</string>
     <string name="dict_history">Недавние запросы</string>
     <string name="dict_speak">Произнести</string>

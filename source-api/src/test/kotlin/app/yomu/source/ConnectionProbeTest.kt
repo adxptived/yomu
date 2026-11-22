@@ -73,16 +73,14 @@ class ConnectionProbeTest {
     @Test
     fun `a login requirement and a browser check are different answers`() {
         assertEquals(ProbeResult.NeedsAuth, ConnectionProbe.verdict(401, null, "", setOf(ConnectionKind.OPDS)))
-        assertEquals(ProbeResult.NeedsBrowser, ConnectionProbe.verdict(403, null, "", setOf(ConnectionKind.OPDS)))
+        assertEquals(ProbeResult.NeedsBrowser, ConnectionProbe.verdict(403, null, "", setOf(ConnectionKind.OPDS), browserChallenge = true))
     }
 
     @Test
-    fun `a missing document is an invalid address and a server fault is a network error`() {
-        assertTrue(ConnectionProbe.verdict(404, null, "", setOf(ConnectionKind.OPDS)) is ProbeResult.InvalidUrl)
-        assertEquals(ProbeResult.NetworkError, ConnectionProbe.verdict(503, null, "", setOf(ConnectionKind.OPDS)))
-        // A timeout and a rate limit are temporary: the address stays, "try again" is the action.
-        assertEquals(ProbeResult.NetworkError, ConnectionProbe.verdict(408, null, "", setOf(ConnectionKind.OPDS)))
-        assertEquals(ProbeResult.NetworkError, ConnectionProbe.verdict(429, null, "", setOf(ConnectionKind.OPDS)))
+    fun `http errors retain their status without being treated as browser checks`() {
+        for (status in listOf(403, 404, 408, 429, 503)) {
+            assertEquals(ProbeResult.HttpFailure(status), ConnectionProbe.verdict(status, null, "", setOf(ConnectionKind.OPDS)))
+        }
     }
 
     @Test

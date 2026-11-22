@@ -1,14 +1,19 @@
 package app.yomu.ui
 
+import android.app.Activity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.AppLockController
 import app.yomu.MainViewModel
@@ -33,6 +38,14 @@ fun YomuRoot(viewModel: MainViewModel, lock: AppLockController, hints: HintStore
     val hideCovers by viewModel.hideCovers.collectAsStateWithLifecycle()
     val s = state ?: return
     YomuTheme(s.theme) {
+        val view = LocalView.current
+        val lightBackground = MaterialTheme.colorScheme.background.luminance() > 0.5f
+        SideEffect {
+            val window = (view.context as? Activity)?.window
+            if (window != null) {
+                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = lightBackground
+            }
+        }
         CompositionLocalProvider(
             LocalHapticsEnabled provides s.haptics,
             LocalHideCovers provides hideCovers,

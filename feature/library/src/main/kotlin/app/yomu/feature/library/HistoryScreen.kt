@@ -1,5 +1,7 @@
 package app.yomu.feature.library
 
+import androidx.activity.compose.BackHandler
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -35,7 +37,6 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -43,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +53,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -66,6 +69,7 @@ import app.yomu.core.datastore.AppSettings
 import app.yomu.core.ui.components.BookListItem
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.EmptyState
+import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.SwipeAction
 import app.yomu.core.ui.components.SwipeActionsBox
 import app.yomu.core.ui.components.motionItem
@@ -83,6 +87,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -102,9 +107,14 @@ class HistoryViewModel(
     settings: AppSettings,
 ) : ViewModel() {
     val query = MutableStateFlow("")
+    private val entries = history.observe().shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+
+    val recent: StateFlow<List<ReadingHistoryItem>> = entries.map { items ->
+        items.asSequence().distinctBy { it.bookId to it.catalogItemId }.take(3).toList()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** null while loading. */
-    val days: StateFlow<List<HistoryDay>?> = combine(history.observe(), query) { items, q ->
+    val days: StateFlow<List<HistoryDay>?> = combine(entries, query) { items, q ->
         val needle = q.trim()
         items.filter { needle.isEmpty() || it.title.contains(needle, true) || it.subtitle?.contains(needle, true) == true }
             .groupBy { it.day }
@@ -176,14 +186,11 @@ fun HistoryScreen(
 /** Search and "Clear history" for the top bar of the history (its own screen or the History tab of the profile). */
 @Composable
 fun HistoryActions(viewModel: HistoryViewModel, searching: Boolean, onSearching: (Boolean) -> Unit) {
+    if (searching) return
     val days by viewModel.days.collectAsStateWithLifecycle()
     var menu by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
-    if (searching) {
-        IconButton(onClick = { onSearching(false); viewModel.query.value = "" }) { Icon(Icons.Default.Close, stringResource(CoreR.string.close)) }
-    } else {
-        IconButton(onClick = { onSearching(true) }) { Icon(Icons.Default.Search, stringResource(CoreR.string.search)) }
-    }
+    IconButton(onClick = { onSearching(true) }) { Icon(Icons.Default.Search, stringResource(CoreR.string.search)) }
     Box {
         IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, stringResource(CoreR.string.more)) }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -248,18 +255,25 @@ fun HistoryPane(
         item.bookId?.let(onBookDetails) ?: item.catalogItemId?.let(onOpenTitle)
     }
 
+    val searchFocus = remember { FocusRequester() }
+    val closeSearch = {
+        viewModel.query.value = ""
+        onSearching(false)
+    }
+    BackHandler(enabled = searching, onBack = closeSearch)
+    LaunchedEffect(searching) { if (searching) searchFocus.requestFocus() }
+
     Column(modifier.fillMaxSize()) {
         if (searching) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { viewModel.query.value = it },
-                placeholder = { Text(stringResource(R.string.history_search)) },
-                leadingIcon = { Icon(Icons.Default.Search, null) },
-                trailingIcon = {
-                    IconButton(onClick = { onSearching(false); viewModel.query.value = "" }) { Icon(Icons.Default.Close, stringResource(CoreR.string.close)) }
+            SearchField(
+                query = query,
+                onQueryChange = { viewModel.query.value = it },
+                placeholder = stringResource(R.string.history_search),
+                focusRequester = searchFocus,
+                trailing = {
+                    IconButton(onClick = closeSearch) { Icon(Icons.Default.Close, stringResource(CoreR.string.close)) }
                 },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s),
+                modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s),
             )
         }
         val list = days

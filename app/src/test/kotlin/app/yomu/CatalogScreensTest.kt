@@ -22,6 +22,9 @@ import app.yomu.core.ui.theme.YomuTheme
 import app.yomu.domain.model.DownloadStatus
 import app.yomu.feature.catalog.CatalogHomeViewModel
 import app.yomu.feature.catalog.CatalogScreen
+import app.yomu.feature.catalog.GlobalSearchScreen
+import app.yomu.feature.catalog.GlobalSearchViewModel
+import app.yomu.feature.catalog.SearchArgs
 import app.yomu.feature.catalog.TitleScreen
 import app.yomu.feature.downloads.DownloadsScreen
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
@@ -29,6 +32,7 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import com.github.takahirom.roborazzi.captureScreenRoboImage
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -163,6 +167,8 @@ class CatalogScreensTest {
     fun downloadQueue() {
         seed()
         compose.setContent { YomuTheme { DownloadsScreen(koinViewModel(), onBack = {}) } }
+        awaitText("Pause all")
+        awaitText("Resume paused")
         awaitText("Chapter 8")
         compose.mainClock.advanceTimeBy(1_000)
         shot("34_downloads")
@@ -186,6 +192,57 @@ class CatalogScreensTest {
         compose.onAllNodesWithText("Filter")[0].performClick()
         compose.mainClock.advanceTimeBy(1_000)
         shotScreen("36_catalog_library_filters")
+    }
+
+    @Test
+    fun catalogStartsWithAllSourceLanguages() {
+        lateinit var model: CatalogHomeViewModel
+        compose.setContent {
+            YomuTheme {
+                model = koinViewModel<CatalogHomeViewModel>()
+                CatalogScreen(
+                    viewModel = model, onOpenSource = {}, onOpenTitle = {}, onReadChapter = {},
+                    onGlobalSearch = {}, onOpenExtensions = {}, onOpenDownloads = {},
+                )
+            }
+        }
+        awaitText("MangaDex")
+        assertTrue(model.sourceList.value.any { it.name == "Wikisource" && it.lang == "fr" })
+    }
+
+    @Test
+    fun sourceSearchAcceptsNameAndLanguageTogether() {
+        lateinit var model: CatalogHomeViewModel
+        compose.setContent {
+            YomuTheme {
+                model = koinViewModel<CatalogHomeViewModel>()
+                CatalogScreen(
+                    viewModel = model, onOpenSource = {}, onOpenTitle = {}, onReadChapter = {},
+                    onGlobalSearch = {}, onOpenExtensions = {}, onOpenDownloads = {},
+                )
+            }
+        }
+        awaitText("MangaDex")
+        compose.runOnIdle { model.sourceQuery.value = "Wikisource fr" }
+        compose.waitUntil(5_000) {
+            model.sourceList.value.singleOrNull()?.let { it.name == "Wikisource" && it.lang == "fr" } == true
+        }
+    }
+
+    @Test
+    fun globalSearchOffersAnExplicitLanguageScope() {
+        compose.setContent {
+            YomuTheme {
+                GlobalSearchScreen(
+                    viewModel = koinViewModel<GlobalSearchViewModel> { parametersOf(SearchArgs()) },
+                    onBack = {}, onOpenTitle = {}, onOpenSource = { _, _ -> },
+                )
+            }
+        }
+        awaitText("Search languages:")
+        compose.onNode(hasText("Search languages:", substring = true) and hasClickAction()).performClick()
+        awaitText("Source languages")
+        compose.onNode(hasText("All languages") and hasClickAction()).assertExists()
     }
 
     /** The pencil of the source list: select many sources and apply one action to all of them. */

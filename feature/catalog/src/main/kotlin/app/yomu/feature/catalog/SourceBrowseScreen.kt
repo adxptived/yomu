@@ -108,7 +108,7 @@ import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.motionItem
-import app.yomu.core.ui.components.navBarBottomPadding
+import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.components.rememberHaptic
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.source.FilterList
@@ -173,6 +173,7 @@ fun SourceBrowseScreen(
     }
 
     Scaffold(
+        contentWindowInsets = topLevelContentInsets(),
         topBar = {
             Column {
                 TopAppBar(
@@ -355,7 +356,7 @@ private fun BrowseList(
             modifier = modifier.fillMaxSize(),
         ) {
             if (listMode) {
-                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
+                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = Dimens.xl)) {
                     items(count = items.itemCount, key = { i -> items.stableKey(i) }) { i ->
                         // items[i] (not peek) reports the access to Paging so the next page is requested; the index is
                         // checked against the live count because the list can shrink between building and drawing.
@@ -390,7 +391,7 @@ private fun BrowseList(
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(Dimens.gridMin),
                     state = gridState,
-                    contentPadding = PaddingValues(start = Dimens.m, top = Dimens.m, end = Dimens.m, bottom = navBarBottomPadding(Dimens.m)),
+                    contentPadding = PaddingValues(start = Dimens.m, top = Dimens.m, end = Dimens.m, bottom = Dimens.m),
                     horizontalArrangement = Arrangement.spacedBy(Dimens.m),
                     verticalArrangement = Arrangement.spacedBy(Dimens.m),
                     modifier = Modifier.fillMaxSize(),
@@ -498,6 +499,7 @@ private fun SearchPage(
                     version = epoch,
                     loading = filtersLoading,
                     activeCount = active.size,
+                    canSubmit = query.isNotBlank() || filters.isNotEmpty(),
                     onPick = { q ->
                         focusManager.clearFocus()
                         editing = false
@@ -547,6 +549,7 @@ private fun SearchPanel(
     version: Int,
     loading: Boolean,
     activeCount: Int,
+    canSubmit: Boolean,
     onPick: (String) -> Unit,
     onClearHistory: () -> Unit,
     onChanged: () -> Unit,
@@ -590,7 +593,7 @@ private fun SearchPanel(
                 )
             }
         }
-        if (filters.isNotEmpty()) {
+        if (canSubmit) {
             Surface(color = MaterialTheme.colorScheme.surface) {
                 Column {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -620,7 +623,7 @@ private fun AppendFooter(items: LazyPagingItems<SItem>) {
     when (val append = items.loadState.append) {
         is LoadState.Loading -> Box(Modifier.fillMaxWidth().padding(Dimens.l), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(28.dp)) }
         is LoadState.Error -> Column(Modifier.fillMaxWidth().padding(Dimens.l), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(errorMessage(append.error), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Text(stringResource(R.string.browse_append_error, errorMessage(append.error)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             TextButton(onClick = { items.retry() }) { Text(stringResource(CoreR.string.retry)) }
         }
         else -> Unit

@@ -1,6 +1,7 @@
 package app.yomu
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.WindowManager
@@ -10,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import app.yomu.core.datastore.AppSettings
 import app.yomu.core.ui.components.HintStore
 import app.yomu.core.ui.components.KeyBus
 import app.yomu.core.ui.components.LauncherIcons
@@ -17,7 +19,6 @@ import app.yomu.ui.YomuRoot
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
@@ -29,6 +30,7 @@ import org.koin.androidx.viewmodel.ext.android.viewModel
 class YomuActivity : AppCompatActivity() {
     private val viewModel: MainViewModel by viewModel()
     private val lock: AppLockController by inject()
+    private val settings: AppSettings by inject()
     private val hints: HintStore by inject()
     private val launcherIcons: LauncherIcons by inject()
 
@@ -39,16 +41,24 @@ class YomuActivity : AppCompatActivity() {
         val fromHistory = intent?.flags?.and(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
         if (savedInstanceState == null && !fromHistory) viewModel.handleIntent(intent)
 
+        // Cover the first frame until the persisted privacy settings have loaded.
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.CREATED) {
                 // FLAG_SECURE is on while the app lock is showing too: the recent-apps thumbnail and screenshots
                 // must not show the library behind the lock overlay.
                 combine(
-                    viewModel.state.filterNotNull().map { it.secureScreen }.distinctUntilChanged(),
-                    lock.locked.map { it == true }.distinctUntilChanged(),
-                ) { secure, locked -> secure || locked }.collect { hide ->
-                    if (hide) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE) else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-                }
+                    settings.secureScreen.flow,
+                    lock.locked.filterNotNull(),
+                    settings.incognito.flow,
+                ) { secure, locked, incognito -> secure || locked || incognito }
+                    .distinctUntilChanged()
+                    .collect { hide ->
+                        if (hide) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(!hide)
+                    }
             }
         }
         setContent { YomuRoot(viewModel, lock, hints, launcherIcons) }

@@ -18,6 +18,8 @@
     <string name="library_search_syntax_hint">Try title:Dune &amp;&amp; unread:&gt;2 · || for either · -word to exclude</string>
     <string name="library_sort">Sort</string>
     <string name="library_view_list">Show as list</string>
+    <string name="library_sort_ascending">Ascending</string>
+    <string name="library_sort_descending">Descending</string>
     <string name="library_view_grid">Show as grid</string>
     <string name="library_filters">Filter and view</string>
     <string name="library_rescan">Rescan folders</string>
@@ -119,6 +121,7 @@
     <string name="details_description_collapse">Collapse</string>
     <string name="details_duration_unknown">Length unknown</string>
     <string name="library_bulk_partial">Applied to %1$d of %2$d</string>
+    <string name="details_organize">Tags and tabs</string>
     <string name="details_collections">Tabs</string>
     <string name="details_annotations">Highlights, notes and bookmarks</string>
     <string name="details_annotations_summary">%1$d highlights · %2$d notes · %3$d bookmarks</string>

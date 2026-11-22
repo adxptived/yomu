@@ -41,6 +41,14 @@ sealed interface ProbeResult {
     /** The request timed out or the network is unavailable. */
     data object NetworkError : ProbeResult
 
+    data object NoAudioEpisodes : ProbeResult
+
+    data class HttpFailure(val status: Int) : ProbeResult
+
+    enum class TransportIssue { TIMEOUT, DNS, CONNECTION, TLS, REDIRECT }
+
+    data class TransportFailure(val issue: TransportIssue) : ProbeResult
+
     /** The source API version is not one this build supports. */
     data class ApiMismatch(val found: String?) : ProbeResult
 }
@@ -97,15 +105,11 @@ object ConnectionProbe {
         bodyPrefix: String,
         supported: Set<ConnectionKind>,
         followedRedirects: Boolean = false,
+        browserChallenge: Boolean = false,
     ): ProbeResult {
         if (status == 401) return ProbeResult.NeedsAuth
-        // 403 is not a password request by itself: a browser check is the common cause.
-        if (status == 403) return ProbeResult.NeedsBrowser
-        if (status == 404 || status == 410) return ProbeResult.InvalidUrl("not found")
-        // A timeout or a rate limit is temporary: the address is not wrong, and "try again" is the useful action.
-        if (status == 408 || status == 429) return ProbeResult.NetworkError
-        if (status in 500..599) return ProbeResult.NetworkError
-        if (status !in 200..299) return ProbeResult.InvalidUrl("status $status")
+        if (browserChallenge && (status == 403 || status == 503)) return ProbeResult.NeedsBrowser
+        if (status !in 200..299) return ProbeResult.HttpFailure(status)
         val kind = classify(contentType, bodyPrefix)
         if (kind !in supported) return ProbeResult.Unsupported(kind)
         // A redirect to a web page means the address serves a site, not the document the user expected.

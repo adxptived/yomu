@@ -2,6 +2,7 @@ package app.yomu.data.source
 
 import android.content.Context
 import android.graphics.drawable.Drawable
+import androidx.room.withTransaction
 import app.yomu.core.database.SourceEntity
 import app.yomu.core.database.YomuDatabase
 import app.yomu.core.datastore.AppSettings
@@ -70,6 +71,8 @@ data class SourceInfo(
     val hidden: Boolean = false,
     /** Home page of the source, when it has one (for "Open in browser"). */
     val webUrl: String? = null,
+    val extensionHidden: Boolean = false,
+    val individuallyHidden: Boolean = false,
 ) {
     /** Kept as the shape the source list already reads; the value comes from [capabilities]. */
     val supportsLatest: Boolean get() = capabilities.latest
@@ -145,6 +148,8 @@ class SourceManager(
                 // Safe content: a source of an adult extension is not listed anywhere (the list, global search and the
                 // language counts all come from here).
                 if (!content.allows(ext?.isNsfw == true)) return@mapNotNull null
+                val individuallyHidden = s.id.toString() in hiddenSources
+                val extensionHidden = ext != null && ext.pkg in hiddenExtensions
                 SourceInfo(
                     id = s.id, name = s.name, lang = s.lang, content = s.content,
                     kind = when {
@@ -164,8 +169,10 @@ class SourceManager(
                     isNsfw = ext?.isNsfw == true,
                     icon = ext?.icon,
                     logo = if (ext == null) logoOf(s) else null,
-                    hidden = s.id.toString() in hiddenSources || (ext != null && ext.pkg in hiddenExtensions),
+                    hidden = individuallyHidden || extensionHidden,
                     webUrl = (s.homeUrl ?: (s as? HttpSource)?.baseUrl)?.takeIf { it.isNotBlank() },
+                    extensionHidden = extensionHidden,
+                    individuallyHidden = individuallyHidden,
                 )
             }.onFailure { Timber.w(it, "Source info ${s.id}") }.getOrNull()
         }
@@ -183,7 +190,7 @@ class SourceManager(
     /** Whether [info] passes the language filter; local folders, own OPDS catalogs and multi-language sources always do. */
     fun isShown(info: SourceInfo, langs: Set<String> = languages.value): Boolean =
         ALL_LANGUAGES in langs || info.kind == SourceInfo.Kind.LOCAL || info.kind == SourceInfo.Kind.OPDS ||
-            info.lang.isBlank() || info.lang == "all" || info.lang in langs
+            info.lang.isBlank() || info.lang == "all" || info.lang == "multi" || info.lang in langs
 
     init {
         scope.launch {
@@ -243,7 +250,14 @@ class SourceManager(
             username?.takeIf { it.isNotBlank() }?.let { put("username", it) }
             password?.takeIf { it.isNotBlank() }?.let { put("password", it) }
         }
-        db.sources().upsert(SourceEntity(src.id, name, "all", KIND_OPDS, pinned = true, enabled = true, configJson = json.encodeToString(configSerializer, cfg), lastUsedAt = 0))
+        val config = json.encodeToString(configSerializer, cfg)
+        db.withTransaction {
+            val existing = db.sources().get(src.id)
+            db.sources().upsert(
+                existing?.copy(name = name, configJson = config)
+                    ?: SourceEntity(src.id, name, "all", KIND_OPDS, pinned = true, enabled = true, configJson = config, lastUsedAt = 0),
+            )
+        }
         reloadOpds()
         return src.id
     }
@@ -312,8 +326,14 @@ class SourceManager(
     }
 
     suspend fun setExtensionHidden(pkg: String, hidden: Boolean) {
-        settings.hiddenExtensions.update { if (hidden) it + pkg else it - pkg }
+        setExtensionsHidden(setOf(pkg), hidden)
     }
+
+    suspend fun setExtensionsHidden(packages: Set<String>, hidden: Boolean) {
+        settings.hiddenExtensions.update { if (hidden) it + packages else it - packages }
+    }
+
+    suspend fun refreshExtensions() = extensions.reload()
 
     /** Shows every hidden source and extension again. */
     suspend fun unhideAll() {

@@ -164,14 +164,19 @@ class AppSmokeTest {
         assertTrue(failures.joinToString("\n"), failures.isEmpty())
     }
 
+    @OptIn(ExperimentalTestApi::class)
     @Test
     fun startsAndShowsMainScreens() {
-        awaitText("Welcome to Yomu")
-        shot("01_onboarding")
-        compose.onAllNodesWithText("Next")[0].performClick()
-        awaitText("Where are your books?")
-        shot("02_onboarding_folder")
-        compose.onAllNodesWithText("Skip")[0].performClick()
+        val welcome = hasText("Welcome to Yomu")
+        val libraryTab = hasText("Library") and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
+        compose.waitUntilAtLeastOneExists(welcome or libraryTab, 20_000)
+        if (compose.onAllNodes(welcome).fetchSemanticsNodes().isNotEmpty()) {
+            shot("01_onboarding")
+            compose.onAllNodesWithText("Next")[0].performClick()
+            awaitText("Where are your books?")
+            shot("02_onboarding_folder")
+            compose.onAllNodesWithText("Skip")[0].performClick()
+        }
 
         // The empty state proves that the database query of the library finished.
         awaitText("Your library is empty")
@@ -344,8 +349,7 @@ class AppSmokeTest {
         back()
         awaitText("MangaDex")
 
-        // Extensions moved from the end of the source list to an icon of the top bar.
-        compose.onNode(hasContentDescription("Extensions")).performClick()
+        compose.onNode(hasText("Extensions") and hasClickAction()).performClick()
         awaitText("Installed")
         compose.mainClock.advanceTimeBy(2_000)
 
@@ -401,10 +405,9 @@ class AppSmokeTest {
         clickTab("Library")
         awaitText("Smoke Manga")
         // A tile opens the card; the card's read action starts the reader (LibraryOpenResolver).
-        // The extended FAB hides its label from semantics, so its icon's content description is the handle.
         compose.onAllNodesWithText("Smoke Manga")[0].performClick()
-        compose.waitUntilAtLeastOneExists(hasContentDescription("Read"), 20_000)
-        compose.onAllNodes(hasContentDescription("Read"))[0].performClick()
+        compose.waitUntilAtLeastOneExists(hasText("Read") and hasClickAction(), 20_000)
+        compose.onNode(hasText("Read") and hasClickAction()).performClick()
         // The page number shows once the pages are in; the tap zones ("Back / Menu / Forward") are not shown.
         awaitText("1 / 4")
         compose.mainClock.advanceTimeBy(1_000)

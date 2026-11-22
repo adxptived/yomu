@@ -107,11 +107,15 @@ import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
@@ -277,6 +281,18 @@ fun ReaderScreen(
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
     LaunchedEffect(landscape) { viewModel.setLandscape(landscape) }
     val data = (content as? UiState.Data)?.value
+    // The status bar sits on the page while the controls are hidden (a paper theme can be light inside a dark app
+    // theme, where the white icons disappeared on it), and on the app's top bar while the controls are shown.
+    val view = LocalView.current
+    val readingBackground = if (data is ReaderContent.Text || (data == null && !imageCanvas)) Color(readerText.background) else Color.Black
+    val readingLight = readingBackground.luminance() > 0.5f
+    val chromeLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    DisposableEffect(view, readingLight, chrome) {
+        val window = (view.context as? android.app.Activity)?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        controller?.isAppearanceLightStatusBars = if (chrome) chromeLight else readingLight
+        onDispose { controller?.isAppearanceLightStatusBars = chromeLight }
+    }
     // The settings sample shows the open page, not a generic paragraph; it is read once when the sheet opens.
     val previewSnippet by produceState<String?>(null, sheet, data) {
         value = if (sheet == ReaderSheet.SETTINGS) viewModel.visibleSnippet() else null
@@ -431,6 +447,7 @@ fun ReaderScreen(
     }
     BackHandler(enabled = sheet == ReaderSheet.NONE && (chrome || searchState.active != null || jumpBack != null || resumeFrom != null)) {
         when {
+            quickPanel -> quickPanel = false
             searchState.active != null -> viewModel.clearSearch()
             resumeFrom != null -> resumeFrom = null
             jumpBack != null -> viewModel.dismissJumpBack()
@@ -723,7 +740,8 @@ fun ReaderScreen(
         EdgeAdjustPill(edge, edgeShown, Modifier.align(Alignment.Center))
 
         // Zoom lock: pages and comics open at the zoom of the current page. A side button, within thumb reach.
-        if (chrome && (data is ReaderContent.Pdf || data is ReaderContent.Manga)) {
+        // Hidden while a sheet or the quick panel is open: it used to hang over their top edge like a leftover.
+        if (chrome && sheet == ReaderSheet.NONE && !quickPanel && (data is ReaderContent.Pdf || data is ReaderContent.Manga)) {
             val locked = if (data is ReaderContent.Pdf) pdfSettings.zoomLock else mangaSettings.zoomLock
             val label = stringResource(if (locked) R.string.reader_zoom_lock_on else R.string.reader_zoom_lock_off)
             Surface(
@@ -864,7 +882,6 @@ fun ReaderScreen(
                 bookmarked = bookmarked,
                 onBack = onBack,
                 onBookmark = { haptic.perform(); viewModel.toggleBookmark() },
-                onMore = { sheet = ReaderSheet.MORE },
             )
         }
 
@@ -896,14 +913,6 @@ fun ReaderScreen(
                 MiniPill(Modifier.align(Alignment.CenterHorizontally)) {
                     Text(stringResource(R.string.reader_ocr_running), Modifier.padding(horizontal = 16.dp, vertical = 12.dp), style = MaterialTheme.typography.labelLarge)
                 }
-            }
-            AnimatedVisibility(
-                visible = !landscape && chrome && quickPanel && data != null && seekDrag == null,
-                enter = fadeIn(tween(180)) + slideInVertically(tween(180)) { it / 2 },
-                exit = fadeOut(tween(120)),
-                modifier = Modifier.weight(1f, fill = false),
-            ) {
-                displayControls()
             }
             resumeFrom?.let { page ->
                 AnimatedVisibility(
@@ -946,10 +955,9 @@ fun ReaderScreen(
             ) {
                 JumpBackChip(page = jump?.page ?: 0, onBack = viewModel::jumpBack, onDismiss = viewModel::dismissJumpBack)
             }
-            // The floating circle above the bar: every rare command of the reader is one thumb tap away, the
-            // same grouped sheet the top bar's ⋮ opens. It hides with the chrome and over sheets and drags.
+            // Keep the reader actions beside the bottom controls.
             AnimatedVisibility(
-                visible = chrome && data != null && sheet == ReaderSheet.NONE && seekDrag == null,
+                visible = chrome && data != null && sheet == ReaderSheet.NONE && !quickPanel && seekDrag == null,
                 enter = fadeIn(tween(150)),
                 exit = fadeOut(tween(100)),
                 modifier = Modifier.align(Alignment.End).padding(end = Dimens.l, bottom = Dimens.s),
@@ -965,6 +973,15 @@ fun ReaderScreen(
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                         Icon(Icons.Default.MoreVert, stringResource(CoreR.string.more))
                     }
+                }
+            }
+            if (!landscape && chrome && quickPanel && data != null && seekDrag == null) {
+                Box(Modifier.fillMaxWidth()) {
+                    Popup(
+                        alignment = Alignment.BottomCenter,
+                        onDismissRequest = { quickPanel = false },
+                        properties = PopupProperties(focusable = true, usePlatformDefaultWidth = false),
+                    ) { displayControls() }
                 }
             }
             AnimatedVisibility(
@@ -1189,7 +1206,6 @@ private fun ReaderTopBar(
     bookmarked: Boolean,
     onBack: () -> Unit,
     onBookmark: () -> Unit,
-    onMore: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.statusBarsPadding().heightIn(min = 64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1206,7 +1222,6 @@ private fun ReaderTopBar(
                 Icon(if (bookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, bookmarkLabel,
                     tint = if (bookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = onMore) { Icon(Icons.Default.MoreVert, stringResource(CoreR.string.more)) }
         }
     }
 }

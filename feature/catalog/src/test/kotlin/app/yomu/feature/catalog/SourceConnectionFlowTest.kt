@@ -166,6 +166,18 @@ class SourceConnectionFlowTest {
     }
 
     @Test
+    fun `correcting a pasted link after a 404 can discover a podcast`() {
+        val pasted = SourceConnectionFlow.startPastedLink(SourceConnectionFlow.initial, "https://example.org/missing")
+        val failed = SourceConnectionFlow.detected(pasted, ProbeResult.HttpFailure(404))
+        val address = SourceConnectionFlow.back(failed)
+        assertEquals(ConnectionStep.Address(null), address.step)
+        val probing = SourceConnectionFlow.startCheck(SourceConnectionFlow.editAddress(address, address = "https://example.org/podcast"))
+        val preview = SourceConnectionFlow.detected(probing, ProbeResult.Recognised(ConnectionKind.RSS))
+        assertEquals(ConnectionMethod.RSS, preview.method)
+        assertEquals(ConnectionStep.Saving, SourceConnectionFlow.startSave(preview)?.step)
+    }
+
+    @Test
     fun `a web page is a set of candidates, not a saveable connection`() {
         val page = ProbeResult.Recognised(
             ConnectionKind.WEB_PAGE,
