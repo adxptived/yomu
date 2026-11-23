@@ -339,4 +339,5 @@
         <item quantity="many">%1$d изменений ждут отправки: нет сети или сервис не ответил</item>
         <item quantity="other">%1$d изменения ждут отправки: нет сети или сервис не ответил</item>
     </plurals>
+    <string name="onboarding_open_catalog">Найти книгу в каталоге</string>
 </resources>

@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -28,6 +30,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Extension
@@ -88,14 +91,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -131,6 +135,7 @@ fun ExtensionsScreen(
     onBack: () -> Unit,
     onOpenSourceSettings: (Long) -> Unit = {},
     addStoreUrl: String? = null,
+    onOpenSource: (Long) -> Unit = {},
 ) {
     val installed by viewModel.installed.collectAsStateWithLifecycle()
     val available by viewModel.available.collectAsStateWithLifecycle()
@@ -355,6 +360,7 @@ fun ExtensionsScreen(
                 update = updates.firstOrNull { it.installed.pkg == pkg },
                 onDismiss = { detailsFor = null },
                 onOpenSettings = { id -> detailsFor = null; onOpenSourceSettings(id) },
+                onOpenSource = { id -> detailsFor = null; onOpenSource(id) },
                 onUpdate = viewModel::update,
                 onTrust = { trustFor = ext },
                 onUntrust = { viewModel.untrust(ext) },
@@ -362,6 +368,7 @@ fun ExtensionsScreen(
                 hidden = ext.pkg in hiddenExtensions,
                 onHide = { viewModel.setExtensionHidden(ext.pkg, it) },
                 infos = sourceInfos,
+                showSources = nsfw || !ext.isNsfw,
                 onPinSource = viewModel::setSourcePinned,
                 onEnableSource = viewModel::setSourceEnabled,
                 onHideSource = viewModel::setSourceHidden,
@@ -600,6 +607,7 @@ private fun brokenText(ext: InstalledExtension, short: Boolean = false): String 
     BrokenReason.NEWER_API -> stringResource(R.string.ext_broken_api)
     BrokenReason.UNSIGNED -> stringResource(R.string.ext_broken_unsigned)
     BrokenReason.MALFORMED -> stringResource(R.string.ext_broken_malformed)
+    BrokenReason.NO_CATALOG -> stringResource(R.string.ext_broken_no_catalog)
     BrokenReason.FAILED -> stringResource(if (short) R.string.ext_broken_failed_short else R.string.ext_broken_failed_explain)
     null -> stringResource(R.string.ext_broken_hint)
 }
@@ -849,12 +857,14 @@ private fun LanguagesDialog(all: List<String>, selected: Set<String>, onToggle: 
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ExtensionDetailsSheet(
     ext: InstalledExtension,
     update: ExtensionUpdate?,
     onDismiss: () -> Unit,
     onOpenSettings: (Long) -> Unit,
+    onOpenSource: (Long) -> Unit,
     onUpdate: (ExtensionUpdate) -> Unit,
     onTrust: () -> Unit,
     onUntrust: () -> Unit,
@@ -862,111 +872,186 @@ private fun ExtensionDetailsSheet(
     hidden: Boolean,
     onHide: (Boolean) -> Unit,
     infos: Map<Long, SourceInfo>,
+    showSources: Boolean,
     onPinSource: (Long, Boolean) -> Unit,
     onEnableSource: (Long, Boolean) -> Unit,
     onHideSource: (Long, Boolean) -> Unit,
 ) {
-    YomuSheet(onDismiss) {
-        Row(Modifier.padding(horizontal = Dimens.l), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Dimens.m)) {
-            ExtIcon(ext)
-            Column(Modifier.weight(1f)) {
-                Text(ext.name, style = MaterialTheme.typography.titleLarge)
-                Text(installedSummary(ext), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            WarningBadge(ext.contentWarning)
-        }
-        Spacer(Modifier.height(Dimens.m))
-        when (ext.status) {
-            ExtensionStatus.BROKEN -> BrokenDetails(ext)
-            ExtensionStatus.UNTRUSTED -> Text(
-                stringResource(R.string.ext_untrusted_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = Dimens.l).padding(bottom = Dimens.m),
-            )
-            ExtensionStatus.LOADED -> Unit
-        }
-        Row(Modifier.padding(horizontal = Dimens.l), horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
-            if (update != null) FilledTonalButton(onClick = { onUpdate(update) }) { Text(stringResource(R.string.ext_update) + " → " + update.available.versionName) }
-            if (ext.status == ExtensionStatus.UNTRUSTED) FilledTonalButton(onClick = onTrust) { Text(stringResource(R.string.ext_trust)) }
-            // A loaded extension can be locked again: its code stops running without deleting anything.
-            if (ext.status == ExtensionStatus.LOADED) OutlinedButton(onClick = onUntrust) { Text(stringResource(R.string.ext_untrust)) }
-            OutlinedButton(onClick = onUninstall) { Text(stringResource(R.string.ext_uninstall)) }
-        }
-        ListItem(
-            modifier = Modifier.clickable { onHide(!hidden) },
-            leadingContent = { Icon(Icons.Outlined.VisibilityOff, null) },
-            headlineContent = { Text(stringResource(R.string.ext_hide_switch)) },
-            supportingContent = { Text(stringResource(R.string.ext_hide_switch_sum)) },
-            trailingContent = { Switch(checked = hidden, onCheckedChange = onHide) },
-        )
-        if (ext.sources.isNotEmpty()) {
-            Spacer(Modifier.height(Dimens.s))
-            SectionHeader(stringResource(R.string.ext_sources) + " · " + ext.sources.size)
-            ext.sources.sortedWith(compareBy(ExtensionsViewModel.languageOrder()) { it.lang }).forEach { src ->
-                val configurable = (src as? TachiyomiSource)?.hasPreferences == true
-                val info = infos[src.id]
-                val pinned = info?.pinned == true
-                val enabled = info?.enabled != false
-                val sourceHidden = info?.hidden == true
-                ListItem(
-                    modifier = (if (configurable) Modifier.clickable { onOpenSettings(src.id) } else Modifier).alpha(if (enabled && !sourceHidden) 1f else 0.6f),
-                    headlineContent = { Text(src.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    supportingContent = {
-                        Text(
-                            listOfNotNull(
-                                langLabel(src.lang),
-                                if (!enabled) stringResource(R.string.source_disabled) else null,
-                                if (sourceHidden) stringResource(R.string.source_hidden) else null,
-                            ).joinToString(" · "),
-                        )
-                    },
-                    trailingContent = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { onPinSource(src.id, !pinned) }) {
-                                Icon(
-                                    if (pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
-                                    stringResource(if (pinned) R.string.source_unpin else R.string.source_pin),
-                                    tint = if (pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            IconButton(onClick = { onEnableSource(src.id, !enabled) }) {
-                                Icon(
-                                    if (enabled) Icons.Outlined.CheckCircle else Icons.Outlined.Block,
-                                    stringResource(if (enabled) R.string.source_disable else R.string.source_enable),
-                                    tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
-                                )
-                            }
-                            // Hiding a source alone means nothing while the whole extension is hidden.
-                            IconButton(onClick = { onHideSource(src.id, !sourceHidden) }, enabled = !hidden) {
-                                Icon(
-                                    if (sourceHidden) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                    stringResource(if (sourceHidden) R.string.source_unhide else R.string.source_hide),
-                                )
-                            }
-                            if (configurable) Icon(Icons.Filled.Settings, stringResource(R.string.ext_source_settings))
-                        }
-                    },
-                )
-            }
-        }
-        Spacer(Modifier.height(Dimens.s))
-        HorizontalDivider()
-        DetailLine(stringResource(R.string.ext_details_version), "${ext.versionName} (${ext.versionCode})")
-        ext.libVersion?.let { DetailLine(stringResource(R.string.ext_details_lib), it.toString()) }
-        DetailLine(stringResource(R.string.ext_details_package), ext.pkg)
-        ext.storeName?.let { DetailLine(stringResource(R.string.ext_details_store), it) }
-        DetailLine(stringResource(R.string.ext_details_signature), ext.signatureHash.chunked(4).take(8).joinToString(" ") + "…")
-        DetailLine(
-            stringResource(R.string.ext_details_location),
-            when {
-                ext.isBundled -> stringResource(R.string.ext_bundled)
-                ext.isPrivate -> stringResource(R.string.ext_private)
-                else -> stringResource(R.string.ext_system)
-            },
-        )
-        Spacer(Modifier.height(Dimens.xl))
+    val sourceRows = remember(ext.sources) {
+        ext.sources.distinctBy { it.id }.sortedWith(compareBy(ExtensionsViewModel.languageOrder()) { it.lang })
     }
+    YomuSheet(onDismiss) {
+        LazyColumn(Modifier.fillMaxWidth()) {
+            item("extension-summary") {
+                Column {
+                    Row(
+                        Modifier.padding(horizontal = Dimens.l),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Dimens.m),
+                    ) {
+                        ExtIcon(ext)
+                        Column(Modifier.weight(1f)) {
+                            Text(ext.name, style = MaterialTheme.typography.titleLarge)
+                            Text(
+                                installedSummary(ext),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        WarningBadge(ext.contentWarning)
+                    }
+                    Spacer(Modifier.height(Dimens.m))
+                    when (ext.status) {
+                        ExtensionStatus.BROKEN -> BrokenDetails(ext)
+                        ExtensionStatus.UNTRUSTED -> Text(
+                            stringResource(R.string.ext_untrusted_hint),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = Dimens.l).padding(bottom = Dimens.m),
+                        )
+                        ExtensionStatus.LOADED -> Unit
+                    }
+                    FlowRow(Modifier.padding(horizontal = Dimens.l), horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
+                        if (update != null) {
+                            FilledTonalButton(onClick = { onUpdate(update) }) {
+                                Text(stringResource(R.string.ext_update) + " → " + update.available.versionName)
+                            }
+                        }
+                        if (ext.status == ExtensionStatus.UNTRUSTED) {
+                            FilledTonalButton(onClick = onTrust) { Text(stringResource(R.string.ext_trust)) }
+                        }
+                        if (ext.status == ExtensionStatus.LOADED) {
+                            OutlinedButton(onClick = onUntrust) { Text(stringResource(R.string.ext_untrust)) }
+                        }
+                        OutlinedButton(onClick = onUninstall) { Text(stringResource(R.string.ext_uninstall)) }
+                    }
+                    ListItem(
+                        modifier = Modifier.clickable { onHide(!hidden) },
+                        leadingContent = { Icon(Icons.Outlined.VisibilityOff, null) },
+                        headlineContent = { Text(stringResource(R.string.ext_hide_switch)) },
+                        supportingContent = { Text(stringResource(R.string.ext_hide_switch_sum)) },
+                        trailingContent = { Switch(checked = hidden, onCheckedChange = onHide) },
+                    )
+                }
+            }
+            if (sourceRows.isNotEmpty()) {
+                item("sources-heading") { SectionHeader(stringResource(R.string.ext_sources) + " · " + sourceRows.size) }
+                if (!showSources) {
+                    item("safe-content") {
+                        Text(
+                            stringResource(R.string.ext_sources_safe_mode),
+                            modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    items(sourceRows, key = { it.id }) { src ->
+                        val info = infos[src.id]?.takeIf { it.extensionPkg == ext.pkg }
+                        if (info == null) {
+                            ListItem(
+                                headlineContent = { Text(src.name) },
+                                supportingContent = { Text(stringResource(R.string.ext_source_unavailable)) },
+                            )
+                        } else {
+                            ExtensionSourceRow(
+                                info = info,
+                                onOpen = { onOpenSource(src.id) },
+                                onSettings = { onOpenSettings(src.id) },
+                                onPin = { onPinSource(src.id, !info.pinned) },
+                                onEnable = { onEnableSource(src.id, !info.enabled) },
+                                onHide = { onHideSource(src.id, !info.individuallyHidden) },
+                            )
+                        }
+                    }
+                }
+            }
+            item("extension-metadata") {
+                Column {
+                    Spacer(Modifier.height(Dimens.s))
+                    HorizontalDivider()
+                    DetailLine(stringResource(R.string.ext_details_version), "${ext.versionName} (${ext.versionCode})")
+                    ext.libVersion?.let { DetailLine(stringResource(R.string.ext_details_lib), it.toString()) }
+                    DetailLine(stringResource(R.string.ext_details_package), ext.pkg)
+                    ext.storeName?.let { DetailLine(stringResource(R.string.ext_details_store), it) }
+                    DetailLine(stringResource(R.string.ext_details_signature), ext.signatureHash.chunked(4).take(8).joinToString(" ") + "…")
+                    DetailLine(
+                        stringResource(R.string.ext_details_location),
+                        when {
+                            ext.isBundled -> stringResource(R.string.ext_bundled)
+                            ext.isPrivate -> stringResource(R.string.ext_private)
+                            else -> stringResource(R.string.ext_system)
+                        },
+                    )
+                    Spacer(Modifier.height(Dimens.xl))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExtensionSourceRow(
+    info: SourceInfo,
+    onOpen: () -> Unit,
+    onSettings: () -> Unit,
+    onPin: () -> Unit,
+    onEnable: () -> Unit,
+    onHide: () -> Unit,
+) {
+    var showMenu by remember(info.id) { mutableStateOf(false) }
+    val openLabel = stringResource(R.string.ext_open_source)
+    ListItem(
+        modifier = Modifier.clickable(onClickLabel = openLabel, role = Role.Button, onClick = onOpen),
+        leadingContent = { SourceIcon(info, size = 36.dp) },
+        headlineContent = { Text(info.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        supportingContent = {
+            Text(
+                listOfNotNull(
+                    langLabel(info.lang),
+                    stringResource(R.string.catalog_section_pinned).takeIf { info.pinned },
+                    stringResource(R.string.source_disabled).takeUnless { info.enabled },
+                    stringResource(R.string.source_hidden).takeIf { info.hidden },
+                ).joinToString(" · "),
+            )
+        },
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+                Box {
+                    IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, stringResource(CoreR.string.more)) }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        if (info.hasSettings) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.ext_source_settings)) },
+                                leadingIcon = { Icon(Icons.Filled.Settings, null) },
+                                onClick = { showMenu = false; onSettings() },
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text(stringResource(if (info.pinned) R.string.source_unpin else R.string.source_pin)) },
+                            leadingIcon = { Icon(Icons.Outlined.PushPin, null) },
+                            onClick = { showMenu = false; onPin() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(if (info.enabled) R.string.source_disable else R.string.source_enable)) },
+                            leadingIcon = { Icon(if (info.enabled) Icons.Outlined.Block else Icons.Outlined.CheckCircle, null) },
+                            onClick = { showMenu = false; onEnable() },
+                        )
+                        if (!info.extensionHidden || info.individuallyHidden) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(if (info.individuallyHidden) R.string.source_unhide else R.string.source_hide)) },
+                                leadingIcon = {
+                                    Icon(if (info.individuallyHidden) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff, null)
+                                },
+                                onClick = { showMenu = false; onHide() },
+                            )
+                        }
+                    }
+                }
+            }
+        },
+    )
 }
 
 /** Explanation of a broken extension and, for start failures, the technical error to copy for its authors. */

@@ -269,6 +269,10 @@
     <string name="ext_unsupported">Not supported</string>
     <string name="ext_search_hint">Search extensions</string>
     <string name="ext_sources">Sources</string>
+    <string name="ext_open_source">Open catalog</string>
+    <string name="ext_source_unavailable">Unavailable in this catalog</string>
+    <string name="ext_source_settings_unavailable">Source settings are unavailable</string>
+    <string name="ext_sources_safe_mode">These sources are hidden by the safe content setting.</string>
     <string name="ext_source_settings">Source settings</string>
     <string name="ext_details_version">Version</string>
     <string name="ext_details_lib">Extension API</string>
@@ -285,6 +289,7 @@
     <string name="ext_broken_api">Needs a newer version of Yomu</string>
     <string name="ext_broken_unsigned">The package is not signed</string>
     <string name="ext_broken_malformed">The package is damaged or incomplete</string>
+    <string name="ext_broken_no_catalog">The extension provides no browsable sources</string>
     <string name="ext_broken_failed">Failed to start: %1$s</string>
     <string name="ext_broken_after_trust">The extension is trusted, but failed to load: %1$s</string>
     <string name="ext_err_not_apk">The file is not an Android package (APK)</string>
@@ -329,6 +334,7 @@
     <string name="ext_trust_all_text">These extensions will be able to run code in the app and access the network:\n\n%1$s</string>
     <string name="ext_trust_all_more">and %1$s more</string>
     <string name="ext_trusted_all">Extensions are trusted and loaded</string>
+    <string name="ext_trusted_one">Extension loaded: %1$s</string>
     <string name="ext_untrusted_short">signature %1$s…</string>
     <string name="ext_broken_failed_short">Couldn’t start — tap for details</string>
     <string name="ext_broken_failed_explain">The extension failed to start. It may be outdated or not compatible with this version of Yomu: try updating it. If that doesn’t help, send the details below to its authors.</string>
@@ -448,7 +454,14 @@
     <string name="source_filter_hide_disabled">Hide disabled</string>
     <string name="source_filter_hide_unstable">Hide not responding</string>
     <string name="source_filter_show_hidden">Show hidden</string>
-    <string name="source_filter_shown">%1$d of %2$d</string>
+    <plurals name="source_filter_excluded">
+        <item quantity="one">%d source filtered out</item>
+        <item quantity="other">%d sources filtered out</item>
+    </plurals>
+    <string name="source_filters_paused">List filters paused</string>
+    <string name="source_apply_filters">Apply filters</string>
+    <string name="source_show_filtered_matches">Show matches</string>
+    <string name="source_show_all">Show all</string>
     <string name="source_filter_empty">No sources match the filters</string>
     <string name="source_filter_languages_title">Source languages</string>
     <string name="source_filter_languages_search">Find a language</string>
@@ -599,4 +612,6 @@
     <string name="connection_catalog_name">Catalog name</string>
     <string name="browse_append_error">Could not load the next page. %s</string>
     <string name="connection_error_no_episodes">This feed contains no playable audio episodes. Use an RSS or Atom feed with audio files.</string>
+    <string name="upcoming_today">Today · %1$s</string>
+    <string name="upcoming_tomorrow">Tomorrow · %1$s</string>
 </resources>

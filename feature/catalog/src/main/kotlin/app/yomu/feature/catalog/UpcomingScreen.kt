@@ -149,6 +149,7 @@ fun UpcomingScreen(viewModel: UpcomingViewModel, onBack: () -> Unit, onOpenTitle
     val settings: AppSettings = koinInject()
     val timeFormat by settings.timeFormat.flow.collectAsStateWithLifecycle(initialValue = settings.timeFormat.default)
     val dateFormat = rememberFormat()
+    val today = LocalDate.now()
     Scaffold(
         contentWindowInsets = topLevelContentInsets(),
         topBar = {
@@ -267,7 +268,11 @@ fun UpcomingScreen(viewModel: UpcomingViewModel, onBack: () -> Unit, onOpenTitle
                             days.forEach { day ->
                                 item(key = "day-${day.date}") {
                                     Text(
-                                        day.date.format(dateFormat),
+                                        when (day.date) {
+                                            today -> stringResource(R.string.upcoming_today, day.date.format(dateFormat))
+                                            today.plusDays(1) -> stringResource(R.string.upcoming_tomorrow, day.date.format(dateFormat))
+                                            else -> day.date.format(dateFormat)
+                                        },
                                         style = MaterialTheme.typography.titleSmall,
                                         color = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s),

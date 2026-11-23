@@ -89,4 +89,5 @@
     <string name="page_action_set_cover">Сделать обложкой</string>
     <string name="page_action_note">Заметка</string>
     <string name="hint_annotations_swipe">Смахните заметку или закладку влево, чтобы удалить. Удаление можно сразу отменить.</string>
+    <string name="annotations_reset_filters">Очистить поиск и фильтры</string>
 </resources>

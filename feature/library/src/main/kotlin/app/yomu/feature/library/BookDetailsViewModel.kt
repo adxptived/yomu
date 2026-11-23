@@ -66,6 +66,9 @@ class BookDetailsViewModel(
     /** null while loading; a deleted book emits [Missing]. */
     val book: StateFlow<Book?> = books.observeBook(bookId).map { it ?: MISSING }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val collections = books.observeCollections().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val savedPosition = books.observeBook(bookId).mapLatest { book ->
+        book?.let { books.getProgress(it.id) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val allTags = books.observeTags().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private val refresh = MutableStateFlow(0)
     /** Length and track count of an audio book, read from its own track list; null for everything else. */

@@ -291,6 +291,8 @@ fun AnnotationsScreen(
                         title = stringResource(if (filtered) R.string.annotations_no_results else R.string.annotations_empty_title),
                         message = if (filtered) null else stringResource(if (filter.tab == AnnotationTab.BOOKMARKS) R.string.annotations_bookmarks_empty else R.string.annotations_empty_message),
                         icon = if (filter.tab == AnnotationTab.BOOKMARKS) Icons.Outlined.BookmarkBorder else Icons.Default.FormatQuote,
+                        actionLabel = if (filtered) stringResource(R.string.annotations_reset_filters) else null,
+                        onAction = if (filtered) viewModel::clearFilters else null,
                     )
                 }
                 is UiState.Error -> ErrorState(s.error, onRetry = viewModel::retry)
@@ -463,7 +465,7 @@ fun AnnotationCard(entry: AnnotationEntry, showBook: Boolean, onClick: () -> Uni
                         loc?.let { "${(it.totalProgression * 100).toInt()}%" },
                         dateFormat.format(Date(entry.createdAt)),
                     ).joinToString(" · ")
-                    Text(where, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text(where, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     if (h?.isFavorite == true) Icon(Icons.Default.Star, stringResource(R.string.annotations_favorites_only), Modifier.padding(start = 4.dp).height(16.dp), tint = MaterialTheme.colorScheme.tertiary)
                 }
             }

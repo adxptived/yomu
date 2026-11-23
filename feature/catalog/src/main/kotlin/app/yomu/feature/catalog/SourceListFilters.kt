@@ -88,15 +88,16 @@ internal fun languagesSummary(langs: Set<String>): String = when {
 
 /**
  * The bar over the source list: Filters (with the number of active filters), Languages and Sort buttons, then every
- * active filter as a chip that removes it, and "12 of 340" while something is hidden.
+ * active filter as a chip that removes it. The count excludes results unrelated to the current search.
  */
 @Composable
 internal fun SourceFilterBar(
     filter: SourceListFilter,
     langs: Set<String>,
     sort: SourceSortMode,
-    shown: Int,
-    total: Int,
+    listing: CatalogSourceListing,
+    searching: Boolean,
+    onToggleExcluded: () -> Unit,
     onOpenFilters: () -> Unit,
     onOpenLanguages: () -> Unit,
     onUpdate: ((SourceListFilter) -> SourceListFilter) -> Unit,
@@ -120,7 +121,7 @@ internal fun SourceFilterBar(
                 ToolbarPill(Icons.AutoMirrored.Filled.Sort, sourceSortLabel(sort), onClick = onOpenFilters)
             }
         }
-        if (filter.isActive) LazyRow(
+        if (filter.isActive && !listing.showingExcluded) LazyRow(
             Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = Dimens.l),
             horizontalArrangement = Arrangement.spacedBy(Dimens.s),
@@ -149,13 +150,30 @@ internal fun SourceFilterBar(
                 item(key = "hidden") { RemovableChip(stringResource(R.string.source_filter_show_hidden), onRemove = { onUpdate { it.copy(showHidden = false) } }) }
             }
         }
-        if (shown < total) {
-            Text(
-                stringResource(R.string.source_filter_shown, shown, total),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
-            )
+        if (listing.excludedCount > 0 || listing.showingExcluded) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = Dimens.l),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (listing.showingExcluded) {
+                        stringResource(R.string.source_filters_paused)
+                    } else {
+                        pluralStringResource(R.plurals.source_filter_excluded, listing.excludedCount, listing.excludedCount)
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f).padding(vertical = Dimens.xs),
+                )
+                val label = when {
+                    listing.showingExcluded -> R.string.source_apply_filters
+                    searching -> R.string.source_show_filtered_matches
+                    else -> R.string.source_show_all
+                }
+                TextButton(onClick = onToggleExcluded) {
+                    Text(stringResource(label))
+                }
+            }
         }
     }
 }
@@ -191,6 +209,7 @@ internal fun SourceFilterSheet(
     sort: SourceSortMode,
     onSort: (SourceSortMode) -> Unit,
     onUpdate: ((SourceListFilter) -> SourceListFilter) -> Unit,
+    onReset: () -> Unit,
     onUnhideAll: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
@@ -245,6 +264,9 @@ internal fun SourceFilterSheet(
             CheckRow(stringResource(R.string.source_filter_hide_disabled), filter.hideDisabled) { v -> onUpdate { it.copy(hideDisabled = v) } }
             CheckRow(stringResource(R.string.source_filter_hide_unstable), filter.hideUnstable) { v -> onUpdate { it.copy(hideUnstable = v) } }
             CheckRow(stringResource(R.string.source_filter_show_hidden), filter.showHidden) { v -> onUpdate { it.copy(showHidden = v) } }
+            TextButton(onClick = onReset, modifier = Modifier.padding(horizontal = Dimens.xl, vertical = Dimens.s)) {
+                Text(stringResource(R.string.chapter_filters_reset))
+            }
             if (onUnhideAll != null) {
                 TextButton(onClick = onUnhideAll, modifier = Modifier.padding(horizontal = Dimens.xl, vertical = Dimens.s)) {
                     Text(stringResource(R.string.source_unhide_all))

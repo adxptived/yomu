@@ -284,4 +284,6 @@
         <item quantity="other">Загрузки: осталось %d</item>
     </plurals>
     <string name="library_downloads_failed">Загрузки: есть ошибки</string>
+    <string name="library_clear_search">Очистить поиск</string>
+    <string name="library_clear_search_filters">Очистить поиск и фильтры</string>
 </resources>

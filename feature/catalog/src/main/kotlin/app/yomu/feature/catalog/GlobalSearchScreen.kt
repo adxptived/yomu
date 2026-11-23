@@ -140,7 +140,7 @@ fun GlobalSearchScreen(
             )
             return@Scaffold
         }
-        val shown = if (onlyWithResults) list.filter { it.loading || it.items.isNotEmpty() } else list
+        val shown = if (onlyWithResults) list.filter { it.loading || it.error != null || it.items.isNotEmpty() } else list
         val answered = list.count { !it.loading }
         LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
             if (list.isEmpty()) item(key = "no-sources") { EmptyState(title = stringResource(R.string.sources_empty), modifier = Modifier.fillMaxWidth()) }
@@ -175,7 +175,7 @@ fun GlobalSearchScreen(
                                 status,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (r.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
+                                maxLines = if (r.error != null) 3 else 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }

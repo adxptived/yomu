@@ -71,10 +71,12 @@ import app.yomu.core.ui.components.LocalNavBarHidden
 import app.yomu.core.ui.components.LocalNavBarInset
 import app.yomu.core.ui.components.LocalSharedTransitionScope
 import app.yomu.core.ui.components.NavTab
+import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.item
 import app.yomu.data.audio.YouTubeAuth
 import app.yomu.data.repository.toJson
+import app.yomu.data.source.SourceManager
 import app.yomu.domain.model.BookFormat
 import app.yomu.domain.model.TextReaderSettings
 import app.yomu.domain.repository.BookRepository
@@ -183,6 +185,7 @@ fun YomuNavigation(main: MainViewModel, reduceMotion: Boolean, navLabels: Boolea
                 is MainEvent.Lookup -> nav.navigate(LookupRoute(e.text))
                 is MainEvent.AddExtensionStore -> nav.navigate(ExtensionsRoute(addStore = e.url))
                 MainEvent.OpenDownloads -> nav.navigate(DownloadsRoute) { launchSingleTop = true }
+                MainEvent.OpenCatalog -> tabsState.select(TopLevel.CATALOG)
                 is MainEvent.OpenChapter -> nav.navigate(ReaderRoute(chapterId = e.chapterId))
                 is MainEvent.OpenTitle -> nav.navigate(TitleRoute(e.entryId))
                 is MainEvent.AddSource -> nav.navigate(SourceConnectionRoute(e.url))
@@ -509,6 +512,11 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
         // ---------------------------------------------------------------- catalog
         screen<SourceRoute> { entry ->
             val r = entry.toRoute<SourceRoute>()
+            val ready by koinInject<SourceManager>().ready.collectAsStateWithLifecycle()
+            if (!ready) {
+                SkeletonList(Modifier.fillMaxSize())
+                return@screen
+            }
             // Wide windows keep the grid and show the tapped title in a pane beside it.
             val twoPane = windowWidthDp() >= 840.dp
             var paneTitle by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -577,7 +585,13 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
         }
         screen<ExtensionsRoute> { entry ->
             val r = entry.toRoute<ExtensionsRoute>()
-            ExtensionsScreen(koinViewModel(), back, onOpenSourceSettings = { nav.navigate(SourceSettingsRoute(it)) }, addStoreUrl = r.addStore)
+            ExtensionsScreen(
+                viewModel = koinViewModel(),
+                onBack = back,
+                onOpenSourceSettings = { nav.navigate(SourceSettingsRoute(it)) },
+                addStoreUrl = r.addStore,
+                onOpenSource = { nav.navigate(SourceRoute(it)) },
+            )
         }
         screen<SourceConnectionRoute> { entry ->
             SourceConnectionScreen(
@@ -611,7 +625,7 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
         }
         screen<SourceSettingsRoute> { entry -> SourceSettingsScreen(entry.toRoute<SourceSettingsRoute>().sourceId, back) }
         screen<WebViewRoute> { entry -> WebViewScreen(entry.toRoute<WebViewRoute>().url, back) }
-        screen<DownloadsRoute> { DownloadsScreen(koinViewModel(), back) }
+        screen<DownloadsRoute> { DownloadsScreen(koinViewModel(), back, onOpenTitle = { nav.navigate(TitleRoute(it)) }) }
     }
 }
 

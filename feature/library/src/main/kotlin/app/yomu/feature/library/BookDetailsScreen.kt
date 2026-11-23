@@ -146,6 +146,7 @@ private fun BookDetailsContent(
 ) {
     val book by viewModel.book.collectAsStateWithLifecycle()
     val extras by viewModel.extras.collectAsStateWithLifecycle()
+    val savedPosition by viewModel.savedPosition.collectAsStateWithLifecycle()
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
     val collections by viewModel.collections.collectAsStateWithLifecycle()
     val subscription by viewModel.subscription.collectAsStateWithLifecycle()
@@ -283,6 +284,19 @@ private fun BookDetailsContent(
                 }
             }
             Column(Modifier.padding(horizontal = Dimens.l), verticalArrangement = Arrangement.spacedBy(Dimens.m)) {
+                savedPosition?.let { locator ->
+                    Text(continuePlace(current, locator), style = MaterialTheme.typography.titleSmall)
+                }
+                if (current.progress > 0f) {
+                    val progress = current.progress.coerceIn(0f, 1f)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+                    ) {
+                        LinearProgressIndicator(progress = { progress }, modifier = Modifier.weight(1f))
+                        Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
                 Button(onClick = { onRead(current) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(if (current.format.isAudio) Icons.Default.Headphones else Icons.AutoMirrored.Filled.MenuBook, null)
                     Text(
@@ -356,16 +370,6 @@ private fun BookDetailsContent(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(Modifier.padding(Dimens.m)) {
-                        if (current.progress > 0f) {
-                            val progress = current.progress.coerceIn(0f, 1f)
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(Dimens.s),
-                            ) {
-                                LinearProgressIndicator(progress = { progress }, modifier = Modifier.weight(1f))
-                                Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelLarge)
-                            }
-                        }
                         FlowRow(verticalArrangement = Arrangement.Center, horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
                             Box(Modifier.align(Alignment.CenterVertically)) {
                                 AssistChip(

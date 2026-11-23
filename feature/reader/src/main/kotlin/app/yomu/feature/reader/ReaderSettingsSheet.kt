@@ -171,8 +171,12 @@ fun ReaderSettingsSheet(
                 }
             }
             Column(Modifier.weight(1f).verticalScroll(settingsScroll)) {
-                if (content is ReaderContent.Text && !searching) {
+                if (content is ReaderContent.Text && !searching && tab != 2) {
                     ReaderPreview(previewText, previewSnippet)
+                    if (tab == 0) {
+                        FontSizeRow(text, viewModel)
+                        LineHeightOptions(text, viewModel)
+                    }
                     PresetsRow(text, presets, viewModel)
                 }
                 if (viewModel.bookId > 0 || viewModel.isOnline) {
@@ -363,6 +367,34 @@ private fun hasMatches(query: String, content: ReaderContent): Boolean {
  * changes the size — the same row as in the quick panel.
  */
 @Composable
+private fun LineHeightOptions(s: TextReaderSettings, vm: ReaderViewModel) {
+    Text(
+        stringResource(R.string.rs_line_height),
+        style = MaterialTheme.typography.titleSmall,
+        modifier = Modifier.padding(start = Dimens.l, top = Dimens.s),
+    )
+    val lineOptions =
+        listOf(1.3f to R.string.rs_line_compact, 1.5f to R.string.rs_line_normal, 1.8f to R.string.rs_line_loose)
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs)) {
+        lineOptions.forEachIndexed { i, (value, label) ->
+            SegmentedButton(
+                selected = kotlin.math.abs(s.lineHeight - value) < 0.02f,
+                onClick = { vm.updateText { it.copy(lineHeight = value) } },
+                shape = SegmentedButtonDefaults.itemShape(i, lineOptions.size),
+            ) { Text(stringResource(label)) }
+        }
+    }
+    if (lineOptions.none { kotlin.math.abs(s.lineHeight - it.first) < 0.02f }) {
+        Text(
+            "${stringResource(R.string.rs_custom_value)} · ${"%.2f×".format(s.lineHeight)}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = Dimens.l),
+        )
+    }
+}
+
+@Composable
 private fun TextSettings(s: TextReaderSettings, vm: ReaderViewModel, query: String) {
     var fontOpen by remember { mutableStateOf(false) }
     val weightOptions =
@@ -380,7 +412,7 @@ private fun TextSettings(s: TextReaderSettings, vm: ReaderViewModel, query: Stri
             icon = Icons.Filled.TextFields,
             onClick = { fontOpen = true },
         )
-        FontSizeRow(s, vm)
+        if (query.isNotBlank()) FontSizeRow(s, vm)
         Text(
             stringResource(R.string.rs_weight),
             style = MaterialTheme.typography.titleSmall,
@@ -412,30 +444,7 @@ private fun TextSettings(s: TextReaderSettings, vm: ReaderViewModel, query: Stri
         icon = Icons.Outlined.FormatLineSpacing,
         initiallyExpanded = true,
     ) {
-        Text(
-            stringResource(R.string.rs_line_height),
-            style = MaterialTheme.typography.titleSmall,
-            modifier = Modifier.padding(start = Dimens.l, top = Dimens.s),
-        )
-        val lineOptions =
-            listOf(1.3f to R.string.rs_line_compact, 1.5f to R.string.rs_line_normal, 1.8f to R.string.rs_line_loose)
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs)) {
-            lineOptions.forEachIndexed { i, (value, label) ->
-                SegmentedButton(
-                    selected = kotlin.math.abs(s.lineHeight - value) < 0.02f,
-                    onClick = { vm.updateText { it.copy(lineHeight = value) } },
-                    shape = SegmentedButtonDefaults.itemShape(i, lineOptions.size),
-                ) { Text(stringResource(label)) }
-            }
-        }
-        if (lineOptions.none { kotlin.math.abs(s.lineHeight - it.first) < 0.02f }) {
-            Text(
-                "${stringResource(R.string.rs_custom_value)} · ${"%.2f×".format(s.lineHeight)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = Dimens.l),
-            )
-        }
+        if (query.isNotBlank()) LineHeightOptions(s, vm)
         Text(
             stringResource(R.string.rs_align),
             style = MaterialTheme.typography.titleSmall,
@@ -878,12 +887,12 @@ private fun PdfSettingsContent(s: PdfSettings, vm: ReaderViewModel, query: Strin
                 modifier = Modifier.padding(start = Dimens.l, top = Dimens.s),
             )
             val crop = s.manualCrop
+            PdfCropPreview(crop)
             val update: (app.yomu.domain.model.CropMargins) -> Unit = { m -> vm.updatePdf { it.copy(manualCrop = m) } }
             PreferenceSlider(stringResource(R.string.rs_pdf_crop_left), crop.left * 100, 0f..25f, { v -> update(crop.copy(left = v / 100f)) }, { "${it.toInt()}%" }, steps = 25)
             PreferenceSlider(stringResource(R.string.rs_pdf_crop_right), crop.right * 100, 0f..25f, { v -> update(crop.copy(right = v / 100f)) }, { "${it.toInt()}%" }, steps = 25)
             PreferenceSlider(stringResource(R.string.rs_pdf_crop_top), crop.top * 100, 0f..25f, { v -> update(crop.copy(top = v / 100f)) }, { "${it.toInt()}%" }, steps = 25)
             PreferenceSlider(stringResource(R.string.rs_pdf_crop_bottom), crop.bottom * 100, 0f..25f, { v -> update(crop.copy(bottom = v / 100f)) }, { "${it.toInt()}%" }, steps = 25)
-            PdfCropPreview(crop)
         }
     }
     CollapsibleSection(

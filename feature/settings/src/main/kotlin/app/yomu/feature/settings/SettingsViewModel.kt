@@ -47,6 +47,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+data class SelectedBackup(val uri: Uri, val displayName: String?, val manifest: BackupPreview)
+
 sealed interface SettingsEvent {
     data class Message(val res: Int, val args: List<Any> = emptyList()) : SettingsEvent
     data class Failure(val error: Throwable) : SettingsEvent
@@ -212,19 +214,18 @@ class SettingsViewModel(
     }
 
     /** The manifest of the archive the user picked, shown before anything is written. */
-    val backupPreview = MutableStateFlow<BackupPreview?>(null)
-    private var previewUri: Uri? = null
+    val backupPreview = MutableStateFlow<SelectedBackup?>(null)
 
     fun previewBackup(uri: Uri) = viewModelScope.launch(ScreenErrors) {
         busy.value = true
         runCatchingApp {
             appScope.detached {
                 withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { backup.preview(it) } ?: error("Cannot read the file")
+                    val manifest = context.contentResolver.openInputStream(uri)?.use { backup.preview(it) } ?: error("Cannot read the file")
+                    SelectedBackup(uri, Files.displayName(context, uri), manifest)
                 }
             }
         }.onSuccess { p ->
-            previewUri = uri
             backupPreview.value = p
         }.onFailure { _events.send(SettingsEvent.Failure(it)) }
         busy.value = false
@@ -232,15 +233,12 @@ class SettingsViewModel(
 
     /** Restores the archive whose manifest was just shown. */
     fun confirmRestore(options: BackupOptions = BackupOptions()) {
-        val uri = previewUri
-        backupPreview.value = null
-        previewUri = null
-        uri?.let { restoreBackup(it, options) }
+        val selected = backupPreview.value ?: return
+        if (backupPreview.compareAndSet(selected, null)) restoreBackup(selected.uri, options)
     }
 
     fun dismissBackupPreview() {
         backupPreview.value = null
-        previewUri = null
     }
 
     fun restoreBackup(uri: Uri, options: BackupOptions = BackupOptions()) = viewModelScope.launch(ScreenErrors) {

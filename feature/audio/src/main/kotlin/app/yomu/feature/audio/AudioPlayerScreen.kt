@@ -722,9 +722,10 @@ private fun NowPlaying(
         chapterTitle.ifBlank { title },
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.primary,
-        maxLines = 1,
+        maxLines = 2,
         overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onChapters).heightIn(min = 32.dp).padding(vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClickLabel = stringResource(R.string.audio_chapters), onClick = onChapters)
+            .heightIn(min = 48.dp).padding(vertical = 6.dp),
     )
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -795,15 +796,15 @@ private fun PlayerControls(
         }
         Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            SkipButton(settings.skipBackSec, forward = false, enabled = s != null, onClick = viewModel::back)
             IconButton(onClick = viewModel::previous, enabled = s != null, modifier = Modifier.size(52.dp)) {
                 Icon(Icons.Default.SkipPrevious, stringResource(R.string.audio_previous), Modifier.size(36.dp))
             }
+            SkipButton(settings.skipBackSec, forward = false, enabled = s != null, onClick = viewModel::back)
             PlayButton(s, viewModel::playPause)
+            SkipButton(settings.skipForwardSec, forward = true, enabled = s != null, onClick = viewModel::forward)
             IconButton(onClick = viewModel::next, enabled = s != null, modifier = Modifier.size(52.dp)) {
                 Icon(Icons.Default.SkipNext, stringResource(R.string.audio_next), Modifier.size(36.dp))
             }
-            SkipButton(settings.skipForwardSec, forward = true, enabled = s != null, onClick = viewModel::forward)
         }
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

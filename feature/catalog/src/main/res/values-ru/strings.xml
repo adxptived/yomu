@@ -273,6 +273,10 @@
     <string name="ext_unsupported">Не поддерживается</string>
     <string name="ext_search_hint">Поиск расширений</string>
     <string name="ext_sources">Источники</string>
+    <string name="ext_open_source">Открыть каталог</string>
+    <string name="ext_source_unavailable">Недоступен в каталоге</string>
+    <string name="ext_source_settings_unavailable">Настройки источника недоступны</string>
+    <string name="ext_sources_safe_mode">Эти источники скрыты настройками безопасного контента.</string>
     <string name="ext_source_settings">Настройки источника</string>
     <string name="ext_details_version">Версия</string>
     <string name="ext_details_lib">API расширений</string>
@@ -289,6 +293,7 @@
     <string name="ext_broken_api">Нужна более новая версия Yomu</string>
     <string name="ext_broken_unsigned">Пакет не подписан</string>
     <string name="ext_broken_malformed">Пакет повреждён или неполон</string>
+    <string name="ext_broken_no_catalog">Расширение не предоставляет ни одного каталога</string>
     <string name="ext_broken_failed">Ошибка запуска: %1$s</string>
     <string name="ext_broken_after_trust">Расширение отмечено доверенным, но не загрузилось: %1$s</string>
     <string name="ext_err_not_apk">Файл не является пакетом Android (APK)</string>
@@ -337,6 +342,7 @@
     <string name="ext_trust_all_text">Эти расширения смогут выполнять код в приложении и обращаться к сети:\n\n%1$s</string>
     <string name="ext_trust_all_more">и ещё %1$s</string>
     <string name="ext_trusted_all">Расширения отмечены доверенными и загружены</string>
+    <string name="ext_trusted_one">Расширение загружено: %1$s</string>
     <string name="ext_untrusted_short">подпись %1$s…</string>
     <string name="ext_broken_failed_short">Не запускается — нажмите, чтобы узнать подробнее</string>
     <string name="ext_broken_failed_explain">Расширение не запустилось. Возможно, оно устарело или несовместимо с этой версией Yomu — попробуйте его обновить. Если не поможет, отправьте подробности ниже его авторам.</string>
@@ -460,7 +466,16 @@
     <string name="source_filter_hide_disabled">Скрыть отключённые</string>
     <string name="source_filter_hide_unstable">Скрыть неотвечающие</string>
     <string name="source_filter_show_hidden">Показать скрытые</string>
-    <string name="source_filter_shown">%1$d из %2$d</string>
+    <plurals name="source_filter_excluded">
+        <item quantity="one">Скрыт %d источник</item>
+        <item quantity="few">Скрыто %d источника</item>
+        <item quantity="many">Скрыто %d источников</item>
+        <item quantity="other">Скрыто %d источника</item>
+    </plurals>
+    <string name="source_filters_paused">Фильтры списка приостановлены</string>
+    <string name="source_apply_filters">Применить фильтры</string>
+    <string name="source_show_filtered_matches">Показать совпадения</string>
+    <string name="source_show_all">Показать все</string>
     <string name="source_filter_empty">Нет источников под эти фильтры</string>
     <string name="source_filter_languages_title">Языки источников</string>
     <string name="source_filter_languages_search">Найти язык</string>
@@ -617,4 +632,6 @@
     <string name="connection_catalog_name">Название каталога</string>
     <string name="browse_append_error">Не удалось загрузить следующую страницу. %s</string>
     <string name="connection_error_no_episodes">В этой ленте нет аудиоэпизодов. Укажите RSS или Atom с аудиофайлами.</string>
+    <string name="upcoming_today">Сегодня · %1$s</string>
+    <string name="upcoming_tomorrow">Завтра · %1$s</string>
 </resources>

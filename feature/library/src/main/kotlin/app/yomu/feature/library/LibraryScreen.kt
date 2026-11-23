@@ -683,8 +683,17 @@ fun LibraryScreen(
                         filtered -> EmptyState(
                             title = stringResource(R.string.library_nothing_found),
                             icon = Icons.Default.Search,
-                            actionLabel = if (activeFilters > 0) stringResource(R.string.library_clear_filters) else null,
-                            onAction = if (activeFilters > 0) viewModel::clearFilters else null,
+                            actionLabel = stringResource(
+                                when {
+                                    search.isBlank() -> R.string.library_clear_filters
+                                    activeFilters == 0 -> R.string.library_clear_search
+                                    else -> R.string.library_clear_search_filters
+                                },
+                            ),
+                            onAction = {
+                                viewModel.setSearch("")
+                                if (activeFilters > 0) viewModel.clearFilters()
+                            },
                         )
                         else -> EmptyState(
                             title = stringResource(R.string.library_tab_empty_title),
@@ -1179,7 +1188,11 @@ private fun ContinueReading(
 ) {
     val first = items.firstOrNull() ?: return
     val localBook = (first as? ContinueItem.BookItem)?.book
-    val resumeLabel = stringResource(R.string.details_continue)
+    val isAudio = when (first) {
+        is ContinueItem.BookItem -> first.book.format.isAudio
+        is ContinueItem.OnlineItem -> first.entry.type == app.yomu.domain.model.ContentType.AUDIO
+    }
+    val resumeLabel = stringResource(if (isAudio) R.string.details_continue_listening else R.string.details_continue)
     val open: (ContinueItem) -> Unit = { item ->
         when (item) {
             is ContinueItem.BookItem -> onOpenBook(item.book)
@@ -1214,7 +1227,7 @@ private fun ContinueReading(
                         }
                         is ContinueItem.OnlineItem -> pluralStringResource(R.plurals.library_unread_chapters, first.entry.unread, first.entry.unread) to first.entry.readFraction()
                     }
-                    detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
                         LinearProgressIndicator(
                             progress = { fraction.coerceIn(0f, 1f) },
@@ -1227,7 +1240,11 @@ private fun ContinueReading(
                         Text("${(fraction * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                Icon(Icons.Default.PlayArrow, null, tint = MaterialTheme.colorScheme.primary)
+                Icon(
+                    imageVector = if (isAudio) Icons.Default.PlayArrow else Icons.Outlined.AutoStories,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
             }
         }
         val rest = items.drop(1)
@@ -1264,7 +1281,7 @@ private fun ContinueReading(
 
 /** The saved chapter or page shown alongside the progress indicator. */
 @Composable
-private fun continuePlace(book: Book, locator: Locator): String {
+internal fun continuePlace(book: Book, locator: Locator): String {
     val title = locator.chapterTitle?.takeIf { it.isNotBlank() }
     return when (book.engine) {
         EngineType.TEXT, EngineType.AUDIO -> title ?: stringResource(R.string.library_continue_chapter, locator.chapter + 1)

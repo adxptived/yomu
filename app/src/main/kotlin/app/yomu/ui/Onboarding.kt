@@ -73,7 +73,7 @@ private enum class StartGoal { READ, MANGA, AUDIO, LANGUAGE }
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun OnboardingScreen(settings: AppSettings, onDone: () -> Unit) {
+fun OnboardingScreen(settings: AppSettings, onDone: (openCatalog: Boolean) -> Unit) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val imports: ImportService = koinInject()
@@ -105,10 +105,10 @@ fun OnboardingScreen(settings: AppSettings, onDone: () -> Unit) {
         }
     }
 
-    fun finish() {
+    fun finish(openCatalog: Boolean = false) {
         scope.launch(ScreenErrors) {
             settings.targetLang.set(language)
-            onDone()
+            onDone(openCatalog)
         }
     }
 
@@ -184,7 +184,7 @@ fun OnboardingScreen(settings: AppSettings, onDone: () -> Unit) {
                                     color = MaterialTheme.colorScheme.error,
                                 )
                             }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Button(onClick = { folderPicker.launch(null) }) { Text(stringResource(R.string.onboarding_folder_pick)) }
                                 OutlinedButton(onClick = { filePicker.launch(arrayOf("*/*")) }) { Text(stringResource(R.string.onboarding_file_pick)) }
                             }
@@ -194,6 +194,9 @@ fun OnboardingScreen(settings: AppSettings, onDone: () -> Unit) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
                             )
+                            TextButton(onClick = { finish(openCatalog = true) }) {
+                                Text(stringResource(R.string.onboarding_open_catalog))
+                            }
                         }
                         else -> {
                             PageHeader(Icons.Outlined.Translate, stringResource(R.string.onboarding_language_title), stringResource(R.string.onboarding_language_text))

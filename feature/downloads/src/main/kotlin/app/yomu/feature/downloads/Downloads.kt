@@ -1,5 +1,6 @@
 package app.yomu.feature.downloads
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -226,7 +227,7 @@ val downloadsModule = module {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DownloadsScreen(viewModel: DownloadsViewModel, onBack: () -> Unit) {
+fun DownloadsScreen(viewModel: DownloadsViewModel, onBack: () -> Unit, onOpenTitle: ((Long) -> Unit)? = null) {
     val snackbar = remember { SnackbarHostState() }
     val cancelled = stringResource(R.string.downloads_cancelled)
     val undo = stringResource(CoreR.string.undo)
@@ -252,7 +253,7 @@ fun DownloadsScreen(viewModel: DownloadsViewModel, onBack: () -> Unit) {
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         TopLevelBody(padding, Modifier.fillMaxSize()) {
-            DownloadsContent(viewModel, Modifier.fillMaxSize())
+            DownloadsContent(viewModel, Modifier.fillMaxSize(), onOpenTitle)
         }
     }
 }
@@ -301,7 +302,7 @@ fun DownloadsActions(viewModel: DownloadsViewModel) {
  * padding leaves room for the floating navigation bar when it is shown in the profile.
  */
 @Composable
-fun DownloadsContent(viewModel: DownloadsViewModel, modifier: Modifier = Modifier) {
+fun DownloadsContent(viewModel: DownloadsViewModel, modifier: Modifier = Modifier, onOpenTitle: ((Long) -> Unit)? = null) {
     val sections by viewModel.sections.collectAsStateWithLifecycle()
     val usage by viewModel.usage.collectAsStateWithLifecycle()
     val titles by viewModel.entryTitles.collectAsStateWithLifecycle()
@@ -329,7 +330,7 @@ fun DownloadsContent(viewModel: DownloadsViewModel, modifier: Modifier = Modifie
                     )
                 }
             }
-            section(R.string.downloads_running, s.running, viewModel, titles, maxRetries)
+            section(R.string.downloads_running, s.running, viewModel, onOpenTitle, maxRetries)
             audioSection(audio, viewModel)
             if (s.queued.isNotEmpty()) {
                 item(key = "h-queued") { SectionHeader("${stringResource(R.string.downloads_queued)} (${s.queued.size})") }
@@ -337,14 +338,14 @@ fun DownloadsContent(viewModel: DownloadsViewModel, modifier: Modifier = Modifie
                     val title = group.entryId?.let { titles[it] }?.takeIf { it.isNotEmpty() }
                     if (title != null && group.items.size > 1) {
                         item(key = "g-${group.entryId}") { GroupHeader(title, group.items, viewModel) }
-                        items(group.items, key = { it.id }) { DownloadRow(it, viewModel, DownloadSections.shortTitle(it, title), maxRetries, motionItem().padding(start = Dimens.l)) }
+                        items(group.items, key = { it.id }) { DownloadRow(it, viewModel, DownloadSections.shortTitle(it, title), maxRetries, onOpenTitle, motionItem().padding(start = Dimens.l)) }
                     } else {
-                        items(group.items, key = { it.id }) { DownloadRow(it, viewModel, it.title, maxRetries, motionItem()) }
+                        items(group.items, key = { it.id }) { DownloadRow(it, viewModel, it.title, maxRetries, onOpenTitle, motionItem()) }
                     }
                 }
             }
-            section(R.string.downloads_failed, s.failed, viewModel, titles, maxRetries)
-            section(R.string.downloads_finished, s.finished, viewModel, titles, maxRetries)
+            section(R.string.downloads_failed, s.failed, viewModel, onOpenTitle, maxRetries)
+            section(R.string.downloads_finished, s.finished, viewModel, onOpenTitle, maxRetries)
             item(key = "usage") { UsageCard(usage, onClearCache = { confirmClearCache = true }) }
         }
     }
@@ -364,14 +365,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.section(
     title: Int,
     list: List<DownloadItem>,
     vm: DownloadsViewModel,
-    titles: Map<Long, String>,
+    onOpenTitle: ((Long) -> Unit)?,
     maxRetries: Int,
 ) {
     if (list.isEmpty()) return
     item(key = "h-$title") {
         SectionHeader("${stringResource(title)} (${list.size})")
     }
-    items(list, key = { it.id }) { d -> DownloadRow(d, vm, d.title, maxRetries, motionItem()) }
+    items(list, key = { it.id }) { d -> DownloadRow(d, vm, d.title, maxRetries, onOpenTitle, motionItem()) }
 }
 
 @Composable
@@ -440,7 +441,7 @@ private fun UsageLine(label: Int, size: String) {
 }
 
 @Composable
-private fun DownloadRow(item: DownloadItem, vm: DownloadsViewModel, label: String, maxRetries: Int, modifier: Modifier = Modifier) {
+private fun DownloadRow(item: DownloadItem, vm: DownloadsViewModel, label: String, maxRetries: Int, onOpenTitle: ((Long) -> Unit)?, modifier: Modifier = Modifier) {
     var menu by remember { mutableStateOf(false) }
     val wait = LocalNetworkWait.current
     val hasError = !item.error.isNullOrBlank()
@@ -479,6 +480,9 @@ private fun DownloadRow(item: DownloadItem, vm: DownloadsViewModel, label: Strin
         },
     ) {
         ListItem(
+            modifier = item.entryId?.takeIf { onOpenTitle != null }?.let { id ->
+                Modifier.clickable(onClickLabel = stringResource(R.string.downloads_open_title)) { onOpenTitle?.invoke(id) }
+            } ?: Modifier,
             headlineContent = { Text(label, maxLines = 2, overflow = TextOverflow.Ellipsis) },
             supportingContent = {
                 Column {

@@ -73,7 +73,7 @@ data class InstalledExtension(
     val isNsfw: Boolean get() = contentWarning == ContentWarning.NSFW
 }
 
-enum class BrokenReason { UNSUPPORTED_LIB, NEWER_API, UNSIGNED, MALFORMED, FAILED }
+enum class BrokenReason { UNSUPPORTED_LIB, NEWER_API, UNSIGNED, MALFORMED, NO_CATALOG, FAILED }
 
 data class ExtensionUpdate(val installed: InstalledExtension, val available: AvailableExtension)
 
@@ -133,11 +133,6 @@ class ExtensionManager(
 
     private val _installed = MutableStateFlow<List<InstalledExtension>>(emptyList())
     val installed: StateFlow<List<InstalledExtension>> = _installed.asStateFlow()
-
-    private val _loaded = MutableStateFlow<List<InstalledExtension>>(emptyList())
-
-    /** Extensions whose sources are registered in the app. */
-    val loaded: StateFlow<List<InstalledExtension>> = _loaded.asStateFlow()
 
     private val _available = MutableStateFlow<List<AvailableExtension>>(emptyList())
     val available: StateFlow<List<AvailableExtension>> = _available.asStateFlow()
@@ -207,7 +202,6 @@ class ExtensionManager(
                     .getOrNull()
             }.sortedBy { it.name.lowercase() }
             _installed.value = out
-            _loaded.value = out.filter { it.status == ExtensionStatus.LOADED }
             computeUpdates()
         }
     }
@@ -264,16 +258,21 @@ class ExtensionManager(
         }
 
         val path = file?.path ?: app.sourceDir
-        val sources = try {
-            when (format) {
+        val (sources, langs) = try {
+            val sources = when (format) {
                 ExtensionFormat.TACHIYOMI -> loadTachiyomi(info, meta.getString(T_META_CLASS), path)
                 ExtensionFormat.YOMU -> loadYomu(info, meta.getString(Y_META_CLASS), path, app)
             }
+            if (sources.isEmpty()) {
+                closeLoader(info.packageName)
+                return broken(BrokenReason.NO_CATALOG)
+            }
+            sources to sources.map { it.lang }.toSet()
         } catch (t: Throwable) {
+            closeLoader(info.packageName)
             Timber.e(t, "Extension ${info.packageName} failed to load")
             return broken(BrokenReason.FAILED, generateSequence(t) { it.cause }.last().let { "${it.javaClass.simpleName}: ${it.message.orEmpty()}" })
         }
-        val langs = sources.map { it.lang }.toSet()
         return base.copy(
             status = ExtensionStatus.LOADED,
             sources = sources,

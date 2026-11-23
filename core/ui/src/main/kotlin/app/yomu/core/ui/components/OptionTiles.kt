@@ -4,7 +4,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -47,44 +50,50 @@ fun <T> OptionTiles(
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs),
-        horizontalArrangement = Arrangement.spacedBy(Dimens.s),
-    ) {
-        options.forEach { o ->
-            val isSelected = o.value == selected
-            val content = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-            Surface(
-                selected = isSelected,
-                onClick = { onSelect(o.value) },
-                shape = MaterialTheme.shapes.medium,
-                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-                contentColor = content,
-                border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, Color.Transparent),
-                modifier = Modifier.weight(1f).heightIn(min = 76.dp).semantics { role = Role.RadioButton },
-            ) {
-                Column(
-                    Modifier.padding(horizontal = Dimens.xs, vertical = Dimens.s),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(Dimens.xs, Alignment.CenterVertically),
+    BoxWithConstraints(modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs)) {
+        val minTileWidth = 68.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)
+        val columns = ((maxWidth + Dimens.s) / (minTileWidth + Dimens.s)).toInt().coerceAtLeast(1)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth().selectableGroup(),
+            maxItemsInEachRow = columns,
+            horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+            verticalArrangement = Arrangement.spacedBy(Dimens.s),
+        ) {
+            options.forEach { o ->
+                val isSelected = o.value == selected
+                val content = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                Surface(
+                    selected = isSelected,
+                    onClick = { onSelect(o.value) },
+                    shape = MaterialTheme.shapes.medium,
+                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = content,
+                    border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, Color.Transparent),
+                    modifier = Modifier.weight(1f).heightIn(min = 76.dp).semantics { role = Role.RadioButton },
                 ) {
-                    Box(Modifier.heightIn(min = 28.dp), contentAlignment = Alignment.Center) {
-                        when {
-                            o.preview != null -> o.preview.invoke(isSelected)
-                            o.icon != null -> Icon(
-                                o.icon,
-                                contentDescription = null,
-                                modifier = Modifier.size(26.dp).rotate(o.iconRotation),
-                            )
+                    Column(
+                        Modifier.padding(horizontal = Dimens.xs, vertical = Dimens.s),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(Dimens.xs, Alignment.CenterVertically),
+                    ) {
+                        Box(Modifier.heightIn(min = 28.dp), contentAlignment = Alignment.Center) {
+                            when {
+                                o.preview != null -> o.preview.invoke(isSelected)
+                                o.icon != null -> Icon(
+                                    o.icon,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(26.dp).rotate(o.iconRotation),
+                                )
+                            }
                         }
+                        Text(
+                            o.label,
+                            style = MaterialTheme.typography.labelMedium,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
-                    Text(
-                        o.label,
-                        style = MaterialTheme.typography.labelMedium,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
                 }
             }
         }

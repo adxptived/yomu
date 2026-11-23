@@ -153,6 +153,12 @@ internal fun sourceComparator(sort: SourceSortMode, deviceLanguage: String = jav
     return compareByDescending<SourceInfo> { it.pinned }.then(main).then(byName)
 }
 
+data class CatalogSourceListing(
+    val sources: List<SourceInfo> = emptyList(),
+    val excludedCount: Int = 0,
+    val showingExcluded: Boolean = false,
+)
+
 class CatalogHomeViewModel(
     private val context: Context,
     private val sources: SourceManager,
@@ -204,6 +210,11 @@ class CatalogHomeViewModel(
 
     /** Filter of the source list by name. */
     val sourceQuery = MutableStateFlow("")
+    private val includeExcludedSources = MutableStateFlow(false)
+
+    fun showExcludedSources(show: Boolean) {
+        includeExcludedSources.value = show
+    }
 
     private val _refreshingSources = MutableStateFlow(false)
     val refreshingSources = _refreshingSources.asStateFlow()
@@ -224,30 +235,34 @@ class CatalogHomeViewModel(
     /** Ids of the sources that do not answer, for "hide sources that don't respond". */
     private val unstableIds = catalog.health.map { h -> h.filterValues { it.unstable }.keys }.distinctUntilChanged()
 
-    val sourceList: StateFlow<List<SourceInfo>> = combine(
+    val sourceListing: StateFlow<CatalogSourceListing> = combine(
         sources.infos,
         catalogLanguages,
         settings.sourceSort.flow,
-        sourceQuery.debounceTyping(),
+        combine(sourceQuery.debounceTyping(), includeExcludedSources) { query, include -> query to include },
         combine(settings.catalogSourceFilter.flow, unstableIds) { f, u -> f to u },
-    ) { infos, langs, sort, q, (filter, unstable) ->
+    ) { infos, langs, sort, (q, include), (filter, unstable) ->
         val tokens = q.trim().split(Regex("\\s+")).filter(String::isNotEmpty)
-        infos.filter { s ->
+        val matches = if (tokens.isEmpty()) infos else infos.filter { s ->
+            tokens.all { word ->
+                s.name.contains(word, ignoreCase = true) ||
+                    s.extensionName?.contains(word, ignoreCase = true) == true ||
+                    s.lang.equals(word, ignoreCase = true) ||
+                    languageName(s.lang).contains(word, ignoreCase = true)
+            }
+        }
+        val visible = matches.filter { s ->
             sources.isShown(s, langs) &&
-                filter.matches(s.content.name, s.kind.name, s.pinned, s.enabled, s.isNsfw, s.id in unstable, s.hidden) &&
-                tokens.all { word ->
-                    s.name.contains(word, ignoreCase = true) ||
-                        s.extensionName?.contains(word, ignoreCase = true) == true ||
-                        s.lang.equals(word, ignoreCase = true) ||
-                        languageName(s.lang).contains(word, ignoreCase = true)
-                }
-        }.sortedWith(sourceComparator(sort))
+                filter.matches(s.content.name, s.kind.name, s.pinned, s.enabled, s.isNsfw, s.id in unstable, s.hidden)
+        }
+        CatalogSourceListing(
+            sources = (if (include) matches else visible).sortedWith(sourceComparator(sort)),
+            excludedCount = matches.size - visible.size,
+            showingExcluded = include,
+        )
     }
         .onEach { sourceListLoaded.value = true }
-        .state(this, emptyList())
-
-    /** Number of sources before any filter: "12 of 340" in the filter bar. */
-    val sourceTotal: StateFlow<Int> = sources.infos.map { it.size }.state(this, 0)
+        .state(this, CatalogSourceListing())
 
     /** Sort and filters of the library tab. */
     val libraryDisplay: StateFlow<LibraryDisplay> = settings.libraryDisplay.stateIn(viewModelScope)
@@ -296,6 +311,7 @@ class CatalogHomeViewModel(
 
     /** Every source again: no filters, all languages. */
     fun resetSourceFilters() = viewModelScope.launch(ScreenErrors) {
+        showExcludedSources(false)
         settings.catalogSourceFilter.set(SourceListFilter())
         settings.catalogLanguages.set(setOf(SourceManager.ALL_LANGUAGES))
     }

@@ -146,7 +146,6 @@ import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.catalog.HistoryEntry
 import app.yomu.data.source.SourceHealth
 import app.yomu.data.source.SourceInfo
-import app.yomu.data.source.SourceManager
 import app.yomu.domain.catalog.LibraryDisplay
 import app.yomu.domain.catalog.LibrarySortMode
 import app.yomu.domain.catalog.SourceListFilter
@@ -177,7 +176,7 @@ fun CatalogScreen(
     onOpenUpdatesPlan: () -> Unit = {},
 ) {
     val ready by viewModel.ready.collectAsStateWithLifecycle()
-    val sources by viewModel.sourceList.collectAsStateWithLifecycle()
+    val sourceListing by viewModel.sourceListing.collectAsStateWithLifecycle()
     val langs by viewModel.languages.collectAsStateWithLifecycle()
     val allLangs by viewModel.allLanguages.collectAsStateWithLifecycle()
     val favorites by viewModel.favorites.collectAsStateWithLifecycle()
@@ -186,7 +185,6 @@ fun CatalogScreen(
     val sourceQuery by viewModel.sourceQuery.collectAsStateWithLifecycle()
     val sourceSort by viewModel.sourceSort.collectAsStateWithLifecycle()
     val sourceFilter by viewModel.sourceFilter.collectAsStateWithLifecycle()
-    val sourceTotal by viewModel.sourceTotal.collectAsStateWithLifecycle()
     val languageCounts by viewModel.languageCounts.collectAsStateWithLifecycle()
     val health by viewModel.health.collectAsStateWithLifecycle()
     val tabs by viewModel.tabs.collectAsStateWithLifecycle()
@@ -285,14 +283,13 @@ fun CatalogScreen(
             when (HomeTab.entries[tab]) {
                 HomeTab.SOURCES -> SourcesTab(
                     ready = ready,
-                    sources = sources,
+                    listing = sourceListing,
                     query = sourceQuery,
                     sort = sourceSort,
                     health = health,
                     langs = langs,
                     allLangs = allLangs,
                     filter = sourceFilter,
-                    total = sourceTotal,
                     languageCounts = languageCounts,
                     viewModel = viewModel,
                     onOpenSource = { s ->
@@ -374,14 +371,13 @@ fun CatalogScreen(
 @Composable
 private fun SourcesTab(
     ready: Boolean,
-    sources: List<SourceInfo>,
+    listing: CatalogSourceListing,
     query: String,
     sort: SourceSortMode,
     health: Map<Long, SourceHealth>,
     langs: Set<String>,
     allLangs: List<String>,
     filter: SourceListFilter,
-    total: Int,
     languageCounts: Map<String, Int>,
     viewModel: CatalogHomeViewModel,
     onOpenSource: (SourceInfo) -> Unit,
@@ -394,6 +390,7 @@ private fun SourcesTab(
     onToggleEditing: () -> Unit,
     extensionUpdates: Int,
 ) {
+    val sources = listing.sources
     var menuFor by remember { mutableStateOf<SourceInfo?>(null) }
     var removeFor by remember { mutableStateOf<SourceInfo?>(null) }
     var showFilters by remember { mutableStateOf(false) }
@@ -416,7 +413,7 @@ private fun SourcesTab(
     }
     // Split once per list, not on every recomposition of the tab.
     val (pinned, others) = remember(sources) { sources.partition { it.pinned } }
-    val filtered = filter.isActive || SourceManager.ALL_LANGUAGES !in langs
+    val filtered = !listing.showingExcluded && listing.excludedCount > 0
     // One section per language while the list mixes many of them (an extension ships a source per language, and a
     // flat multilingual list reads as random duplicates); a search and the bulk editor stay flat.
     val universalLabel = stringResource(R.string.catalog_section_universal)
@@ -477,7 +474,7 @@ private fun SourcesTab(
                     }
                 }
             }
-            if (total > 0 || query.isNotEmpty()) {
+            if (sources.isNotEmpty() || filtered || query.isNotEmpty() || listing.showingExcluded) {
                 item(key = "tools") {
                     Column(Modifier.fillMaxWidth().padding(bottom = Dimens.xs)) {
                         SearchField(
@@ -490,19 +487,14 @@ private fun SourcesTab(
                             filter = filter,
                             langs = langs,
                             sort = sort,
-                            shown = sources.size,
-                            total = total,
-                            onOpenFilters = { showFilters = true },
-                            onOpenLanguages = { showLanguages = true },
+                            listing = listing,
+                            searching = query.isNotBlank(),
+                            onToggleExcluded = { viewModel.showExcludedSources(!listing.showingExcluded) },
+                            onOpenFilters = { viewModel.showExcludedSources(false); showFilters = true },
+                            onOpenLanguages = { viewModel.showExcludedSources(false); showLanguages = true },
                             onUpdate = { viewModel.updateSourceFilter(it) },
                             modifier = Modifier.padding(top = Dimens.xs),
                         )
-                        if (filtered && sources.isNotEmpty() && sources.size < total) {
-                            TextButton(
-                                onClick = { viewModel.resetSourceFilters() },
-                                modifier = Modifier.padding(horizontal = Dimens.s),
-                            ) { Text(stringResource(R.string.chapter_filters_reset)) }
-                        }
                     }
                 }
             }
@@ -517,21 +509,11 @@ private fun SourcesTab(
                         modifier = Modifier.fillMaxWidth().padding(top = Dimens.xl),
                     )
                 }
-                if (filtered) {
-                    item(key = "reset-filters") {
-                        TextButton(
-                            onClick = { viewModel.resetSourceFilters() },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text(stringResource(R.string.chapter_filters_reset)) }
-                    }
-                }
-            } else if (sources.isEmpty() && total > 0 && filtered) {
+            } else if (sources.isEmpty() && filtered) {
                 item(key = "filtered-empty") {
                     EmptyState(
                         title = stringResource(R.string.source_filter_empty),
                         icon = Icons.Filled.FilterList,
-                        actionLabel = stringResource(R.string.chapter_filters_reset),
-                        onAction = { viewModel.resetSourceFilters() },
                         modifier = Modifier.fillMaxWidth().padding(top = Dimens.xl),
                     )
                 }
@@ -580,6 +562,10 @@ private fun SourcesTab(
             sort = sort,
             onSort = { viewModel.setSourceSort(it) },
             onUpdate = { viewModel.updateSourceFilter(it) },
+            onReset = {
+                viewModel.resetSourceFilters()
+                showFilters = false
+            },
             onUnhideAll = {
                 viewModel.unhideAllSources()
                 showFilters = false

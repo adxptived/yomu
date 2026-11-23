@@ -118,6 +118,17 @@ class AppSmokeTest {
         compose.waitForIdle()
     }
 
+    @Test
+    fun firstLaunchOpensCatalogFromImportPage() {
+        val settings = GlobalContext.get().get<app.yomu.core.datastore.AppSettings>()
+        runBlocking { settings.onboardingDone.set(false) }
+        awaitText("Welcome to Yomu")
+        compose.onAllNodesWithText("Next")[0].performClick()
+        awaitText("Find a book in the catalog")
+        compose.onAllNodesWithText("Find a book in the catalog")[0].performClick()
+        awaitText("MangaDex")
+    }
+
     private fun shot(name: String) {
         compose.waitForIdle()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/$name.png")

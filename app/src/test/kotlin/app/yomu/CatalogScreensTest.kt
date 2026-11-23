@@ -4,8 +4,10 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
@@ -13,25 +15,43 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import app.yomu.core.database.CatalogItemEntity
 import app.yomu.core.database.ChapterEntity
 import app.yomu.core.database.DownloadTaskEntity
 import app.yomu.core.database.YomuDatabase
+import app.yomu.core.datastore.AppSettings
 import app.yomu.core.ui.theme.YomuTheme
+import app.yomu.data.source.ContentWarning
+import app.yomu.data.source.ExtensionFormat
+import app.yomu.data.source.ExtensionManager
+import app.yomu.data.source.ExtensionStatus
+import app.yomu.data.source.InstalledExtension
+import app.yomu.data.source.SourceManager
+import app.yomu.domain.catalog.ContentPreference
+import app.yomu.domain.catalog.NsfwFilter
+import app.yomu.domain.catalog.SourceListFilter
 import app.yomu.domain.model.DownloadStatus
 import app.yomu.feature.catalog.CatalogHomeViewModel
 import app.yomu.feature.catalog.CatalogScreen
+import app.yomu.feature.catalog.ExtensionsScreen
+import app.yomu.feature.catalog.ExtensionsViewModel
 import app.yomu.feature.catalog.GlobalSearchScreen
 import app.yomu.feature.catalog.GlobalSearchViewModel
 import app.yomu.feature.catalog.SearchArgs
 import app.yomu.feature.catalog.TitleScreen
 import app.yomu.feature.downloads.DownloadsScreen
+import app.yomu.source.CatalogSource
+import app.yomu.sources.opds.OpdsSource
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.github.takahirom.roborazzi.captureScreenRoboImage
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -165,13 +185,16 @@ class CatalogScreensTest {
 
     @Test
     fun downloadQueue() {
-        seed()
-        compose.setContent { YomuTheme { DownloadsScreen(koinViewModel(), onBack = {}) } }
+        val expectedTitle = seed()
+        var openedTitle: Long? = null
+        compose.setContent { YomuTheme { DownloadsScreen(koinViewModel(), onBack = {}, onOpenTitle = { openedTitle = it }) } }
         awaitText("Pause all")
         awaitText("Resume paused")
         awaitText("Chapter 8")
         compose.mainClock.advanceTimeBy(1_000)
         shot("34_downloads")
+        compose.onNode(hasText("Chapter 8", substring = true) and hasClickAction()).performClick()
+        compose.runOnIdle { assertEquals(expectedTitle, openedTitle) }
     }
 
     @Test
@@ -207,7 +230,7 @@ class CatalogScreensTest {
             }
         }
         awaitText("MangaDex")
-        assertTrue(model.sourceList.value.any { it.name == "Wikisource" && it.lang == "fr" })
+        assertTrue(model.sourceListing.value.sources.any { it.name == "Wikisource" && it.lang == "fr" })
     }
 
     @Test
@@ -225,8 +248,107 @@ class CatalogScreensTest {
         awaitText("MangaDex")
         compose.runOnIdle { model.sourceQuery.value = "Wikisource fr" }
         compose.waitUntil(5_000) {
-            model.sourceList.value.singleOrNull()?.let { it.name == "Wikisource" && it.lang == "fr" } == true
+            model.sourceListing.value.sources.singleOrNull()?.let { it.name == "Wikisource" && it.lang == "fr" } == true
         }
+    }
+
+    @Test
+    fun loadedExtensionAppearsInCatalogAndHiddenSourceCanBeRevealed() {
+        val source = seedExtensionSources().single()
+        runBlocking { GlobalContext.get().get<SourceManager>().setHidden(source.id, true) }
+        lateinit var model: CatalogHomeViewModel
+        compose.setContent {
+            YomuTheme {
+                model = koinViewModel<CatalogHomeViewModel>()
+                CatalogScreen(
+                    viewModel = model, onOpenSource = {}, onOpenTitle = {}, onReadChapter = {},
+                    onGlobalSearch = {}, onOpenExtensions = {}, onOpenDownloads = {},
+                )
+            }
+        }
+        awaitText("Show all")
+        assertTrue(model.sourceListing.value.sources.none { it.id == source.id })
+        compose.onNode(hasText("Show all") and hasClickAction()).performClick()
+        compose.runOnIdle { model.sourceQuery.value = source.name }
+        compose.waitUntil(5_000) { model.sourceListing.value.sources.singleOrNull()?.id == source.id }
+    }
+
+    @Test
+    fun filteredExtensionCanBeOpenedWithoutResettingSavedFilters() {
+        val settings = GlobalContext.get().get<AppSettings>()
+        val source = seedExtensionSources(warning = ContentWarning.NSFW).single()
+        runBlocking {
+            settings.contentPreference.set(ContentPreference.MIXED)
+            settings.catalogSourceFilter.set(SourceListFilter(nsfw = NsfwFilter.HIDE))
+        }
+        lateinit var model: CatalogHomeViewModel
+        var opened: Long? = null
+        compose.setContent {
+            YomuTheme {
+                model = koinViewModel<CatalogHomeViewModel>()
+                CatalogScreen(
+                    viewModel = model, onOpenSource = { opened = it }, onOpenTitle = {}, onReadChapter = {},
+                    onGlobalSearch = {}, onOpenExtensions = {}, onOpenDownloads = {},
+                )
+            }
+        }
+        awaitText("Hide 18+")
+        compose.runOnIdle { model.sourceQuery.value = source.name }
+        awaitText("1 source filtered out")
+        assertTrue(model.sourceListing.value.sources.none { it.id == source.id })
+        compose.onNode(hasText("Show matches") and hasClickAction()).performClick()
+        compose.waitUntil(5_000) { model.sourceListing.value.sources.singleOrNull()?.id == source.id }
+        compose.onNode(hasText(source.name) and hasText("Books") and hasClickAction()).performClick()
+        compose.runOnIdle { assertEquals(source.id, opened) }
+        compose.onNode(hasText("Apply filters") and hasClickAction()).performClick()
+        compose.waitUntil(5_000) { model.sourceListing.value.sources.none { it.id == source.id } }
+        assertEquals(NsfwFilter.HIDE, runBlocking { settings.catalogSourceFilter.get() }.nsfw)
+    }
+
+    @Test
+    fun sourceWithoutPreferencesOpensFromLongExtensionDetails() {
+        // Keep the store cache fresh so opening this screen only starts the installed-package scan.
+        val manager = GlobalContext.get().get<ExtensionManager>()
+        runBlocking { manager.refreshStores() }
+        var opened: Long? = null
+        compose.setContent {
+            YomuTheme {
+                ExtensionsScreen(koinViewModel<ExtensionsViewModel>(), onBack = {}, onOpenSource = { opened = it })
+            }
+        }
+        awaitText("Installed")
+        // reload shares the scan mutex. Inject the in-memory source after startup has released it.
+        runBlocking { manager.reload() }
+        val source = seedExtensionSources(count = 20).last()
+        awaitText("A test extension")
+        compose.onNode(hasText("A test extension") and hasClickAction()).performClick()
+        val heading = hasText("Sources · 20")
+        val target = hasText(source.name) and hasClickAction()
+        awaitText("Sources · 20")
+        val listId = compose.onNode(hasScrollAction() and hasAnyDescendant(heading)).fetchSemanticsNode().id
+        compose.onNode(SemanticsMatcher("extension sources list") { it.id == listId }).performScrollToNode(target)
+        compose.onNode(target).performClick()
+        compose.runOnIdle { assertEquals(source.id, opened) }
+    }
+
+    private fun seedExtensionSources(count: Int = 1, warning: ContentWarning = ContentWarning.SAFE): List<CatalogSource> {
+        val koin = GlobalContext.get()
+        val manager = koin.get<ExtensionManager>()
+        val sources = koin.get<SourceManager>()
+        runBlocking { sources.ready.first { it } }
+        val catalogs = List(count) { i ->
+            object : CatalogSource by OpdsSource("Fixture catalog ${i + 1}", "https://fixture.invalid/opds/$i", "en") {}
+        }
+        @Suppress("UNCHECKED_CAST")
+        val installed = ExtensionManager::class.java.getDeclaredField("_installed").apply { isAccessible = true }
+            .get(manager) as MutableStateFlow<List<InstalledExtension>>
+        installed.value += InstalledExtension(
+            pkg = "app.yomu.fixture.extension", name = "A test extension", versionName = "1.0", versionCode = 1,
+            format = ExtensionFormat.YOMU, libVersion = null, lang = "en", contentWarning = warning,
+            signatures = listOf("fixture"), isPrivate = true, isBundled = false, status = ExtensionStatus.LOADED,
+            sources = catalogs,
+        )
+        return catalogs
     }
 
     @Test

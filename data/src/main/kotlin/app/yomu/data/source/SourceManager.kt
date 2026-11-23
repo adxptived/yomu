@@ -34,8 +34,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -118,40 +118,53 @@ class SourceManager(
         add(NovelBinSource())
     }
     private val opds = MutableStateFlow<List<OpdsSource>>(emptyList())
-    private val _ready = MutableStateFlow(false)
-    val ready: StateFlow<Boolean> = _ready.asStateFlow()
+    private val scanComplete = MutableStateFlow(false)
 
-    /**
-     * All sources. An extension source with the same id as a built-in one (for example the MangaDex extension and the
-     * built-in MangaDex use the same id scheme and URLs) replaces it, so saved titles keep working with either.
-     */
-    val sources: StateFlow<List<CatalogSource>> = combine(opds, extensions.loaded) { o, e ->
-        val ext = e.flatMap { it.sources }.distinctBy { it.id }
-        val extIds = ext.map { it.id }.toSet()
-        builtIn.filter { it is LocalSource || it.id !in extIds } + o + ext.filter { it.id != LocalSource.ID }
-    }.stateIn(scope, SharingStarted.Eagerly, builtIn)
+    private data class RegisteredSource(val source: CatalogSource, val extension: InstalledExtension? = null)
+    private data class Registry(val entries: Map<Long, RegisteredSource>, val ready: Boolean)
+
+    // Resolve source IDs and their owning packages from the same scan. A matching extension replaces a built-in
+    // source (e.g. MangaDex) so that existing titles still resolve by ID. Local and personal catalogs keep their IDs.
+    private val registry = combine(opds, extensions.installed, scanComplete) { _, _, _ ->
+        // Read after the startup flag so a ready registry includes both completed scans.
+        val ready = scanComplete.value
+        val personal = opds.value
+        val installed = extensions.installed.value
+        val fromExtensions = buildMap {
+            installed.filter { it.status == ExtensionStatus.LOADED }.forEach { ext ->
+                ext.sources.forEach { source -> putIfAbsent(source.id, RegisteredSource(source, ext)) }
+            }
+        }
+        val entries = buildMap {
+            builtIn.filter { it is LocalSource || it.id !in fromExtensions }
+                .forEach { put(it.id, RegisteredSource(it)) }
+            personal.forEach { putIfAbsent(it.id, RegisteredSource(it)) }
+            fromExtensions.forEach { (id, entry) -> putIfAbsent(id, entry) }
+        }
+        Registry(entries, ready)
+    }.stateIn(scope, SharingStarted.Eagerly, Registry(builtIn.associate { it.id to RegisteredSource(it) }, false))
+
+    val ready: StateFlow<Boolean> = registry.map { it.ready }.stateIn(scope, SharingStarted.Eagerly, false)
+    val sources: StateFlow<List<CatalogSource>> = registry.map { it.entries.values.map(RegisteredSource::source) }
+        .stateIn(scope, SharingStarted.Eagerly, builtIn)
 
     val infos: StateFlow<List<SourceInfo>> = combine(
-        sources, db.sources().observe(), settings.hiddenSources.flow, settings.hiddenExtensions.flow, settings.contentPreference.flow,
-    ) { list, rows, hiddenSources, hiddenExtensions, content ->
+        registry, db.sources().observe(), settings.hiddenSources.flow, settings.hiddenExtensions.flow, settings.contentPreference.flow,
+    ) { registered, rows, hiddenSources, hiddenExtensions, content ->
         val byId = rows.associateBy { it.id }
-        // The extension of every source in one pass: looking it up per source went over all sources of all
-        // extensions for each one (millions of comparisons with the big repositories, on every list change).
-        val extOf = HashMap<Long, InstalledExtension>()
-        extensions.loaded.value.forEach { e -> e.sources.forEach { src -> extOf.putIfAbsent(src.id, e) } }
-        list.mapNotNull { s ->
+        registered.entries.mapNotNull { (id, entry) ->
+            val (s, ext) = entry
             // One extension property that throws must not terminate this eagerly shared flow (which would freeze the
             // whole catalog until the app restarts): the source is left out of this snapshot instead.
             runCatching {
-                val row = byId[s.id]
-                val ext = extOf[s.id]
+                val row = byId[id]
                 // Safe content: a source of an adult extension is not listed anywhere (the list, global search and the
                 // language counts all come from here).
                 if (!content.allows(ext?.isNsfw == true)) return@mapNotNull null
-                val individuallyHidden = s.id.toString() in hiddenSources
+                val individuallyHidden = id.toString() in hiddenSources
                 val extensionHidden = ext != null && ext.pkg in hiddenExtensions
                 SourceInfo(
-                    id = s.id, name = s.name, lang = s.lang, content = s.content,
+                    id = id, name = s.name, lang = s.lang, content = s.content,
                     kind = when {
                         s is LocalSource -> SourceInfo.Kind.LOCAL
                         s is OpdsSource -> SourceInfo.Kind.OPDS
@@ -174,7 +187,7 @@ class SourceManager(
                     extensionHidden = extensionHidden,
                     individuallyHidden = individuallyHidden,
                 )
-            }.onFailure { Timber.w(it, "Source info ${s.id}") }.getOrNull()
+            }.onFailure { Timber.w(it, "Source info $id") }.getOrNull()
         }
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
@@ -201,7 +214,7 @@ class SourceManager(
                     .onFailure { Timber.e(it, "Configuring the local source failed") }
                 runCatching { extensions.reload() }.onFailure { Timber.e(it, "Loading extensions failed") }
             } finally {
-                _ready.value = true
+                scanComplete.value = true
             }
         }
     }
@@ -226,7 +239,7 @@ class SourceManager(
         }
     }
 
-    fun get(id: Long): CatalogSource? = sources.value.firstOrNull { it.id == id }
+    fun get(id: Long): CatalogSource? = registry.value.entries[id]?.source
 
     /**
      * What [source] can do: what it reports, or what its old flags imply. One place decides, so a screen and a search

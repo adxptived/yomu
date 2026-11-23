@@ -170,6 +170,7 @@ class AnnotationsViewModel(
 
     fun setTab(tab: AnnotationTab) = _filter.update { copy(tab = tab) }
     fun setQuery(q: String) = _filter.update { copy(query = q) }
+    fun clearFilters() = _filter.update { copy(query = "", color = null, favoritesOnly = false) }
     fun setColor(c: HighlightColor?) = _filter.update { copy(color = c) }
     fun toggleFavorites() = _filter.update { copy(favoritesOnly = !favoritesOnly) }
     fun toggleSort() = _filter.update { copy(sort = if (sort == AnnotationSort.POSITION) AnnotationSort.DATE else AnnotationSort.POSITION) }

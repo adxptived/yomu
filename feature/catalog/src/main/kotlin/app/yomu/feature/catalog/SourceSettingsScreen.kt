@@ -9,18 +9,23 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.core.os.bundleOf
 import androidx.fragment.compose.AndroidFragment
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.preference.DialogPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceGroup
+import app.yomu.core.ui.components.EmptyState
+import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.aboveNavBar
 import app.yomu.data.source.SourceManager
 import app.yomu.data.source.tachiyomi.TachiyomiSource
@@ -36,14 +41,16 @@ import app.yomu.core.ui.R as CoreR
 @Composable
 fun SourceSettingsScreen(sourceId: Long, onBack: () -> Unit) {
     val sources = koinInject<SourceManager>()
-    val source = sources.get(sourceId)
+    val ready by sources.ready.collectAsStateWithLifecycle()
+    val registered by sources.sources.collectAsStateWithLifecycle()
+    val source = registered.firstOrNull { it.id == sourceId } as? TachiyomiSource
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Column {
                         Text(source?.name ?: stringResource(R.string.ext_source_settings))
-                        if (source != null) Text(langLabel(source.lang, single = true), style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+                        if (source != null) Text(langLabel(source.lang, single = true), style = MaterialTheme.typography.bodySmall)
                     }
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back)) } },
@@ -51,10 +58,15 @@ fun SourceSettingsScreen(sourceId: Long, onBack: () -> Unit) {
         },
     ) { padding ->
         // A source's own preference screen cannot scroll under the pill: it ends above it.
-        AndroidFragment<SourcePreferencesFragment>(
-            modifier = Modifier.padding(padding.aboveNavBar()).fillMaxSize(),
-            arguments = bundleOf(SourcePreferencesFragment.ARG_SOURCE to sourceId),
-        )
+        val modifier = Modifier.padding(padding.aboveNavBar()).fillMaxSize()
+        when {
+            !ready -> SkeletonList(modifier)
+            source?.hasPreferences != true -> EmptyState(title = stringResource(R.string.ext_source_settings_unavailable), modifier = modifier)
+            else -> AndroidFragment<SourcePreferencesFragment>(
+                modifier = modifier,
+                arguments = bundleOf(SourcePreferencesFragment.ARG_SOURCE to sourceId),
+            )
+        }
     }
 }
 

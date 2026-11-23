@@ -78,6 +78,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -1393,9 +1394,10 @@ internal fun ColumnScope.BackupSection(vm: SettingsViewModel, onOpenSync: () -> 
     PreferenceHeader(stringResource(R.string.set_reset))
     PreferenceItem(stringResource(R.string.set_reset_all), stringResource(R.string.set_reset_all_sum), onClick = { confirmReset = true }, icon = settingIcon(R.string.set_reset_all))
 
-    preview?.let { p ->
-        var replace by remember(p) { mutableStateOf(false) }
-        var chosen by remember(p) { mutableStateOf(BackupCategory.entries.toSet()) }
+    preview?.let { selected ->
+        val p = selected.manifest
+        var replace by remember(selected) { mutableStateOf(false) }
+        var chosen by remember(selected) { mutableStateOf(BackupCategory.entries.toSet()) }
         AlertDialog(
             onDismissRequest = vm::dismissBackupPreview,
             title = { Text(stringResource(R.string.set_restore_preview_title)) },
@@ -1404,6 +1406,7 @@ internal fun ColumnScope.BackupSection(vm: SettingsViewModel, onOpenSync: () -> 
                     Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(Dimens.xs),
                 ) {
+                    selected.displayName?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.titleMedium) }
                     if (p.createdAt > 0) {
                         val whenMade = TimeFormat.formatDateTime(context, timeFormat, p.createdAt)
                         Text(stringResource(R.string.set_restore_preview_date, whenMade))
@@ -1417,14 +1420,14 @@ internal fun ColumnScope.BackupSection(vm: SettingsViewModel, onOpenSync: () -> 
                     BackupCategory.entries.forEach { category ->
                         val count = p.categories[category] ?: 0
                         Row(
-                            Modifier.fillMaxWidth().clickable {
-                                chosen = if (category in chosen) chosen - category else chosen + category
+                            Modifier.fillMaxWidth().heightIn(min = Dimens.touch).toggleable(value = category in chosen, role = Role.Checkbox) {
+                                chosen = if (it) chosen + category else chosen - category
                             },
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Checkbox(
                                 checked = category in chosen,
-                                onCheckedChange = { chosen = if (category in chosen) chosen - category else chosen + category },
+                                onCheckedChange = null,
                             )
                             Column(Modifier.padding(start = Dimens.xs)) {
                                 Text(backupCategoryLabel(category), style = MaterialTheme.typography.bodyMedium)

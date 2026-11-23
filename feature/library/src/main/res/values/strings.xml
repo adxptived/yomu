@@ -258,4 +258,6 @@
         <item quantity="other">Downloads: %d left</item>
     </plurals>
     <string name="library_downloads_failed">Downloads: some failed</string>
+    <string name="library_clear_search">Clear search</string>
+    <string name="library_clear_search_filters">Clear search and filters</string>
 </resources>

@@ -154,6 +154,11 @@ internal fun ReaderQuickPanel(
 @Composable
 private fun TextQuick(s: TextReaderSettings, vm: ReaderViewModel) {
     FontSizeRow(s, vm)
+    PreferenceSlider(
+        stringResource(R.string.rs_line_height), s.lineHeight, 1f..2.5f,
+        { value -> vm.updateText { it.copy(lineHeight = value) } },
+        { "%.2f".format(it) }, steps = 29,
+    )
     var fontsOpen by remember { mutableStateOf(false) }
     ThemePicker(s, { t -> vm.updateText { it.copy(theme = t) } }, themes = TextPresets.quickThemes, title = "")
     Text(
@@ -192,11 +197,6 @@ private fun TextQuick(s: TextReaderSettings, vm: ReaderViewModel) {
         title = stringResource(R.string.rs_font_current, fontLabelText(s.fontFamily)),
         icon = Icons.Filled.TextFields,
         onClick = { fontsOpen = true },
-    )
-    PreferenceSlider(
-        stringResource(R.string.rs_line_height), s.lineHeight, 1f..2.5f,
-        { value -> vm.updateText { it.copy(lineHeight = value) } },
-        { "%.2f".format(it) }, steps = 29,
     )
     PreferenceSlider(
         stringResource(R.string.rs_margin_h), s.marginHorizontal.toFloat(), 0f..80f,

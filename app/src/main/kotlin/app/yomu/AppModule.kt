@@ -155,6 +155,7 @@ sealed interface MainEvent {
 
     /** A tap on a download notification. */
     data object OpenDownloads : MainEvent
+    data object OpenCatalog : MainEvent
 
     /** An online chapter to read (the "Continue reading" widget). */
     data class OpenChapter(val chapterId: Long) : MainEvent
@@ -322,7 +323,10 @@ class MainViewModel(
         if (uris.size == 1 && failed.isNotEmpty()) _events.send(MainEvent.Imported(0, 1, failed.first().error))
     }
 
-    fun finishOnboarding() = viewModelScope.launch(ScreenErrors) { settings.onboardingDone.set(true) }
+    fun finishOnboarding(openCatalog: Boolean = false) = viewModelScope.launch(ScreenErrors) {
+        settings.onboardingDone.set(true)
+        if (openCatalog) _events.send(MainEvent.OpenCatalog)
+    }
 
     companion object {
         private const val MAX_LOOKUP = 200

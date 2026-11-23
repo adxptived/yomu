@@ -294,8 +294,8 @@ fun ReaderScreen(
         onDispose { controller?.isAppearanceLightStatusBars = chromeLight }
     }
     // The settings sample shows the open page, not a generic paragraph; it is read once when the sheet opens.
-    val previewSnippet by produceState<String?>(null, sheet, data) {
-        value = if (sheet == ReaderSheet.SETTINGS) viewModel.visibleSnippet() else null
+    val previewSnippet by produceState<String?>(null, sheet, data, textReady) {
+        value = if (sheet == ReaderSheet.SETTINGS && data is ReaderContent.Text && textReady) viewModel.visibleSnippet() else null
     }
     val bookLang = viewModel.book?.language
     val author = viewModel.book?.authors?.joinToString()

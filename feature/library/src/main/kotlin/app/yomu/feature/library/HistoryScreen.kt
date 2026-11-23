@@ -284,6 +284,12 @@ fun HistoryPane(
                 message = stringResource(R.string.history_empty_text),
                 icon = Icons.Outlined.History,
             )
+            list.isEmpty() -> EmptyState(
+                title = stringResource(R.string.history_nothing_found),
+                icon = Icons.Default.Search,
+                actionLabel = stringResource(R.string.library_clear_search),
+                onAction = { viewModel.query.value = "" },
+            )
             else -> LazyColumn(
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl)),
@@ -291,16 +297,6 @@ fun HistoryPane(
                 if (showToday) {
                     today?.takeIf { query.isBlank() }?.let { t ->
                         item(key = "today") { TodayCard(t, onOpenStats) }
-                    }
-                }
-                if (list.isEmpty()) {
-                    item(key = "nothing") {
-                        Text(
-                            stringResource(R.string.history_nothing_found),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(Dimens.l),
-                        )
                     }
                 }
                 list.forEach { day ->

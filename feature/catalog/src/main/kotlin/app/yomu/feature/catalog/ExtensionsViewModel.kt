@@ -182,7 +182,11 @@ class ExtensionsViewModel(
     fun trust(ext: InstalledExtension) = viewModelScope.launch(ScreenErrors) {
         extensions.trust(ext)
         val now = extensions.installed.value.firstOrNull { it.pkg == ext.pkg }
-        if (now?.status == ExtensionStatus.BROKEN) _events.send(CatalogEvent.Message(R.string.ext_broken_after_trust, now.error))
+        when (now?.status) {
+            ExtensionStatus.LOADED -> _events.send(CatalogEvent.Message(R.string.ext_trusted_one, now.name))
+            ExtensionStatus.BROKEN -> _events.send(CatalogEvent.Message(R.string.ext_broken_after_trust, now.error ?: now.name))
+            else -> Unit
+        }
     }
 
     /** Trusts every extension in [list] (the ones the user saw in the "Trust all" dialog) at once. */

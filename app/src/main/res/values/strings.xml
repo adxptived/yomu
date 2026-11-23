@@ -328,4 +328,5 @@
         <item quantity="one">%1$d change still waits: no network or the service did not answer</item>
         <item quantity="other">%1$d changes still wait: no network or the service did not answer</item>
     </plurals>
+    <string name="onboarding_open_catalog">Find a book in the catalog</string>
 </resources>
