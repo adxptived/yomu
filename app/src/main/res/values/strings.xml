@@ -54,6 +54,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_13_0">
+        <item>Open the catalog from first launch, find sources more easily and return to a title from the download queue.</item>
+        <item>See your saved reading position in book details. Change text size and spacing together while reading.</item>
+        <item>The mini-player shows the sleep timer, and the full player keeps skip controls beside Play.</item>
+        <item>Clear empty searches and see the selected backup file before restoring it.</item>
+    </string-array>
     <string-array name="whats_new_2_12_0">
         <item>Catalog filters are easier to adjust, and bottom navigation stays available while browsing and adding sources.</item>
         <item>Connect custom OPDS catalogs and audiobook feeds with clearer error messages, previews and working download links.</item>

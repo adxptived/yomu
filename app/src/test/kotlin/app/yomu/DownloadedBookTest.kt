@@ -77,7 +77,8 @@ class DownloadedBookTest {
 
         // A double tap queues the book once.
         val first = downloads.enqueueBook("Downloaded Book", url, "application/epub+zip")
-        assertEquals(first, downloads.enqueueBook("Downloaded Book", url, "application/epub+zip"))
+        assertEquals(first, downloads.enqueueBook("Downloaded Book", url, "application/epub+zip", entryId = 12))
+        assertEquals(12L, db.downloads().get(first)?.itemId)
         process(downloads, db, first)
         val book = awaitSingleBook(db)
         val file = File(Uri.parse(book.uri).path!!)

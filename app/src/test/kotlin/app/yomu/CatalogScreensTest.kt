@@ -368,9 +368,15 @@ class CatalogScreensTest {
     }
 
     /** The pencil of the source list: select many sources and apply one action to all of them. */
+    @OptIn(ExperimentalTestApi::class)
     @Test
     fun sourceBulkEditor() {
         seed()
+        val settings = GlobalContext.get().get<AppSettings>()
+        runBlocking {
+            settings.contentPreference.set(ContentPreference.MIXED)
+            settings.catalogSourceFilter.set(SourceListFilter())
+        }
         compose.setContent {
             YomuTheme {
                 CatalogScreen(
@@ -379,8 +385,9 @@ class CatalogScreensTest {
                 )
             }
         }
-        awaitText("MangaDex")
-        compose.onNode(hasContentDescription("Edit sources") and hasClickAction()).performClick()
+        val editSources = hasContentDescription("Edit sources") and hasClickAction()
+        compose.waitUntilAtLeastOneExists(editSources, 20_000)
+        compose.onNode(editSources).performClick()
         awaitText("Select all")
         compose.onAllNodesWithText("Select all")[0].performClick()
         compose.mainClock.advanceTimeBy(1_000)

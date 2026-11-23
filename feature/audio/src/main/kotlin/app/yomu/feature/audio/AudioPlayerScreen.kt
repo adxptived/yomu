@@ -1207,7 +1207,7 @@ private fun originLabel(origin: AudioOrigin): String? = when (origin) {
 }
 
 @Composable
-private fun sleepTimerStatus(s: PlayerSnapshot?): String? {
+internal fun sleepTimerStatus(s: PlayerSnapshot?): String? {
     if (s == null) return null
     if (s.sleepEndOfChapter) return stringResource(R.string.audio_sleep_chapter)
     val deadline = s.sleepAt

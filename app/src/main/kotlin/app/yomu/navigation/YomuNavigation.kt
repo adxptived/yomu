@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
@@ -226,8 +227,9 @@ fun YomuNavigation(main: MainViewModel, reduceMotion: Boolean, navLabels: Boolea
         val topTaken = showIncognito
         Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(if (topTaken) WindowInsets.statusBars else WindowInsets(0, 0, 0, 0))) {
             // The mini player floats above the navigation bar; the screens leave room for it in their lists.
-            val miniRoom = if (playing != null) MINI_PLAYER_ROOM else 0.dp
-            Shell(adaptive, onHome, barVisible, tabsState.selected, barHidden, items, shown, navLabels, tabsState, barInset + miniRoom, nav, reduceMotion)
+            val density = LocalDensity.current
+            var miniHeight by remember(density) { mutableStateOf(MINI_PLAYER_ROOM) }
+            Shell(adaptive, onHome, barVisible, tabsState.selected, barHidden, items, shown, navLabels, tabsState, barInset + if (playing != null) miniHeight else 0.dp, nav, reduceMotion)
             playing?.let { np ->
                 MiniPlayer(
                     audio, np,
@@ -236,7 +238,7 @@ fun YomuNavigation(main: MainViewModel, reduceMotion: Boolean, navLabels: Boolea
                         // Above the bar; a tab with its own bottom bar (library selection) keeps the same room, so
                         // the mini player never sits on top of those actions.
                         bottom = if (adaptive == NavigationSuiteType.NavigationBar && (barVisible || onHome)) barInset else navBarsBottom,
-                    ),
+                    ).onSizeChanged { miniHeight = with(density) { it.height.toDp() } },
                 )
             }
         }
@@ -256,7 +258,7 @@ private fun MiniPlayer(
 ) {
     val live by audio.miniState.collectAsStateWithLifecycle(np)
     NowPlayingBar(
-        live ?: np,
+        live?.takeIf { it.bookId == np.bookId } ?: np,
         onOpen = onOpen,
         onToggle = audio::togglePlay,
         onStop = audio::stop,

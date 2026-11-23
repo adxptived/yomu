@@ -103,12 +103,27 @@ class DownloadRepository(
     suspend fun entryTitles(ids: Collection<Long>): Map<Long, String> =
         if (ids.isEmpty()) emptyMap() else db.catalog().items(ids).associate { it.id to it.title }
 
-    suspend fun enqueueBook(title: String, url: String, mimeType: String?, sourceId: Long? = null, headers: Map<String, String> = emptyMap()): Long {
+    suspend fun enqueueBook(
+        title: String,
+        url: String,
+        mimeType: String?,
+        sourceId: Long? = null,
+        headers: Map<String, String> = emptyMap(),
+        entryId: Long? = null,
+    ): Long {
         // The check and the insert share one transaction: a second tap (or the UI and UpdateWorker at once) must not
         // pass the check between the two and create a duplicate task that imports the same file twice.
         val id = db.withTransaction {
-            dao.activeForUrl(url)?.let { return@withTransaction it.id }
+            dao.activeForUrl(url)?.let { active ->
+                if (active.kind == DownloadKind.BOOK.name && active.itemId == null && active.sourceId == sourceId && entryId != null) {
+                    dao.update(active.copy(itemId = entryId))
+                }
+                return@withTransaction active.id
+            }
             dao.failedForUrl(url)?.let { failed ->
+                if (failed.kind == DownloadKind.BOOK.name && failed.itemId == null && failed.sourceId == sourceId && entryId != null) {
+                    dao.update(failed.copy(itemId = entryId))
+                }
                 dao.restart(listOf(failed.id), System.currentTimeMillis())
                 return@withTransaction failed.id
             }
@@ -118,7 +133,7 @@ class DownloadRepository(
                     kind = DownloadKind.BOOK.name, title = title, url = url,
                     headersJson = if (headers.isEmpty()) null else Json.encodeToString(headersSerializer, headers),
                     status = DownloadStatus.QUEUED.name, bytesDownloaded = 0, bytesTotal = -1, pagesDone = 0, pagesTotal = 0, error = null,
-                    chapterId = null, itemId = null, sourceId = sourceId, destPath = null, mimeType = mimeType, createdAt = now, updatedAt = now,
+                    chapterId = null, itemId = entryId, sourceId = sourceId, destPath = null, mimeType = mimeType, createdAt = now, updatedAt = now,
                 ),
             )
         }

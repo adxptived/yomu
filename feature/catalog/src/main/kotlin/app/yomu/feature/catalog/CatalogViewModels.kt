@@ -1390,7 +1390,7 @@ class TitleViewModel(
         }
         runCatchingApp {
             val headers = runCatching { catalog.bookDownloadHeaders(e.sourceId, link.url) }.getOrDefault(emptyMap())
-            downloads.enqueueBook(e.title, link.url, link.mimeType, e.sourceId, headers)
+            downloads.enqueueBook(e.title, link.url, link.mimeType, e.sourceId, headers, entryId = e.id)
         }.onSuccess { _events.send(CatalogEvent.Message(R.string.title_book_queued)) }
             .onFailure { _events.send(CatalogEvent.Failure(it)) }
     }

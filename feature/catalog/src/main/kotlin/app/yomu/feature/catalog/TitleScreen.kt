@@ -546,7 +546,7 @@ private fun TitleContent(
                         l == null -> item(key = "links-loading") {
                             Box(Modifier.fillMaxWidth().padding(Dimens.l), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                         }
-                        l.isEmpty() -> item(key = "links-empty") {
+                        l.isEmpty() && loadError == null && !refreshing -> item(key = "links-empty") {
                             Text(stringResource(R.string.title_no_files), modifier = Modifier.padding(horizontal = Dimens.l), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         else -> items(l, key = { it.url }) { link -> LinkRow(link) { viewModel.downloadBook(link) } }

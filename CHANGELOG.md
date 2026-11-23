@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.13.0 — easier reading, source discovery and offline access
+
+### Catalog and downloads
+
+- Open the catalog directly from first launch. Find sources by name or language, reveal hidden sources and open filtered search matches without resetting saved filters.
+- Open sources from their extension details, including sources without a settings page. Failed sources stay visible in global search so you can retry them individually.
+- Open the catalog title from a linked download in the queue. File loading errors now have their own retry state.
+- The catalog check plan labels today and tomorrow.
+
+### Books, reading and audio
+
+- See the saved chapter or page and progress next to the reading button in book details. The library resume action distinguishes reading from listening.
+- Change text size and line spacing together in reader settings. The preview follows the open book when Android changes its font scale. In PDF settings, the crop preview sits above the margin controls.
+- Skip backward or forward beside the play button. The mini-player shows the sleep timer, and app screens leave room for its measured height.
+
+### Settings and accessibility
+
+- Clear a search or filters directly from an empty library, history or annotation view.
+- Choice tiles wrap at larger system text sizes. The backup preview shows the selected file name before you decide whether to restore it.
+
 ## 2.12.0 — better source connections and library controls
 
 ### Catalog and sources

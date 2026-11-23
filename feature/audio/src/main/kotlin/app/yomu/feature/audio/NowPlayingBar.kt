@@ -79,11 +79,15 @@ fun NowPlayingBar(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
-                        state.trackTitle.ifBlank { state.bookTitle },
+                    val subtitle = listOfNotNull(
+                        state.trackTitle.takeIf { it.isNotBlank() && it != state.bookTitle },
+                        sleepTimerStatus(state),
+                    ).joinToString(" · ")
+                    if (subtitle.isNotEmpty()) Text(
+                        subtitle,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }

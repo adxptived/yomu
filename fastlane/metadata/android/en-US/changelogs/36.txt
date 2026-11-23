@@ -1,0 +1,3 @@
+Open the catalog from first launch, find sources by name or language, and reopen a title from Downloads.
+Book details show where you stopped. Reader settings put font size next to line spacing, and the mini-player shows the sleep timer.
+Clear empty searches and review the selected backup file before restoring it.
