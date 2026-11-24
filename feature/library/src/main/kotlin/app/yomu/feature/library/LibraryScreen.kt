@@ -103,6 +103,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -131,9 +133,11 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.LoadState
@@ -166,6 +170,9 @@ import app.yomu.core.ui.components.TabOption
 import app.yomu.core.ui.components.TabsPickerSheet
 import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.TopLevelBody
+import app.yomu.core.ui.components.barBackdrop
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.core.ui.components.WheelLayout
 import app.yomu.core.ui.components.YomuFab
 import app.yomu.core.ui.components.YomuSheet
@@ -227,6 +234,8 @@ fun LibraryScreen(
     /** The extension/source manager: install catalogs of online sources and configure them. */
     onOpenSources: () -> Unit = {},
     online: OnlineLibrary? = null,
+    /** The book whose details are open in the pane beside the list (a wide window): its tile is marked. */
+    highlightBookId: Long? = null,
 ) {
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -421,6 +430,11 @@ fun LibraryScreen(
     // "All" without books: a compact card offers the import instead of the full-screen empty state.
     val noBooksCard = !inOnline && !inTab && !filtered && noBooksAtAll && onlineCount > 0
     val fullEmpty = !inOnline && !inTab && !filtered && noBooksAtAll && onlineCount == 0
+    val loading = (booksLoading && showBooks) || total < 0 || !onlineLoaded
+    val emptyResults = bookCount == 0 && onlineTiles.isEmpty() && !shelf && !noBooksCard
+    val drawBehindTopBar = !inOnline && !selecting && !searching && !loading && !fullEmpty && !emptyResults
+    val toolbarBackdrop = rememberHazeState()
+    val refreshState = rememberPullToRefreshState()
     val showFab = !selecting && !inOnline && !noBooksCard && !fullEmpty
     // The actions for the selected books take the place of the floating navigation bar.
     HideNavBarWhile(selecting)
@@ -440,7 +454,15 @@ fun LibraryScreen(
             },
         contentWindowInsets = topLevelContentInsets(),
         topBar = {
-            Column(Modifier.background(MaterialTheme.colorScheme.background)) {
+            val backdrop = if (drawBehindTopBar) {
+                Modifier.barBackdrop(toolbarBackdrop).pointerInput(Unit) {
+                    // The toolbar owns touches in its gaps as well as on its controls.
+                    awaitPointerEventScope { while (true) awaitPointerEvent() }
+                }
+            } else {
+                Modifier.background(MaterialTheme.colorScheme.background)
+            }
+            Column(Modifier.fillMaxWidth().then(backdrop)) {
                 when {
                     selecting -> TopAppBar(
                         // Local books and online entries are counted together: they share one selection.
@@ -667,11 +689,24 @@ fun LibraryScreen(
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        TopLevelBody(padding, Modifier.fillMaxSize()) {
-            PullToRefreshBox(isRefreshing = refreshing, onRefresh = { if (!selecting) viewModel.refresh() }, modifier = Modifier.fillMaxSize()) {
+        val topInset = if (drawBehindTopBar) padding.calculateTopPadding() else 0.dp
+        TopLevelBody(padding, Modifier.fillMaxSize(), drawBehindTopBar = drawBehindTopBar) {
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = { if (!selecting) viewModel.refresh() },
+                state = refreshState,
+                modifier = Modifier.fillMaxSize().then(if (drawBehindTopBar) Modifier.hazeSource(toolbarBackdrop) else Modifier),
+                indicator = {
+                    PullToRefreshDefaults.Indicator(
+                        state = refreshState,
+                        isRefreshing = refreshing,
+                        modifier = Modifier.align(Alignment.TopCenter).padding(top = topInset),
+                    )
+                },
+            ) {
                 when {
                     inOnline -> online.pane(snackbar, search)
-                    (booksLoading && showBooks) || total < 0 || !onlineLoaded -> if (grid) SkeletonGrid() else SkeletonList()
+                    loading -> if (grid) SkeletonGrid() else SkeletonList()
                     fullEmpty -> EmptyState(
                         title = stringResource(R.string.library_empty_title),
                         message = stringResource(R.string.library_empty_text),
@@ -679,7 +714,7 @@ fun LibraryScreen(
                         actionLabel = stringResource(R.string.library_import),
                         onAction = { showImport = true },
                     )
-                    bookCount == 0 && onlineTiles.isEmpty() && !shelf && !noBooksCard -> when {
+                    emptyResults -> when {
                         filtered -> EmptyState(
                             title = stringResource(R.string.library_nothing_found),
                             icon = Icons.Default.Search,
@@ -708,8 +743,10 @@ fun LibraryScreen(
                             showBooks = showBooks,
                             grid = grid,
                             columns = columns,
+                            topInset = topInset,
                             selection = selection,
                             selectionMode = selecting,
+                            highlightBookId = highlightBookId,
                             onlineSelection = typedSelection.keys.filterIsInstance<LibraryItemKey.OnlineEntry>().mapTo(mutableSetOf()) { it.id },
                             onlineTiles = onlineTiles,
                             header = {
@@ -1192,7 +1229,7 @@ private fun ContinueReading(
         is ContinueItem.BookItem -> first.book.format.isAudio
         is ContinueItem.OnlineItem -> first.entry.type == app.yomu.domain.model.ContentType.AUDIO
     }
-    val resumeLabel = stringResource(if (isAudio) R.string.details_continue_listening else R.string.details_continue)
+    val resumeLabel = stringResource(if (isAudio) R.string.details_continue_listening else R.string.library_continue)
     val open: (ContinueItem) -> Unit = { item ->
         when (item) {
             is ContinueItem.BookItem -> onOpenBook(item.book)
@@ -1208,6 +1245,7 @@ private fun ContinueReading(
                 .combinedClickable(
                     onClick = { open(first) },
                     onClickLabel = resumeLabel,
+                    onLongClickLabel = if (localBook != null) stringResource(R.string.library_details) else null,
                     onLongClick = localBook?.let { book -> { onDetails(book) } },
                 ),
         ) {
@@ -1216,9 +1254,8 @@ private fun ContinueReading(
                     is ContinueItem.BookItem -> first.book.title to first.book.cover()
                     is ContinueItem.OnlineItem -> first.entry.title to first.entry.coverUrl
                 }
-                CoverImage(cover, title, Modifier.width(56.dp))
+                CoverImage(cover, title, Modifier.width(56.dp).clearAndSetSemantics {})
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
-                    Text(stringResource(R.string.library_continue), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                     Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     val (detail, fraction) = when (first) {
                         is ContinueItem.BookItem -> {
@@ -1239,12 +1276,22 @@ private fun ContinueReading(
                         )
                         Text("${(fraction * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.clearAndSetSemantics {},
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = Dimens.m, vertical = Dimens.xs),
+                            horizontalArrangement = Arrangement.spacedBy(Dimens.xs),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(if (isAudio) Icons.Default.PlayArrow else Icons.Outlined.AutoStories, null, Modifier.size(16.dp))
+                            Text(resumeLabel, style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
                 }
-                Icon(
-                    imageVector = if (isAudio) Icons.Default.PlayArrow else Icons.Outlined.AutoStories,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                )
             }
         }
         val rest = items.drop(1)
@@ -1472,8 +1519,11 @@ private fun LibraryGrid(
     showBooks: Boolean,
     grid: Boolean,
     columns: Int,
+    topInset: Dp,
     selection: Set<Long>,
     selectionMode: Boolean,
+    /** The book open in the details pane of a wide window: its tile keeps the outline. */
+    highlightBookId: Long? = null,
     /** Selected online entries; a separate key space from [selection], which holds local book ids. */
     onlineSelection: Set<Long> = emptySet(),
     onlineTiles: List<CatalogEntry>,
@@ -1509,7 +1559,7 @@ private fun LibraryGrid(
             LazyVerticalGrid(
                 state = gridState,
                 columns = if (columns <= 0) GridCells.Adaptive(Dimens.gridMin) else GridCells.Fixed(columns),
-                contentPadding = PaddingValues(start = Dimens.s, end = Dimens.s, bottom = navBarBottomPadding(96.dp)),
+                contentPadding = PaddingValues(start = Dimens.s, top = topInset, end = Dimens.s, bottom = navBarBottomPadding(96.dp)),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 item(key = "header", span = { GridItemSpan(maxLineSpan) }, contentType = "header") { Column { header() } }
@@ -1547,6 +1597,7 @@ private fun LibraryGrid(
                         badge = book.format.name.takeIf { it != "EPUB" },
                         selected = book.id in selection,
                         selectionMode = selectionMode,
+                        highlighted = book.id == highlightBookId,
                         finished = book.status == ReadingStatus.FINISHED,
                         coverModifier = Modifier.sharedCover("book-${book.id}"),
                         onClick = { onClick(book) },
@@ -1561,12 +1612,12 @@ private fun LibraryGrid(
                 }
                 item(key = "footer", span = { GridItemSpan(maxLineSpan) }, contentType = "footer") { Column { footer() } }
             }
-            FastScroller(gridState.asFastScrollTarget(), scrollDescription, Modifier.align(Alignment.CenterEnd).padding(bottom = navBarBottomPadding(96.dp)), label)
+            FastScroller(gridState.asFastScrollTarget(), scrollDescription, Modifier.align(Alignment.CenterEnd).padding(top = topInset, bottom = navBarBottomPadding(96.dp)), label)
         }
     } else {
         val listState = rememberLazyListState()
         Box(Modifier.fillMaxSize()) {
-            LazyColumn(state = listState, contentPadding = PaddingValues(bottom = navBarBottomPadding(96.dp)), modifier = Modifier.fillMaxSize()) {
+            LazyColumn(state = listState, contentPadding = PaddingValues(top = topInset, bottom = navBarBottomPadding(96.dp)), modifier = Modifier.fillMaxSize()) {
                 item(key = "header", contentType = "header") { Column { header() } }
                 if (onlineTiles.isNotEmpty()) {
                     if (sectionLabels) {
@@ -1619,6 +1670,7 @@ private fun LibraryGrid(
                             meta = listOfNotNull(book.format.name, book.series, book.language?.uppercase()).joinToString(" · "),
                             selected = book.id in selection,
                             selectionMode = selectionMode,
+                            highlighted = book.id == highlightBookId,
                             coverModifier = Modifier.sharedCover("book-${book.id}"),
                             onClick = { onClick(book) },
                             onLongClick = { onLongClick(book) },
@@ -1635,7 +1687,7 @@ private fun LibraryGrid(
                 }
                 item(key = "footer", contentType = "footer") { Column { footer() } }
             }
-            FastScroller(listState.asFastScrollTarget(), scrollDescription, Modifier.align(Alignment.CenterEnd).padding(bottom = navBarBottomPadding(96.dp)), label)
+            FastScroller(listState.asFastScrollTarget(), scrollDescription, Modifier.align(Alignment.CenterEnd).padding(top = topInset, bottom = navBarBottomPadding(96.dp)), label)
         }
     }
 }

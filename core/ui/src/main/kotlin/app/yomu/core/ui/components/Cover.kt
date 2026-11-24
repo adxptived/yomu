@@ -121,6 +121,8 @@ fun BookGridItem(
     selected: Boolean = false,
     /** Choosing several books: every cover shows a checkbox, ticked for the selected ones. */
     selectionMode: Boolean = false,
+    /** The book is open in the details pane of a wide window: same outline, no checkbox. */
+    highlighted: Boolean = false,
     finished: Boolean = false,
     coverModifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -131,7 +133,7 @@ fun BookGridItem(
     readLabel: String? = null,
     infoLabel: String? = null,
 ) {
-    val border = if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small) else Modifier
+    val border = if (selected || highlighted) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small) else Modifier
     val split = onInfoClick != null
     Column(
         modifier
@@ -215,6 +217,8 @@ fun BookListItem(
     selected: Boolean = false,
     /** Choosing several books: every row shows a checkbox, ticked for the selected ones. */
     selectionMode: Boolean = false,
+    /** The book is open in the details pane of a wide window. */
+    highlighted: Boolean = false,
     coverModifier: Modifier = Modifier,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
@@ -225,7 +229,11 @@ fun BookListItem(
     readLabel: String? = null,
     infoLabel: String? = null,
 ) {
-    val bg = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+    val bg = when {
+        selected -> MaterialTheme.colorScheme.secondaryContainer
+        highlighted -> MaterialTheme.colorScheme.surfaceContainerHigh
+        else -> Color.Transparent
+    }
     val split = onInfoClick != null
     Row(
         modifier

@@ -680,6 +680,8 @@ private fun LibraryTab(nav: NavHostController, tabs: TabsState) {
                 onAddSource = { nav.navigate(SourceConnectionRoute()) },
                 onOpenSources = { nav.navigate(ExtensionsRoute()) },
                 online = online,
+                // The pane keeps the list on screen: the book it shows is marked in the list.
+                highlightBookId = paneBook,
             )
         }
     }
