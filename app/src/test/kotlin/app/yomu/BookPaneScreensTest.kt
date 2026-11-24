@@ -6,14 +6,18 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Shader
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import app.yomu.data.book.EpubBuilder
 import app.yomu.data.book.EpubMeta
 import app.yomu.data.library.ImportOutcome
@@ -30,6 +34,7 @@ import org.junit.runner.RunWith
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.stopKoin
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -58,7 +63,16 @@ class BookPaneScreensTest {
     private fun cover(): ByteArray {
         val bmp = Bitmap.createBitmap(300, 450, Bitmap.Config.ARGB_8888)
         val paint = Paint().apply { shader = LinearGradient(0f, 0f, 300f, 450f, 0xFF0F766E.toInt(), 0xFF14B8A6.toInt(), Shader.TileMode.CLAMP) }
-        Canvas(bmp).drawRect(0f, 0f, 300f, 450f, paint)
+        val canvas = Canvas(bmp)
+        canvas.drawRect(0f, 0f, 300f, 450f, paint)
+        paint.shader = null
+        paint.isAntiAlias = true
+        paint.color = 0xFFFFD992.toInt()
+        canvas.drawCircle(206f, 150f, 53f, paint)
+        paint.color = 0xFF154D58.toInt()
+        canvas.drawOval(-230f, 170f, 425f, 540f, paint)
+        paint.color = 0xFF0B3544.toInt()
+        canvas.drawOval(30f, 212f, 540f, 660f, paint)
         return ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
     }
 
@@ -86,9 +100,9 @@ class BookPaneScreensTest {
     }
 
     /** A long press opens the book's actions; Details opens the page. */
-    private fun openDetails() {
-        importBook("The Tide Archive", "tide.epub")
-        compose.onAllNodesWithText("The Tide Archive")[0].performTouchInput { longClick() }
+    private fun openDetails(title: String = "The Tide Archive") {
+        importBook(title, "tide.epub")
+        compose.onAllNodesWithText(title)[0].performTouchInput { longClick() }
         compose.waitForIdle()
         compose.onAllNodesWithText("Details")[0].performClick()
         awaitText("Mara Ellison")
@@ -102,10 +116,56 @@ class BookPaneScreensTest {
     }
 
     @Test
-    @Config(qualifiers = "w411dp-h891dp-xxhdpi")
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "w411dp-h680dp-xxhdpi")
     fun phoneDetailsTintedByCover() {
         openDetails()
         shot("311_details_cover_tint")
+        val title = compose.onNodeWithText("The Tide Archive")
+        val beforeScroll = title.getUnclippedBoundsInRoot().top
+        title.performTouchInput { swipeUp(endY = -height.toFloat() * 4) }
+        compose.waitForIdle()
+        assertTrue("book content must scroll behind the bars", title.getUnclippedBoundsInRoot().top < beforeScroll)
+        shot("314_details_scrolled_bars")
+        compose.onNode(hasContentDescription("Add to favorites")).performClick()
+        compose.waitUntilAtLeastOneExists(hasContentDescription("Remove from favorites"), 10_000)
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-xhdpi")
+    fun largeTextTitleUsesFullHeaderWidth() {
+        RuntimeEnvironment.setFontScale(1.5f)
+        compose.activityRule.scenario.recreate()
+        val title = "The Tide Archive and the Lost Records of the Northern Archipelago"
+        openDetails(title)
+        val titleBounds = compose.onNodeWithText(title).getUnclippedBoundsInRoot()
+        val readBounds = compose.onNodeWithText("Read").getUnclippedBoundsInRoot()
+        assertTrue("title must start at the full-width action's leading edge", titleBounds.left == readBounds.left)
+        shot("313_details_large_text")
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h460dp-xhdpi")
+    fun libraryScrollsBehindItsHeader() {
+        val title = "The Tide Archive"
+        importBook(title, "library-tide.epub")
+        for (index in 1..6) importBook("Field Notes $index", "field-notes-$index.epub")
+        compose.onAllNodesWithText("Got it").let { tips ->
+            if (tips.fetchSemanticsNodes().isNotEmpty()) tips[0].performClick()
+        }
+        val header = compose.onNode(hasText("Library") and !hasClickAction())
+        val headerTop = header.getUnclippedBoundsInRoot().top
+        val bookTitles = compose.onAllNodes(hasText("Field Notes", substring = true))
+        val beforeScroll = bookTitles.fetchSemanticsNodes().associate { it.id to it.positionInRoot.y }
+        compose.onRoot().performTouchInput {
+            swipeUp(startY = height * 0.70f, endY = height * 0.43f, durationMillis = 600)
+        }
+        assertTrue("at least one visible book must move up", bookTitles.fetchSemanticsNodes().any {
+            val before = beforeScroll[it.id]
+            before != null && it.positionInRoot.y < before
+        })
+        assertTrue("the library header must stay pinned", header.getUnclippedBoundsInRoot().top == headerTop)
+        shot("315_library_scrolled_header")
     }
 
     /** The title of a library tile opens the details; the cover is the way into the book. */

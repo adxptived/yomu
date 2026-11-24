@@ -1,10 +1,22 @@
 package app.yomu
 
+import android.app.Application
+import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.pm.FeatureInfo
+import android.content.pm.PackageInfo
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.Uri
+import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
@@ -17,22 +29,28 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import app.yomu.core.database.CatalogItemEntity
 import app.yomu.core.database.ChapterEntity
 import app.yomu.core.database.DownloadTaskEntity
 import app.yomu.core.database.YomuDatabase
+import app.yomu.core.common.AppError
 import app.yomu.core.datastore.AppSettings
+import app.yomu.core.ui.theme.ThemeConfig
+import app.yomu.core.ui.theme.ThemeMode
 import app.yomu.core.ui.theme.YomuTheme
 import app.yomu.data.source.ContentWarning
 import app.yomu.data.source.ExtensionFormat
 import app.yomu.data.source.ExtensionManager
 import app.yomu.data.source.ExtensionStatus
 import app.yomu.data.source.InstalledExtension
+import app.yomu.data.source.SourceInfo
 import app.yomu.data.source.SourceManager
 import app.yomu.domain.catalog.ContentPreference
 import app.yomu.domain.catalog.NsfwFilter
 import app.yomu.domain.catalog.SourceListFilter
 import app.yomu.domain.model.DownloadStatus
+import app.yomu.feature.catalog.BrowseArgs
 import app.yomu.feature.catalog.CatalogHomeViewModel
 import app.yomu.feature.catalog.CatalogScreen
 import app.yomu.feature.catalog.ExtensionsScreen
@@ -40,9 +58,15 @@ import app.yomu.feature.catalog.ExtensionsViewModel
 import app.yomu.feature.catalog.GlobalSearchScreen
 import app.yomu.feature.catalog.GlobalSearchViewModel
 import app.yomu.feature.catalog.SearchArgs
+import app.yomu.feature.catalog.SourceBrowseScreen
+import app.yomu.feature.catalog.SourceBrowseViewModel
 import app.yomu.feature.catalog.TitleScreen
 import app.yomu.feature.downloads.DownloadsScreen
 import app.yomu.source.CatalogSource
+import app.yomu.source.FilterList
+import app.yomu.source.ItemsPage
+import app.yomu.source.SItem
+import app.yomu.source.WebViewRequiredException
 import app.yomu.sources.opds.OpdsSource
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -61,8 +85,13 @@ import org.koin.core.context.GlobalContext
 import org.koin.core.context.stopKoin
 import org.koin.core.parameter.parametersOf
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.shadows.ShadowNetworkCapabilities
+import java.net.SocketTimeoutException
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Screens of the catalog added in 1.3 (chapter sort and filters, download menu and selection, the download queue and
@@ -187,7 +216,10 @@ class CatalogScreensTest {
     fun downloadQueue() {
         val expectedTitle = seed()
         var openedTitle: Long? = null
-        compose.setContent { YomuTheme { DownloadsScreen(koinViewModel(), onBack = {}, onOpenTitle = { openedTitle = it }) } }
+        var wentBack = false
+        compose.setContent {
+            YomuTheme { DownloadsScreen(koinViewModel(), onBack = { wentBack = true }, onOpenTitle = { openedTitle = it }) }
+        }
         awaitText("Pause all")
         awaitText("Resume paused")
         awaitText("Chapter 8")
@@ -195,6 +227,19 @@ class CatalogScreensTest {
         shot("34_downloads")
         compose.onNode(hasText("Chapter 8", substring = true) and hasClickAction()).performClick()
         compose.runOnIdle { assertEquals(expectedTitle, openedTitle) }
+        val back = topmost("Back")
+        val initialTop = back.getUnclippedBoundsInRoot().top
+        val queue = compose.onNode(hasScrollAction())
+        val initialScroll = queue.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+        compose.onRoot().performTouchInput {
+            swipeUp(startY = height * 0.75f, endY = height * 0.36f, durationMillis = 550)
+        }
+        awaitText("Chapter 10")
+        assertTrue(queue.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value() > initialScroll)
+        assertEquals(initialTop, back.getUnclippedBoundsInRoot().top)
+        shot("37_downloads_scrolled")
+        back.performClick()
+        compose.runOnIdle { assertTrue(wentBack) }
     }
 
     @Test
@@ -253,6 +298,99 @@ class CatalogScreensTest {
     }
 
     @Test
+    fun externalTachiyomiInstallIsDiscoveredWhileCatalogIsOpen() {
+        val context = compose.activity.applicationContext
+        val koin = GlobalContext.get()
+        val manager = koin.get<ExtensionManager>()
+        runBlocking { koin.get<SourceManager>().ready.first { it } }
+        compose.setContent {
+            YomuTheme {
+                CatalogScreen(
+                    viewModel = koinViewModel<CatalogHomeViewModel>(), onOpenSource = {}, onOpenTitle = {}, onReadChapter = {},
+                    onGlobalSearch = {}, onOpenExtensions = {}, onOpenDownloads = {},
+                )
+            }
+        }
+        awaitText("MangaDex")
+
+        val pkg = "eu.kanade.tachiyomi.extension.en.testexternal"
+        shadowOf(context.packageManager).installPackage(PackageInfo().apply {
+            packageName = pkg
+            versionName = "1.4.1"
+            reqFeatures = arrayOf(FeatureInfo().apply { name = "tachiyomi.extension" })
+            applicationInfo = ApplicationInfo().apply {
+                packageName = pkg
+                metaData = Bundle().apply { putString("tachiyomi.extension.class", ".TestSource") }
+            }
+        })
+        val added = Intent(Intent.ACTION_PACKAGE_ADDED, Uri.fromParts("package", pkg, null))
+        // A package broadcast is sent by the OS on Android. Dispatch it to the registered receiver in Robolectric.
+        val receiver = shadowOf(context as Application).getReceiversForIntent(added).single()
+        compose.runOnIdle { receiver.onReceive(context, added) }
+        compose.waitUntil(5_000) { manager.installed.value.any { it.pkg == pkg } }
+    }
+
+    @Test
+    fun addedSourcesAreVisibleBeforePinnedBuiltInSources() {
+        val source = seedExtensionSources().single()
+        val manager = GlobalContext.get().get<SourceManager>()
+        runBlocking {
+            val infos = manager.infos.first { list -> list.any { it.kind == SourceInfo.Kind.BUILT_IN } }
+            manager.setPinned(infos.filter { it.kind == SourceInfo.Kind.BUILT_IN }.map { it.id }, true)
+        }
+        compose.setContent {
+            YomuTheme {
+                CatalogScreen(
+                    viewModel = koinViewModel<CatalogHomeViewModel>(), onOpenSource = {}, onOpenTitle = {}, onReadChapter = {},
+                    onGlobalSearch = {}, onOpenExtensions = {}, onOpenDownloads = {},
+                )
+            }
+        }
+        awaitText(source.name)
+        compose.onNodeWithText(source.name).assertIsDisplayed()
+    }
+
+    @Test
+    fun checkingSourceOffersWebViewThenTreatsEmptyPageAsAvailable() {
+        val connectivity = checkNotNull(compose.activity.getSystemService(ConnectivityManager::class.java))
+        val capabilities = ShadowNetworkCapabilities.newInstance()
+        shadowOf(capabilities).addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        shadowOf(connectivity).setNetworkCapabilities(checkNotNull(connectivity.activeNetwork), capabilities)
+        val url = "https://fixture.invalid/verify"
+        val attempts = AtomicInteger()
+        val source = seedExtensionSources(popular = {
+            if (attempts.incrementAndGet() == 1) throw WebViewRequiredException(url)
+            ItemsPage(emptyList(), false)
+        }).single()
+        var openedWebView: String? = null
+        compose.setContent {
+            YomuTheme {
+                CatalogScreen(
+                    viewModel = koinViewModel<CatalogHomeViewModel>(),
+                    onOpenSource = { error("Checking should keep the sources tab open") },
+                    onOpenTitle = {}, onReadChapter = {}, onGlobalSearch = {}, onOpenExtensions = {}, onOpenDownloads = {},
+                    onOpenWebView = { openedWebView = it },
+                )
+            }
+        }
+        awaitText(source.name)
+        fun check() {
+            compose.onNodeWithText(source.name).performTouchInput { longClick() }
+            awaitText("Check availability")
+            compose.onNode(hasText("Check availability") and hasClickAction()).performClick()
+        }
+        check()
+        awaitText("Open in WebView")
+        compose.onNodeWithText("Open in WebView").performClick()
+        compose.runOnIdle { assertEquals(url, openedWebView) }
+        check()
+        awaitText("Responding")
+        assertEquals(2, attempts.get())
+        val infos = GlobalContext.get().get<SourceManager>().infos.value
+        assertEquals(0L, infos.single { it.id == source.id }.lastUsedAt)
+    }
+
+    @Test
     fun loadedExtensionAppearsInCatalogAndHiddenSourceCanBeRevealed() {
         val source = seedExtensionSources().single()
         runBlocking { GlobalContext.get().get<SourceManager>().setHidden(source.id, true) }
@@ -269,6 +407,8 @@ class CatalogScreensTest {
         awaitText("Show all")
         assertTrue(model.sourceListing.value.sources.none { it.id == source.id })
         compose.onNode(hasText("Show all") and hasClickAction()).performClick()
+        awaitText("Added sources")
+        awaitText(source.name)
         compose.runOnIdle { model.sourceQuery.value = source.name }
         compose.waitUntil(5_000) { model.sourceListing.value.sources.singleOrNull()?.id == source.id }
     }
@@ -331,13 +471,26 @@ class CatalogScreensTest {
         compose.runOnIdle { assertEquals(source.id, opened) }
     }
 
-    private fun seedExtensionSources(count: Int = 1, warning: ContentWarning = ContentWarning.SAFE): List<CatalogSource> {
+    private fun seedExtensionSources(
+        count: Int = 1,
+        warning: ContentWarning = ContentWarning.SAFE,
+        popular: (suspend () -> ItemsPage)? = null,
+        search: (suspend (String) -> ItemsPage)? = null,
+    ): List<CatalogSource> {
         val koin = GlobalContext.get()
         val manager = koin.get<ExtensionManager>()
         val sources = koin.get<SourceManager>()
         runBlocking { sources.ready.first { it } }
+        // Names and URLs carry the instance number: two fixtures with the same name would share a source id.
+        val run = ++fixtureRuns
         val catalogs = List(count) { i ->
-            object : CatalogSource by OpdsSource("Fixture catalog ${i + 1}", "https://fixture.invalid/opds/$i", "en") {}
+            val n = run * 100 + i
+            val opds = OpdsSource("Fixture catalog $n", "https://fixture.invalid/opds/$n", "en")
+            object : CatalogSource by opds {
+                override suspend fun getPopular(page: Int): ItemsPage = popular?.invoke() ?: opds.getPopular(page)
+                override suspend fun search(query: String, filters: FilterList, page: Int): ItemsPage =
+                    search?.invoke(query) ?: opds.search(query, filters, page)
+            }
         }
         @Suppress("UNCHECKED_CAST")
         val installed = ExtensionManager::class.java.getDeclaredField("_installed").apply { isAccessible = true }
@@ -395,6 +548,125 @@ class CatalogScreensTest {
         compose.onAllNodesWithText("Actions")[0].performClick()
         compose.mainClock.advanceTimeBy(1_000)
         shotScreen("38_catalog_bulk_actions")
+    }
+
+    /**
+     * Global search answers source by source (package 2 of the UI plan): one source is ready, another times out;
+     * the ready results stay visible while "Only with results" is on and after the failed source is retried.
+     */
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun globalSearchKeepsResultsThroughPartialFailure() {
+        goOnline()
+        val manager = GlobalContext.get().get<SourceManager>()
+        val slowCalls = AtomicInteger()
+        val quick = seedExtensionSources(search = {
+            ItemsPage(listOf(SItem(url = "/quick/1", title = "Alpha Fixture", author = "Quick Source")), false)
+        }).single()
+        val slow = seedExtensionSources(search = {
+            // The repository itself retries a timeout once; the answer comes from the Retry button instead.
+            if (slowCalls.incrementAndGet() <= 2) throw AppError.Timeout(SocketTimeoutException("fixture"))
+            ItemsPage(listOf(SItem(url = "/slow/1", title = "Beta Fixture", author = "Slow Source")), false)
+        }).single()
+        runBlocking { manager.setEnabled(manager.infos.value.filter { it.id != quick.id && it.id != slow.id }.map { it.id }, false) }
+        compose.waitUntil(5_000) { manager.infos.value.none { it.id != quick.id && it.id != slow.id && it.enabled } }
+
+        lateinit var model: GlobalSearchViewModel
+        compose.setContent {
+            YomuTheme {
+                model = koinViewModel<GlobalSearchViewModel> { parametersOf(SearchArgs()) }
+                GlobalSearchScreen(viewModel = model, onBack = {}, onOpenTitle = {}, onOpenSource = { _, _ -> })
+            }
+        }
+        awaitText("Search languages:")
+        compose.runOnIdle { model.query.value = "fixture"; model.submit() }
+        awaitText("Alpha Fixture")
+        awaitText("The site is taking too long to respond")
+        compose.mainClock.advanceTimeBy(1_000)
+        shot("48_global_search_partial_failure")
+        // "Only with results": the ready source stays, the failed one keeps its Retry button.
+        compose.onNode(hasText("With results") and hasClickAction()).performClick()
+        compose.onAllNodesWithText("Alpha Fixture")[0].assertIsDisplayed()
+        compose.onNode(hasContentDescription("Retry")).performClick()
+        awaitText("Beta Fixture")
+        compose.onAllNodesWithText("Alpha Fixture")[0].assertIsDisplayed()
+    }
+
+    /** A source search keeps its ready pages when the next page fails; Retry finishes the list (package 2). */
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun sourceSearchKeepsReadyPagesWhenNextPageFails() {
+        goOnline()
+        val pageCalls = AtomicInteger()
+        val source = seedExtensionSources(search = { _ ->
+            when (val call = pageCalls.incrementAndGet()) {
+                1 -> ItemsPage(listOf(SItem(url = "/s/1", title = "Search Hit One", author = "Fixture Author")), true)
+                2, 3 -> throw AppError.Timeout(SocketTimeoutException("fixture"))
+                else -> ItemsPage(listOf(SItem(url = "/s/2", title = "Search Hit Two", author = "Fixture Author")), false)
+            }
+        }).single()
+        compose.setContent {
+            YomuTheme {
+                SourceBrowseScreen(
+                    viewModel = koinViewModel<SourceBrowseViewModel> { parametersOf(BrowseArgs(sourceId = source.id, query = "hit")) },
+                    onBack = {}, onOpenTitle = {}, onOpenNavigation = { _, _, _ -> }, onOpenWebView = {},
+                )
+            }
+        }
+        awaitText("Search Hit One")
+        awaitText("Could not load the next page")
+        compose.onAllNodesWithText("Search Hit One")[0].assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(1_000)
+        shot("49_source_search_append_failure")
+        compose.onNode(hasText("Retry") and hasClickAction()).performClick()
+        awaitText("Search Hit Two")
+        compose.onAllNodesWithText("Search Hit One")[0].assertIsDisplayed()
+    }
+
+    /** The download queue on a narrow phone with large text in the dark theme (package 4 of the UI plan). */
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-xhdpi")
+    fun downloadQueueLargeTextScrollsUnderHeader() {
+        RuntimeEnvironment.setFontScale(1.5f)
+        assertEquals(1.5f, compose.activity.resources.configuration.fontScale)
+        val expectedTitle = seed()
+        var openedTitle: Long? = null
+        var wentBack = false
+        compose.setContent {
+            YomuTheme(ThemeConfig(mode = ThemeMode.DARK)) {
+                DownloadsScreen(koinViewModel(), onBack = { wentBack = true }, onOpenTitle = { openedTitle = it })
+            }
+        }
+        // With 150% text the queued rows start below the fold: scroll until Chapter 8 is on screen.
+        awaitText("Smoke Manga")
+        val back = topmost("Back")
+        val headerTop = back.getUnclippedBoundsInRoot().top
+        val queue = compose.onNode(hasScrollAction())
+        val initialScroll = queue.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+        compose.onRoot().performTouchInput {
+            swipeUp(startY = height * 0.75f, endY = height * 0.30f, durationMillis = 550)
+        }
+        awaitText("Chapter 8")
+        assertTrue(queue.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value() > initialScroll)
+        assertEquals(headerTop, back.getUnclippedBoundsInRoot().top)
+        compose.mainClock.advanceTimeBy(1_000)
+        shot("75_downloads_narrow_dark_large_text")
+        compose.onNode(hasText("Chapter 8", substring = true) and hasClickAction()).performClick()
+        compose.runOnIdle { assertEquals(expectedTitle, openedTitle) }
+        back.performClick()
+        compose.runOnIdle { assertTrue(wentBack) }
+    }
+
+    /** Number of seedExtensionSources calls; two fixtures must not share a source id. */
+    private var fixtureRuns = 0
+
+    /** Robolectric starts offline; source calls skip their retries (and the app's calls fail at once) without this. */
+    private fun goOnline() {
+        val connectivity = checkNotNull(compose.activity.getSystemService(ConnectivityManager::class.java))
+        val capabilities = ShadowNetworkCapabilities.newInstance()
+        shadowOf(capabilities).addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        shadowOf(connectivity).setNetworkCapabilities(checkNotNull(connectivity.activeNetwork), capabilities)
     }
 
     private companion object {

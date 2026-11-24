@@ -7,11 +7,13 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -85,8 +87,15 @@ class NavigationUxScreensTest {
         searchSettings("font")
         shot("320_settings_search_results")
         compose.onAllNodes(hasText("Settings ›", substring = true))[0].performClick()
-        compose.mainClock.advanceTimeBy(500)
+        compose.mainClock.advanceTimeBy(2_000)
+        // The found option is scrolled to and flashed inside its section.
+        compose.onNodeWithText("Font size").assertIsDisplayed()
         shot("321_settings_search_opened")
+        // Back from the section: the search field keeps the query and the results are still listed.
+        compose.onAllNodes(hasContentDescription("Back"))[0].performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        awaitText("Settings ›")
+        compose.onNode(hasText("font") and hasSetTextAction()).assertExists()
     }
 
     @Test
@@ -111,7 +120,10 @@ class NavigationUxScreensTest {
         compose.onAllNodes(hasSetTextAction())[0].performTextInput("font")
         awaitText("Settings ›")
         compose.onAllNodes(hasText("Settings ›", substring = true))[0].performClick()
-        compose.mainClock.advanceTimeBy(500)
+        compose.mainClock.advanceTimeBy(2_000)
+        // The pane shows the found option; the root beside it keeps the query and the results.
+        compose.onAllNodesWithText("Font size")[0].assertIsDisplayed()
+        compose.onAllNodes(hasText("Settings ›", substring = true))[0].assertIsDisplayed()
         shot("323_tablet_settings_search_opened")
     }
 
