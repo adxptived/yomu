@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.14.0 — glass panels, live source checks and a polished search
+
+### Catalog and sources
+
+- Check a source's availability from its long-press menu. The check offers the WebView verification page when the site needs one and answers "Responding" after a single request.
+- Installed extensions refresh by themselves when a package is added, replaced or removed, so the catalog list is current without reopening it.
+- Source rows wrap their secondary line (language, kind, availability) instead of cutting it, and the update plan keeps the day header on screen with a visible boundary between days.
+- Global search keeps ready results while another source times out and retries the failed source on its own. A source search keeps its loaded pages when the next page fails.
+
+### Books and library
+
+- On a wide window the details pane marks the book it shows in the list, and the list stays beside the pane.
+- Coming back from a book or another tab returns the shelf to the same scroll position; the last row scrolls above the floating bar and still takes taps.
+
+### Interface
+
+- The floating navigation pill and the top bars of the reader, downloads and book details use a real glass backdrop: the content blurs beneath a gradient scrim, the capsule carries a specular edge, and screens without the blur fall back to a dense fill.
+
 ## 2.13.0 — easier reading, source discovery and offline access
 
 ### Catalog and downloads

@@ -1,0 +1,3 @@
+The floating navigation and the top bars blur the content beneath them.
+Check a source's availability from its menu; extensions refresh after a package change.
+Search keeps ready results through a source timeout, and the details pane marks the open book on a wide window.

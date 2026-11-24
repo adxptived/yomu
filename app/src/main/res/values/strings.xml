@@ -54,6 +54,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_14_0">
+        <item>The floating navigation and the top bars blur the content beneath them, with a dense fill where the blur is unavailable.</item>
+        <item>Check a source\'s availability from its long-press menu, and extensions refresh live after a package change.</item>
+        <item>Global search keeps ready results through a source timeout, with a retry for the failed source.</item>
+        <item>On a wide window the details pane highlights the open book, and source rows wrap instead of cutting.</item>
+    </string-array>
     <string-array name="whats_new_2_13_0">
         <item>Open the catalog from first launch, find sources more easily and return to a title from the download queue.</item>
         <item>See your saved reading position in book details. Change text size and spacing together while reading.</item>

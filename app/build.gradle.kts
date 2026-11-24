@@ -21,8 +21,8 @@ android {
     namespace = "app.yomu"
     defaultConfig {
         applicationId = "app.yomu.reader"
-        versionCode = 36
-        versionName = "2.13.0"
+        versionCode = 37
+        versionName = "2.14.0"
         versionSuffix?.let { versionNameSuffix = it }
         buildConfigField("String", "ANILIST_CLIENT_ID", "\"${trackerKey("YOMU_ANILIST_CLIENT_ID")}\"")
         buildConfigField("String", "MAL_CLIENT_ID", "\"${trackerKey("YOMU_MAL_CLIENT_ID")}\"")
