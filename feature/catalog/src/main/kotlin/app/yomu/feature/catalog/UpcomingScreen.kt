@@ -1,6 +1,8 @@
 package app.yomu.feature.catalog
 
 import android.content.Context
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -138,6 +140,7 @@ class UpcomingViewModel(
 }
 
 /** The plan grouped by day; tapping a title opens it. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun UpcomingScreen(viewModel: UpcomingViewModel, onBack: () -> Unit, onOpenTitle: (Long) -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -265,8 +268,15 @@ fun UpcomingScreen(viewModel: UpcomingViewModel, onBack: () -> Unit, onOpenTitle
                             )
                         }
                         LazyColumn(Modifier.fillMaxSize()) {
-                            days.forEach { day ->
-                                item(key = "day-${day.date}") {
+                            days.forEachIndexed { index, day ->
+                                // A day boundary you can see: a heavier line before every day but the first, and the
+                                // day header stays on screen while its titles scroll.
+                                if (index > 0) {
+                                    item(key = "boundary-${day.date}") {
+                                        HorizontalDivider(Modifier.padding(top = Dimens.s, bottom = Dimens.xs), thickness = 2.dp)
+                                    }
+                                }
+                                stickyHeader(key = "day-${day.date}") {
                                     Text(
                                         when (day.date) {
                                             today -> stringResource(R.string.upcoming_today, day.date.format(dateFormat))
@@ -275,7 +285,7 @@ fun UpcomingScreen(viewModel: UpcomingViewModel, onBack: () -> Unit, onOpenTitle
                                         },
                                         style = MaterialTheme.typography.titleSmall,
                                         color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s),
+                                        modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = Dimens.l, vertical = Dimens.s),
                                     )
                                 }
                                 if (day.checks.isEmpty()) {

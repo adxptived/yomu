@@ -3,6 +3,7 @@ package app.yomu.data.catalog
 import android.content.Context
 import android.graphics.BitmapFactory
 import androidx.room.withTransaction
+import app.yomu.core.common.AppError
 import app.yomu.core.database.CatalogItemEntity
 import app.yomu.core.database.ChapterEntity
 import app.yomu.core.database.YomuDatabase
@@ -535,6 +536,17 @@ class CatalogRepository(
                 BrowseMode.SEARCH -> s.search(query, filters ?: s.getFilterList(), page)
                 BrowseMode.NAVIGATE -> s.browse(url.orEmpty(), page)
             }
+        }
+    }
+
+    /** Checks the first real catalog page without recording a visit or fetching another page. */
+    suspend fun checkSourceAvailability(sourceId: Long) {
+        val source = source(sourceId)
+        if (!isOnline()) throw AppError.NoNetwork()
+        val capabilities = sources.capabilitiesOf(source)
+        require(capabilities.popular || capabilities.latest)
+        sourceCall(sourceId, timeoutMs = 12_000, attempts = 1) {
+            if (capabilities.popular) source.getPopular(1) else source.getLatest(1)
         }
     }
 

@@ -73,6 +73,7 @@ data class SourceInfo(
     val webUrl: String? = null,
     val extensionHidden: Boolean = false,
     val individuallyHidden: Boolean = false,
+    val externalExtension: Boolean = false,
 ) {
     /** Kept as the shape the source list already reads; the value comes from [capabilities]. */
     val supportsLatest: Boolean get() = capabilities.latest
@@ -186,6 +187,7 @@ class SourceManager(
                     webUrl = (s.homeUrl ?: (s as? HttpSource)?.baseUrl)?.takeIf { it.isNotBlank() },
                     extensionHidden = extensionHidden,
                     individuallyHidden = individuallyHidden,
+                    externalExtension = ext?.isBundled == false,
                 )
             }.onFailure { Timber.w(it, "Source info $id") }.getOrNull()
         }

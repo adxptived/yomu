@@ -231,6 +231,20 @@ class CatalogHomeViewModel(
 
     /** Recent failures per source, for the "not responding" hint. */
     val health: StateFlow<Map<Long, SourceHealth>> = catalog.health
+    private val _checkingSources = MutableStateFlow<Set<Long>>(emptySet())
+    val checkingSources = _checkingSources.asStateFlow()
+
+    fun checkSourceAvailability(source: SourceInfo) = viewModelScope.launch(ScreenErrors) {
+        if (source.id in _checkingSources.value) return@launch
+        _checkingSources.update { it + source.id }
+        try {
+            runCatchingApp { catalog.checkSourceAvailability(source.id) }
+                .onSuccess { _events.send(CatalogEvent.Message(R.string.source_check_success, source.name)) }
+                .onFailure { _events.send(CatalogEvent.Failure(it)) }
+        } finally {
+            _checkingSources.update { it - source.id }
+        }
+    }
 
     /** Ids of the sources that do not answer, for "hide sources that don't respond". */
     private val unstableIds = catalog.health.map { h -> h.filterValues { it.unstable }.keys }.distinctUntilChanged()

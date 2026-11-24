@@ -1,13 +1,17 @@
 package app.yomu.data.source
 
 import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
+import androidx.core.content.ContextCompat
 import app.yomu.compat.tachiyomi.TachiyomiCompat
 import app.yomu.core.database.ExtensionRepoEntity
 import app.yomu.core.database.YomuDatabase
@@ -20,11 +24,15 @@ import app.yomu.source.Source
 import app.yomu.source.SourceFactory
 import app.yomu.source.await
 import dalvik.system.PathClassLoader
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -165,6 +173,30 @@ class ExtensionManager(
     }
 
     private val privateDir: File get() = File(context.filesDir, "extensions").also { it.mkdirs() }
+
+    init {
+        val app = context.applicationContext
+        val changes = Channel<Unit>(Channel.CONFLATED)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action != Intent.ACTION_PACKAGE_REPLACED && intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return
+                changes.trySend(Unit)
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REPLACED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addDataScheme("package")
+        }
+        // These package lifecycle actions are protected Android broadcasts.
+        ContextCompat.registerReceiver(app, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            for (change in changes) {
+                runCatching { reload() }.onFailure { Timber.w(it, "Refreshing installed extensions after a package change") }
+            }
+        }
+    }
 
     // region loading
 

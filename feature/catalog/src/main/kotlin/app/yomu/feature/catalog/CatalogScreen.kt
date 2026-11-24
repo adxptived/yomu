@@ -204,7 +204,7 @@ fun CatalogScreen(
     val pickFolder =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(viewModel::configureLocal) }
 
-    CatalogEventsEffect(viewModel.events, snackbar, onOpenTitle)
+    CatalogEventsEffect(viewModel.events, snackbar, onOpenTitle, onOpenWebView = onOpenWebView)
 
     Scaffold(
         contentWindowInsets = topLevelContentInsets(),
@@ -398,6 +398,7 @@ private fun SourcesTab(
     var selected by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showBulk by remember { mutableStateOf(false) }
     val refreshing by viewModel.refreshingSources.collectAsStateWithLifecycle()
+    val checkingSources by viewModel.checkingSources.collectAsStateWithLifecycle()
     val visibleIds = remember(sources) { sources.mapTo(HashSet()) { it.id } }
     val selectedVisible = remember(selected, visibleIds) { selected.intersect(visibleIds) }
     BackHandler(enabled = editing && !showBulk) { onToggleEditing() }
@@ -412,7 +413,11 @@ private fun SourcesTab(
         return
     }
     // Split once per list, not on every recomposition of the tab.
-    val (pinned, others) = remember(sources) { sources.partition { it.pinned } }
+    val (external, remaining) = remember(sources, editing, query) {
+        if (editing || query.isNotBlank()) emptyList<SourceInfo>() to sources
+        else sources.partition { it.externalExtension }
+    }
+    val (pinned, others) = remember(remaining) { remaining.partition { it.pinned } }
     val filtered = !listing.showingExcluded && listing.excludedCount > 0
     // One section per language while the list mixes many of them (an extension ships a source per language, and a
     // flat multilingual list reads as random duplicates); a search and the bulk editor stay flat.
@@ -420,9 +425,10 @@ private fun SourcesTab(
     val otherLabel = stringResource(R.string.catalog_section_other)
     val grouping = !editing && query.isEmpty() && !filter.isActive &&
         others.map { it.lang }.distinct().size > 1
-    val sections: List<Triple<String, String?, List<SourceInfo>>> = remember(others, grouping, allLangs, universalLabel, otherLabel, pinned) {
+    val hasLeadingSection = pinned.isNotEmpty() || external.isNotEmpty()
+    val sections: List<Triple<String, String?, List<SourceInfo>>> = remember(others, grouping, allLangs, universalLabel, otherLabel, hasLeadingSection) {
         if (!grouping) {
-            val flatHeader = if (pinned.isNotEmpty() && others.isNotEmpty()) otherLabel else null
+            val flatHeader = if (hasLeadingSection && others.isNotEmpty()) otherLabel else null
             listOf(Triple("all", flatHeader, others))
         } else {
             val universal = others.filter { SourceVariants.isMultiLang(it.lang) || it.kind == SourceInfo.Kind.LOCAL || it.kind == SourceInfo.Kind.OPDS }
@@ -535,6 +541,7 @@ private fun SourcesTab(
                 SourceRow(
                     s = s,
                     health = health[s.id],
+                    checking = s.id in checkingSources,
                     editing = editing,
                     selected = s.id in selectedVisible,
                     onOpen = { if (editing) toggle(s.id) else onOpenSource(s) },
@@ -542,6 +549,10 @@ private fun SourcesTab(
                     onPin = { viewModel.setPinned(s.id, !s.pinned) },
                     modifier = Modifier.animateItem(),
                 )
+            }
+            if (external.isNotEmpty()) {
+                item(key = "h-external") { ListHeader(stringResource(R.string.catalog_section_external), Modifier.animateItem()) }
+                items(external, key = { it.id }) { row(it) }
             }
             if (pinned.isNotEmpty()) {
                 item(key = "h-pinned") { ListHeader(stringResource(R.string.catalog_section_pinned), Modifier.animateItem()) }
@@ -587,6 +598,12 @@ private fun SourcesTab(
     menuFor?.let { s ->
         YomuSheet(onDismiss = { menuFor = null }) {
             SheetTitle(s.name)
+            if (s.kind != SourceInfo.Kind.LOCAL && (s.capabilities.popular || s.capabilities.latest) && s.id !in checkingSources) {
+                SheetAction(Icons.Filled.Refresh, stringResource(R.string.source_check_availability)) {
+                    menuFor = null
+                    viewModel.checkSourceAvailability(s)
+                }
+            }
             s.webUrl?.let { url ->
                 SheetAction(Icons.Filled.OpenInBrowser, stringResource(R.string.source_open_browser)) {
                     menuFor = null
@@ -705,6 +722,7 @@ private fun SourceBulkBar(selected: Int, onSelectAll: () -> Unit, onClear: () ->
 private fun SourceRow(
     s: SourceInfo,
     health: SourceHealth?,
+    checking: Boolean,
     editing: Boolean,
     selected: Boolean,
     onOpen: () -> Unit,
@@ -717,11 +735,19 @@ private fun SourceRow(
         if (!s.enabled) stringResource(R.string.source_disabled) else null,
         if (s.hidden) stringResource(R.string.source_hidden) else null,
     )
+    val lastError = health?.lastError
     val warning = when {
-        health?.lastError != null -> errorMessage(health.lastError!!)
+        checking -> null
+        lastError != null -> errorMessage(lastError)
         health?.slow == true -> stringResource(R.string.source_slow)
         else -> null
     }
+    val availability = when {
+        checking -> stringResource(R.string.source_check_running)
+        s.kind != SourceInfo.Kind.LOCAL && warning == null && (health?.lastSuccessAt ?: 0L) > 0L -> stringResource(R.string.source_responding)
+        else -> null
+    }
+    val subtitle = (details + listOfNotNull(availability)).joinToString(" · ")
     val errorColor = MaterialTheme.colorScheme.error
     ListItem(
         headlineContent = { Text(s.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -736,18 +762,19 @@ private fun SourceRow(
                         SourceBadge(stringResource(R.string.ext_nsfw), MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
                     }
                 }
-                if (details.isNotEmpty() || warning != null) {
+                if (subtitle.isNotEmpty() || warning != null) {
                     Text(
                         buildAnnotatedString {
-                            append(details.joinToString(" · "))
+                            append(subtitle)
                             if (warning != null) {
-                                if (details.isNotEmpty()) append(" · ")
+                                if (subtitle.isNotEmpty()) append(" · ")
                                 withStyle(SpanStyle(color = errorColor)) { append(warning) }
                             }
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        // Language, kind and the availability of long names wrap instead of hiding behind an ellipsis.
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }

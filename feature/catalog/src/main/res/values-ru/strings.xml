@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="catalog_title">Каталог</string>
+    <string name="catalog_section_external">Добавленные источники</string>
     <string name="catalog_tab_sources">Источники</string>
     <string name="catalog_tab_library">Библиотека</string>
     <string name="catalog_tab_updates">Обновления</string>
@@ -78,6 +79,10 @@
     <string name="source_bulk_show_extensions">Показать выбранные расширения</string>
     <string name="source_unhide_all">Показать все скрытые источники</string>
     <string name="source_open_browser">Открыть в браузере</string>
+    <string name="source_check_availability">Проверить доступность</string>
+    <string name="source_check_running">Проверяем…</string>
+    <string name="source_responding">Отвечает</string>
+    <string name="source_check_success">%1$s ответил</string>
     <string name="source_settings">Настройки источника</string>
     <string name="source_disabled">отключён</string>
     <string name="source_hidden">скрыт</string>
