@@ -55,6 +55,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -68,6 +69,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -83,6 +87,9 @@ import app.yomu.core.ui.components.SwipeAction
 import app.yomu.core.ui.components.SwipeActionsBox
 import app.yomu.core.ui.components.motionItem
 import app.yomu.core.ui.components.TopLevelBody
+import app.yomu.core.ui.components.barBackdrop
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.theme.Dimens
@@ -228,6 +235,7 @@ val downloadsModule = module {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadsScreen(viewModel: DownloadsViewModel, onBack: () -> Unit, onOpenTitle: ((Long) -> Unit)? = null) {
+    val backdrop = rememberHazeState()
     val snackbar = remember { SnackbarHostState() }
     val cancelled = stringResource(R.string.downloads_cancelled)
     val undo = stringResource(CoreR.string.undo)
@@ -245,6 +253,11 @@ fun DownloadsScreen(viewModel: DownloadsViewModel, onBack: () -> Unit, onOpenTit
         contentWindowInsets = topLevelContentInsets(),
         topBar = {
             TopAppBar(
+                modifier = Modifier.barBackdrop(backdrop).pointerInput(Unit) {
+                    // Rows passing underneath must not receive taps through the toolbar.
+                    awaitPointerEventScope { while (true) awaitPointerEvent() }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
                 title = { Text(stringResource(R.string.downloads_title)) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back)) } },
                 actions = { DownloadsActions(viewModel) },
@@ -252,8 +265,13 @@ fun DownloadsScreen(viewModel: DownloadsViewModel, onBack: () -> Unit, onOpenTit
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        TopLevelBody(padding, Modifier.fillMaxSize()) {
-            DownloadsContent(viewModel, Modifier.fillMaxSize(), onOpenTitle)
+        TopLevelBody(padding, Modifier.fillMaxSize(), drawBehindTopBar = true) {
+            DownloadsContent(
+                viewModel,
+                Modifier.fillMaxSize().hazeSource(backdrop),
+                onOpenTitle,
+                topInset = padding.calculateTopPadding(),
+            )
         }
     }
 }
@@ -302,7 +320,12 @@ fun DownloadsActions(viewModel: DownloadsViewModel) {
  * padding leaves room for the floating navigation bar when it is shown in the profile.
  */
 @Composable
-fun DownloadsContent(viewModel: DownloadsViewModel, modifier: Modifier = Modifier, onOpenTitle: ((Long) -> Unit)? = null) {
+fun DownloadsContent(
+    viewModel: DownloadsViewModel,
+    modifier: Modifier = Modifier,
+    onOpenTitle: ((Long) -> Unit)? = null,
+    topInset: Dp = 0.dp,
+) {
     val sections by viewModel.sections.collectAsStateWithLifecycle()
     val usage by viewModel.usage.collectAsStateWithLifecycle()
     val titles by viewModel.entryTitles.collectAsStateWithLifecycle()
@@ -317,7 +340,7 @@ fun DownloadsContent(viewModel: DownloadsViewModel, modifier: Modifier = Modifie
     LaunchedEffect(s?.finished?.size) { viewModel.refreshUsage() }
 
     CompositionLocalProvider(LocalNetworkWait provides wait) {
-        LazyColumn(modifier, contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
+        LazyColumn(modifier, contentPadding = PaddingValues(top = topInset, bottom = navBarBottomPadding(Dimens.xl))) {
             if (summary?.visible == true) item(key = "summary") { QueueSummary(summary, wait, viewModel) }
             if (s == null) return@LazyColumn
             if (s.isEmpty && audio.isEmpty()) {

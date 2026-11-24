@@ -4,6 +4,7 @@ plugins {
 }
 dependencies {
     api(project(":core:common"))
+    api(libs.haze)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.coil.compose)

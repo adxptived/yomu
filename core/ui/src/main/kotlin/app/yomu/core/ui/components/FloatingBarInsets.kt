@@ -55,11 +55,15 @@ fun topLevelContentInsets(): WindowInsets = ScaffoldDefaults.contentWindowInsets
  * or the screen's own bottom bar while it shows one.
  */
 @Composable
-fun TopLevelBody(padding: PaddingValues, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+fun TopLevelBody(padding: PaddingValues, modifier: Modifier = Modifier, drawBehindTopBar: Boolean = false, content: @Composable BoxScope.() -> Unit) {
     val direction = LocalLayoutDirection.current
     CompositionLocalProvider(LocalNavBarInset provides padding.calculateBottomPadding()) {
         Box(
-            modifier.padding(start = padding.calculateStartPadding(direction), top = padding.calculateTopPadding(), end = padding.calculateEndPadding(direction)),
+            modifier.padding(
+                start = padding.calculateStartPadding(direction),
+                top = if (drawBehindTopBar) 0.dp else padding.calculateTopPadding(),
+                end = padding.calculateEndPadding(direction),
+            ),
             content = content,
         )
     }

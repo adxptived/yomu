@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -79,10 +80,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -99,6 +103,9 @@ import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.coverTint
+import app.yomu.core.ui.components.barBackdrop
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.rememberCoverColor
 import app.yomu.core.ui.components.sharedCover
@@ -166,11 +173,13 @@ private fun BookDetailsContent(
         rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { it?.let(viewModel::setCover) }
 
     val current = book
+    val toolbarBackdrop = rememberHazeState()
     LaunchedEffect(current) { if (current === BookDetailsViewModel.MISSING) onBack() }
     Scaffold(
         contentWindowInsets = topLevelContentInsets(),
         topBar = {
             TopAppBar(
+                modifier = Modifier.barBackdrop(toolbarBackdrop),
                 title = {},
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -245,7 +254,7 @@ private fun BookDetailsContent(
             return@Scaffold
         }
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            Modifier.fillMaxSize().hazeSource(toolbarBackdrop).verticalScroll(rememberScrollState())
                 .padding(bottom = navBarBottomPadding(Dimens.xl)),
         ) {
             Box(Modifier.fillMaxWidth()) {
@@ -264,22 +273,30 @@ private fun BookDetailsContent(
                 )
                 // Over the scrim, or it would wash the colour out.
                 Box(Modifier.matchParentSize().coverTint(tint))
-                Row(
+                BoxWithConstraints(
                     Modifier.fillMaxWidth().padding(top = padding.calculateTopPadding()).padding(Dimens.l),
-                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    CoverImage(cover, current.title, Modifier.width(96.dp).then(if (inPane) Modifier else Modifier.sharedCover("book-${current.id}")))
-                    Column(Modifier.padding(start = Dimens.l).weight(1f)) {
-                        Text(current.title, style = MaterialTheme.typography.titleLarge, maxLines = 4, overflow = TextOverflow.Ellipsis)
-                        if (current.authors.isNotEmpty()) Text(current.authorsText, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        current.series?.let { s ->
-                            Text(listOfNotNull(s, current.seriesIndex?.let { "#" + it.toString().removeSuffix(".0") }).joinToString(" "), style = MaterialTheme.typography.bodySmall)
-                        }
-                        Text(
-                            listOfNotNull(current.format.name, Files.humanSize(current.fileSize).takeIf { current.fileSize > 0 }, current.language?.uppercase(), current.publisher)
-                                .joinToString(" · "),
-                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    val poster = cover != null && !inPane && maxWidth < 480.dp
+                    val coverWidth = if (poster) (maxWidth * 0.46f).coerceAtMost(176.dp) else 96.dp
+                    val minTextWidth = 160.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)
+                    val showCover: @Composable () -> Unit = {
+                        CoverImage(
+                            cover, current.title,
+                            Modifier.width(coverWidth).clearAndSetSemantics {}
+                                .then(if (inPane) Modifier else Modifier.sharedCover("book-${current.id}"))
+                                .then(if (poster) Modifier.clip(MaterialTheme.shapes.extraLarge) else Modifier),
                         )
+                    }
+                    if (poster || maxWidth < coverWidth + Dimens.l + minTextWidth) {
+                        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Dimens.m)) {
+                            Box(Modifier.align(Alignment.CenterHorizontally)) { showCover() }
+                            BookHeaderText(current)
+                        }
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(Dimens.l), verticalAlignment = Alignment.CenterVertically) {
+                            showCover()
+                            BookHeaderText(current)
+                        }
                     }
                 }
             }
@@ -501,6 +518,26 @@ private fun BookDetailsContent(
     }
     if (translateDialog) {
         TranslateBookDialog(viewModel, onDismiss = { translateDialog = false })
+    }
+}
+
+@Composable
+private fun BookHeaderText(book: Book) {
+    Column {
+        Text(book.title, style = MaterialTheme.typography.titleLarge)
+        if (book.authors.isNotEmpty()) {
+            Text(book.authorsText, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        book.series?.let { series ->
+            val index = book.seriesIndex?.toString()?.removeSuffix(".0")
+            Text(if (index == null) series else "$series #$index", style = MaterialTheme.typography.bodySmall)
+        }
+        Text(
+            listOfNotNull(book.format.name, Files.humanSize(book.fileSize).takeIf { book.fileSize > 0 }, book.language?.uppercase(), book.publisher)
+                .joinToString(" · "),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

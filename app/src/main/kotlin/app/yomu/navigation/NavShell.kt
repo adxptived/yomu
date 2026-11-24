@@ -26,6 +26,8 @@ import app.yomu.core.ui.components.FloatingNavBar
 import app.yomu.core.ui.components.LocalReduceMotion
 import app.yomu.core.ui.components.NavItem
 import app.yomu.core.ui.components.YomuNavRail
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 
 /** Material 3 "emphasized" curves: a quick start for elements that leave, a long soft landing for those that arrive. */
 private val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
@@ -70,6 +72,7 @@ fun NavShell(
     }
     // Composed while visible or still sliding away.
     val onScreen by remember { derivedStateOf { shown.value > 0f } }
+    val backdrop = rememberHazeState()
     val slide = Modifier.graphicsLayer {
         val p = shown.value
         alpha = p
@@ -81,7 +84,7 @@ fun NavShell(
                 YomuNavRail(items, selected, onSelect, slide, onPress = onPress)
             } else if (type == NavigationSuiteType.NavigationBar) {
                 // No scrim and no reserved strip: the pill floats over the page, exactly like on the tabs.
-                FloatingNavBar(items, selected, showLabels, onSelect, slide, onPress = onPress)
+                FloatingNavBar(items, selected, showLabels, onSelect, slide, onPress = onPress, backdrop = backdrop)
             }
         }
     }
@@ -92,7 +95,10 @@ fun NavShell(
         else -> WindowInsets(0, 0, 0, 0)
     }
     Layout(
-        contents = listOf(bar, { Box(Modifier.consumeWindowInsets(consumed)) { content() } }),
+        contents = listOf(bar, {
+            val capture = if (type == NavigationSuiteType.NavigationBar && (visible || onScreen)) Modifier.hazeSource(backdrop) else Modifier
+            Box(Modifier.consumeWindowInsets(consumed).then(capture)) { content() }
+        }),
         modifier = Modifier.background(MaterialTheme.colorScheme.background),
     ) { (barMeasurables, contentMeasurables), constraints ->
         val width = constraints.maxWidth

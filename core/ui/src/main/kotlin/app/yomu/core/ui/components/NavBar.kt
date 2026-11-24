@@ -53,12 +53,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
@@ -75,6 +78,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEachIndexed
 import app.yomu.core.ui.R
 import app.yomu.core.ui.theme.Dimens
+import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -138,6 +142,7 @@ fun FloatingNavBar(
     modifier: Modifier = Modifier,
     windowInsets: WindowInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal),
     onPress: (Int) -> Unit = {},
+    backdrop: HazeState? = null,
 ) {
     Box(
         modifier
@@ -146,10 +151,14 @@ fun FloatingNavBar(
             .padding(start = Dimens.l, end = Dimens.l, top = Dimens.xs, bottom = Dimens.m),
         contentAlignment = Alignment.Center,
     ) {
+        val glass = backdrop != null
         Surface(
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shadowElevation = 8.dp,
+            color = if (!glass) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            // The glass keeps a hairline bevel (light at the top, shaded at the bottom); the opaque pill keeps the
+            // plain outline it always had.
+            border = if (glass) BorderStroke(1.dp, glassEdge()) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
             modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(),
         ) {
             NavBarItems(
@@ -158,7 +167,9 @@ fun FloatingNavBar(
                 showLabels = showLabels,
                 onSelect = onSelect,
                 onPress = onPress,
-                modifier = Modifier.height(FloatingNavBarDefaults.pillHeight(showLabels)).padding(6.dp),
+                modifier = Modifier.then(
+                    if (backdrop != null) Modifier.barBackdrop(backdrop).glassSheen() else Modifier,
+                ).height(FloatingNavBarDefaults.pillHeight(showLabels)).padding(6.dp),
             )
         }
     }
@@ -220,7 +231,10 @@ private fun NavBarItems(items: List<NavItem>, selected: Int, showLabels: Boolean
                 }
             },
             // 2: the sliding indicator
-            { Box(Modifier.clip(CircleShape).background(colors.primary)) },
+            {
+                val top = lerp(colors.primary, Color.White, 0.10f)
+                Box(Modifier.clip(CircleShape).background(Brush.verticalGradient(0f to top, 1f to colors.primary)))
+            },
             // 3: filled icons on the capsule; each fades in as its item becomes selected
             {
                 items.forEachIndexed { i, item ->
