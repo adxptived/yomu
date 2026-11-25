@@ -455,7 +455,6 @@ class CatalogScreensTest {
             settings.contentPreference.set(ContentPreference.SAFE)
             settings.catalogSourceFilter.set(SourceListFilter())
         }
-        val source = seedExtensionSources(warning = ContentWarning.NSFW).single()
         lateinit var model: CatalogHomeViewModel
         compose.setContent {
             YomuTheme {
@@ -466,9 +465,15 @@ class CatalogScreensTest {
                 )
             }
         }
-        awaitText("Show installed 18+ sources")
+        awaitText("Find a source by name or language")
+        // The startup/package scan publishes a complete inventory. Wait for it before adding the fake package.
+        runBlocking { GlobalContext.get().get<ExtensionManager>().reload() }
+        val source = seedExtensionSources(warning = ContentWarning.NSFW).single()
+        compose.waitUntil(10_000) { model.installedAdultSourcesHidden.value }
+        val notice = hasText("Show installed 18+ sources") and hasClickAction()
+        compose.onNode(hasScrollAction() and hasAnyDescendant(hasText("Add a source"))).performScrollToNode(notice)
         assertTrue(model.sourceListing.value.sources.none { it.id == source.id })
-        compose.onNodeWithText("Show installed 18+ sources").performClick()
+        compose.onNode(notice).performClick()
         awaitText(source.name)
         assertEquals(ContentPreference.MIXED, runBlocking { settings.contentPreference.get() })
         assertTrue(model.sourceListing.value.sources.single { it.id == source.id }.isNsfw)
