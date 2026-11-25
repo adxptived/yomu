@@ -141,7 +141,6 @@ import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.QuickActionMenu
 import app.yomu.core.ui.components.QuickMenuItem
 import app.yomu.core.ui.components.SkeletonBox
-import app.yomu.core.ui.components.barBackdrop
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.rememberHaptic
 import app.yomu.core.ui.theme.Dimens
@@ -171,9 +170,6 @@ import app.yomu.feature.reader.pdf.PdfReaderView
 import app.yomu.feature.translator.Speaker
 import app.yomu.feature.translator.TranslationSheet
 import app.yomu.feature.translator.TranslationViewModel
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -615,14 +611,8 @@ fun ReaderScreen(
 
     val showControlsLabel = stringResource(R.string.reader_show_controls)
     val bars = updateTransition(chrome && data != null, label = "Reader bars")
-    val readerBackdrop = rememberHazeState()
-    val backdrop = readerBackdrop.takeIf { common.transparentBars }
-    // Record the page only while the bars need it, including their exit animation.
-    val pageBackdrop = if (backdrop != null && (bars.currentState || bars.targetState)) {
-        Modifier.hazeSource(backdrop)
-    } else {
-        Modifier
-    }
+    // The frosted blur is off for now: the bars keep a translucent tint instead, so text stays readable over any page.
+    val transparentBars = common.transparentBars
     Box(
         Modifier
             .fillMaxSize()
@@ -702,7 +692,7 @@ fun ReaderScreen(
                     ErrorState(s.error, onRetry = viewModel::retry, secondaryLabel = stringResource(CoreR.string.back), onSecondary = onBack)
                 }
             }
-            is UiState.Data -> Box(Modifier.matchParentSize().then(pageBackdrop)) {
+            is UiState.Data -> Box(Modifier.matchParentSize()) {
                 when (val c = s.value) {
                     is ReaderContent.Text -> key(c.controller) {
                         EpubReaderView(c.controller, onAttached = { viewModel.onWebViewAttached(c.controller) })
@@ -893,7 +883,7 @@ fun ReaderScreen(
         ) {
             val bookmarked = remember(bookmarks, position) { viewModel.bookmarkHere() != null }
             ReaderTopBar(
-                backdrop = backdrop,
+                transparent = transparentBars,
                 title = title,
                 subtitle = position.chapterTitle,
                 bookmarked = bookmarked,
@@ -1019,7 +1009,7 @@ fun ReaderScreen(
                 }
                 val spread = pdfController?.visiblePages(position.page)?.takeIf { it.first < it.last }
                 ReaderBottomBar(
-                    backdrop = backdrop,
+                    transparent = transparentBars,
                     position = position,
                     marks = if (position.viewportSeek) viewportBookmarkMarks else remember(bookmarks) { bookmarks.map { it.locator.totalProgression } },
                     chapterMarks = chapterStarts,
@@ -1218,18 +1208,18 @@ fun ReaderScreen(
 }
 
 @Composable
-private fun ReaderBarSurface(backdrop: HazeState?, content: @Composable () -> Unit) {
+private fun ReaderBarSurface(transparent: Boolean, content: @Composable () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Surface(
-        color = if (backdrop == null) colors.surfaceContainer else Color.Transparent,
+        color = if (transparent) Color.Transparent else colors.surfaceContainer,
         contentColor = colors.onSurface,
-        tonalElevation = if (backdrop == null) 3.dp else 0.dp,
+        tonalElevation = if (transparent) 0.dp else 3.dp,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        // Surface clips to the bar bounds, so the effect stays over the reader controls.
-        val glass = if (backdrop != null) {
+        // Surface clips to the bar bounds, so the tint stays over the reader controls.
+        val glass = if (transparent) {
             // Book pages can be much brighter or darker than the app. Keep theme-colored controls readable over either.
-            Modifier.barBackdrop(backdrop).background(colors.surfaceContainerHigh.copy(alpha = 0.72f))
+            Modifier.background(colors.surfaceContainerHigh.copy(alpha = 0.88f))
         } else {
             Modifier
         }
@@ -1239,14 +1229,14 @@ private fun ReaderBarSurface(backdrop: HazeState?, content: @Composable () -> Un
 
 @Composable
 private fun ReaderTopBar(
-    backdrop: HazeState?,
+    transparent: Boolean,
     title: String,
     subtitle: String?,
     bookmarked: Boolean,
     onBack: () -> Unit,
     onBookmark: () -> Unit,
 ) {
-    ReaderBarSurface(backdrop) {
+    ReaderBarSurface(transparent) {
         Row(Modifier.statusBarsPadding().heightIn(min = 64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back)) }
             Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
@@ -1267,7 +1257,7 @@ private fun ReaderTopBar(
 
 @Composable
 private fun ReaderBottomBar(
-    backdrop: HazeState?,
+    transparent: Boolean,
     position: ReaderPosition,
     marks: List<Float>,
     /** Chapter boundaries on the slider, 0..1 of the book. */
@@ -1291,7 +1281,7 @@ private fun ReaderBottomBar(
     onSearch: () -> Unit,
     onQuick: () -> Unit,
 ) {
-    ReaderBarSurface(backdrop) {
+    ReaderBarSurface(transparent) {
         Column(Modifier.navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp)) {
             var dragging by remember { mutableStateOf<Float?>(null) }
             var pending by remember { mutableStateOf<PendingReaderSeek?>(null) }

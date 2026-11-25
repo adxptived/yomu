@@ -4,7 +4,7 @@
 
 ### Reading and interface
 
-- The top and bottom controls blur the page beneath them across the shared reader, including EPUB, DOCX, PDF and manga. **Transparent reader bars** is on by default and can be turned off in the reader or reading settings.
+- The top and bottom controls use a translucent, theme-tinted bar over the page across the shared reader, including EPUB, DOCX, PDF and manga. **Transparent reader bars** is on by default and can be turned off in the reader or reading settings.
 - Top and bottom app bars share the same tint and translucency, including the fallback on devices without blur.
 
 ### Catalog and launcher

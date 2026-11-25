@@ -1,4 +1,4 @@
-• Frosted top and bottom controls across the reader, with a transparency toggle.
+• Translucent top and bottom controls in the reader, with a transparency toggle.
 • Matching translucency for the app bars.
 • Catalog can show installed 18+ sources hidden by Safe mode.
 • Fixed the themed icon and restored the launcher entry after older icon choices.
