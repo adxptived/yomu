@@ -89,6 +89,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.datastore.Pref
@@ -225,7 +226,7 @@ fun SettingsScreen(
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        TopLevelBody(padding, Modifier.hazeSource(topBarBackdrop)) { CompositionLocalProvider(LocalSettingsFocus provides focus) { AnimatedContent(targetState = current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "settings") { s ->
+        TopLevelBody(padding, Modifier.hazeSource(topBarBackdrop), drawBehindTopBar = true) { CompositionLocalProvider(LocalSettingsFocus provides focus) { AnimatedContent(targetState = current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "settings") { s ->
             if (s == null) {
                 SettingsRoot(
                     query = query,
@@ -243,9 +244,10 @@ fun SettingsScreen(
                     },
                     incognito = viewModel.settings.incognito.state().value,
                     onIncognito = { on -> viewModel.set(viewModel.settings.incognito, on) },
+                    topInset = padding.calculateTopPadding(),
                 )
             } else {
-                SectionContent(s, viewModel, links, onOpen = { section = it })
+                SectionContent(s, viewModel, links, onOpen = { section = it }, topInset = padding.calculateTopPadding())
             }
         } } }
     }
@@ -274,12 +276,13 @@ private fun SettingsRoot(
     onOpenResult: (SettingsSearchEntry) -> Unit,
     incognito: Boolean,
     onIncognito: (Boolean) -> Unit,
+    topInset: Dp = 0.dp,
 ) {
     val index = rememberSettingsIndex()
     val q = query.trim()
     val results = remember(q, index) { filterSettings(index, q) }
     val root = stringResource(CoreR.string.settings)
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = topInset, bottom = navBarBottomPadding(Dimens.xl))) {
         item(key = "search") {
             SearchField(
                 query = query,
@@ -371,7 +374,7 @@ private fun SettingsRow(icon: ImageVector, title: String, summary: String, onCli
 }
 
 @Composable
-private fun SectionContent(s: SettingsSection, vm: SettingsViewModel, links: SettingsLinks, onOpen: (SettingsSection) -> Unit) {
+private fun SectionContent(s: SettingsSection, vm: SettingsViewModel, links: SettingsLinks, onOpen: (SettingsSection) -> Unit, topInset: Dp = 0.dp) {
     when (s) {
         SettingsSection.LOGS -> ErrorLogSection(vm)
         SettingsSection.FONTS -> FontsSection(vm)
@@ -379,7 +382,7 @@ private fun SectionContent(s: SettingsSection, vm: SettingsViewModel, links: Set
         SettingsSection.NAVIGATION -> NavigationSection(vm)
         SettingsSection.QUICK_ACTIONS -> QuickActionsSection(vm, onOpenSelection = { onOpen(SettingsSection.SELECTION) })
         SettingsSection.SYNC_PROBLEMS -> SyncProblemsSection(vm)
-        else -> ScrollSection {
+        else -> ScrollSection(topInset) {
             when (s) {
                 SettingsSection.APPEARANCE -> AppearanceSection(vm)
                 SettingsSection.LIBRARY -> LibrarySection(vm)
@@ -405,8 +408,11 @@ private fun SectionContent(s: SettingsSection, vm: SettingsViewModel, links: Set
 }
 
 @Composable
-internal fun ScrollSection(content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = navBarBottomPadding(Dimens.xl)), content = content)
+internal fun ScrollSection(topInset: Dp = 0.dp, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = topInset, bottom = navBarBottomPadding(Dimens.xl)),
+        content = content,
+    )
 }
 
 /** Restarts the app process (used after restoring a backup). */

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.16.0 — extensions back in the catalog, clear bars and a new icon
+
+### Catalog and extensions
+
+- Installed extension packages are listed with the built-in sources again, as in 2.3.0. A package installed by another app, or one whose store was removed, is trusted once on the first scan; later installs keep the explicit trust flow.
+- Extensions downloaded from a store record their signer, so removing the repository no longer turns an installed extension into an untrusted one.
+- The "Installed extensions not in the list" card is removed. Sources are ordinary catalog rows with their language, kind and 18+ badge; safe content keeps hiding the 18+ ones until it is turned off.
+
+### Interface
+
+- Top and bottom bars are transparent on every screen and share the same frosted backdrop; the page scrolls and blurs beneath them. The no-blur fallback is translucent too.
+- The new Yomu icon replaces the four colour variants, their drawables and their launcher aliases.
+
 ## 2.15.0 — frosted bars, visible sources and a unified title card
 
 ### Catalog and sources

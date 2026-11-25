@@ -192,51 +192,11 @@
             </intent-filter>
         </activity>
 
-        <!--
-            Launcher icons (Settings → Appearance → App icon): exactly one of these aliases is enabled at a time.
-            The classic one keeps the component name the activity had before 1.7.0, so existing home-screen
-            shortcuts survive the update.
-        -->
+        <!-- The single launcher entry. The alias keeps the pre-1.7.0 component name, so existing shortcuts survive. -->
         <activity-alias
             android:name=".MainActivity"
             android:enabled="true"
             android:exported="true"
-            android:targetActivity=".YomuActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".icon.PurpleLight"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_purple_light"
-            android:roundIcon="@mipmap/ic_launcher_purple_light"
-            android:targetActivity=".YomuActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".icon.OrangeDark"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_orange_dark"
-            android:roundIcon="@mipmap/ic_launcher_orange_dark"
-            android:targetActivity=".YomuActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".icon.OrangeLight"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_orange_light"
-            android:roundIcon="@mipmap/ic_launcher_orange_light"
             android:targetActivity=".YomuActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

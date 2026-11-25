@@ -449,29 +449,30 @@ class CatalogScreensTest {
     }
 
     @Test
-    fun installedExtensionHiddenBySafeContentStaysDiscoverable() {
+    fun installedAdultSourceIsHiddenBySafeContentUntilItIsTurnedOn() {
         val settings = GlobalContext.get().get<AppSettings>()
         runBlocking {
             settings.contentPreference.set(ContentPreference.SAFE)
             settings.catalogSourceFilter.set(SourceListFilter())
         }
-        seedExtensionSources(warning = ContentWarning.NSFW)
-        var openedExtensions = false
+        val source = seedExtensionSources(warning = ContentWarning.NSFW).single()
+        lateinit var model: CatalogHomeViewModel
         compose.setContent {
             YomuTheme {
+                model = koinViewModel()
                 CatalogScreen(
-                    viewModel = koinViewModel(), onOpenSource = {}, onOpenTitle = {}, onReadChapter = {},
-                    onGlobalSearch = {}, onOpenExtensions = { openedExtensions = true }, onOpenDownloads = {},
+                    viewModel = model, onOpenSource = {}, onOpenTitle = {}, onReadChapter = {},
+                    onGlobalSearch = {}, onOpenExtensions = {}, onOpenDownloads = {},
                 )
             }
         }
-        // The source is filtered out of the listing by the safe-content setting, but the package is not lost.
-        awaitText("Installed extensions not in the list")
-        awaitText("A test extension")
-        awaitText("Hidden by the content settings")
-        shot("35_installed_extensions_card")
-        compose.onNode(hasText("Open extensions") and hasClickAction()).performClick()
-        compose.runOnIdle { assertTrue(openedExtensions) }
+        awaitText("MangaDex")
+        // Safe content hides the 18+ source of the installed package; the trust migration keeps it registered,
+        // so turning the preference on lists it like any other source.
+        assertTrue(model.sourceListing.value.sources.none { it.id == source.id })
+        runBlocking { settings.contentPreference.set(ContentPreference.MIXED) }
+        awaitText(source.name)
+        assertTrue(model.sourceListing.value.sources.single { it.id == source.id }.isNsfw)
     }
 
     @Test

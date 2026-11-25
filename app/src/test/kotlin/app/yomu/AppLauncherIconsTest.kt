@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -37,34 +36,22 @@ class AppLauncherIconsTest {
         }
 
     @Test
-    fun pickingSwitchesTheAliasWhenTheAppIsLeftAndSurvivesARestart() {
+    fun theSingleIconKeepsTheDefaultAliasAndSurvivesARestart() {
         context.getSharedPreferences("launcher_icon", Context.MODE_PRIVATE).edit().clear().commit()
 
         val icons = AppLauncherIcons(context)
-        assertEquals(AppLauncherIcons.PURPLE_DARK, icons.current.value)
+        assertEquals(AppLauncherIcons.DEFAULT, icons.current.value)
+        assertEquals(listOf(AppLauncherIcons.DEFAULT), icons.icons.map { it.id })
 
+        // An id of one of the old colour variants is ignored instead of leaving the app without a launcher entry.
         icons.select("orange-light")
-        assertEquals("orange-light", icons.current.value)
-        // The running window was started from the default alias: switching now would close it, so the switch waits
-        // for the app to be left.
+        assertEquals(AppLauncherIcons.DEFAULT, icons.current.value)
+        icons.apply()
         assertTrue("still on the default alias", enabled("app.yomu.MainActivity", byDefault = true))
-        assertFalse(enabled("app.yomu.icon.OrangeLight"))
 
-        icons.apply() // what happens when the app goes to the background
-        assertTrue("Peach alias is enabled", enabled("app.yomu.icon.OrangeLight"))
-        assertFalse("the default alias is disabled", enabled("app.yomu.MainActivity"))
-
-        // The next start reads the stored pick, and its aliases agree with it already.
         val again = AppLauncherIcons(context)
-        assertEquals("orange-light", again.current.value)
-        assertTrue(enabled("app.yomu.icon.OrangeLight"))
-        assertFalse(enabled("app.yomu.MainActivity"))
-
-        again.select(AppLauncherIcons.PURPLE_DARK)
-        again.apply()
-        assertEquals(AppLauncherIcons.PURPLE_DARK, again.current.value)
+        assertEquals(AppLauncherIcons.DEFAULT, again.current.value)
         assertTrue(enabled("app.yomu.MainActivity", byDefault = true))
-        assertFalse(enabled("app.yomu.icon.OrangeLight"))
 
         context.getSharedPreferences("launcher_icon", Context.MODE_PRIVATE).edit().clear().commit()
     }

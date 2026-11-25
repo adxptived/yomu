@@ -25,7 +25,6 @@ import app.yomu.data.catalog.HistoryEntry
 import app.yomu.data.download.DownloadRepository
 import app.yomu.data.library.ImportOutcome
 import app.yomu.data.source.ExtensionManager
-import app.yomu.data.source.InstalledExtension
 import app.yomu.data.source.SourceHealth
 import app.yomu.data.source.SourceInfo
 import app.yomu.data.source.SourceManager
@@ -304,11 +303,6 @@ class CatalogHomeViewModel(
     /** Number of installed extensions with a newer version, shown on the Extensions button. */
     val extensionUpdates: StateFlow<Int> = extensions.updates.map { it.size }.state(this, 0)
 
-    /** Every installed package, so the source list can name the ones that contribute no visible source. */
-    val installedExtensions: StateFlow<List<InstalledExtension>> = extensions.installed.state(this, emptyList())
-
-    /** Registered sources by id: the installed package can offer "Open" even when the filters hide the row. */
-    val sourceInfos: StateFlow<Map<Long, SourceInfo>> = sources.infos.map { list -> list.associateBy { it.id } }.state(this, emptyMap())
     val localConfigured: Boolean get() = sources.local.isConfigured
 
     fun toggleLanguage(lang: String) = viewModelScope.launch(ScreenErrors) {

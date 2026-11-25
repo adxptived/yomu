@@ -84,7 +84,6 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -140,8 +139,6 @@ import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.catalog.HistoryEntry
-import app.yomu.data.source.ExtensionStatus
-import app.yomu.data.source.InstalledExtension
 import app.yomu.data.source.SourceHealth
 import app.yomu.data.source.SourceInfo
 import app.yomu.domain.catalog.LibraryDisplay
@@ -193,8 +190,6 @@ fun CatalogScreen(
     val history by viewModel.history.collectAsStateWithLifecycle()
     val newCount by viewModel.newCount.collectAsStateWithLifecycle()
     val extensionUpdates by viewModel.extensionUpdates.collectAsStateWithLifecycle()
-    val installedExtensions by viewModel.installedExtensions.collectAsStateWithLifecycle()
-    val sourceInfos by viewModel.sourceInfos.collectAsStateWithLifecycle()
     val incognito by viewModel.incognito.collectAsStateWithLifecycle()
 
     val snackbar = remember { SnackbarHostState() }
@@ -285,8 +280,7 @@ fun CatalogScreen(
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        val sourcesTab = HomeTab.entries[tab] == HomeTab.SOURCES
-        TopLevelBody(padding, Modifier.fillMaxSize().hazeSource(topBarBackdrop), drawBehindTopBar = sourcesTab) {
+        TopLevelBody(padding, Modifier.fillMaxSize().hazeSource(topBarBackdrop), drawBehindTopBar = true) {
             when (HomeTab.entries[tab]) {
                 HomeTab.SOURCES -> SourcesTab(
                     topInset = padding.calculateTopPadding(),
@@ -311,10 +305,8 @@ fun CatalogScreen(
                     editing = editingSources,
                     onToggleEditing = { editingSources = !editingSources },
                     extensionUpdates = extensionUpdates,
-                    installed = installedExtensions,
-                    sourceInfos = sourceInfos,
                 )
-                HomeTab.LIBRARY -> LibraryTab(favorites, libraryTotal, libraryDisplay, tabs, tabMembers, viewModel, onOpenTitle, onBrowse = { tab = 0 })
+                HomeTab.LIBRARY -> LibraryTab(favorites, libraryTotal, libraryDisplay, tabs, tabMembers, viewModel, onOpenTitle, onBrowse = { tab = 0 }, topInset = padding.calculateTopPadding())
                 HomeTab.UPDATES -> {
                     var filter by remember { mutableStateOf(app.yomu.domain.catalog.HistoryFilter()) }
                     val shown = remember(updates, filter) { updates.filter { filter.matches(it.toViewItem()) } }
@@ -322,6 +314,7 @@ fun CatalogScreen(
                         entries = shown,
                         emptyTitle = stringResource(R.string.updates_empty),
                         emptyIcon = Icons.Outlined.NewReleases,
+                        topInset = padding.calculateTopPadding(),
                         header = { hasEntries ->
                             OutlinedButton(onClick = viewModel::checkUpdates, modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s)) {
                                 Icon(Icons.Filled.Refresh, null)
@@ -345,6 +338,7 @@ fun CatalogScreen(
                         entries = shown,
                         emptyTitle = stringResource(R.string.history_empty),
                         emptyIcon = Icons.Outlined.History,
+                        topInset = padding.calculateTopPadding(),
                         header = { hasEntries ->
                             if (history.isNotEmpty()) {
                                 TextButton(onClick = { confirmClear = true }, modifier = Modifier.padding(horizontal = Dimens.s)) {
@@ -400,8 +394,6 @@ private fun SourcesTab(
     editing: Boolean,
     onToggleEditing: () -> Unit,
     extensionUpdates: Int,
-    installed: List<InstalledExtension>,
-    sourceInfos: Map<Long, SourceInfo>,
 ) {
     val sources = listing.sources
     var menuFor by remember { mutableStateOf<SourceInfo?>(null) }
@@ -413,11 +405,6 @@ private fun SourcesTab(
     val refreshing by viewModel.refreshingSources.collectAsStateWithLifecycle()
     val checkingSources by viewModel.checkingSources.collectAsStateWithLifecycle()
     val visibleIds = remember(sources) { sources.mapTo(HashSet()) { it.id } }
-    // Installed extensions with no visible source: filtered out by language/content/filters, or never loaded. The
-    // app's own bundled extensions follow the language filter by design and are not reported as "missing".
-    val missingExtensions = remember(installed, visibleIds) {
-        installed.filter { ext -> !ext.isBundled && ext.sources.none { it.id in visibleIds } }
-    }
     val selectedVisible = remember(selected, visibleIds) { selected.intersect(visibleIds) }
     BackHandler(enabled = editing && !showBulk) { onToggleEditing() }
     LaunchedEffect(visibleIds) {
@@ -523,19 +510,6 @@ private fun SourcesTab(
                             modifier = Modifier.padding(top = Dimens.xs),
                         )
                     }
-                }
-            }
-            // An installed extension whose sources are all filtered out (language, content, hidden) or not loaded
-            // would otherwise be invisible here, even though the user can see it in Extensions.
-            if (!editing && missingExtensions.isNotEmpty()) {
-                item(key = "installed-missing") {
-                    InstalledExtensionsCard(
-                        extensions = missingExtensions,
-                        sourceInfos = sourceInfos,
-                        onOpenSource = onOpenSource,
-                        onOpenExtensions = onOpenExtensions,
-                        onShowExcluded = { viewModel.showExcludedSources(true) },
-                    )
                 }
             }
             if (sources.isEmpty() && query.isNotEmpty()) {
@@ -751,62 +725,6 @@ private fun SourceBulkBar(selected: Int, onSelectAll: () -> Unit, onClear: () ->
     }
 }
 
-/**
- * Installed extensions that contribute no visible row: their sources are filtered out by language, content or a
- * filter, or the package never loaded. The card keeps them discoverable and opens either the first working source or
- * the Extensions screen with the status and the trust action.
- */
-@Composable
-private fun InstalledExtensionsCard(
-    extensions: List<InstalledExtension>,
-    sourceInfos: Map<Long, SourceInfo>,
-    onOpenSource: (SourceInfo) -> Unit,
-    onOpenExtensions: () -> Unit,
-    onShowExcluded: () -> Unit,
-) {
-    val anyFiltered = extensions.any { ext -> ext.sources.any { it.id in sourceInfos } }
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = MaterialTheme.shapes.large,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs),
-    ) {
-        Column(Modifier.padding(vertical = Dimens.s)) {
-            Row(Modifier.padding(start = Dimens.m, end = Dimens.s), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Extension, null, tint = MaterialTheme.colorScheme.primary)
-                Text(
-                    stringResource(R.string.catalog_installed_hidden_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f).padding(start = Dimens.s),
-                )
-                if (anyFiltered) {
-                    TextButton(onClick = onShowExcluded) { Text(stringResource(R.string.catalog_installed_show)) }
-                }
-            }
-            extensions.forEach { ext ->
-                val openable = ext.sources.firstNotNullOfOrNull { sourceInfos[it.id] }
-                val reason = when (ext.status) {
-                    ExtensionStatus.UNTRUSTED -> stringResource(R.string.catalog_installed_untrusted)
-                    ExtensionStatus.BROKEN -> stringResource(R.string.catalog_installed_broken)
-                    ExtensionStatus.LOADED ->
-                        stringResource(if (openable != null) R.string.catalog_installed_filtered else R.string.catalog_installed_safe)
-                }
-                Row(
-                    Modifier.fillMaxWidth().padding(start = Dimens.m, end = Dimens.xs).heightIn(min = 48.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(ext.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-                    }
-                    TextButton(onClick = { if (openable != null) onOpenSource(openable) else onOpenExtensions() }) {
-                        Text(stringResource(if (openable != null) R.string.catalog_installed_open else R.string.catalog_installed_manage))
-                    }
-                }
-            }
-        }
-    }
-}
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SourceRow(
@@ -958,6 +876,7 @@ internal fun LibraryTab(
     onBrowse: () -> Unit,
     query: String = "",
     showTabs: Boolean = true,
+    topInset: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp(0f),
 ) {
     val context = LocalContext.current
     var tab by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -988,7 +907,7 @@ internal fun LibraryTab(
                 (q.isEmpty() || e.title.contains(q, ignoreCase = true) || e.author?.contains(q, ignoreCase = true) == true)
         }
     }
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().padding(top = topInset)) {
         if (showTabs) {
             PillTabRow(
                 tabs = listOf(PillTab("all", stringResource(R.string.category_all), total)) +
@@ -1184,6 +1103,7 @@ private fun FeedTab(
     onMarkRead: (Collection<Long>, Boolean) -> Unit,
     onDownload: (Collection<Long>) -> Unit,
     onRemoveSelected: ((Collection<Long>) -> Unit)?,
+    topInset: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp(0f),
 ) {
     // Chapter ids are the record identity: the same chapter read again is a second history row, one selection.
     var selection by remember { mutableStateOf<Set<Long>>(emptySet()) }
@@ -1201,7 +1121,10 @@ private fun FeedTab(
     fun toggle(id: Long) {
         selection = if (id in selection) selection - id else selection + id
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(top = topInset, bottom = navBarBottomPadding(Dimens.xl)),
+    ) {
         item(key = "header") { header(entries.isNotEmpty()) }
         // The grouping and the filters mean nothing over an empty list: they only pushed the empty state down.
         if (entries.isNotEmpty()) {

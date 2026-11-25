@@ -262,6 +262,14 @@ class AppSettings(context: Context) {
     val incognito = bool("incognito", false)
     val trustedExtensions = stringSet("trusted_extensions")
 
+    /**
+     * The trust of the extensions that were already installed when this build first ran. Up to 2.15 an extension
+     * that was installed on the device but had no trust entry (a store removed later, an install from another app)
+     * silently vanished from the catalog; 2.16 trusts those packages once, so they are listed again. Installs made
+     * after this run keep the explicit trust flow.
+     */
+    val extensionTrustMigrated = bool("extension_trust_migrated", false)
+
     /** Bundled extensions the user uninstalled: they are not copied back on the next start. */
     val removedBundledExtensions = stringSet("removed_bundled_extensions")
 
@@ -461,7 +469,7 @@ class AppSettings(context: Context) {
 
     /** State of this installation, not a preference: never exported, and a backup never overwrites it. */
     private val deviceKeys =
-        setOf("update_checked_at", "update_latest", "whats_new_seen", "crash_seen_at", "last_sync_error")
+        setOf("update_checked_at", "update_latest", "whats_new_seen", "crash_seen_at", "last_sync_error", "extension_trust_migrated")
 
     /** Exports all stored preferences as typed JSON (used by backup). Secrets are skipped unless [includeSecrets]. */
     suspend fun exportJson(includeSecrets: Boolean = false): JsonObject {

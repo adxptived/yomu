@@ -208,7 +208,7 @@ class ExtensionManager(
                 runCatching { installBundled() }.onFailure { Timber.w(it, "Bundled extensions") }
             }
             val pm = context.packageManager
-            val trusted = settings.trustedExtensions.get()
+            var trusted = settings.trustedExtensions.get()
             val storeKeys = db.sources().repos().mapNotNull { it.signingKey?.lowercase() }.toSet()
             val bundledPkgs = bundledIndex().map { it.pkg }.toSet()
             val previous = _installed.value.associateBy { it.pkg }
@@ -219,6 +219,19 @@ class ExtensionManager(
             val private = privateFiles().mapNotNull { f ->
                 archiveInfo(pm, f)?.takeIf { formatOf(it) != null }?.let { it to f }
             }.associateBy { it.first.packageName }
+
+            // A package that was installed before this build may have no trust entry: an old store was removed, the
+            // extension was installed by Mihon/F-Droid, or an update changed the signer. Such extensions used to show
+            // in the catalog; trust what is already on the device once and keep the explicit flow for new installs.
+            if (!settings.extensionTrustMigrated.get()) {
+                val entries = (shared.values + private.values.map { it.first }).mapNotNull { info ->
+                    signaturesOf(info).sorted().joinToString(",").takeIf { it.isNotEmpty() }
+                        ?.let { "${info.packageName}:$it" }
+                }.toSet()
+                if (entries.isNotEmpty()) settings.trustedExtensions.update { it + entries }
+                settings.extensionTrustMigrated.set(true)
+                trusted = settings.trustedExtensions.get()
+            }
 
             val out = (shared.keys + private.keys).mapNotNull { pkg ->
                 val s = shared[pkg]
@@ -515,7 +528,7 @@ class ExtensionManager(
         val tmp = File.createTempFile("ext-", ".tmp", context.cacheDir)
         try {
             download(ext.apkUrl, tmp) { p -> _installing.update { it + (ext.pkg to p) } }
-            installFile(tmp, ext.pkg)
+            installFile(tmp, ext.pkg, trustSigner = true)
         } finally {
             tmp.delete()
             _installing.update { it - ext.pkg }
@@ -529,13 +542,13 @@ class ExtensionManager(
             (context.contentResolver.openInputStream(uri) ?: throw IOException("Cannot open $uri")).use { input ->
                 tmp.outputStream().use { input.copyTo(it) }
             }
-            installFile(tmp, null)
+            installFile(tmp, null, trustSigner = false)
         } finally {
             tmp.delete()
         }
     }
 
-    private suspend fun installFile(tmp: File, expectedPkg: String?): String {
+    private suspend fun installFile(tmp: File, expectedPkg: String?, trustSigner: Boolean): String {
         val pm = context.packageManager
         val info = archiveInfo(pm, tmp) ?: throw ExtensionException(ExtensionException.Reason.NOT_AN_APK)
         if (!PACKAGE.matches(info.packageName)) throw ExtensionException(ExtensionException.Reason.NOT_AN_EXTENSION, info.packageName)
@@ -551,6 +564,12 @@ class ExtensionManager(
         }
         writeReadOnly(tmp, dest)
         File(privateDir, "${info.packageName}.apk").takeIf { it.exists() }?.let { it.setWritable(true); it.delete() }
+        // A download from a store is trusted for good, like Mihon: removing the repository later must not turn an
+        // already installed extension into an unusable one.
+        if (trustSigner) {
+            val hash = sigs.sorted().joinToString(",")
+            settings.trustedExtensions.update { it + "${info.packageName}:$hash" }
+        }
         settings.removedBundledExtensions.update { it - info.packageName }
         reload()
         return info.packageName

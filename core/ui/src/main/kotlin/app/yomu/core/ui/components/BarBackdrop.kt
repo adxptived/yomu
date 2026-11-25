@@ -4,6 +4,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import app.yomu.core.ui.theme.isDarkScheme
 import dev.chrisbanes.haze.HazeState
@@ -12,9 +13,8 @@ import dev.chrisbanes.haze.hazeEffect
 
 /**
  * The frosted surface under a floating bar or a top bar: the content scrolls on underneath, blurred and tinted with
- * the theme's own surface so icons and labels keep their contrast over any cover. Dark themes use a lifted container
- * tone (visible even on AMOLED black), light themes a milky surface; both stay translucent enough for the colours of
- * the covers to come through.
+ * the theme's own surface so icons and labels keep their contrast over any cover. The tint is translucent: the bar
+ * only darkens (or milks) what passes under it instead of drawing a solid strip of its own.
  *
  * Devices without a usable blur keep a denser fill ([fallbackTint]), so the bars never turn into unreadable
  * see-through strips.
@@ -26,17 +26,20 @@ fun Modifier.barBackdrop(state: HazeState): Modifier {
     // the slightly deeper tint still marks the bar without turning it into an opaque strip.
     val tint = MaterialTheme.colorScheme.surfaceContainerHigh
     return hazeEffect(state) {
-        backgroundColor = tint
-        blurRadius = 22.dp
+        // No base fill: the blurred page itself is what the bar shows, with only a light gradient of the theme on top.
+        backgroundColor = Color.Transparent
+        blurRadius = 28.dp
         tints = listOf(
             HazeTint(
                 Brush.verticalGradient(
-                    0f to tint.copy(alpha = if (dark) 0.62f else 0.60f),
-                    1f to tint.copy(alpha = if (dark) 0.50f else 0.50f),
+                    0f to tint.copy(alpha = if (dark) 0.26f else 0.28f),
+                    1f to tint.copy(alpha = if (dark) 0.14f else 0.16f),
                 ),
             ),
         )
-        fallbackTint = HazeTint(tint.copy(alpha = if (dark) 0.94f else 0.92f))
+        // Even where the GPU cannot blur, the bar stays translucent: a solid strip was the complaint the glass bars
+        // were meant to answer.
+        fallbackTint = HazeTint(tint.copy(alpha = if (dark) 0.48f else 0.56f))
         noiseFactor = 0f
     }
 }

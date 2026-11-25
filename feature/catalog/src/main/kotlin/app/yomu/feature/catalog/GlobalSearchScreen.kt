@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -135,6 +137,11 @@ fun GlobalSearchScreen(
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
+        val direction = androidx.compose.ui.platform.LocalLayoutDirection.current
+        val sides = Modifier.padding(
+            start = padding.calculateStartPadding(direction),
+            end = padding.calculateEndPadding(direction),
+        )
         val list = results
         if (list == null) {
             LaunchedEffect(Unit) { if (query.isEmpty()) runCatching { focus.requestFocus() } }
@@ -142,13 +149,16 @@ fun GlobalSearchScreen(
                 title = stringResource(R.string.global_search_empty),
                 message = stringResource(if (viewModel.migrateFrom != null) R.string.migrate_hint else R.string.global_search_empty_hint),
                 icon = Icons.Outlined.TravelExplore,
-                modifier = Modifier.padding(padding).fillMaxSize(),
+                modifier = sides.fillMaxSize().padding(top = padding.calculateTopPadding()),
             )
             return@Scaffold
         }
         val shown = if (onlyWithResults) list.filter { it.loading || it.error != null || it.items.isNotEmpty() } else list
         val answered = list.count { !it.loading }
-        LazyColumn(Modifier.padding(padding).fillMaxSize().hazeSource(topBarBackdrop), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
+        LazyColumn(
+            sides.fillMaxSize().hazeSource(topBarBackdrop),
+            contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = navBarBottomPadding(Dimens.xl)),
+        ) {
             if (list.isEmpty()) item(key = "no-sources") { EmptyState(title = stringResource(R.string.sources_empty), modifier = Modifier.fillMaxWidth()) }
             if (list.isNotEmpty()) {
                 item(key = "summary") {

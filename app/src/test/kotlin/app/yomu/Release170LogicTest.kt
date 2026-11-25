@@ -150,31 +150,20 @@ class Release170LogicTest {
     }
 
     @Test
-    fun launcherIconSwitchesWhenTheAppIsLeft() {
+    fun launcherIconHasOneAliasAndOldPicksFallBack() {
         val pm = context.packageManager
         fun state(alias: String) = pm.getComponentEnabledSetting(ComponentName(context, alias))
         val icons = AppLauncherIcons(context)
-        assertEquals(listOf("purple-dark", "purple-light", "orange-dark", "orange-light"), icons.icons.map { it.id })
-        assertEquals("purple-dark", icons.current.value)
+        assertEquals(listOf(AppLauncherIcons.DEFAULT), icons.icons.map { it.id })
+        assertEquals(AppLauncherIcons.DEFAULT, icons.current.value)
 
+        // A pick stored by a build with four colour variants no longer matches any alias: the default stays enabled.
         icons.select("orange-dark")
-        assertEquals("orange-dark", icons.current.value)
-        // Nothing changes while the app is on screen.
-        assertEquals(PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, state("app.yomu.icon.OrangeDark"))
+        assertEquals(AppLauncherIcons.DEFAULT, icons.current.value)
+        assertEquals(PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, state("app.yomu.MainActivity"))
         icons.apply()
-        assertEquals(PackageManager.COMPONENT_ENABLED_STATE_ENABLED, state("app.yomu.icon.OrangeDark"))
-        assertEquals(PackageManager.COMPONENT_ENABLED_STATE_DISABLED, state("app.yomu.MainActivity"))
-        assertEquals(PackageManager.COMPONENT_ENABLED_STATE_DISABLED, state("app.yomu.icon.PurpleLight"))
-        // The next start reads the choice back from the package manager.
-        assertEquals("orange-dark", AppLauncherIcons(context).current.value)
-
-        icons.select("unknown")
-        assertEquals("orange-dark", icons.current.value)
-        icons.select("purple-dark")
-        icons.apply()
-        assertEquals(PackageManager.COMPONENT_ENABLED_STATE_ENABLED, state("app.yomu.MainActivity"))
-        assertEquals(PackageManager.COMPONENT_ENABLED_STATE_DISABLED, state("app.yomu.icon.OrangeDark"))
-        assertEquals("purple-dark", AppLauncherIcons(context).current.value)
+        assertEquals(PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, state("app.yomu.MainActivity"))
+        assertEquals(AppLauncherIcons.DEFAULT, AppLauncherIcons(context).current.value)
     }
 
     @Test

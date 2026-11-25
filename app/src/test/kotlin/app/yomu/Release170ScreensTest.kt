@@ -176,12 +176,12 @@ class Release170ScreensTest {
 
     @Test
     fun appIconPicker() {
-        val icons = AppLauncherIcons(context).apply { select("orange-dark") }
+        val icons = AppLauncherIcons(context)
         settingsScreen(settingsModel(AppUpdates(context, settings, fetch = { null })), SettingsSection.APPEARANCE, icons)
         awaitText("App icon")
         // Скроллим к подсказке под плитками: тогда видна вся сетка иконок, а не только заголовок у края.
         compose.onNodeWithText("The icon changes when you leave the app", substring = true).performScrollTo()
-        awaitText("Amber")
+        awaitText("Yomu")
         compose.mainClock.advanceTimeBy(1_000)
         shot("71_settings_app_icon")
     }
@@ -189,7 +189,7 @@ class Release170ScreensTest {
     @Test
     fun updateDialog() {
         val updates = AppUpdates(context, settings, fetch = { release }, installer = {})
-        settingsScreen(settingsModel(updates), SettingsSection.ABOUT, AppLauncherIcons(context).apply { select("purple-light") })
+        settingsScreen(settingsModel(updates), SettingsSection.ABOUT, AppLauncherIcons(context))
         awaitText("Check for updates")
         updates.check(openDialog = true)
         awaitText("Download and install")
@@ -209,7 +209,7 @@ class Release170ScreensTest {
             },
             installer = {},
         )
-        settingsScreen(settingsModel(updates), SettingsSection.ABOUT, AppLauncherIcons(context).apply { select("purple-light") })
+        settingsScreen(settingsModel(updates), SettingsSection.ABOUT, AppLauncherIcons(context))
         awaitText("Check for updates")
         updates.download(release)
         runBlocking { withTimeout(5_000) { updates.state.first { it is UpdateState.Downloading && it.progress == 0.42f } } }
@@ -278,12 +278,7 @@ class Release170ScreensTest {
     }
 
     @DrawableRes
-    private fun monochrome(icon: LauncherIcon): Int = when (icon.id) {
-        "purple-light" -> R.drawable.ic_launcher_purple_light_monochrome
-        "orange-dark" -> R.drawable.ic_launcher_orange_dark_monochrome
-        "orange-light" -> R.drawable.ic_launcher_orange_light_monochrome
-        else -> R.drawable.ic_launcher_purple_dark_monochrome
-    }
+    private fun monochrome(@Suppress("UNUSED_PARAMETER") icon: LauncherIcon): Int = R.drawable.ic_launcher_monochrome
 
     private companion object {
         const val SHEET = "sheet"

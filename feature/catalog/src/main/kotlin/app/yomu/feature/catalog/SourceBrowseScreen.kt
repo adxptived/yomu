@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -218,7 +220,13 @@ fun SourceBrowseScreen(
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize().hazeSource(topBarBackdrop)) {
+        val direction = androidx.compose.ui.platform.LocalLayoutDirection.current
+        val sides = Modifier.padding(
+            start = padding.calculateStartPadding(direction),
+            end = padding.calculateEndPadding(direction),
+        )
+        val topInset = padding.calculateTopPadding()
+        Box(sides.fillMaxSize().hazeSource(topBarBackdrop)) {
             if (!viewModel.exists) {
                 EmptyState(title = stringResource(R.string.source_missing), modifier = Modifier.fillMaxSize())
                 return@Box
@@ -237,6 +245,7 @@ fun SourceBrowseScreen(
                             onItem = onItem,
                             onLongItem = onLongItem,
                             onOpenWebView = onOpenWebView,
+                            topInset = topInset,
                         )
                     }
                     BrowseTab.SEARCH -> SearchPage(
@@ -251,6 +260,7 @@ fun SourceBrowseScreen(
                         onItem = onItem,
                         onLongItem = onLongItem,
                         onOpenWebView = onOpenWebView,
+                        topInset = topInset,
                     )
                 }
             }
@@ -319,6 +329,7 @@ private fun BrowseList(
     onItem: (SItem) -> Unit,
     onLongItem: (SItem) -> Unit,
     onOpenWebView: (String) -> Unit,
+    topInset: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp(0f),
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -364,7 +375,7 @@ private fun BrowseList(
             modifier = modifier.fillMaxSize(),
         ) {
             if (listMode) {
-                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = Dimens.xl)) {
+                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(top = topInset, bottom = Dimens.xl)) {
                     items(count = items.itemCount, key = { i -> items.stableKey(i) }) { i ->
                         // items[i] (not peek) reports the access to Paging so the next page is requested; the index is
                         // checked against the live count because the list can shrink between building and drawing.
@@ -399,7 +410,7 @@ private fun BrowseList(
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(Dimens.gridMin),
                     state = gridState,
-                    contentPadding = PaddingValues(start = Dimens.m, top = Dimens.m, end = Dimens.m, bottom = Dimens.m),
+                    contentPadding = PaddingValues(start = Dimens.m, top = topInset + Dimens.m, end = Dimens.m, bottom = Dimens.m),
                     horizontalArrangement = Arrangement.spacedBy(Dimens.m),
                     verticalArrangement = Arrangement.spacedBy(Dimens.m),
                     modifier = Modifier.fillMaxSize(),
@@ -445,6 +456,7 @@ private fun SearchPage(
     onItem: (SItem) -> Unit,
     onLongItem: (SItem) -> Unit,
     onOpenWebView: (String) -> Unit,
+    topInset: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp(0f),
 ) {
     val query by model.query.collectAsStateWithLifecycle()
     val filters by model.filters.collectAsStateWithLifecycle()
@@ -464,7 +476,7 @@ private fun SearchPage(
         model.submit()
     }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().padding(top = topInset)) {
         Row(
             Modifier.fillMaxWidth().padding(start = Dimens.l, end = Dimens.m, top = Dimens.s, bottom = Dimens.xs),
             verticalAlignment = Alignment.CenterVertically,

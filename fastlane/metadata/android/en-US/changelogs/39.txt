@@ -1,0 +1,3 @@
+Installed extensions are back in the catalog and open like built-in sources; the separate "not in the list" card is gone.
+Top and bottom bars are transparent on every screen, with the page scrolling beneath them.
+The new Yomu icon replaces all old colour variants.

@@ -42,10 +42,7 @@
     </plurals>
     <string name="add_extension_repo">Add extension repository</string>
     <!-- Launcher icons (Settings → Appearance → App icon) -->
-    <string name="icon_purple_dark">Violet</string>
-    <string name="icon_purple_light">Lilac</string>
-    <string name="icon_orange_dark">Amber</string>
-    <string name="icon_orange_light">Peach</string>
+    <string name="icon_yomu">Yomu</string>
     <!-- A crash of the previous run (1.9.0) -->
     <string name="crash_title">Yomu closed unexpectedly</string>
     <string name="crash_text">The app crashed last time. The report has the error, the screen it happened on and the phone model: send it to the developer to get it fixed. Nothing is sent without you.</string>
@@ -54,6 +51,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_16_0">
+        <item>Installed extensions are back in the catalog: packages installed by another app or left without a trust entry are trusted once and listed with the built-in sources.</item>
+        <item>The “Installed extensions not in the list” card is gone — every loaded source is a normal row with its language, kind and 18+ badge.</item>
+        <item>Top and bottom bars are transparent on every screen: the page scrolls and blurs beneath them like in the library.</item>
+        <item>The new Yomu icon replaces all four old colour variants.</item>
+    </string-array>
     <string-array name="whats_new_2_15_0">
         <item>The top and bottom bars share a frosted, theme-tinted blur without the white line, readable on dark and AMOLED screens.</item>
         <item>Installed extensions whose sources are filtered out stay visible in the catalog with the reason and a working Open action.</item>

@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -95,7 +93,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -110,6 +107,7 @@ import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.SearchField
+import app.yomu.core.ui.components.TopLevelBody
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.core.ui.components.copyText
@@ -244,113 +242,107 @@ fun ExtensionsScreen(
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        val direction = LocalLayoutDirection.current
-        val modifier = Modifier
-            .padding(
-                start = padding.calculateStartPadding(direction),
-                top = padding.calculateTopPadding(),
-                end = padding.calculateEndPadding(direction),
-            )
-            .fillMaxSize()
-            .hazeSource(topBarBackdrop)
-        when (tab) {
-            0 -> LazyColumn(modifier, contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
-                installedTab(
-                    installed = installed, updates = updates, installing = installing, query = query,
-                    onUpdate = viewModel::update, onUpdateAll = viewModel::updateAll,
-                    onTrust = { trustFor = it }, onTrustAll = { trustAll = it },
-                    onUninstall = { uninstallFor = it }, onOpen = { detailsFor = it.pkg },
-                    onBrowse = { tab = 1 },
-                    hidden = hiddenExtensions,
-                    onHide = { ext, hide -> viewModel.setExtensionHidden(ext.pkg, hide) },
-                )
-            }
-            1 -> LazyColumn(modifier, contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
-                item {
-                    LanguageChips(languages, onClick = { pickLanguages = true })
-                }
-                if (stores.isEmpty()) {
-                    item {
-                        EmptyState(
-                            title = stringResource(R.string.ext_no_repos),
-                            message = stringResource(R.string.ext_no_repos_hint),
-                            icon = Icons.Outlined.Storage,
-                            actionLabel = stringResource(R.string.ext_add_repo),
-                            onAction = { tab = 2 },
-                        )
-                    }
-                } else if (available.isEmpty() && !refreshing) {
-                    item {
-                        EmptyState(
-                            title = stringResource(if (query.isBlank()) R.string.ext_nothing_available else R.string.ext_no_results),
-                            icon = Icons.Outlined.Language,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-                available.forEach { group ->
-                    item(key = "h-" + group.lang) { SectionHeader(langLabel(group.lang) + " · " + group.items.size) }
-                    items(group.items, key = { "a-" + it.storeUrl + it.pkg }) { a ->
-                        AvailableRow(a, installing.containsKey(a.pkg), installing[a.pkg], multiStore = stores.size > 1) { viewModel.install(a) }
-                    }
-                }
-            }
-            else -> LazyColumn(modifier, contentPadding = PaddingValues(bottom = navBarBottomPadding(96.dp))) {
-                // Adding a repository right in the tab: paste a link, see the name, size and key, add — no dialog.
-                item(key = "add") {
-                    AddStoreCard(
-                        initial = addStoreInitial,
-                        preview = preview,
-                        onCheck = viewModel::previewStore,
-                        onConfirm = { viewModel.confirmStore(); addStoreInitial = "" },
-                        onDismiss = { viewModel.dismissPreview(); addStoreInitial = "" },
+        val topInset = padding.calculateTopPadding()
+        TopLevelBody(padding, Modifier.fillMaxSize().hazeSource(topBarBackdrop), drawBehindTopBar = true) {
+            when (tab) {
+                0 -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = topInset, bottom = navBarBottomPadding(Dimens.xl))) {
+                    installedTab(
+                        installed = installed, updates = updates, installing = installing, query = query,
+                        onUpdate = viewModel::update, onUpdateAll = viewModel::updateAll,
+                        onTrust = { trustFor = it }, onTrustAll = { trustAll = it },
+                        onUninstall = { uninstallFor = it }, onOpen = { detailsFor = it.pkg },
+                        onBrowse = { tab = 1 },
+                        hidden = hiddenExtensions,
+                        onHide = { ext, hide -> viewModel.setExtensionHidden(ext.pkg, hide) },
                     )
                 }
-                item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s),
-                    ) {
-                        Row(Modifier.padding(Dimens.l), horizontalArrangement = Arrangement.spacedBy(Dimens.m)) {
-                            Icon(Icons.Outlined.VerifiedUser, null, tint = MaterialTheme.colorScheme.primary)
-                            Text(stringResource(R.string.ext_repo_warning), style = MaterialTheme.typography.bodySmall)
+                1 -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = topInset, bottom = navBarBottomPadding(Dimens.xl))) {
+                    item {
+                        LanguageChips(languages, onClick = { pickLanguages = true })
+                    }
+                    if (stores.isEmpty()) {
+                        item {
+                            EmptyState(
+                                title = stringResource(R.string.ext_no_repos),
+                                message = stringResource(R.string.ext_no_repos_hint),
+                                icon = Icons.Outlined.Storage,
+                                actionLabel = stringResource(R.string.ext_add_repo),
+                                onAction = { tab = 2 },
+                            )
+                        }
+                    } else if (available.isEmpty() && !refreshing) {
+                        item {
+                            EmptyState(
+                                title = stringResource(if (query.isBlank()) R.string.ext_nothing_available else R.string.ext_no_results),
+                                icon = Icons.Outlined.Language,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                    available.forEach { group ->
+                        item(key = "h-" + group.lang) { SectionHeader(langLabel(group.lang) + " · " + group.items.size) }
+                        items(group.items, key = { "a-" + it.storeUrl + it.pkg }) { a ->
+                            AvailableRow(a, installing.containsKey(a.pkg), installing[a.pkg], multiStore = stores.size > 1) { viewModel.install(a) }
                         }
                     }
                 }
-                if (stores.isEmpty()) {
+                else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = topInset, bottom = navBarBottomPadding(96.dp))) {
+                    // Adding a repository right in the tab: paste a link, see the name, size and key, add — no dialog.
+                    item(key = "add") {
+                        AddStoreCard(
+                            initial = addStoreInitial,
+                            preview = preview,
+                            onCheck = viewModel::previewStore,
+                            onConfirm = { viewModel.confirmStore(); addStoreInitial = "" },
+                            onDismiss = { viewModel.dismissPreview(); addStoreInitial = "" },
+                        )
+                    }
                     item {
-                        EmptyState(
-                            title = stringResource(R.string.ext_no_repos),
-                            message = stringResource(R.string.ext_no_repos_hint),
-                            icon = Icons.Outlined.Storage,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s),
+                        ) {
+                            Row(Modifier.padding(Dimens.l), horizontalArrangement = Arrangement.spacedBy(Dimens.m)) {
+                                Icon(Icons.Outlined.VerifiedUser, null, tint = MaterialTheme.colorScheme.primary)
+                                Text(stringResource(R.string.ext_repo_warning), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
                     }
-                }
-                items(stores, key = { it.url }) { s -> StoreRow(s, onRemove = { removeStore = s }) }
-                val suggested = RECOMMENDED_STORES.filter { rec -> stores.none { rec.matches(it.url) } }
-                if (suggested.isNotEmpty()) {
-                    item(key = "rec-h") { SectionHeader(stringResource(R.string.ext_rec_title)) }
-                    items(suggested, key = { "rec-" + it.url }) { rec ->
-                        ListItem(
-                            leadingContent = { Icon(Icons.Outlined.Storage, null, tint = MaterialTheme.colorScheme.primary) },
-                            headlineContent = { Text(rec.name) },
-                            supportingContent = { Text(stringResource(rec.description), style = MaterialTheme.typography.bodySmall) },
-                            trailingContent = {
-                                FilledTonalButton(onClick = {
-                                    addStoreInitial = rec.url
-                                    viewModel.previewStore(rec.url)
-                                }) { Text(stringResource(CoreR.string.add)) }
-                            },
-                        )
+                    if (stores.isEmpty()) {
+                        item {
+                            EmptyState(
+                                title = stringResource(R.string.ext_no_repos),
+                                message = stringResource(R.string.ext_no_repos_hint),
+                                icon = Icons.Outlined.Storage,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
-                    item(key = "rec-note") {
-                        Text(
-                            stringResource(R.string.ext_rec_note),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s),
-                        )
+                    items(stores, key = { it.url }) { s -> StoreRow(s, onRemove = { removeStore = s }) }
+                    val suggested = RECOMMENDED_STORES.filter { rec -> stores.none { rec.matches(it.url) } }
+                    if (suggested.isNotEmpty()) {
+                        item(key = "rec-h") { SectionHeader(stringResource(R.string.ext_rec_title)) }
+                        items(suggested, key = { "rec-" + it.url }) { rec ->
+                            ListItem(
+                                leadingContent = { Icon(Icons.Outlined.Storage, null, tint = MaterialTheme.colorScheme.primary) },
+                                headlineContent = { Text(rec.name) },
+                                supportingContent = { Text(stringResource(rec.description), style = MaterialTheme.typography.bodySmall) },
+                                trailingContent = {
+                                    FilledTonalButton(onClick = {
+                                        addStoreInitial = rec.url
+                                        viewModel.previewStore(rec.url)
+                                    }) { Text(stringResource(CoreR.string.add)) }
+                                },
+                            )
+                        }
+                        item(key = "rec-note") {
+                            Text(
+                                stringResource(R.string.ext_rec_note),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s),
+                            )
+                        }
                     }
                 }
             }

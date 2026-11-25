@@ -14,20 +14,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 
 /**
- * Launcher icons (1.7.0). Every icon is an `<activity-alias>` of [YomuActivity] in the manifest and exactly one is
- * enabled. The pick is kept in [PREFS] as well as in the package manager: the package manager alone forgets it when
- * the app dies before the switch. The switch itself runs when the app goes to the background — disabling the alias
- * that the running window was started from closes that window, so it must not happen while the screen is open.
- * The artwork is one drawing in four colour variants; the sources are in `branding/app-icons`.
+ * The launcher icon. The alias in the manifest is the only launcher entry, kept enabled so home-screen shortcuts
+ * survive updates. The previous four colour variants were replaced by the single new artwork; a stored pick of one of
+ * those ids simply falls back to it.
  */
 class AppLauncherIcons(private val context: Context) : LauncherIcons, DefaultLifecycleObserver {
     private class Alias(val icon: LauncherIcon, val className: String, val enabledByDefault: Boolean = false)
 
     private val aliases = listOf(
-        Alias(LauncherIcon(PURPLE_DARK, R.string.icon_purple_dark, R.drawable.ic_launcher_purple_dark_background, R.drawable.ic_launcher_purple_dark_foreground), "app.yomu.MainActivity", enabledByDefault = true),
-        Alias(LauncherIcon("purple-light", R.string.icon_purple_light, R.drawable.ic_launcher_purple_light_background, R.drawable.ic_launcher_purple_light_foreground), "app.yomu.icon.PurpleLight"),
-        Alias(LauncherIcon("orange-dark", R.string.icon_orange_dark, R.drawable.ic_launcher_orange_dark_background, R.drawable.ic_launcher_orange_dark_foreground), "app.yomu.icon.OrangeDark"),
-        Alias(LauncherIcon("orange-light", R.string.icon_orange_light, R.drawable.ic_launcher_orange_light_background, R.drawable.ic_launcher_orange_light_foreground), "app.yomu.icon.OrangeLight"),
+        Alias(
+            LauncherIcon(DEFAULT, R.string.icon_yomu, R.drawable.ic_launcher_background, R.drawable.ic_launcher_foreground),
+            "app.yomu.MainActivity",
+            enabledByDefault = true,
+        ),
     )
 
     override val icons: List<LauncherIcon> = aliases.map { it.icon }
@@ -87,12 +86,12 @@ class AppLauncherIcons(private val context: Context) : LauncherIcons, DefaultLif
     private fun read(): String = runCatching {
         val pm = context.packageManager
         (aliases.firstOrNull { !it.enabledByDefault && isEnabled(pm, it) } ?: aliases.first()).icon.id
-    }.getOrDefault(PURPLE_DARK)
+    }.getOrDefault(DEFAULT)
 
     private fun component(a: Alias) = ComponentName(context, a.className)
 
     companion object {
-        const val PURPLE_DARK = "purple-dark"
+        const val DEFAULT = "yomu"
         private const val PREFS = "launcher_icon"
         private const val KEY = "picked"
     }
