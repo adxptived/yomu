@@ -28,6 +28,7 @@ import app.yomu.domain.library.BulkExecutor
 import app.yomu.domain.library.BulkOutcome
 import app.yomu.domain.library.ContentOrigin
 import app.yomu.domain.library.ContentType
+import app.yomu.domain.model.ContentType as CatalogContentType
 import app.yomu.domain.library.LibraryItemKey
 import app.yomu.domain.library.LibraryQuerySpec
 import app.yomu.domain.library.LibraryQuerySpecData
@@ -223,6 +224,13 @@ internal fun CatalogEntry.toSearchFields(): LibrarySearchFields = object : Libra
     }
 }
 
+/** The "Type" chip an online title belongs to: the same content groups the local books use. */
+internal fun CatalogContentType.formatGroup(): FormatGroup = when (this) {
+    CatalogContentType.MANGA -> FormatGroup.COMICS
+    CatalogContentType.AUDIO -> FormatGroup.AUDIO
+    CatalogContentType.NOVEL, CatalogContentType.BOOK -> FormatGroup.BOOKS
+}
+
 /** Online titles of the current tab that pass the search and filters, in the library's order. */
 internal fun List<CatalogEntry>.forLibrary(
     filter: LibraryFilter,
@@ -230,12 +238,17 @@ internal fun List<CatalogEntry>.forLibrary(
     query: LibrarySearchAndSort,
     tabsOf: Map<Long, Set<Long>>,
 ): List<CatalogEntry> {
-    if (types.isNotEmpty() && FormatGroup.ONLINE !in types) return emptyList()
+    // "Online" is an origin, not a content type: it widens the selection to every network title. Without it, the
+    // remaining chips still match by the title's own kind (manga → comics, novel → books), so the manga filter no
+    // longer drops the online manga the user added to the library.
+    val onlineOnly = FormatGroup.ONLINE in types
+    val contentTypes = types - FormatGroup.ONLINE
     // Titles of the sources carry no language: a language filter is about the books.
     if (filter.language != null) return emptyList()
     val q = query.raw.trim()
     val shown = filter { e ->
-        (filter.collectionId == null || tabsOf[e.id]?.contains(filter.collectionId) == true) &&
+        (types.isEmpty() || onlineOnly || e.type.formatGroup() in contentTypes) &&
+            (filter.collectionId == null || tabsOf[e.id]?.contains(filter.collectionId) == true) &&
             (if (query.parsed.usesAdvanced) {
                 query.parsed.expression.matches(e.toSearchFields())
             } else {
@@ -558,8 +571,13 @@ class LibraryViewModel(
                 .map { it.id }.filter { it !in pending } to q.toString()
         }
         _selection.value = ids.toSet()
+        // The online tiles visible under the same query belong to the same "all": a mixed selection keeps its typed keys.
+        val online = onlineShown.value.map { LibraryItemKey.OnlineEntry(it.id) }
+        val keys = mutableSetOf<LibraryItemKey>()
+        ids.mapTo(keys) { LibraryItemKey.LocalBook(it) }
+        keys.addAll(online)
         // "Select all" is a snapshot of the query, not of the loaded tiles: the same set feeds the typed state.
-        _typedSelection.value = LibrarySelection().replaceAll(ids.mapTo(mutableSetOf()) { LibraryItemKey.LocalBook(it) }, snapshot)
+        _typedSelection.value = LibrarySelection().replaceAll(keys, snapshot)
     }
 
     /** "Continue" on an online title opens the chapter to read next; the title page only when it has no chapters. */

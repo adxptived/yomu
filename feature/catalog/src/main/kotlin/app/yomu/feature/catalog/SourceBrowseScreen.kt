@@ -100,6 +100,8 @@ import app.yomu.core.ui.components.CoverCache
 import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.ErrorState
 import app.yomu.core.ui.components.ExpandVisibility
+import app.yomu.core.ui.components.GlassTopBarBackground
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.LocalHideCovers
 import app.yomu.core.ui.components.LocalReduceMotion
 import app.yomu.core.ui.components.SearchField
@@ -110,6 +112,8 @@ import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.motionItem
 import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.components.rememberHaptic
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.source.FilterList
 import app.yomu.source.SItem
@@ -172,11 +176,13 @@ fun SourceBrowseScreen(
         }
     }
 
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         contentWindowInsets = topLevelContentInsets(),
         topBar = {
-            Column {
+            GlassTopBarBackground(topBarBackdrop) { Column {
                 TopAppBar(
+                    colors = glassTopBarColors(),
                     title = { Text(viewModel.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back)) } },
                     actions = {
@@ -208,11 +214,11 @@ fun SourceBrowseScreen(
                         }
                     }
                 }
-            }
+            } }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize()) {
+        Box(Modifier.padding(padding).fillMaxSize().hazeSource(topBarBackdrop)) {
             if (!viewModel.exists) {
                 EmptyState(title = stringResource(R.string.source_missing), modifier = Modifier.fillMaxSize())
                 return@Box
@@ -263,6 +269,8 @@ private fun BrowseTab.label(): Int = when (this) {
 private fun BrowseTabRow(tabs: List<BrowseTab>, pager: PagerState, onSelect: (Int) -> Unit) {
     PrimaryTabRow(
         selectedTabIndex = pager.currentPage,
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+        divider = {},
         indicator = {
             TabRowDefaults.PrimaryIndicator(
                 modifier = Modifier.tabIndicatorLayout { measurable, constraints, positions ->

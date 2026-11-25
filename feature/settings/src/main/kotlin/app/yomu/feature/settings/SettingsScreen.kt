@@ -93,11 +93,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.datastore.Pref
 import app.yomu.core.ui.components.EmptyState
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.TopLevelBody
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.topLevelContentInsets
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.core.ui.theme.Dimens
 import kotlinx.coroutines.launch
 import app.yomu.core.ui.R as CoreR
@@ -193,11 +197,13 @@ fun SettingsScreen(
     }
 
     val current = section
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         contentWindowInsets = topLevelContentInsets(),
         topBar = {
-            Column {
+            GlassTopBarBackground(topBarBackdrop) { Column {
                 TopAppBar(
+                    colors = glassTopBarColors(),
                     title = { Text(stringResource(current?.title ?: CoreR.string.settings)) },
                     navigationIcon = {
                         val back: (() -> Unit)? = when {
@@ -215,11 +221,11 @@ fun SettingsScreen(
                     },
                 )
                 if (busy) LinearProgressIndicator(Modifier.padding(horizontal = Dimens.l))
-            }
+            } }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        TopLevelBody(padding) { CompositionLocalProvider(LocalSettingsFocus provides focus) { AnimatedContent(targetState = current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "settings") { s ->
+        TopLevelBody(padding, Modifier.hazeSource(topBarBackdrop)) { CompositionLocalProvider(LocalSettingsFocus provides focus) { AnimatedContent(targetState = current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "settings") { s ->
             if (s == null) {
                 SettingsRoot(
                     query = query,

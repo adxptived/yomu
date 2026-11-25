@@ -1,0 +1,3 @@
+Frosted top and bottom bars without the white line, readable on dark and AMOLED screens.
+Installed extensions missing from the catalog now show the reason and open from both screens.
+Library → All keeps online titles with the shelf hidden; manga titles use the book card and real chapter numbers.

@@ -53,7 +53,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
@@ -156,9 +155,7 @@ fun FloatingNavBar(
             shape = CircleShape,
             color = if (!glass) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
             contentColor = MaterialTheme.colorScheme.onSurface,
-            // The glass keeps a hairline bevel (light at the top, shaded at the bottom); the opaque pill keeps the
-            // plain outline it always had.
-            border = if (glass) BorderStroke(1.dp, glassEdge()) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            // The glass has no bevel and no specular line: the tinted blur alone separates it from the page.
             modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(),
         ) {
             NavBarItems(
@@ -168,7 +165,7 @@ fun FloatingNavBar(
                 onSelect = onSelect,
                 onPress = onPress,
                 modifier = Modifier.then(
-                    if (backdrop != null) Modifier.barBackdrop(backdrop).glassSheen() else Modifier,
+                    if (backdrop != null) Modifier.barBackdrop(backdrop) else Modifier,
                 ).height(FloatingNavBarDefaults.pillHeight(showLabels)).padding(6.dp),
             )
         }

@@ -148,6 +148,7 @@ class NavigationScreensTest {
     fun lastShelfRowClearsTheFloatingBar() {
         importShelf()
         scrollTo("Field Notes 6")
+        shot("78_nav_bar_glass")
         val barTop = navBarTop()
         val lastTitle = compose.onAllNodes(hasText("Field Notes 6")).fetchSemanticsNodes().last()
         compose.runOnIdle {
@@ -159,6 +160,39 @@ class NavigationScreensTest {
         // The last row still takes the tap: its title opens the details card.
         compose.onAllNodesWithText("Field Notes 6").let { nodes -> nodes[nodes.fetchSemanticsNodes().lastIndex].performClick() }
         awaitText("Mara Ellison")
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "w411dp-h891dp-xxhdpi")
+    fun allShowsOnlineMangaWithTheShelfHidden() {
+        // Onboarding is the same gate as for an imported book; there is no local title in this test.
+        compose.waitUntil(20_000) {
+            listOf("Welcome to Yomu", "Library").any { compose.onAllNodes(hasText(it, substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        }
+        if (compose.onAllNodes(hasText("Welcome to Yomu")).fetchSemanticsNodes().isNotEmpty()) {
+            compose.onAllNodesWithText("Next")[0].performClick()
+            awaitText("Where are your books?")
+            compose.onAllNodesWithText("Skip")[0].performClick()
+        }
+        val koin = GlobalContext.get()
+        runBlocking { koin.get<app.yomu.core.datastore.AppSettings>().libraryShelfHidden.set(true) }
+        runBlocking {
+            koin.get<app.yomu.core.database.YomuDatabase>().catalog().insert(
+                app.yomu.core.database.CatalogItemEntity(
+                    sourceId = 424_242L, url = "/all/online-manga", title = "Online Manga Only",
+                    author = "Remote Author", artist = null, description = null, genres = "Action", status = 1,
+                    coverUrl = null, type = "MANGA", favorite = true, categoryId = null,
+                    addedAt = System.currentTimeMillis(), lastUpdateAt = 0, initialized = true,
+                ),
+            )
+        }
+        // The app opens on the Library tab; the catalog shelf is off, so the title can only come from the ordinary
+        // All grid.
+        settle()
+        awaitText("Online Manga Only")
+        compose.onAllNodesWithText("Online Manga Only")[0].assertIsDisplayed()
+        shot("79_library_all_online")
     }
 
     @Test

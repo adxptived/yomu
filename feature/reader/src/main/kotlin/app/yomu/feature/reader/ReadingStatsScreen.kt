@@ -71,8 +71,12 @@ import app.yomu.core.datastore.AppSettings
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.CoverImage
 import app.yomu.core.ui.components.EmptyState
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.StateContent
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.navBarBottomPadding
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.data.repository.ReadingHistoryRepository
 import app.yomu.data.repository.TitleInfo
 import app.yomu.domain.repository.StatsRepository
@@ -127,16 +131,18 @@ class ReadingStatsViewModel(
 
 @Composable
 fun ReadingStatsScreen(viewModel: ReadingStatsViewModel, onBack: () -> Unit) {
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         topBar = {
-            TopAppBar(
+            GlassTopBarBackground(topBarBackdrop) { TopAppBar(
+                colors = glassTopBarColors(),
                 title = { Text(stringResource(R.string.stats_title)) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back)) } },
                 actions = { ReadingStatsActions(viewModel) },
-            )
+            ) }
         },
     ) { padding ->
-        ReadingStatsPane(viewModel, Modifier.padding(padding))
+        ReadingStatsPane(viewModel, Modifier.padding(padding).hazeSource(topBarBackdrop))
     }
 }
 

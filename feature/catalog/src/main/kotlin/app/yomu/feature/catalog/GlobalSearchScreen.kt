@@ -52,10 +52,14 @@ import app.yomu.core.ui.components.BookGridItem
 import app.yomu.core.ui.components.ChipItem
 import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.FilterChipsRow
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.theme.Dimens
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.data.catalog.MigrationCategory
 import app.yomu.data.catalog.MigrationPlan
 import app.yomu.source.SourceContent
@@ -87,10 +91,12 @@ fun GlobalSearchScreen(
     val focus = remember { FocusRequester() }
     CatalogEventsEffect(viewModel.events, snackbar, onOpenTitle)
 
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         topBar = {
-            Column {
+            GlassTopBarBackground(topBarBackdrop) { Column {
                 TopAppBar(
+                    colors = glassTopBarColors(),
                     title = { Text(stringResource(if (viewModel.migrateFrom != null) R.string.migrate_title else R.string.global_search)) },
                     navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back)) } },
                 )
@@ -125,7 +131,7 @@ fun GlobalSearchScreen(
                     migrating -> LinearProgressIndicator(Modifier.fillMaxWidth())
                     all.isNotEmpty() && answered < all.size -> LinearProgressIndicator(progress = { answered.toFloat() / all.size }, modifier = Modifier.fillMaxWidth())
                 }
-            }
+            } }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
@@ -142,7 +148,7 @@ fun GlobalSearchScreen(
         }
         val shown = if (onlyWithResults) list.filter { it.loading || it.error != null || it.items.isNotEmpty() } else list
         val answered = list.count { !it.loading }
-        LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
+        LazyColumn(Modifier.padding(padding).fillMaxSize().hazeSource(topBarBackdrop), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
             if (list.isEmpty()) item(key = "no-sources") { EmptyState(title = stringResource(R.string.sources_empty), modifier = Modifier.fillMaxWidth()) }
             if (list.isNotEmpty()) {
                 item(key = "summary") {

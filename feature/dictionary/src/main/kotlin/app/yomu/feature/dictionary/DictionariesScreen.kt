@@ -47,14 +47,18 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.EmptyState
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.PreferenceSwitch
 import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.YomuFab
 import app.yomu.core.ui.components.TopLevelBody
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.theme.Dimens
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.domain.model.DictFormat
 import app.yomu.domain.model.DictionaryInfo
 import app.yomu.core.ui.R as UiR
@@ -79,15 +83,17 @@ fun DictionariesScreen(viewModel: DictionariesViewModel, onBack: () -> Unit) {
             )
         }
     }
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         // The import button stays above the floating bar; the list runs on under it.
         contentWindowInsets = topLevelContentInsets(),
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            TopAppBar(
+            GlassTopBarBackground(topBarBackdrop) { TopAppBar(
+                colors = glassTopBarColors(),
                 title = { Text(stringResource(R.string.dicts_title)) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(UiR.string.back)) } },
-            )
+            ) }
         },
         floatingActionButton = {
             YomuFab(
@@ -97,7 +103,7 @@ fun DictionariesScreen(viewModel: DictionariesViewModel, onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        TopLevelBody(padding, Modifier.fillMaxSize()) {
+        TopLevelBody(padding, Modifier.fillMaxSize().hazeSource(topBarBackdrop)) {
         Column(Modifier.fillMaxSize()) {
             if (importing) {
                 Column(Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s)) {

@@ -69,11 +69,15 @@ import app.yomu.core.datastore.AppSettings
 import app.yomu.core.ui.components.BookListItem
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.EmptyState
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.SwipeAction
 import app.yomu.core.ui.components.SwipeActionsBox
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.motionItem
 import app.yomu.core.ui.components.navBarBottomPadding
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.repository.ReadingHistoryItem
 import app.yomu.data.repository.ReadingHistoryRepository
@@ -154,18 +158,20 @@ fun HistoryScreen(
     var searching by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scroll = TopAppBarDefaults.pinnedScrollBehavior()
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            TopAppBar(
+            GlassTopBarBackground(topBarBackdrop) { TopAppBar(
+                colors = glassTopBarColors(),
                 scrollBehavior = scroll,
                 title = { Text(stringResource(R.string.history_title)) },
                 actions = {
                     IconButton(onClick = onOpenStats) { Icon(Icons.Outlined.BarChart, stringResource(R.string.history_stats)) }
                     HistoryActions(viewModel, searching, onSearching = { searching = it })
                 },
-            )
+            ) }
         },
     ) { padding ->
         HistoryPane(
@@ -178,7 +184,7 @@ fun HistoryScreen(
             onReadChapter = onReadChapter,
             onOpenTitle = onOpenTitle,
             onOpenStats = onOpenStats,
-            modifier = Modifier.padding(padding),
+            modifier = Modifier.padding(padding).hazeSource(topBarBackdrop),
         )
     }
 }

@@ -90,11 +90,15 @@ import app.yomu.core.common.Share
 import app.yomu.core.datastore.AppSettings
 import app.yomu.core.ui.components.BookListItem
 import app.yomu.core.ui.components.CollapsibleSection
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.PreferenceItem
 import app.yomu.core.ui.components.TopLevelBody
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.topLevelContentInsets
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.repository.ReadingHistoryItem
 import app.yomu.feature.library.HistoryActions
@@ -161,12 +165,14 @@ fun ProfileScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     BackHandler(enabled = page != ProfilePage.NONE) { page = ProfilePage.NONE }
+    val topBarBackdrop = rememberHazeState()
 
     Scaffold(
         contentWindowInsets = topLevelContentInsets(),
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            TopAppBar(
+            GlassTopBarBackground(topBarBackdrop) { TopAppBar(
+                colors = glassTopBarColors(),
                 title = { Text(stringResource(page.title)) },
                 navigationIcon = {
                     if (page != ProfilePage.NONE) {
@@ -185,10 +191,10 @@ fun ProfileScreen(
                         }
                     }
                 },
-            )
+            ) }
         },
     ) { padding ->
-        TopLevelBody(padding, Modifier.fillMaxSize()) {
+        TopLevelBody(padding, Modifier.fillMaxSize().hazeSource(topBarBackdrop)) {
             Column(Modifier.fillMaxSize()) {
                 when (page) {
                     ProfilePage.STATS -> ReadingStatsPane(statsViewModel, Modifier.fillMaxSize())

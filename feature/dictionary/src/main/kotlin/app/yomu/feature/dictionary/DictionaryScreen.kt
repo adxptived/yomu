@@ -43,6 +43,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -51,16 +52,20 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.common.UiState
 import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.ErrorState
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.TopLevelBody
 import app.yomu.core.ui.components.YomuTab
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.feature.translator.Speaker
 import app.yomu.feature.translator.TranslationSheet
 import app.yomu.feature.translator.TranslationViewModel
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -78,32 +83,36 @@ fun DictionaryScreen(
     val wordCount by viewModel.wordCount.collectAsStateWithLifecycle()
     val glossaryViewModel: GlossaryViewModel = koinViewModel()
     androidx.compose.runtime.LaunchedEffect(initialQuery) { if (!initialQuery.isNullOrBlank()) { tab = 0; viewModel.search(initialQuery) } }
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         contentWindowInsets = topLevelContentInsets(),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.dict_title)) },
-                actions = {
-                    if (tab == 1 && wordCount > 0) {
-                        IconButton(onClick = onStartReview) { Icon(Icons.Default.School, stringResource(R.string.review_title)) }
-                    }
-                    IconButton(onClick = onOpenDictionaries) { Icon(Icons.AutoMirrored.Filled.LibraryBooks, stringResource(R.string.dicts_title)) }
-                },
-            )
+            GlassTopBarBackground(topBarBackdrop) { Column {
+                TopAppBar(
+                    colors = glassTopBarColors(),
+                    title = { Text(stringResource(R.string.dict_title)) },
+                    actions = {
+                        if (tab == 1 && wordCount > 0) {
+                            IconButton(onClick = onStartReview) { Icon(Icons.Default.School, stringResource(R.string.review_title)) }
+                        }
+                        IconButton(onClick = onOpenDictionaries) { Icon(Icons.AutoMirrored.Filled.LibraryBooks, stringResource(R.string.dicts_title)) }
+                    },
+                )
+                PrimaryTabRow(selectedTabIndex = tab, containerColor = Color.Transparent, divider = {}) {
+                    YomuTab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(R.string.dict_tab_lookup)) })
+                    YomuTab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.dict_tab_words)) })
+                    YomuTab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.dict_tab_glossary)) })
+                }
+            } }
         },
     ) { padding ->
-        TopLevelBody(padding, Modifier.fillMaxSize()) { Column(Modifier.fillMaxSize()) {
-            PrimaryTabRow(selectedTabIndex = tab) {
-                YomuTab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(R.string.dict_tab_lookup)) })
-                YomuTab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.dict_tab_words)) })
-                YomuTab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.dict_tab_glossary)) })
-            }
+        TopLevelBody(padding, Modifier.fillMaxSize().hazeSource(topBarBackdrop)) {
             when (tab) {
                 0 -> LookupTab(viewModel, onStartReview, onOpenDictionaries)
                 1 -> WordsContent(wordsViewModel, onOpenBook)
                 else -> GlossaryContent(glossaryViewModel, onOpenBook)
             }
-        } }
+        }
     }
 }
 

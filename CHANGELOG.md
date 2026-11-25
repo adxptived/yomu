@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.15.0 — frosted bars, visible sources and a unified title card
+
+### Catalog and sources
+
+- Installed extension packages whose sources are filtered out or not loaded stay visible in the catalog with the reason and a working action: open the first available source or the extensions screen.
+- Extension details explain every unavailable source: untrusted package, load failure, a source ID owned by another package, or the safe-content setting, which now also offers to turn 18+ content on.
+
+### Library and reading
+
+- Library → All keeps online manga and novels when the catalog shelf is hidden, and counts them on the All tab.
+- The manga/comics filter matches online manga by its content type instead of dropping every online title; "Select all" includes the visible online entries.
+- A manga title page uses the book card layout: poster cover, one primary "Start/Continue · chapter" action, saved page and progress in the header. The floating read button is gone.
+- Chapter badges show the source's own numbers, including split chapters such as 39.1, instead of the position in the filtered list. Long chapter gaps say how many numbers are not shown.
+
+### Interface
+
+- Both floating bars share one frosted backdrop: a blurred, theme-tinted layer without the white bevel, the specular sheen or the strip above the pill. Top bars, tabs and their actions sit on the same layer across catalog, library, settings, profile, dictionary, search, downloads and details screens.
+- The darker tint stays visible on AMOLED black and the light tint keeps icons readable over bright covers; devices without blur use a dense fallback.
+
 ## 2.14.0 — glass panels, live source checks and a polished search
 
 ### Catalog and sources

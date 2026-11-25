@@ -182,10 +182,12 @@ class CatalogScreensTest {
     @Test
     fun titleChaptersAndSortSheet() {
         showTitle(seed())
-        awaitText("Chapter 12")
+        // The card header is taller than the old one (a poster cover and the primary action), so the chapters need a
+        // scroll before the last rows are composed.
+        awaitText("Migrate")
         compose.mainClock.advanceTimeBy(1_000)
-        // The source of the seeded title is not installed: the notice offers a migration.
-        compose.onNodeWithText("Migrate").assertExists()
+        shot("29_title_card")
+        compose.onAllNodes(hasScrollAction())[0].performScrollToNode(hasText("Chapter 12", substring = true))
         shot("30_title_chapters")
 
         compose.onAllNodes(hasContentDescription("Sort and filter"))[0].performClick()
@@ -196,7 +198,7 @@ class CatalogScreensTest {
     @Test
     fun titleDownloadMenu() {
         showTitle(seed())
-        awaitText("Chapter 12")
+        awaitText("Migrate")
         topmost("Download").performClick()
         compose.mainClock.advanceTimeBy(1_000)
         shotScreen("32_title_download_menu")
@@ -205,7 +207,8 @@ class CatalogScreensTest {
     @Test
     fun titleSelection() {
         showTitle(seed())
-        awaitText("Chapter 12")
+        awaitText("Migrate")
+        compose.onAllNodes(hasScrollAction())[0].performScrollToNode(hasText("Chapter 11", substring = true))
         compose.onAllNodesWithText("Chapter 11")[0].performTouchInput { longClick() }
         compose.onAllNodesWithText("Chapter 12")[0].performClick()
         compose.mainClock.advanceTimeBy(1_000)
@@ -443,6 +446,32 @@ class CatalogScreensTest {
         compose.onNode(hasText("Apply filters") and hasClickAction()).performClick()
         compose.waitUntil(5_000) { model.sourceListing.value.sources.none { it.id == source.id } }
         assertEquals(NsfwFilter.HIDE, runBlocking { settings.catalogSourceFilter.get() }.nsfw)
+    }
+
+    @Test
+    fun installedExtensionHiddenBySafeContentStaysDiscoverable() {
+        val settings = GlobalContext.get().get<AppSettings>()
+        runBlocking {
+            settings.contentPreference.set(ContentPreference.SAFE)
+            settings.catalogSourceFilter.set(SourceListFilter())
+        }
+        seedExtensionSources(warning = ContentWarning.NSFW)
+        var openedExtensions = false
+        compose.setContent {
+            YomuTheme {
+                CatalogScreen(
+                    viewModel = koinViewModel(), onOpenSource = {}, onOpenTitle = {}, onReadChapter = {},
+                    onGlobalSearch = {}, onOpenExtensions = { openedExtensions = true }, onOpenDownloads = {},
+                )
+            }
+        }
+        // The source is filtered out of the listing by the safe-content setting, but the package is not lost.
+        awaitText("Installed extensions not in the list")
+        awaitText("A test extension")
+        awaitText("Hidden by the content settings")
+        shot("35_installed_extensions_card")
+        compose.onNode(hasText("Open extensions") and hasClickAction()).performClick()
+        compose.runOnIdle { assertTrue(openedExtensions) }
     }
 
     @Test

@@ -43,9 +43,13 @@ import androidx.work.WorkManager
 import app.yomu.core.common.ScreenErrors
 import app.yomu.core.common.TimeFormat
 import app.yomu.core.datastore.AppSettings
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.theme.Dimens
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.data.catalog.CatalogRepository
 import app.yomu.data.work.UpdateRunStore
 import app.yomu.data.work.UpdateWorker
@@ -153,18 +157,20 @@ fun UpcomingScreen(viewModel: UpcomingViewModel, onBack: () -> Unit, onOpenTitle
     val timeFormat by settings.timeFormat.flow.collectAsStateWithLifecycle(initialValue = settings.timeFormat.default)
     val dateFormat = rememberFormat()
     val today = LocalDate.now()
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         contentWindowInsets = topLevelContentInsets(),
         topBar = {
-            TopAppBar(
+            GlassTopBarBackground(topBarBackdrop) { TopAppBar(
+                colors = glassTopBarColors(),
                 title = { Text(stringResource(R.string.upcoming_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(app.yomu.core.ui.R.string.back)) }
                 },
-            )
+            ) }
         },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        Column(Modifier.fillMaxSize().padding(padding).hazeSource(topBarBackdrop)) {
             Text(
                 stringResource(R.string.upcoming_note),
                 style = MaterialTheme.typography.bodyMedium,

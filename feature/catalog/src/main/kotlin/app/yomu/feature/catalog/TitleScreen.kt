@@ -10,6 +10,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -89,6 +90,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.BottomAppBar
+import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -118,6 +120,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -158,6 +162,7 @@ import app.yomu.core.ui.components.CoverCache
 import app.yomu.core.ui.components.CoverImage
 import app.yomu.core.ui.components.CoverTheme
 import app.yomu.core.ui.components.ErrorState
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.MetaItem
 import app.yomu.core.ui.components.MetaLine
 import app.yomu.core.ui.components.MotionContent
@@ -169,10 +174,10 @@ import app.yomu.core.ui.components.SwipeActionsBox
 import app.yomu.core.ui.components.TabOption
 import app.yomu.core.ui.components.TabsPickerSheet
 import app.yomu.core.ui.components.TextInputDialog
-import app.yomu.core.ui.components.YomuFab
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.animateMotionFloat
 import app.yomu.core.ui.components.coverTint
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.motionItem
 import app.yomu.core.ui.components.motionSpec
 import app.yomu.core.ui.components.navBarBottomPadding
@@ -190,6 +195,8 @@ import app.yomu.domain.model.DownloadStatus
 import app.yomu.source.SBookLink
 import app.yomu.source.Status
 import coil3.compose.AsyncImage
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -254,7 +261,9 @@ private fun TitleContent(
     val barInsets = if (inPane) WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.End) else TopAppBarDefaults.windowInsets
     val scaffoldInsets = if (inPane) WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical + WindowInsetsSides.End) else topLevelContentInsets()
     val listState = rememberLazyListState()
-    val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
+    val refreshState = rememberPullToRefreshState()
+    val topBarBackdrop = rememberHazeState()
+    val compactTitle by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
     var mobileAsk by remember { mutableStateOf<Long?>(null) }
     var showMenu by remember { mutableStateOf(false) }
     var showDownloadMenu by remember { mutableStateOf(false) }
@@ -269,7 +278,7 @@ private fun TitleContent(
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
 
     CatalogEventsEffect(viewModel.events, snackbar, onOpenWebView = onOpenWebView, onOpenBook = onOpenBook)
-    val numberWidth = rememberNumberWidth(stats.total)
+    val numberWidth = rememberNumberWidth(chapters, stats.total)
 
     val e = entry
     val isBook = e?.type == ContentType.BOOK || e?.type == ContentType.AUDIO
@@ -292,8 +301,10 @@ private fun TitleContent(
     Scaffold(
         contentWindowInsets = scaffoldInsets,
         topBar = {
+            GlassTopBarBackground(topBarBackdrop) {
             if (selecting) {
                 TopAppBar(
+                    colors = glassTopBarColors(),
                     windowInsets = barInsets,
                     title = { Text(stringResource(R.string.selected_count, selection.size)) },
                     navigationIcon = { IconButton(onClick = viewModel::clearSelection) { Icon(Icons.Filled.Close, stringResource(CoreR.string.close)) } },
@@ -320,8 +331,9 @@ private fun TitleContent(
                 )
             } else {
                 TopAppBar(
+                    colors = glassTopBarColors(),
                     windowInsets = barInsets,
-                    title = { Text(e?.title.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    title = { if (compactTitle) Text(e?.title.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             if (inPane) Icon(Icons.Filled.Close, stringResource(CoreR.string.close))
@@ -434,6 +446,7 @@ private fun TitleContent(
                     },
                 )
             }
+            }
         },
         bottomBar = {
             if (selecting) {
@@ -461,18 +474,6 @@ private fun TitleContent(
                 }
             }
         },
-        floatingActionButton = {
-            val list = chapters
-            if (!selecting && !isBook && !list.isNullOrEmpty()) {
-                val started = list.any { it.read || it.lastPageRead > 0 }
-                YomuFab(
-                    text = stringResource(if (started) R.string.title_continue else R.string.title_start),
-                    icon = Icons.Filled.PlayArrow,
-                    onClick = { continueAt?.let(read) },
-                    expanded = fabExpanded,
-                )
-            }
-        },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         if (e == null) {
@@ -484,20 +485,68 @@ private fun TitleContent(
         PullToRefreshBox(
             isRefreshing = refreshing,
             onRefresh = refreshTitle,
+            state = refreshState,
+            indicator = {
+                // The page now starts above the bar, so the spinner is placed below the glass instead of behind it.
+                PullToRefreshDefaults.Indicator(
+                    state = refreshState,
+                    isRefreshing = refreshing,
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = padding.calculateTopPadding()),
+                )
+            },
             modifier = Modifier
                 .padding(
                     start = padding.calculateStartPadding(direction),
-                    top = padding.calculateTopPadding(),
                     end = padding.calculateEndPadding(direction),
                 )
                 .fillMaxSize(),
         ) {
                 LazyColumn(
-                    Modifier.fillMaxSize(),
+                    Modifier.fillMaxSize().hazeSource(topBarBackdrop),
                     state = listState,
-                    contentPadding = PaddingValues(bottom = navBarBottomPadding(96.dp)),
+                    // The page scrolls under the glass bar; the first item still starts below it.
+                    contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = navBarBottomPadding(96.dp)),
                 ) {
-                item(key = "header") { TitleHeader(e, sourceName ?: if (sourceMissing) stringResource(R.string.source_not_installed) else null) }
+                item(key = "header") {
+                    TitleHeader(
+                        e,
+                        sourceName ?: if (sourceMissing) stringResource(R.string.source_not_installed) else null,
+                        inPane = inPane,
+                    )
+                }
+                if (!selecting) {
+                    item(key = "primary") {
+                        val bound = chapters?.takeIf { !isBook }
+                        if (bound != null && continueAt != null) {
+                            val started = bound.any { it.read || it.lastPageRead > 0 }
+                            TitlePrimaryAction(
+                                target = continueAt!!,
+                                started = started,
+                                stats = stats,
+                                onRead = { continueAt?.let(read) },
+                            )
+                        } else if (bound == null && stats.total > 0) {
+                            // The first chapters are still loading: reserve the place, the button appears with them.
+                            SkeletonList(Modifier.fillMaxWidth().height(72.dp))
+                        }
+                    }
+                    if (chapters != null && continueAt == null && stats.total > 0) {
+                        item(key = "progress") { ChapterProgress(stats) }
+                    }
+                    if (isBook) {
+                        // A web novel opens its first link directly; files are listed below.
+                        val first = links?.firstOrNull()
+                        if (first != null) item(key = "primary-book") {
+                            TitlePrimaryAction(
+                                target = null,
+                                started = false,
+                                stats = stats,
+                                onRead = { viewModel.downloadBook(first) },
+                                bookLabel = stringResource(R.string.download),
+                            )
+                        }
+                    }
+                }
                 if (sourceMissing) item(key = "missing") { MissingSourceCard(onMigrate = { onMigrate(e.id, e.title) }) }
                 item(key = "actions") {
                     Row(
@@ -576,7 +625,7 @@ private fun TitleContent(
                                         stringResource(
                                             if (target.lastPageRead > 0) R.string.title_continue_at_page else R.string.title_continue_at,
                                             target.name,
-                                            target.lastPageRead,
+                                            target.lastPageRead + 1,
                                         ),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.primary,
@@ -603,15 +652,13 @@ private fun TitleContent(
                             }
                         }
                     }
-                    if (stats.total > 0) item(key = "chapters-progress") { ChapterProgress(stats) }
                     // A gap is named only when the numbering can be trusted; a restarted volume would make this a lie.
-                    if (!missing.isNullOrEmpty()) item(key = "chapters-missing") {
+                    val gaps = missing
+                    if (!gaps.isNullOrEmpty()) item(key = "chapters-missing") {
+                        val sample = gaps.take(8).joinToString(", ") { n -> if (n % 1f == 0f) n.toInt().toString() else n.toString() }
+                        val listed = if (gaps.size > 8) stringResource(R.string.chapters_missing_more, sample, gaps.size - 8) else sample
                         Text(
-                            stringResource(
-                                R.string.chapters_missing,
-                                missing!!.size,
-                                missing!!.take(8).joinToString(", ") { n -> if (n % 1f == 0f) n.toInt().toString() else n.toString() },
-                            ),
+                            stringResource(R.string.chapters_missing, gaps.size, listed),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
@@ -659,7 +706,7 @@ private fun TitleContent(
                             ) {
                                 ChapterRow(
                                     chapter = ch,
-                                    number = stats.positions[ch.id],
+                                    number = ch.numberLabel(),
                                     numberWidth = numberWidth,
                                     pending = pending[ch.id],
                                     selected = ch.id in selection,
@@ -796,15 +843,16 @@ private fun TitleContent(
     }
 }
 
-/** Width of the chapter number badges: the widest number of the list, so that the titles line up. */
+/** Width of the chapter number badges: the widest real number of the list, so that the titles line up. */
 @Composable
-private fun rememberNumberWidth(total: Int): Dp {
+private fun rememberNumberWidth(chapters: List<ChapterInfo>?, total: Int): Dp {
     val measurer = rememberTextMeasurer()
     val style = MaterialTheme.typography.labelLarge
     val density = LocalDensity.current
-    return remember(total, style, density) {
-        val digits = total.coerceAtLeast(1).toString().length.coerceAtLeast(2)
-        with(density) { measurer.measure("8".repeat(digits), style).size.width.toDp() } + 14.dp
+    val sample = chapters.orEmpty().mapNotNull { it.numberLabel() }.maxByOrNull { it.length }
+        ?: "8".repeat(total.coerceAtLeast(1).toString().length.coerceAtLeast(2))
+    return remember(sample, style, density) {
+        with(density) { measurer.measure(sample, style).size.width.toDp() } + 14.dp
     }
 }
 
@@ -937,7 +985,7 @@ private fun FilterRow(label: String, checked: Boolean, summary: String? = null, 
 }
 
 @Composable
-private fun TitleHeader(e: CatalogEntry, sourceName: String?) {
+private fun TitleHeader(e: CatalogEntry, sourceName: String?, inPane: Boolean) {
     val context = LocalContext.current
     val tint = app.yomu.core.ui.components.rememberCoverColor(e.coverUrl, app.yomu.core.ui.components.coverPlaceholderColor(e.title))
     Box(Modifier.fillMaxWidth()) {
@@ -955,23 +1003,83 @@ private fun TitleHeader(e: CatalogEntry, sourceName: String?) {
             ),
         )
         Box(Modifier.matchParentSize().coverTint(tint))
-        Row(Modifier.fillMaxWidth().padding(Dimens.l), horizontalArrangement = Arrangement.spacedBy(Dimens.l)) {
-            CoverImage(e.coverUrl, e.title, Modifier.width(112.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
-                Text(e.title, style = MaterialTheme.typography.titleLarge, maxLines = 4, overflow = TextOverflow.Ellipsis)
-                val people = listOfNotNull(e.author, e.artist?.takeIf { it != e.author }).joinToString(", ")
-                if (people.isNotBlank()) {
-                    MetaLine(listOf(MetaItem(Icons.Outlined.Person, people)), style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(Dimens.l)) {
+            // The same card as a book's details: a poster on a phone, the cover beside the text on a wide pane.
+            val poster = !inPane && maxWidth < 480.dp
+            val coverWidth = if (poster) (maxWidth * 0.46f).coerceAtMost(176.dp) else 112.dp
+            val details: @Composable () -> Unit = {
+                Column(verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
+                    Text(e.title, style = MaterialTheme.typography.headlineSmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                    val people = listOfNotNull(e.author, e.artist?.takeIf { it != e.author }).joinToString(", ")
+                    if (people.isNotBlank()) {
+                        MetaLine(listOf(MetaItem(Icons.Outlined.Person, people)), style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+                    }
+                    MetaLine(
+                        listOfNotNull(
+                            statusLabel(context, e.status)?.let { MetaItem(statusIcon(e.status), it) },
+                            MetaItem(typeIcon(e.type), contentLabel(context, e.type)),
+                        ),
+                    )
+                    if (sourceName != null) MetaLine(listOf(MetaItem(Icons.Outlined.Extension, sourceName)), maxLines = 2)
                 }
-                MetaLine(
-                    listOfNotNull(
-                        statusLabel(context, e.status)?.let { MetaItem(statusIcon(e.status), it) },
-                        MetaItem(typeIcon(e.type), contentLabel(context, e.type)),
-                    ),
-                )
-                if (sourceName != null) MetaLine(listOf(MetaItem(Icons.Outlined.Extension, sourceName)), maxLines = 2)
+            }
+            if (poster) {
+                Column(
+                    Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(Dimens.m),
+                ) {
+                    CoverImage(
+                        e.coverUrl, e.title,
+                        Modifier.width(coverWidth).clip(MaterialTheme.shapes.extraLarge),
+                    )
+                    Box(Modifier.fillMaxWidth()) { details() }
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(Dimens.l), verticalAlignment = Alignment.CenterVertically) {
+                    CoverImage(e.coverUrl, e.title, Modifier.width(coverWidth))
+                    Box(Modifier.weight(1f)) { details() }
+                }
             }
         }
+    }
+}
+
+/** The main action of a title card, in the same place and shape as "Read" on a book's details. */
+@Composable
+private fun TitlePrimaryAction(
+    target: ChapterInfo?,
+    started: Boolean,
+    stats: ChapterStats,
+    onRead: () -> Unit,
+    bookLabel: String? = null,
+) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = Dimens.l),
+        verticalArrangement = Arrangement.spacedBy(Dimens.s),
+    ) {
+        Button(onClick = onRead, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Filled.PlayArrow, null)
+            Text(
+                bookLabel ?: stringResource(
+                    if (started) R.string.title_primary_continue else R.string.title_primary_start,
+                    target?.name.orEmpty(),
+                ),
+                Modifier.padding(start = Dimens.s),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (target != null && target.lastPageRead > 0) {
+            // The button already names the chapter; only the page it will resume on is new information.
+            Text(
+                stringResource(R.string.title_saved_page, target.lastPageRead + 1),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        if (stats.total > 0) ChapterProgress(stats)
     }
 }
 
@@ -1043,7 +1151,7 @@ private enum class RowDownload { FAILED, RUNNING, QUEUED, DONE, NONE }
 @Composable
 private fun ChapterRow(
     chapter: ChapterInfo,
-    number: Int?,
+    number: String?,
     numberWidth: Dp,
     pending: DownloadItem?,
     selected: Boolean,
@@ -1116,9 +1224,9 @@ private fun ChapterRow(
     )
 }
 
-/** Position of the chapter in reading order (1 = the first chapter); a check mark while the row is selected. */
+/** The chapter's own number as the source reports it; a check mark while the row is selected. */
 @Composable
-private fun ChapterNumber(number: Int?, selected: Boolean, fresh: Boolean, width: Dp) {
+private fun ChapterNumber(number: String?, selected: Boolean, fresh: Boolean, width: Dp) {
     val scheme = MaterialTheme.colorScheme
     val background by animateColorAsState(
         when {
@@ -1142,7 +1250,7 @@ private fun ChapterNumber(number: Int?, selected: Boolean, fresh: Boolean, width
             if (sel) {
                 Icon(Icons.Filled.Done, null, Modifier.size(18.dp), tint = content)
             } else {
-                Text(number?.toString() ?: "–", style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1)
+                Text(number ?: "–", style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1)
             }
         }
     }

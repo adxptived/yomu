@@ -40,11 +40,15 @@ import app.yomu.core.common.ScreenErrors
 import app.yomu.core.datastore.AppSettings
 import app.yomu.core.datastore.stateIn
 import app.yomu.core.ui.components.ConfirmDialog
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.PreferenceHeader
 import app.yomu.core.ui.components.PreferenceSwitch
 import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.navBarBottomPadding
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.data.translation.MlKitEngine
 import app.yomu.data.translation.TranslationService
 import kotlinx.coroutines.channels.Channel
@@ -104,21 +108,23 @@ fun LanguagePacksScreen(viewModel: LanguagePacksViewModel, onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
     LaunchedEffect(viewModel) { viewModel.errorFlow.collect { snackbar.showSnackbar(errorMessage(context, it)) } }
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            TopAppBar(
+            GlassTopBarBackground(topBarBackdrop) { TopAppBar(
+                colors = glassTopBarColors(),
                 title = { Text(stringResource(R.string.packs_title)) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(UiR.string.back)) } },
-            )
+            ) }
         },
     ) { padding ->
         val list = packs
         if (list == null) {
-            SkeletonList(Modifier.padding(padding))
+            SkeletonList(Modifier.padding(padding).hazeSource(topBarBackdrop))
             return@Scaffold
         }
-        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = navBarBottomPadding(24.dp))) {
+        LazyColumn(Modifier.fillMaxSize().padding(padding).hazeSource(topBarBackdrop), contentPadding = PaddingValues(bottom = navBarBottomPadding(24.dp))) {
             item {
                 Column {
                     Text(

@@ -13,12 +13,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.dp
 import app.yomu.core.database.CatalogItemEntity
 import app.yomu.core.database.ChapterEntity
@@ -116,8 +118,10 @@ class Release140ScreensTest {
                 )
             }
         }
-        awaitText("Chapter 30")
+        // The card header is taller than in 1.4 (poster cover and the primary action): scroll the chapters into view.
+        awaitText("Migrate")
         compose.mainClock.advanceTimeBy(1_000)
+        compose.onAllNodes(hasScrollAction())[0].performScrollToNode(hasText("Chapter 30", substring = true))
         shot("40_title_chapter_numbers")
     }
 

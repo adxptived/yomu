@@ -25,9 +25,12 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceGroup
 import app.yomu.core.ui.components.EmptyState
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.aboveNavBar
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.data.source.SourceManager
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.data.source.tachiyomi.TachiyomiSource
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.preferenceKey
@@ -44,9 +47,11 @@ fun SourceSettingsScreen(sourceId: Long, onBack: () -> Unit) {
     val ready by sources.ready.collectAsStateWithLifecycle()
     val registered by sources.sources.collectAsStateWithLifecycle()
     val source = registered.firstOrNull { it.id == sourceId } as? TachiyomiSource
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         topBar = {
-            TopAppBar(
+            GlassTopBarBackground(topBarBackdrop) { TopAppBar(
+                colors = glassTopBarColors(),
                 title = {
                     Column {
                         Text(source?.name ?: stringResource(R.string.ext_source_settings))
@@ -54,7 +59,7 @@ fun SourceSettingsScreen(sourceId: Long, onBack: () -> Unit) {
                     }
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back)) } },
-            )
+            ) }
         },
     ) { padding ->
         // A source's own preference screen cannot scroll under the pill: it ends above it.

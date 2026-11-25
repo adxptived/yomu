@@ -42,9 +42,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
 import app.yomu.core.common.Share
 import app.yomu.core.network.NetworkClients
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.RequireWebView
 import app.yomu.core.ui.components.aboveNavBar
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.theme.Dimens
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.source.SourceNetwork
 import org.koin.compose.koinInject
 import app.yomu.core.ui.R as CoreR
@@ -71,10 +74,12 @@ fun WebViewScreen(url: String, onBack: () -> Unit) {
 
     BackHandler(enabled = canGoBack) { webViewRef.get()?.goBack() }
 
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         topBar = {
-            Column {
+            GlassTopBarBackground(topBarBackdrop) { Column {
                 TopAppBar(
+                    colors = glassTopBarColors(),
                     title = {
                         Column {
                             Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
@@ -107,7 +112,7 @@ fun WebViewScreen(url: String, onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
                 )
-            }
+            } }
         },
     ) { padding ->
         // A web page cannot scroll under the pill: it ends above it, leaving the bar its room.

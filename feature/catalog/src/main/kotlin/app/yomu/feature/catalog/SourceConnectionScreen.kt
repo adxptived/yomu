@@ -69,9 +69,13 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.theme.Dimens
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.source.LinkCandidate
 import app.yomu.source.ProbeResult
 import app.yomu.core.ui.R as CoreR
@@ -121,21 +125,23 @@ fun SourceConnectionScreen(
         }
     }
 
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         contentWindowInsets = topLevelContentInsets(),
         topBar = {
-            TopAppBar(
+            GlassTopBarBackground(topBarBackdrop) { TopAppBar(
+                colors = glassTopBarColors(),
                 title = { Text(stringResource(R.string.connection_title)) },
                 navigationIcon = {
                     IconButton(onClick = back, enabled = !saving) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back))
                     }
                 },
-            )
+            ) }
         },
     ) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(Dimens.l),
+            Modifier.fillMaxSize().padding(padding).hazeSource(topBarBackdrop).verticalScroll(rememberScrollState()).padding(Dimens.l),
             verticalArrangement = Arrangement.spacedBy(Dimens.m),
         ) {
             when (val step = state.step) {

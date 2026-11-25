@@ -5,6 +5,7 @@ import app.yomu.domain.library.matches
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookFormat
 import app.yomu.domain.model.CatalogEntry
+import app.yomu.domain.model.ContentType
 import app.yomu.domain.model.LibraryFilter
 import app.yomu.domain.model.LibrarySort
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -55,5 +56,33 @@ class LibrarySearchWiringTest {
         val drop = CatalogEntry(id = 2, sourceId = 5, url = "u", title = "Other", author = "Nobody")
         val q = LibrarySearchAndSort("dune", LibrarySearchQuery.parse("dune"), LibrarySort.ADDED, false)
         assertEquals(listOf(1L), listOf(keep, drop).forLibrary(LibraryFilter(), emptySet(), q, emptyMap()).map { it.id })
+    }
+
+    @Test
+    fun `the manga filter keeps online manga and drops online novels`() {
+        val manga = CatalogEntry(id = 1, sourceId = 5, url = "m", title = "Frieren", type = ContentType.MANGA)
+        val novel = CatalogEntry(id = 2, sourceId = 5, url = "n", title = "Novel", type = ContentType.NOVEL)
+        val q = LibrarySearchAndSort("", LibrarySearchQuery.parse(""), LibrarySort.TITLE, true)
+        val shown = listOf(manga, novel).forLibrary(LibraryFilter(), setOf(FormatGroup.COMICS), q, emptyMap())
+        assertEquals(listOf(1L), shown.map { it.id })
+    }
+
+    @Test
+    fun `the online chip keeps every online kind`() {
+        val manga = CatalogEntry(id = 1, sourceId = 5, url = "m", title = "Frieren", type = ContentType.MANGA)
+        val novel = CatalogEntry(id = 2, sourceId = 5, url = "n", title = "Novel", type = ContentType.NOVEL)
+        val audio = CatalogEntry(id = 3, sourceId = 6, url = "a", title = "Audio", type = ContentType.AUDIO)
+        val q = LibrarySearchAndSort("", LibrarySearchQuery.parse(""), LibrarySort.TITLE, true)
+        val shown = listOf(manga, novel, audio).forLibrary(LibraryFilter(), setOf(FormatGroup.ONLINE), q, emptyMap())
+        assertEquals(listOf(3L, 1L, 2L).sorted(), shown.map { it.id }.sorted())
+    }
+
+    @Test
+    fun `a content chip plus online still means every online title`() {
+        val manga = CatalogEntry(id = 1, sourceId = 5, url = "m", title = "Frieren", type = ContentType.MANGA)
+        val novel = CatalogEntry(id = 2, sourceId = 5, url = "n", title = "Novel", type = ContentType.NOVEL)
+        val q = LibrarySearchAndSort("", LibrarySearchQuery.parse(""), LibrarySort.TITLE, true)
+        val shown = listOf(manga, novel).forLibrary(LibraryFilter(), setOf(FormatGroup.COMICS, FormatGroup.ONLINE), q, emptyMap())
+        assertEquals(listOf(1L, 2L), shown.map { it.id })
     }
 }

@@ -224,7 +224,7 @@ class Release200Test {
                 )
             }
         }
-        awaitText("Chapter 10")
+        // The tracking action sits above the chapters, which the taller card header may leave below the fold.
         awaitText("Tracking · 1")
         compose.onAllNodesWithText("Tracking · 1")[0].performClick()
         awaitText("Tracked Manga (AniList)")

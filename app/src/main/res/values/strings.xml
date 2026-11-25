@@ -54,6 +54,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_15_0">
+        <item>The top and bottom bars share a frosted, theme-tinted blur without the white line, readable on dark and AMOLED screens.</item>
+        <item>Installed extensions whose sources are filtered out stay visible in the catalog with the reason and a working Open action.</item>
+        <item>Library → All keeps online manga and novels when the shelf is hidden, and selection no longer drops them.</item>
+        <item>A manga title now uses the book card layout: one Start/Continue button, the saved page and real chapter numbers such as 39.1.</item>
+    </string-array>
     <string-array name="whats_new_2_14_0">
         <item>The floating navigation and the top bars blur the content beneath them, with a dense fill where the blur is unavailable.</item>
         <item>Check a source\'s availability from its long-press menu, and extensions refresh live after a package change.</item>

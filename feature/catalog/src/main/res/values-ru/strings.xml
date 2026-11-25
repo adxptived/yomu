@@ -8,6 +8,14 @@
     <string name="catalog_tab_history">Недавнее</string>
     <string name="catalog_all_languages">Все языки</string>
     <string name="catalog_downloads">Загрузки</string>
+    <string name="catalog_installed_hidden_title">Установленные расширения вне списка</string>
+    <string name="catalog_installed_untrusted">Ещё не доверено</string>
+    <string name="catalog_installed_broken">Не удалось загрузить</string>
+    <string name="catalog_installed_safe">Скрыто настройками контента</string>
+    <string name="catalog_installed_filtered">Скрыто текущими фильтрами</string>
+    <string name="catalog_installed_show">Показать</string>
+    <string name="catalog_installed_manage">Открыть расширения</string>
+    <string name="catalog_installed_open">Открыть</string>
     <string name="opds_url_placeholder">https://example.org/opds</string>
     <string name="title_open_webview">Веб-версия</string>
     <string name="title_update_schedule">Расписание проверок</string>
@@ -172,6 +180,9 @@
     <string name="title_open">Открыть тайтл</string>
     <string name="title_continue">Продолжить</string>
     <string name="title_start">Начать читать</string>
+    <string name="title_primary_start">Начать · %1$s</string>
+    <string name="title_primary_continue">Продолжить · %1$s</string>
+    <string name="title_saved_page">Страница %1$d</string>
     <string name="title_continue_at">Продолжить: %1$s</string>
     <string name="title_continue_at_page">Продолжить: %1$s · стр. %2$d</string>
     <string name="title_files">Файлы</string>
@@ -184,6 +195,7 @@
     <string name="show_less">Свернуть</string>
     <string name="chapters">Главы</string>
     <string name="chapters_missing">В источнике нет глав: %1$d (%2$s)</string>
+    <string name="chapters_missing_more">%1$s и ещё %2$d</string>
     <string name="chapters_empty">Глав пока нет</string>
     <plurals name="chapters_count">
         <item quantity="one">%d глава</item>
@@ -280,6 +292,10 @@
     <string name="ext_sources">Источники</string>
     <string name="ext_open_source">Открыть каталог</string>
     <string name="ext_source_unavailable">Недоступен в каталоге</string>
+    <string name="ext_source_untrusted">Доступен после доверия расширению</string>
+    <string name="ext_source_broken">Расширение не загрузилось, поэтому источник не открыть</string>
+    <string name="ext_source_conflict">ID источника принадлежит «%1$s»</string>
+    <string name="ext_source_safe">Скрыт настройками контента</string>
     <string name="ext_source_settings_unavailable">Настройки источника недоступны</string>
     <string name="ext_sources_safe_mode">Эти источники скрыты настройками безопасного контента.</string>
     <string name="ext_source_settings">Настройки источника</string>

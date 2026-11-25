@@ -108,10 +108,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.EmptyState
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.core.ui.components.copyText
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.theme.Dimens
@@ -125,6 +127,8 @@ import app.yomu.data.source.SourceInfo
 import app.yomu.data.source.StoreState
 import app.yomu.data.source.tachiyomi.TachiyomiSource
 import coil3.compose.AsyncImage
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.core.ui.R as CoreR
 
 /** Mihon-style extension manager: installed (updates, trust, errors), available by language, and repositories. */
@@ -173,12 +177,14 @@ fun ExtensionsScreen(
 
     LaunchedEffect(addStoreUrl) { if (addStoreUrl != null) viewModel.previewStore(addStoreUrl) }
 
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         // The "add repository" button stays above the floating bar; the lists run on under it.
         contentWindowInsets = topLevelContentInsets(),
         topBar = {
-            Column {
+            GlassTopBarBackground(topBarBackdrop) { Column {
                 TopAppBar(
+                    colors = glassTopBarColors(),
                     title = {
                         if (searching) {
                             SearchField(query, { viewModel.query.value = it }, stringResource(R.string.ext_search_hint), focusRequester = searchFocus)
@@ -218,7 +224,7 @@ fun ExtensionsScreen(
                     },
                 )
                 if (refreshing || installing.isNotEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth()) else Spacer(Modifier.height(4.dp))
-                PrimaryTabRow(selectedTabIndex = tab) {
+                PrimaryTabRow(selectedTabIndex = tab, containerColor = androidx.compose.ui.graphics.Color.Transparent, divider = {}) {
                     YomuTab(tab == 0, onClick = { tab = 0 }, text = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(stringResource(R.string.ext_installed_tab))
@@ -234,7 +240,7 @@ fun ExtensionsScreen(
                     YomuTab(tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.ext_available_tab)) })
                     YomuTab(tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.ext_repos_tab)) })
                 }
-            }
+            } }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
@@ -246,6 +252,7 @@ fun ExtensionsScreen(
                 end = padding.calculateEndPadding(direction),
             )
             .fillMaxSize()
+            .hazeSource(topBarBackdrop)
         when (tab) {
             0 -> LazyColumn(modifier, contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
                 installedTab(
@@ -369,6 +376,7 @@ fun ExtensionsScreen(
                 onHide = { viewModel.setExtensionHidden(ext.pkg, it) },
                 infos = sourceInfos,
                 showSources = nsfw || !ext.isNsfw,
+                onShowContent = { viewModel.setShowNsfw(true) },
                 onPinSource = viewModel::setSourcePinned,
                 onEnableSource = viewModel::setSourceEnabled,
                 onHideSource = viewModel::setSourceHidden,
@@ -873,6 +881,7 @@ private fun ExtensionDetailsSheet(
     onHide: (Boolean) -> Unit,
     infos: Map<Long, SourceInfo>,
     showSources: Boolean,
+    onShowContent: () -> Unit,
     onPinSource: (Long, Boolean) -> Unit,
     onEnableSource: (Long, Boolean) -> Unit,
     onHideSource: (Long, Boolean) -> Unit,
@@ -938,20 +947,36 @@ private fun ExtensionDetailsSheet(
                 item("sources-heading") { SectionHeader(stringResource(R.string.ext_sources) + " · " + sourceRows.size) }
                 if (!showSources) {
                     item("safe-content") {
-                        Text(
-                            stringResource(R.string.ext_sources_safe_mode),
-                            modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Column(Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s)) {
+                            Text(
+                                stringResource(R.string.ext_sources_safe_mode),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            TextButton(onClick = onShowContent, contentPadding = PaddingValues(0.dp)) {
+                                Text(stringResource(R.string.ext_show_nsfw))
+                            }
+                        }
                     }
                 } else {
                     items(sourceRows, key = { it.id }) { src ->
-                        val info = infos[src.id]?.takeIf { it.extensionPkg == ext.pkg }
+                        val registered = infos[src.id]
+                        val info = registered?.takeIf { it.extensionPkg == ext.pkg }
                         if (info == null) {
+                            // A row with no registered source says why: untrusted, broken, an ID owned by another
+                            // package (the registry keeps the first owner) or the safe-content setting.
+                            val reason = when {
+                                ext.status == ExtensionStatus.UNTRUSTED -> stringResource(R.string.ext_source_untrusted)
+                                ext.status == ExtensionStatus.BROKEN -> stringResource(R.string.ext_source_broken)
+                                registered != null -> stringResource(
+                                    R.string.ext_source_conflict,
+                                    registered.extensionName ?: registered.extensionPkg ?: registered.name,
+                                )
+                                else -> stringResource(R.string.ext_source_safe)
+                            }
                             ListItem(
                                 headlineContent = { Text(src.name) },
-                                supportingContent = { Text(stringResource(R.string.ext_source_unavailable)) },
+                                supportingContent = { Text(reason) },
                             )
                         } else {
                             ExtensionSourceRow(

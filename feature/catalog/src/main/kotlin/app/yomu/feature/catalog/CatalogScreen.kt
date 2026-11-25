@@ -30,7 +30,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Article
@@ -67,7 +66,6 @@ import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Checkbox
@@ -81,12 +79,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -111,10 +109,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -124,7 +118,9 @@ import app.yomu.core.ui.components.BookListItem
 import app.yomu.core.ui.components.CircleIconButton
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.EmptyState
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.PillTab
 import app.yomu.core.ui.components.PillTabRow
 import app.yomu.core.ui.components.SearchField
@@ -144,6 +140,8 @@ import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.topLevelContentInsets
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.catalog.HistoryEntry
+import app.yomu.data.source.ExtensionStatus
+import app.yomu.data.source.InstalledExtension
 import app.yomu.data.source.SourceHealth
 import app.yomu.data.source.SourceInfo
 import app.yomu.domain.catalog.LibraryDisplay
@@ -153,6 +151,8 @@ import app.yomu.domain.catalog.SourceSortMode
 import app.yomu.domain.model.BookCollection
 import app.yomu.domain.model.CatalogEntry
 import app.yomu.source.SourceContent
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.core.ui.R as CoreR
 
 private enum class HomeTab { SOURCES, LIBRARY, UPDATES, HISTORY }
@@ -193,6 +193,8 @@ fun CatalogScreen(
     val history by viewModel.history.collectAsStateWithLifecycle()
     val newCount by viewModel.newCount.collectAsStateWithLifecycle()
     val extensionUpdates by viewModel.extensionUpdates.collectAsStateWithLifecycle()
+    val installedExtensions by viewModel.installedExtensions.collectAsStateWithLifecycle()
+    val sourceInfos by viewModel.sourceInfos.collectAsStateWithLifecycle()
     val incognito by viewModel.incognito.collectAsStateWithLifecycle()
 
     val snackbar = remember { SnackbarHostState() }
@@ -206,82 +208,88 @@ fun CatalogScreen(
 
     CatalogEventsEffect(viewModel.events, snackbar, onOpenTitle, onOpenWebView = onOpenWebView)
 
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         contentWindowInsets = topLevelContentInsets(),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.catalog_title)) },
-                actions = {
-                    IconButton(onClick = onGlobalSearch) {
-                        Icon(Icons.Filled.Search, stringResource(R.string.global_search))
-                    }
-                    Box {
-                        IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, stringResource(CoreR.string.more)) }
-                        DropdownMenu(showMenu, onDismissRequest = { showMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(CoreR.string.incognito_mode)) },
-                                leadingIcon = { Icon(if (incognito) Icons.Filled.VisibilityOff else Icons.Outlined.Visibility, null) },
-                                trailingIcon = {
-                                    Switch(checked = incognito, onCheckedChange = null)
-                                },
-                                onClick = { showMenu = false; viewModel.setIncognito(!incognito) },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.catalog_downloads)) },
-                                leadingIcon = { Icon(Icons.Filled.Download, null) },
-                                onClick = { showMenu = false; onOpenDownloads() },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.catalog_local_folder)) },
-                                leadingIcon = { Icon(Icons.Filled.FolderOpen, null) },
-                                onClick = { showMenu = false; pickFolder.launch(null) },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.catalog_check_updates)) },
-                                leadingIcon = { Icon(Icons.Filled.Refresh, null) },
-                                onClick = { showMenu = false; viewModel.checkUpdates() },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.upcoming_title)) },
-                                leadingIcon = { Icon(Icons.Outlined.NewReleases, null) },
-                                onClick = { showMenu = false; onOpenUpdatesPlan() },
-                            )
+            GlassTopBarBackground(topBarBackdrop) { Column {
+                TopAppBar(
+                    colors = glassTopBarColors(),
+                    title = { Text(stringResource(R.string.catalog_title)) },
+                    actions = {
+                        IconButton(onClick = onGlobalSearch) {
+                            Icon(Icons.Filled.Search, stringResource(R.string.global_search))
                         }
+                        Box {
+                            IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, stringResource(CoreR.string.more)) }
+                            DropdownMenu(showMenu, onDismissRequest = { showMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(CoreR.string.incognito_mode)) },
+                                    leadingIcon = { Icon(if (incognito) Icons.Filled.VisibilityOff else Icons.Outlined.Visibility, null) },
+                                    trailingIcon = {
+                                        Switch(checked = incognito, onCheckedChange = null)
+                                    },
+                                    onClick = { showMenu = false; viewModel.setIncognito(!incognito) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.catalog_downloads)) },
+                                    leadingIcon = { Icon(Icons.Filled.Download, null) },
+                                    onClick = { showMenu = false; onOpenDownloads() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.catalog_local_folder)) },
+                                    leadingIcon = { Icon(Icons.Filled.FolderOpen, null) },
+                                    onClick = { showMenu = false; pickFolder.launch(null) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.catalog_check_updates)) },
+                                    leadingIcon = { Icon(Icons.Filled.Refresh, null) },
+                                    onClick = { showMenu = false; viewModel.checkUpdates() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.upcoming_title)) },
+                                    leadingIcon = { Icon(Icons.Outlined.NewReleases, null) },
+                                    onClick = { showMenu = false; onOpenUpdatesPlan() },
+                                )
+                            }
+                        }
+                    },
+                )
+                PrimaryTabRow(selectedTabIndex = tab, containerColor = Color.Transparent, divider = {}) {
+                    HomeTab.entries.forEachIndexed { i, t ->
+                        YomuTab(
+                            selected = tab == i,
+                            onClick = { tab = i },
+                            text = {
+                                when (t) {
+                                    HomeTab.SOURCES -> Text(stringResource(R.string.catalog_tab_sources))
+                                    HomeTab.LIBRARY -> Text(stringResource(R.string.catalog_tab_library))
+                                    HomeTab.UPDATES -> BadgedBox(
+                                        badge = {
+                                            if (newCount > 0) {
+                                                Badge(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) {
+                                                    Text(newCount.coerceAtMost(99).toString())
+                                                }
+                                            }
+                                        },
+                                    ) {
+                                        Text(stringResource(R.string.catalog_tab_updates))
+                                    }
+                                    HomeTab.HISTORY -> Text(stringResource(R.string.catalog_tab_history))
+                                }
+                            },
+                        )
                     }
-                },
-            )
+                }
+            } }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        TopLevelBody(padding, Modifier.fillMaxSize()) { Column(Modifier.fillMaxSize()) {
-            PrimaryTabRow(selectedTabIndex = tab) {
-                HomeTab.entries.forEachIndexed { i, t ->
-                    YomuTab(
-                        selected = tab == i,
-                        onClick = { tab = i },
-                        text = {
-                            when (t) {
-                                HomeTab.SOURCES -> Text(stringResource(R.string.catalog_tab_sources))
-                                HomeTab.LIBRARY -> Text(stringResource(R.string.catalog_tab_library))
-                                HomeTab.UPDATES -> BadgedBox(
-                                    badge = {
-                                        if (newCount > 0) {
-                                            Badge(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) {
-                                                Text(newCount.coerceAtMost(99).toString())
-                                            }
-                                        }
-                                    },
-                                ) {
-                                    Text(stringResource(R.string.catalog_tab_updates))
-                                }
-                                HomeTab.HISTORY -> Text(stringResource(R.string.catalog_tab_history))
-                            }
-                        },
-                    )
-                }
-            }
+        val sourcesTab = HomeTab.entries[tab] == HomeTab.SOURCES
+        TopLevelBody(padding, Modifier.fillMaxSize().hazeSource(topBarBackdrop), drawBehindTopBar = sourcesTab) {
             when (HomeTab.entries[tab]) {
                 HomeTab.SOURCES -> SourcesTab(
+                    topInset = padding.calculateTopPadding(),
                     ready = ready,
                     listing = sourceListing,
                     query = sourceQuery,
@@ -303,6 +311,8 @@ fun CatalogScreen(
                     editing = editingSources,
                     onToggleEditing = { editingSources = !editingSources },
                     extensionUpdates = extensionUpdates,
+                    installed = installedExtensions,
+                    sourceInfos = sourceInfos,
                 )
                 HomeTab.LIBRARY -> LibraryTab(favorites, libraryTotal, libraryDisplay, tabs, tabMembers, viewModel, onOpenTitle, onBrowse = { tab = 0 })
                 HomeTab.UPDATES -> {
@@ -362,7 +372,7 @@ fun CatalogScreen(
                     }
                 }
             }
-        } }
+        }
     }
 
 }
@@ -370,6 +380,7 @@ fun CatalogScreen(
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun SourcesTab(
+    topInset: androidx.compose.ui.unit.Dp,
     ready: Boolean,
     listing: CatalogSourceListing,
     query: String,
@@ -389,6 +400,8 @@ private fun SourcesTab(
     editing: Boolean,
     onToggleEditing: () -> Unit,
     extensionUpdates: Int,
+    installed: List<InstalledExtension>,
+    sourceInfos: Map<Long, SourceInfo>,
 ) {
     val sources = listing.sources
     var menuFor by remember { mutableStateOf<SourceInfo?>(null) }
@@ -400,6 +413,11 @@ private fun SourcesTab(
     val refreshing by viewModel.refreshingSources.collectAsStateWithLifecycle()
     val checkingSources by viewModel.checkingSources.collectAsStateWithLifecycle()
     val visibleIds = remember(sources) { sources.mapTo(HashSet()) { it.id } }
+    // Installed extensions with no visible source: filtered out by language/content/filters, or never loaded. The
+    // app's own bundled extensions follow the language filter by design and are not reported as "missing".
+    val missingExtensions = remember(installed, visibleIds) {
+        installed.filter { ext -> !ext.isBundled && ext.sources.none { it.id in visibleIds } }
+    }
     val selectedVisible = remember(selected, visibleIds) { selected.intersect(visibleIds) }
     BackHandler(enabled = editing && !showBulk) { onToggleEditing() }
     LaunchedEffect(visibleIds) {
@@ -447,7 +465,10 @@ private fun SourcesTab(
         onRefresh = { if (!editing) viewModel.refreshSources() },
         modifier = Modifier.fillMaxSize(),
     ) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(top = topInset, bottom = navBarBottomPadding(Dimens.xl)),
+        ) {
             item(key = "source-actions") {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs),
@@ -502,6 +523,19 @@ private fun SourcesTab(
                             modifier = Modifier.padding(top = Dimens.xs),
                         )
                     }
+                }
+            }
+            // An installed extension whose sources are all filtered out (language, content, hidden) or not loaded
+            // would otherwise be invisible here, even though the user can see it in Extensions.
+            if (!editing && missingExtensions.isNotEmpty()) {
+                item(key = "installed-missing") {
+                    InstalledExtensionsCard(
+                        extensions = missingExtensions,
+                        sourceInfos = sourceInfos,
+                        onOpenSource = onOpenSource,
+                        onOpenExtensions = onOpenExtensions,
+                        onShowExcluded = { viewModel.showExcludedSources(true) },
+                    )
                 }
             }
             if (sources.isEmpty() && query.isNotEmpty()) {
@@ -714,6 +748,62 @@ private fun SourceBulkBar(selected: Int, onSelectAll: () -> Unit, onClear: () ->
         TextButton(onClick = onSelectAll) { Text(stringResource(R.string.source_bulk_select_all)) }
         TextButton(onClick = onClear) { Text(stringResource(R.string.source_bulk_clear)) }
         TextButton(onClick = onActions, enabled = selected > 0) { Text(stringResource(R.string.source_bulk_actions)) }
+    }
+}
+
+/**
+ * Installed extensions that contribute no visible row: their sources are filtered out by language, content or a
+ * filter, or the package never loaded. The card keeps them discoverable and opens either the first working source or
+ * the Extensions screen with the status and the trust action.
+ */
+@Composable
+private fun InstalledExtensionsCard(
+    extensions: List<InstalledExtension>,
+    sourceInfos: Map<Long, SourceInfo>,
+    onOpenSource: (SourceInfo) -> Unit,
+    onOpenExtensions: () -> Unit,
+    onShowExcluded: () -> Unit,
+) {
+    val anyFiltered = extensions.any { ext -> ext.sources.any { it.id in sourceInfos } }
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs),
+    ) {
+        Column(Modifier.padding(vertical = Dimens.s)) {
+            Row(Modifier.padding(start = Dimens.m, end = Dimens.s), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Extension, null, tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    stringResource(R.string.catalog_installed_hidden_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f).padding(start = Dimens.s),
+                )
+                if (anyFiltered) {
+                    TextButton(onClick = onShowExcluded) { Text(stringResource(R.string.catalog_installed_show)) }
+                }
+            }
+            extensions.forEach { ext ->
+                val openable = ext.sources.firstNotNullOfOrNull { sourceInfos[it.id] }
+                val reason = when (ext.status) {
+                    ExtensionStatus.UNTRUSTED -> stringResource(R.string.catalog_installed_untrusted)
+                    ExtensionStatus.BROKEN -> stringResource(R.string.catalog_installed_broken)
+                    ExtensionStatus.LOADED ->
+                        stringResource(if (openable != null) R.string.catalog_installed_filtered else R.string.catalog_installed_safe)
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(start = Dimens.m, end = Dimens.xs).heightIn(min = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(ext.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                    }
+                    TextButton(onClick = { if (openable != null) onOpenSource(openable) else onOpenExtensions() }) {
+                        Text(stringResource(if (openable != null) R.string.catalog_installed_open else R.string.catalog_installed_manage))
+                    }
+                }
+            }
+        }
     }
 }
 

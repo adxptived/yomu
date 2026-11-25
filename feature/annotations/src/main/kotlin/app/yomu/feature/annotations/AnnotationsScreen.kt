@@ -92,6 +92,7 @@ import app.yomu.core.ui.components.ChipItem
 import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.ErrorState
 import app.yomu.core.ui.components.FilterChipsRow
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.OneTimeHint
 import app.yomu.core.ui.components.SheetAction
 import app.yomu.core.ui.components.SheetTitle
@@ -102,9 +103,12 @@ import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.motionItem
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.theme.Dimens
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.domain.export.AnnotationFormat
 import app.yomu.domain.model.HighlightColor
 import app.yomu.domain.model.HighlightStyle
@@ -187,10 +191,12 @@ fun AnnotationsScreen(
         }
     }
 
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            TopAppBar(
+            GlassTopBarBackground(topBarBackdrop) { TopAppBar(
+                colors = glassTopBarColors(),
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(UiR.string.back)) } },
                 title = {
                     if (searching) {
@@ -248,10 +254,10 @@ fun AnnotationsScreen(
                         }
                     }
                 },
-            )
+            ) }
         },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
+        Column(Modifier.padding(padding).fillMaxSize().hazeSource(topBarBackdrop)) {
             PrimaryScrollableTabRow(selectedTabIndex = filter.tab.ordinal, edgePadding = Dimens.s) {
                 AnnotationTab.entries.forEach { tab ->
                     YomuTab(

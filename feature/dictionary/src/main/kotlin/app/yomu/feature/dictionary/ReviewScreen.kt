@@ -55,12 +55,16 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.ui.components.EmptyState
+import app.yomu.core.ui.components.GlassTopBarBackground
 import app.yomu.core.ui.components.SkeletonBox
 import app.yomu.core.ui.components.aboveNavBar
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.rememberHaptic
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.domain.model.ReviewMode
 import app.yomu.feature.translator.Speaker
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import kotlin.math.abs
@@ -72,9 +76,11 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit) {
     val s by viewModel.state.collectAsStateWithLifecycle()
     val speaker: Speaker = koinInject()
     val haptic = rememberHaptic()
+    val topBarBackdrop = rememberHazeState()
     Scaffold(
         topBar = {
-            TopAppBar(
+            GlassTopBarBackground(topBarBackdrop) { TopAppBar(
+                colors = glassTopBarColors(),
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(UiR.string.back)) } },
                 title = {
                     Column {
@@ -82,10 +88,10 @@ fun ReviewScreen(viewModel: ReviewViewModel, onBack: () -> Unit) {
                         if (!s.loading && s.queue.isNotEmpty()) Text(stringResource(R.string.review_progress, (s.index + 1).coerceAtMost(s.queue.size), s.queue.size), style = MaterialTheme.typography.bodySmall)
                     }
                 },
-            )
+            ) }
         },
     ) { padding ->
-        Column(Modifier.padding(padding.aboveNavBar()).fillMaxSize()) {
+        Column(Modifier.padding(padding.aboveNavBar()).fillMaxSize().hazeSource(topBarBackdrop)) {
             Column(Modifier.padding(horizontal = Dimens.l)) {
                 Text(stringResource(R.string.review_daily, s.reviewedToday, s.goal), style = MaterialTheme.typography.labelMedium)
                 LinearProgressIndicator(progress = { (s.reviewedToday.toFloat() / s.goal.coerceAtLeast(1)).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(vertical = Dimens.xs))

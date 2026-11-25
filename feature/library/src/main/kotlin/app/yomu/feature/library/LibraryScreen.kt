@@ -171,6 +171,7 @@ import app.yomu.core.ui.components.TabsPickerSheet
 import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.TopLevelBody
 import app.yomu.core.ui.components.barBackdrop
+import app.yomu.core.ui.components.glassTopBarColors
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.core.ui.components.WheelLayout
@@ -421,7 +422,10 @@ fun LibraryScreen(
     // What the grid shows: online titles as tiles (in a user tab, or in "All" while searching or filtering) and books.
     val inTab = filter.collectionId != null
     // Online tiles stay visible while selecting: a mixed selection is the point of the shared selection state.
-    val onlineTiles = if (inOnline) emptyList() else if (inTab || filtered) onlineShown else emptyList()
+    // "All" must really hold every title: with the catalog shelf turned off (or moved away) the online titles are
+    // ordinary tiles of the main grid, not a feature of the optional shelf. The shelf stays a shortcut when shown.
+    // While selecting, the shelf gives way to the selection bar, so its titles move into the grid or would vanish.
+    val onlineTiles = if (inOnline) emptyList() else if (inTab || filtered || shelfHidden || selecting) onlineShown else emptyList()
     // "From the catalog": shown above the books, moved under them, or hidden from its own menu.
     val shelfShown = !inOnline && !inTab && !filtered && !selecting && onlineShown.isNotEmpty() && !shelfHidden
     val shelf = shelfShown && !shelfBelow
@@ -465,6 +469,7 @@ fun LibraryScreen(
             Column(Modifier.fillMaxWidth().then(backdrop)) {
                 when {
                     selecting -> TopAppBar(
+                        colors = glassTopBarColors(),
                         // Local books and online entries are counted together: they share one selection.
                         title = { Text(pluralStringResource(R.plurals.library_selected, selectionCount, selectionCount)) },
                         navigationIcon = {
@@ -572,8 +577,10 @@ fun LibraryScreen(
                 }
                 PillTabRow(
                     tabs = buildList {
-                        // The book total rides on the "All" tab: the header's subtitle line is gone with the compact top bar.
-                        add(PillTab(TAB_ALL, stringResource(R.string.library_all), visibleTotal.takeIf { it > 0 }))
+                        // The total rides on the "All" tab: local books and the online titles shown under the same
+                        // query, so the number always matches what the grid holds.
+                        val allCount = if (visibleTotal < 0) 0 else visibleTotal + onlineShown.size
+                        add(PillTab(TAB_ALL, stringResource(R.string.library_all), allCount.takeIf { it > 0 }))
                         if (onlineShownTab) add(PillTab(TAB_ONLINE, stringResource(R.string.library_online), onlineTotal, Icons.Outlined.Public))
                         collections.forEach { add(PillTab(it.id.toString(), it.name, it.count)) }
                     },
