@@ -8,6 +8,7 @@ import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import dev.chrisbanes.haze.HazeState
@@ -33,6 +34,7 @@ fun GlassTopBarBackground(state: HazeState, modifier: Modifier = Modifier, conte
     Box(
         modifier
             .fillMaxWidth()
+            .clipToBounds()
             .barBackdrop(state)
             // The bar owns touches in its gaps as well as on its controls, so a tap between two icons never reaches
             // the list scrolling underneath.

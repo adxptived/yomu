@@ -2,6 +2,7 @@
 <resources>
     <string name="catalog_title">Catalog</string>
     <string name="catalog_section_external">Added sources</string>
+    <string name="catalog_show_installed_adult">Show installed 18+ sources</string>
     <string name="catalog_tab_sources">Sources</string>
     <string name="catalog_tab_library">Library</string>
     <string name="catalog_tab_updates">Updates</string>

@@ -466,13 +466,30 @@ class CatalogScreensTest {
                 )
             }
         }
-        awaitText("MangaDex")
-        // Safe content hides the 18+ source of the installed package; the trust migration keeps it registered,
-        // so turning the preference on lists it like any other source.
+        awaitText("Show installed 18+ sources")
         assertTrue(model.sourceListing.value.sources.none { it.id == source.id })
-        runBlocking { settings.contentPreference.set(ContentPreference.MIXED) }
+        compose.onNodeWithText("Show installed 18+ sources").performClick()
         awaitText(source.name)
+        assertEquals(ContentPreference.MIXED, runBlocking { settings.contentPreference.get() })
         assertTrue(model.sourceListing.value.sources.single { it.id == source.id }.isNsfw)
+    }
+
+    @Test
+    fun contentMigrationKeepsTheDefaultUnlessTheOldSwitchWasSaved() = runBlocking {
+        val settings = GlobalContext.get().get<AppSettings>()
+        settings.contentPreference.reset()
+        settings.showNsfw.reset()
+
+        settings.migrateContentPreference()
+        assertEquals(ContentPreference.MIXED, settings.contentPreference.get())
+
+        settings.showNsfw.set(false)
+        settings.migrateContentPreference()
+        assertEquals(ContentPreference.SAFE, settings.contentPreference.get())
+
+        settings.contentPreference.set(ContentPreference.MIXED)
+        settings.migrateContentPreference()
+        assertEquals(ContentPreference.MIXED, settings.contentPreference.get())
     }
 
     @Test

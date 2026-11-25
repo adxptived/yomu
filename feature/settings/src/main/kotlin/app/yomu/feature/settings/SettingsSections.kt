@@ -601,6 +601,12 @@ internal fun ColumnScope.ReaderSection(vm: SettingsViewModel, links: SettingsLin
     val t by s.textSettings.state()
     PreferenceHeader(stringResource(R.string.set_reader_general))
     PreferenceSwitch(stringResource(R.string.set_fullscreen), c.fullscreen, { v -> vm.update(s.commonReader) { it.copy(fullscreen = v) } }, stringResource(R.string.set_fullscreen_sum), icon = settingIcon(R.string.set_fullscreen))
+    PreferenceSwitch(
+        stringResource(CoreR.string.reader_transparent_bars),
+        c.transparentBars,
+        { enabled -> vm.update(s.commonReader) { it.copy(transparentBars = enabled) } },
+        summary = stringResource(CoreR.string.reader_transparent_bars_summary),
+    )
     PreferenceSwitch(stringResource(R.string.set_cutout), c.drawUnderCutout, { v -> vm.update(s.commonReader) { it.copy(drawUnderCutout = v) } }, stringResource(R.string.set_cutout_sum), icon = settingIcon(R.string.set_cutout))
     PreferenceSwitch(stringResource(R.string.set_tap_turn), c.tapToTurn, { v -> vm.update(s.commonReader) { it.copy(tapToTurn = v) } }, stringResource(R.string.set_tap_turn_sum), icon = settingIcon(R.string.set_tap_turn))
     PreferenceSwitch(stringResource(R.string.set_volume_keys), c.volumeKeys, { v -> vm.update(s.commonReader) { it.copy(volumeKeys = v) } }, stringResource(R.string.set_volume_keys_sum), icon = settingIcon(R.string.set_volume_keys))

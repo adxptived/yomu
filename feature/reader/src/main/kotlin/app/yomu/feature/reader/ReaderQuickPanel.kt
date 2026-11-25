@@ -357,6 +357,7 @@ private fun CommonQuick(common: CommonReaderSettings, vm: ReaderViewModel) {
         style = MaterialTheme.typography.titleSmall,
         modifier = Modifier.padding(start = Dimens.l, top = Dimens.s),
     )
+    ReaderBarsSwitch(common.transparentBars) { enabled -> vm.updateCommon { it.copy(transparentBars = enabled) } }
     val auto = common.brightness < 0f
     if (auto) {
         // In "Auto" the system brightness rules: a disabled slider that looked like a divider only confused.
@@ -409,6 +410,16 @@ private fun CommonQuick(common: CommonReaderSettings, vm: ReaderViewModel) {
             label = { Text(stringResource(R.string.reader_keep_awake)) },
         )
     }
+}
+
+@Composable
+internal fun ReaderBarsSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    PreferenceSwitch(
+        stringResource(CoreR.string.reader_transparent_bars),
+        checked,
+        onCheckedChange,
+        summary = stringResource(CoreR.string.reader_transparent_bars_summary),
+    )
 }
 
 /**

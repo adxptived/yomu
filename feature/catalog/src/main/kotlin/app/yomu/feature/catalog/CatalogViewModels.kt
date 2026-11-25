@@ -25,6 +25,7 @@ import app.yomu.data.catalog.HistoryEntry
 import app.yomu.data.download.DownloadRepository
 import app.yomu.data.library.ImportOutcome
 import app.yomu.data.source.ExtensionManager
+import app.yomu.data.source.ExtensionStatus
 import app.yomu.data.source.SourceHealth
 import app.yomu.data.source.SourceInfo
 import app.yomu.data.source.SourceManager
@@ -35,6 +36,7 @@ import app.yomu.domain.catalog.ChapterDisplay
 import app.yomu.domain.catalog.ChapterNavigation
 import app.yomu.domain.catalog.ChapterOrder
 import app.yomu.domain.catalog.ChapterSortMode
+import app.yomu.domain.catalog.ContentPreference
 import app.yomu.domain.catalog.LibraryDisplay
 import app.yomu.domain.catalog.LibrarySortMode
 import app.yomu.domain.catalog.NaturalOrder
@@ -302,6 +304,15 @@ class CatalogHomeViewModel(
     val incognito: StateFlow<Boolean> = settings.incognito.stateIn(viewModelScope)
     /** Number of installed extensions with a newer version, shown on the Extensions button. */
     val extensionUpdates: StateFlow<Int> = extensions.updates.map { it.size }.state(this, 0)
+
+    val installedAdultSourcesHidden: StateFlow<Boolean> =
+        combine(settings.contentPreference.flow, extensions.installed) { preference, installed ->
+            !preference.allows(adult = true) && installed.any { it.status == ExtensionStatus.LOADED && it.isNsfw }
+        }.state(this, false)
+
+    fun showInstalledAdultSources() = viewModelScope.launch(ScreenErrors) {
+        settings.contentPreference.update { if (it == ContentPreference.SAFE) ContentPreference.MIXED else it }
+    }
 
     val localConfigured: Boolean get() = sources.local.isConfigured
 

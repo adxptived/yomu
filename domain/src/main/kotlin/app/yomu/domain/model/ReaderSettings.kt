@@ -203,6 +203,7 @@ data class CommonReaderSettings(
     val animationSpeed: Float = 1f,
     /** Software flash after every N physical pages for an E-ink screen; 0 = off. Vendor refresh is never assumed. */
     val flashEveryPages: Int = 0,
+    val transparentBars: Boolean = true,
 ) {
     /** The scheme a PDF tap uses: its own, or the text one. */
     fun pdfZones(): TapZoneLayout = pdfTapZones ?: textTapZones

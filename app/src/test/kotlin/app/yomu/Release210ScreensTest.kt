@@ -95,6 +95,27 @@ class Release210ScreensTest {
     }
 
     @Test
+    fun readerBarTransparencyCanBeTurnedOffAndBackOn() {
+        val vm = model()
+        compose.setContent {
+            YomuTheme(dark) {
+                SettingsScreen(viewModel = vm, links = SettingsLinks(), initialSection = SettingsSection.READER)
+            }
+        }
+
+        awaitText("Transparent reader bars")
+        val preference = compose.onNodeWithText("Transparent reader bars").performScrollTo()
+        fun awaitSetting(enabled: Boolean) {
+            compose.waitUntil(5_000) { runBlocking { settings.commonReader.get().transparentBars } == enabled }
+        }
+
+        preference.performClick()
+        awaitSetting(false)
+        preference.performClick()
+        awaitSetting(true)
+    }
+
+    @Test
     fun githubSync() {
         runBlocking { settings.syncBackend.set(SyncManager.GITHUB) }
         compose.setContent {

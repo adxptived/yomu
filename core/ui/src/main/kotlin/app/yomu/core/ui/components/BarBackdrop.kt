@@ -4,7 +4,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import app.yomu.core.ui.theme.isDarkScheme
 import dev.chrisbanes.haze.HazeState
@@ -24,10 +23,11 @@ fun Modifier.barBackdrop(state: HazeState): Modifier {
     val dark = isDarkScheme()
     // A lifted container tone rather than `surface`: on AMOLED it is visible against pure black, and on a white page
     // the slightly deeper tint still marks the bar without turning it into an opaque strip.
-    val tint = MaterialTheme.colorScheme.surfaceContainerHigh
+    val colors = MaterialTheme.colorScheme
+    val tint = colors.surfaceContainerHigh
     return hazeEffect(state) {
-        // No base fill: the blurred page itself is what the bar shows, with only a light gradient of the theme on top.
-        backgroundColor = Color.Transparent
+        // Fill gaps behind the blurred capture so the original text cannot show through the blur.
+        backgroundColor = colors.background
         blurRadius = 28.dp
         tints = listOf(
             HazeTint(

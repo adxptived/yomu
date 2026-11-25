@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -140,6 +141,7 @@ import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.QuickActionMenu
 import app.yomu.core.ui.components.QuickMenuItem
 import app.yomu.core.ui.components.SkeletonBox
+import app.yomu.core.ui.components.barBackdrop
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.rememberHaptic
 import app.yomu.core.ui.theme.Dimens
@@ -169,6 +171,9 @@ import app.yomu.feature.reader.pdf.PdfReaderView
 import app.yomu.feature.translator.Speaker
 import app.yomu.feature.translator.TranslationSheet
 import app.yomu.feature.translator.TranslationViewModel
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -609,6 +614,15 @@ fun ReaderScreen(
     }
 
     val showControlsLabel = stringResource(R.string.reader_show_controls)
+    val bars = updateTransition(chrome && data != null, label = "Reader bars")
+    val readerBackdrop = rememberHazeState()
+    val backdrop = readerBackdrop.takeIf { common.transparentBars }
+    // Record the page only while the bars need it, including their exit animation.
+    val pageBackdrop = if (backdrop != null && (bars.currentState || bars.targetState)) {
+        Modifier.hazeSource(backdrop)
+    } else {
+        Modifier
+    }
     Box(
         Modifier
             .fillMaxSize()
@@ -688,22 +702,24 @@ fun ReaderScreen(
                     ErrorState(s.error, onRetry = viewModel::retry, secondaryLabel = stringResource(CoreR.string.back), onSecondary = onBack)
                 }
             }
-            is UiState.Data -> when (val c = s.value) {
-                is ReaderContent.Text -> key(c.controller) {
-                    EpubReaderView(c.controller, onAttached = { viewModel.onWebViewAttached(c.controller) })
-                }
-                is ReaderContent.Pdf -> PdfReaderView(c.controller, viewModel, readerText, landscape)
-                is ReaderContent.Manga -> key(c.controller) {
-                    MangaReaderView(
-                        c.controller,
-                        viewModel,
-                        landscape,
-                        hasPrev,
-                        hasNext,
-                        animationSpeed = common.animationSpeed,
-                        preloadAllowed = viewModel::mayPreload,
-                        verticalChapterNavigator = verticalChapterNavigator,
-                    )
+            is UiState.Data -> Box(Modifier.matchParentSize().then(pageBackdrop)) {
+                when (val c = s.value) {
+                    is ReaderContent.Text -> key(c.controller) {
+                        EpubReaderView(c.controller, onAttached = { viewModel.onWebViewAttached(c.controller) })
+                    }
+                    is ReaderContent.Pdf -> PdfReaderView(c.controller, viewModel, readerText, landscape)
+                    is ReaderContent.Manga -> key(c.controller) {
+                        MangaReaderView(
+                            c.controller,
+                            viewModel,
+                            landscape,
+                            hasPrev,
+                            hasNext,
+                            animationSpeed = common.animationSpeed,
+                            preloadAllowed = viewModel::mayPreload,
+                            verticalChapterNavigator = verticalChapterNavigator,
+                        )
+                    }
                 }
             }
         }
@@ -869,14 +885,15 @@ fun ReaderScreen(
         }
 
         // ---------------------------------------------------------------- top bar
-        AnimatedVisibility(
-            visible = chrome && data != null,
+        bars.AnimatedVisibility(
+            visible = { it },
             enter = slideInVertically(tween(220)) { -it } + fadeIn(tween(220)),
             exit = slideOutVertically(tween(200)) { -it } + fadeOut(tween(200)),
             modifier = Modifier.align(Alignment.TopCenter),
         ) {
             val bookmarked = remember(bookmarks, position) { viewModel.bookmarkHere() != null }
             ReaderTopBar(
+                backdrop = backdrop,
                 title = title,
                 subtitle = position.chapterTitle,
                 bookmarked = bookmarked,
@@ -984,8 +1001,8 @@ fun ReaderScreen(
                     ) { displayControls() }
                 }
             }
-            AnimatedVisibility(
-                visible = chrome && data != null,
+            bars.AnimatedVisibility(
+                visible = { it },
                 enter = slideInVertically(tween(220)) { it } + fadeIn(tween(220)),
                 exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(200)),
             ) {
@@ -1002,6 +1019,7 @@ fun ReaderScreen(
                 }
                 val spread = pdfController?.visiblePages(position.page)?.takeIf { it.first < it.last }
                 ReaderBottomBar(
+                    backdrop = backdrop,
                     position = position,
                     marks = if (position.viewportSeek) viewportBookmarkMarks else remember(bookmarks) { bookmarks.map { it.locator.totalProgression } },
                     chapterMarks = chapterStarts,
@@ -1200,14 +1218,29 @@ fun ReaderScreen(
 }
 
 @Composable
+private fun ReaderBarSurface(backdrop: HazeState?, content: @Composable () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        color = if (backdrop == null) colors.surfaceContainer else Color.Transparent,
+        contentColor = colors.onSurface,
+        tonalElevation = if (backdrop == null) 3.dp else 0.dp,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        // Surface clips to the bar bounds, so the effect stays over the reader controls.
+        Box(Modifier.then(if (backdrop != null) Modifier.barBackdrop(backdrop) else Modifier)) { content() }
+    }
+}
+
+@Composable
 private fun ReaderTopBar(
+    backdrop: HazeState?,
     title: String,
     subtitle: String?,
     bookmarked: Boolean,
     onBack: () -> Unit,
     onBookmark: () -> Unit,
 ) {
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
+    ReaderBarSurface(backdrop) {
         Row(Modifier.statusBarsPadding().heightIn(min = 64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back)) }
             Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
@@ -1228,6 +1261,7 @@ private fun ReaderTopBar(
 
 @Composable
 private fun ReaderBottomBar(
+    backdrop: HazeState?,
     position: ReaderPosition,
     marks: List<Float>,
     /** Chapter boundaries on the slider, 0..1 of the book. */
@@ -1251,7 +1285,7 @@ private fun ReaderBottomBar(
     onSearch: () -> Unit,
     onQuick: () -> Unit,
 ) {
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
+    ReaderBarSurface(backdrop) {
         Column(Modifier.navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp)) {
             var dragging by remember { mutableStateOf<Float?>(null) }
             var pending by remember { mutableStateOf<PendingReaderSeek?>(null) }

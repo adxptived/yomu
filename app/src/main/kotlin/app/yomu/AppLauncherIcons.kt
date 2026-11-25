@@ -1,7 +1,9 @@
 package app.yomu
 
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -43,6 +45,7 @@ class AppLauncherIcons(private val context: Context) : LauncherIcons, DefaultLif
 
     /** Applies a stored pick whenever the app goes to the background (the switch there never closes a screen). */
     fun start() {
+        apply()
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
     }
 
@@ -94,5 +97,12 @@ class AppLauncherIcons(private val context: Context) : LauncherIcons, DefaultLif
         const val DEFAULT = "yomu"
         private const val PREFS = "launcher_icon"
         private const val KEY = "picked"
+    }
+}
+
+/** Restores the surviving launcher alias after an update even if the previous icon pick had disabled it. */
+class LauncherIconUpgradeReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) AppLauncherIcons(context).apply()
     }
 }

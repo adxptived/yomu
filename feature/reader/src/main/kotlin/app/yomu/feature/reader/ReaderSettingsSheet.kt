@@ -1086,6 +1086,7 @@ private fun DisplaySettings(c: CommonReaderSettings, vm: ReaderViewModel, showFo
             modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
         )
         PreferenceSwitch(stringResource(R.string.rs_fullscreen), c.fullscreen, { v -> vm.updateCommon { it.copy(fullscreen = v) } }, summary = stringResource(R.string.rs_fullscreen_summary))
+        ReaderBarsSwitch(c.transparentBars) { enabled -> vm.updateCommon { it.copy(transparentBars = enabled) } }
         PreferenceSwitch(stringResource(R.string.rs_cutout), c.drawUnderCutout, { v -> vm.updateCommon { it.copy(drawUnderCutout = v) } }, summary = stringResource(R.string.rs_cutout_summary))
         PreferenceSlider(
             stringResource(R.string.rs_autohide), c.autoHideMenuSeconds.toFloat(), 0f..10f,

@@ -55,4 +55,16 @@ class AppLauncherIconsTest {
 
         context.getSharedPreferences("launcher_icon", Context.MODE_PRIVATE).edit().clear().commit()
     }
+
+    @Test
+    fun startupRestoresLauncherAliasDisabledByAnOldIconPick() {
+        val alias = ComponentName(context, "app.yomu.MainActivity")
+        context.packageManager.setComponentEnabledSetting(
+            alias, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP,
+        )
+
+        AppLauncherIcons(context).start()
+
+        assertTrue(enabled(alias.className, byDefault = true))
+    }
 }

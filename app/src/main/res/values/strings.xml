@@ -51,6 +51,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_17_0">
+        <item>The top and bottom reader controls now blur the page beneath them across books, PDFs and comics.</item>
+        <item>Turn transparent reader bars on or off in the reader settings.</item>
+        <item>Catalog offers to show installed 18+ sources when Safe mode hides them.</item>
+        <item>The themed icon shows the Yomu symbol, and updates restore the launcher entry after an older icon pick.</item>
+    </string-array>
     <string-array name="whats_new_2_16_0">
         <item>Installed extensions are back in the catalog: packages installed by another app or left without a trust entry are trusted once and listed with the built-in sources.</item>
         <item>The “Installed extensions not in the list” card is gone — every loaded source is a normal row with its language, kind and 18+ badge.</item>

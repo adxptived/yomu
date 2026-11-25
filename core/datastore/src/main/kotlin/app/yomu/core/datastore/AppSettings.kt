@@ -247,16 +247,14 @@ class AppSettings(context: Context) {
     val dnsProvider = string("dns_provider", "")
 
     /**
-     * A settings file written before [contentPreference] existed keeps its meaning: the old switch was off by
-     * default, which is [ContentPreference.SAFE], and on meant the content was listed, which is
-     * [ContentPreference.MIXED]. The new value is written once, so the two never disagree afterwards.
+     * Preserve a saved choice from the old switch. With neither setting saved, use the default of [contentPreference].
      */
     suspend fun migrateContentPreference() {
-        val prefs = store.data.first()
         val key = stringPreferencesKey("content_preference")
-        if (key in prefs) return
-        val legacy = prefs[booleanPreferencesKey("show_nsfw")] ?: false
-        store.edit { it[key] = ContentPreference.fromLegacyShowNsfw(legacy).name }
+        store.edit { prefs ->
+            val legacy = prefs[booleanPreferencesKey("show_nsfw")]
+            if (key !in prefs && legacy != null) prefs[key] = ContentPreference.fromLegacyShowNsfw(legacy).name
+        }
     }
     val catalogLanguages = stringSet("catalog_languages")
     val incognito = bool("incognito", false)

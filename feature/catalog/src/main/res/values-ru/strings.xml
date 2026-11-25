@@ -2,6 +2,7 @@
 <resources>
     <string name="catalog_title">Каталог</string>
     <string name="catalog_section_external">Добавленные источники</string>
+    <string name="catalog_show_installed_adult">Показать установленные источники 18+</string>
     <string name="catalog_tab_sources">Источники</string>
     <string name="catalog_tab_library">Библиотека</string>
     <string name="catalog_tab_updates">Обновления</string>

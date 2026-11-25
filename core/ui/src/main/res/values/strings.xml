@@ -78,4 +78,6 @@
     <string name="incognito_mode_sum">Reading history, progress, statistics and searches are not saved</string>
     <string name="incognito_banner">Incognito: history and progress are not saved</string>
     <string name="incognito_turn_off">Turn off</string>
+    <string name="reader_transparent_bars">Transparent reader bars</string>
+    <string name="reader_transparent_bars_summary">Blur the page behind the top and bottom controls</string>
 </resources>

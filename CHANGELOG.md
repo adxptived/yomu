@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.17.0 — transparent reader controls
+
+### Reading and interface
+
+- The top and bottom controls blur the page beneath them across the shared reader, including EPUB, DOCX, PDF and manga. **Transparent reader bars** is on by default and can be turned off in the reader or reading settings.
+- Top and bottom app bars share the same tint and translucency, including the fallback on devices without blur.
+
+### Catalog and launcher
+
+- When Safe mode hides installed 18+ sources, Catalog offers a shortcut to show them. Settings migration preserves a saved choice and uses the current default when there is no saved choice.
+- The themed launcher icon shows the Yomu symbol. Updating restores the launcher entry if an older icon choice had disabled it.
+
 ## 2.16.0 — extensions back in the catalog, clear bars and a new icon
 
 ### Catalog and extensions

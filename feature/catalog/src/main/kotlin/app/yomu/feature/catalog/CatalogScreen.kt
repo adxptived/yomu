@@ -404,6 +404,7 @@ private fun SourcesTab(
     var showBulk by remember { mutableStateOf(false) }
     val refreshing by viewModel.refreshingSources.collectAsStateWithLifecycle()
     val checkingSources by viewModel.checkingSources.collectAsStateWithLifecycle()
+    val installedAdultSourcesHidden by viewModel.installedAdultSourcesHidden.collectAsStateWithLifecycle()
     val visibleIds = remember(sources) { sources.mapTo(HashSet()) { it.id } }
     val selectedVisible = remember(selected, visibleIds) { selected.intersect(visibleIds) }
     BackHandler(enabled = editing && !showBulk) { onToggleEditing() }
@@ -509,6 +510,16 @@ private fun SourcesTab(
                             onUpdate = { viewModel.updateSourceFilter(it) },
                             modifier = Modifier.padding(top = Dimens.xs),
                         )
+                    }
+                }
+            }
+            if (!editing && installedAdultSourcesHidden) {
+                item(key = "safe-content") {
+                    TextButton(
+                        onClick = { viewModel.showInstalledAdultSources() },
+                        modifier = Modifier.padding(horizontal = Dimens.l),
+                    ) {
+                        Text(stringResource(R.string.catalog_show_installed_adult))
                     }
                 }
             }
