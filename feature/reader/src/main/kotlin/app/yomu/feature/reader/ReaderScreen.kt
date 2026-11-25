@@ -1227,7 +1227,13 @@ private fun ReaderBarSurface(backdrop: HazeState?, content: @Composable () -> Un
         modifier = Modifier.fillMaxWidth(),
     ) {
         // Surface clips to the bar bounds, so the effect stays over the reader controls.
-        Box(Modifier.then(if (backdrop != null) Modifier.barBackdrop(backdrop) else Modifier)) { content() }
+        val glass = if (backdrop != null) {
+            // Book pages can be much brighter or darker than the app. Keep theme-colored controls readable over either.
+            Modifier.barBackdrop(backdrop).background(colors.surfaceContainerHigh.copy(alpha = 0.72f))
+        } else {
+            Modifier
+        }
+        Box(glass) { content() }
     }
 }
 
