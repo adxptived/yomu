@@ -66,6 +66,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.core.common.TimeFormat
 import app.yomu.core.datastore.AppSettings
 import coil3.compose.AsyncImage
+import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.delay
 import org.koin.compose.koinInject
 import java.io.File
@@ -85,18 +86,21 @@ internal fun PageChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     spread: IntRange? = null,
+    backdrop: HazeState? = null,
 ) {
     val label = if (spread != null) {
         stringResource(R.string.reader_spread_short, spread.first + 1, spread.last + 1, pages)
     } else {
         pageOfText(page, pages, approximate)
     }
+    val colors = MaterialTheme.colorScheme
+    val shape = MaterialTheme.shapes.small
     Surface(
         onClick = onClick,
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        modifier = modifier,
+        shape = shape,
+        color = if (backdrop != null) Color.Transparent else colors.secondaryContainer,
+        contentColor = if (backdrop != null) colors.onSurface else colors.onSecondaryContainer,
+        modifier = if (backdrop != null) modifier.clip(shape).readerBarBackdrop(backdrop) else modifier,
     ) {
         Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.AutoStories, null, Modifier.size(16.dp))

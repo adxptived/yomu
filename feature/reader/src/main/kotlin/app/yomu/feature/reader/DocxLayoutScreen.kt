@@ -13,6 +13,7 @@ import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -29,7 +30,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -54,14 +58,19 @@ import app.yomu.core.common.Files
 import app.yomu.core.common.ScreenErrors
 import app.yomu.core.common.Share
 import app.yomu.core.common.UiState
+import app.yomu.core.datastore.AppSettings
 import app.yomu.core.ui.components.ErrorState
 import app.yomu.core.ui.components.RequireWebView
+import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.data.book.Containers
 import app.yomu.data.book.docx.DocxLayout
 import app.yomu.data.repository.BookRepositoryImpl
 import app.yomu.domain.model.BookFormat
+import app.yomu.domain.model.CommonReaderSettings
 import app.yomu.domain.repository.StatsRepository
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -85,7 +94,9 @@ class DocxLayoutViewModel(
     private val context: Context,
     private val books: BookRepositoryImpl,
     private val stats: StatsRepository,
+    settings: AppSettings,
 ) : ViewModel() {
+    val commonReader = settings.commonReader.flow
     private val _state = MutableStateFlow<UiState<File>>(UiState.Loading)
     val state: StateFlow<UiState<File>> = _state.asStateFlow()
     private val _title = MutableStateFlow("")
@@ -218,6 +229,9 @@ fun DocxLayoutScreen(viewModel: DocxLayoutViewModel, onBack: () -> Unit, onOpenT
     val page by viewModel.page.collectAsStateWithLifecycle()
     val pages by viewModel.pages.collectAsStateWithLifecycle()
     val laidOut by viewModel.laidOut.collectAsStateWithLifecycle()
+    val common by viewModel.commonReader.collectAsStateWithLifecycle(initialValue = CommonReaderSettings())
+    val layoutBackdrop = rememberHazeState()
+    val backdrop = layoutBackdrop.takeIf { common.transparentBars && state is UiState.Data }
     var web by remember { mutableStateOf<WebView?>(null) }
     var goTo by rememberSaveable { mutableStateOf(false) }
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -228,36 +242,52 @@ fun DocxLayoutScreen(viewModel: DocxLayoutViewModel, onBack: () -> Unit, onOpenT
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            stringResource(R.string.layout_subtitle),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back)) }
-                },
-                actions = {
-                    // The printed pages are view-only; the reflowable reader keeps the dictionary, selection and
-                    // notes. One tap back, also when this screen is the one that opens a Word document by default.
-                    if (onOpenText != null) {
-                        IconButton(onClick = onOpenText) {
-                            Icon(Icons.AutoMirrored.Outlined.MenuBook, stringResource(R.string.reader_text_mode))
+            ReaderBarSurface(backdrop) {
+                TopAppBar(
+                    colors = if (backdrop != null) glassTopBarColors() else TopAppBarDefaults.topAppBarColors(),
+                    title = {
+                        Column {
+                            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                stringResource(R.string.layout_subtitle),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                    }
-                    if (state is UiState.Data && pages > 0) {
-                        IconButton(onClick = { goTo = true }) { Icon(Icons.Outlined.FindInPage, stringResource(R.string.reader_go_to_page)) }
-                    }
-                },
-            )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back)) }
+                    },
+                    actions = {
+                        // The printed pages are view-only; the reflowable reader keeps the dictionary, selection and
+                        // notes. One tap back, also when this screen is the one that opens a Word document by default.
+                        if (onOpenText != null) {
+                            IconButton(onClick = onOpenText) {
+                                Icon(Icons.AutoMirrored.Outlined.MenuBook, stringResource(R.string.reader_text_mode))
+                            }
+                        }
+                        if (state is UiState.Data && pages > 0) {
+                            IconButton(onClick = { goTo = true }) { Icon(Icons.Outlined.FindInPage, stringResource(R.string.reader_go_to_page)) }
+                        }
+                    },
+                )
+            }
         },
     ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize()) {
+        val topInset = padding.calculateTopPadding()
+        val documentInset = if (backdrop != null) topInset else 0.dp
+        val layoutDirection = LocalLayoutDirection.current
+        LaunchedEffect(web, documentInset) {
+            web?.evaluateJavascript("window.yomuLayout && yomuLayout.setTopInset(${documentInset.value})", null)
+        }
+        Box(
+            Modifier.absolutePadding(
+                left = padding.calculateLeftPadding(layoutDirection),
+                top = topInset - documentInset,
+                right = padding.calculateRightPadding(layoutDirection),
+                bottom = padding.calculateBottomPadding(),
+            ).fillMaxSize(),
+        ) {
             when (val s = state) {
                 UiState.Loading, UiState.Empty -> Column(
                     Modifier.align(Alignment.Center).padding(24.dp),
@@ -286,24 +316,27 @@ fun DocxLayoutScreen(viewModel: DocxLayoutViewModel, onBack: () -> Unit, onOpenT
                 is UiState.Data -> {
                     val dir = s.value
                     val context = LocalContext.current
-                    RequireWebView {
-                        AndroidView(
-                            factory = { ctx ->
-                                layoutWebView(ctx, dir, viewModel, background) { url -> Share.openUrl(context, url) }.also { view ->
-                                    web = view
-                                    val query = if (dark) "?dark=1" else ""
-                                    view.loadUrl("https://${DocxLayoutViewModel.HOST}/${DocxLayoutViewModel.INDEX}$query#p=${viewModel.startPage()}")
-                                }
-                            },
-                            onRelease = { view ->
-                                if (web === view) web = null
-                                view.destroy()
-                            },
-                            modifier = Modifier.fillMaxSize(),
-                        )
+                    val capture = if (backdrop != null) Modifier.hazeSource(layoutBackdrop) else Modifier
+                    Box(Modifier.matchParentSize().then(capture)) {
+                        RequireWebView {
+                            AndroidView(
+                                factory = { ctx ->
+                                    layoutWebView(ctx, dir, viewModel, background) { url -> Share.openUrl(context, url) }.also { view ->
+                                        web = view
+                                        val query = "?dark=${if (dark) 1 else 0}&top=${documentInset.value}"
+                                        view.loadUrl("https://${DocxLayoutViewModel.HOST}/${DocxLayoutViewModel.INDEX}$query#p=${viewModel.startPage()}")
+                                    }
+                                },
+                                onRelease = { view ->
+                                    if (web === view) web = null
+                                    view.destroy()
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
                     }
                     if (!laidOut) {
-                        LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
+                        LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(top = documentInset))
                     }
                     if (pages > 0) {
                         PageChip(
@@ -312,6 +345,7 @@ fun DocxLayoutScreen(viewModel: DocxLayoutViewModel, onBack: () -> Unit, onOpenT
                             approximate = !laidOut,
                             onClick = { goTo = true },
                             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = navBarBottomPadding(16.dp)),
+                            backdrop = backdrop,
                         )
                     }
                 }

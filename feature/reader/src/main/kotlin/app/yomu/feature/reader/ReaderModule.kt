@@ -15,5 +15,5 @@ val readerModule = module {
         )
     }
     viewModel { ReadingStatsViewModel(get(), get(), get()) }
-    viewModel { (bookId: Long) -> DocxLayoutViewModel(bookId, androidContext(), get(), get()) }
+    viewModel { (bookId: Long) -> DocxLayoutViewModel(bookId, androidContext(), get(), get(), get()) }
 }

@@ -11,6 +11,25 @@
   if (query.get('dark') === '1') document.documentElement.classList.add('dark');
   var src = document.getElementById('src');
   var out = document.getElementById('pages');
+  var topInset = 0;
+
+  // The Word layout uses its own CSS page dimensions. Convert the toolbar's dp to those units at fit-to-width scale.
+  function applyTopInset() {
+    var root = document.documentElement;
+    var viewport = window.visualViewport;
+    var viewWidth = viewport ? viewport.width * viewport.scale : window.innerWidth;
+    var inset = viewWidth > 0 ? topInset * root.clientWidth / viewWidth : topInset;
+    root.style.scrollPaddingTop = inset + 'px';
+    out.style.paddingTop = (12 + inset) + 'px';
+  }
+
+  function setTopInset(dp) {
+    topInset = Math.max(0, Number(dp) || 0);
+    applyTopInset();
+  }
+
+  setTopInset(query.get('top'));
+  window.addEventListener('resize', applyTopInset);
   var DT = parseFloat(document.body.dataset.dt) || 48;
   var EVEN_ODD = document.body.dataset.eo === '1';
   var notes = {};
@@ -566,7 +585,7 @@
       setTimeout(function () { report(true); }, 60);
     }
   });
-  window.yomuLayout = { goTo: goTo, pages: function () { return pages.length; } };
+  window.yomuLayout = { goTo: goTo, pages: function () { return pages.length; }, setTopInset: setTopInset };
 
   var started = false;
   function start() { if (!started) { started = true; setTimeout(step, 0); } }
