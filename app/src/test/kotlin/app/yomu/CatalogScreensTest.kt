@@ -506,7 +506,10 @@ class CatalogScreensTest {
         val source = seedExtensionSources(warning = ContentWarning.NSFW).single()
         compose.waitUntil(10_000) { model.installedAdultSourcesHidden.value }
         val notice = hasText("Show installed 18+ sources") and hasClickAction()
-        compose.onNode(hasScrollAction() and hasAnyDescendant(hasText("Add a source"))).performScrollToNode(notice)
+        val sourceList = compose.onNode(
+            hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange),
+        )
+        sourceList.performScrollToNode(notice)
         assertTrue(model.sourceListing.value.sources.none { it.id == source.id })
         compose.onNode(notice).performClick()
         awaitText(source.name)

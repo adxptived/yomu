@@ -87,6 +87,7 @@ class BookPaneScreensTest {
             awaitText("Where are your books?")
             compose.onAllNodesWithText("Skip")[0].performClick()
         }
+        compose.waitUntilAtLeastOneExists(hasText("Library") and !hasClickAction(), 20_000)
         val epub = File(compose.activity.cacheDir, fileName)
         EpubBuilder(EpubMeta(title = title, authors = listOf("Mara Ellison"), language = "en")).apply {
             coverHref = addResource("cover.png", "image/png", cover())
