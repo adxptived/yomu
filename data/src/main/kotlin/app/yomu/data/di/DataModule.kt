@@ -14,6 +14,7 @@ import app.yomu.data.backup.MihonImporter
 import app.yomu.data.backup.SyncManager
 import app.yomu.data.book.pdf.PdfAnnotationStore
 import app.yomu.data.catalog.CatalogRepository
+import app.yomu.data.catalog.MetadataRepository
 import app.yomu.data.dictionary.DictionaryRepository
 import app.yomu.data.download.DownloadOverview
 import app.yomu.data.download.DownloadRepository
@@ -78,6 +79,7 @@ val dataModule = module {
     single { SourceHealthTracker() }
     single { LibraryTabs(get()) }
     single { CatalogRepository(androidContext(), get(), get(), get(), get(), get(), get()) }
+    single { MetadataRepository(get(), get()) }
     single { DownloadRepository(androidContext(), get(), get(), get(), get(), get(), get()) }
     single { DownloadOverview(get(), get(), get(), get(), get()) }
     single { BackupManager(androidContext(), get(), get()) }

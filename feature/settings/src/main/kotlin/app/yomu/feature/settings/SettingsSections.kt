@@ -1346,6 +1346,8 @@ private fun TrafficLegend(icon: ImageVector, label: String, bytes: Long, color: 
 internal fun ColumnScope.StorageSection(vm: SettingsViewModel) {
     val usage by vm.usage.collectAsStateWithLifecycle()
     var confirm by remember { mutableStateOf(false) }
+    var confirmConverted by remember { mutableStateOf(false) }
+    var confirmChapters by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { vm.refreshUsage() }
     val u = usage
     if (u == null) {
@@ -1357,9 +1359,33 @@ internal fun ColumnScope.StorageSection(vm: SettingsViewModel) {
         PreferenceItem(stringResource(R.string.set_storage_converted), Files.humanSize(u.converted), icon = settingIcon(R.string.set_storage_converted))
         PreferenceItem(stringResource(R.string.set_storage_covers), Files.humanSize(u.covers), icon = settingIcon(R.string.set_storage_covers))
         PreferenceItem(stringResource(R.string.set_clear_cache), Files.humanSize(u.cache), onClick = { confirm = true }, icon = settingIcon(R.string.set_clear_cache))
+        if (u.converted > 0) {
+            PreferenceItem(stringResource(R.string.set_clear_converted), Files.humanSize(u.converted), onClick = { confirmConverted = true }, icon = settingIcon(R.string.set_clear_converted))
+        }
+        if (u.chapters > 0) {
+            PreferenceItem(stringResource(R.string.set_clear_chapters), Files.humanSize(u.chapters), onClick = { confirmChapters = true }, icon = settingIcon(R.string.set_clear_chapters))
+        }
     }
     if (confirm) {
         ConfirmDialog(stringResource(R.string.set_clear_cache), stringResource(R.string.set_clear_cache_text), stringResource(CoreR.string.clear), onConfirm = vm::clearCache, onDismiss = { confirm = false })
+    }
+    if (confirmConverted) {
+        ConfirmDialog(
+            stringResource(R.string.set_clear_converted),
+            stringResource(R.string.set_clear_converted_text),
+            stringResource(CoreR.string.clear),
+            onConfirm = vm::clearConverted,
+            onDismiss = { confirmConverted = false },
+        )
+    }
+    if (confirmChapters) {
+        ConfirmDialog(
+            stringResource(R.string.set_clear_chapters),
+            stringResource(R.string.set_clear_chapters_text),
+            stringResource(CoreR.string.clear),
+            onConfirm = vm::clearDownloadedChapters,
+            onDismiss = { confirmChapters = false },
+        )
     }
 }
 

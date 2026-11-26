@@ -357,6 +357,12 @@
     <string name="set_clear_cache">Очистить кэш</string>
     <string name="set_clear_cache_text">Будут удалены кэш страниц, обложек и временные файлы. Книги и скачанные главы останутся.</string>
     <string name="set_cache_cleared">Кэш очищен</string>
+    <string name="set_clear_converted">Очистить конвертированные файлы</string>
+    <string name="set_clear_converted_text">Конвертированные файлы книг будут удалены. Оригиналы, прогресс и скачанные главы останутся.</string>
+    <string name="set_converted_cleared">Конвертированных файлов удалено: %1$d</string>
+    <string name="set_clear_chapters">Удалить скачанные главы</string>
+    <string name="set_clear_chapters_text">Будут удалены файлы всех скачанных глав. Тайтлы, прогресс и локальные книги останутся; главы можно скачать снова.</string>
+    <string name="set_chapters_cleared">Скачанных глав удалено: %1$d</string>
 
     <string name="set_backup">Резервные копии и синхронизация</string>
     <string name="set_backup_sum">Файл копии, автокопии, синхронизация через папку</string>

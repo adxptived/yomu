@@ -353,6 +353,12 @@
     <string name="set_clear_cache">Clear cache</string>
     <string name="set_clear_cache_text">Cached pages, covers and temporary files will be deleted. Books and downloaded chapters are kept.</string>
     <string name="set_cache_cleared">Cache cleared</string>
+    <string name="set_clear_converted">Clear converted files</string>
+    <string name="set_clear_converted_text">Converted book files will be deleted. The original books, progress and downloaded chapters stay.</string>
+    <string name="set_converted_cleared">Converted files deleted: %1$d</string>
+    <string name="set_clear_chapters">Delete downloaded chapters</string>
+    <string name="set_clear_chapters_text">Every downloaded chapter file will be deleted. Titles, progress and local books stay; chapters can be downloaded again.</string>
+    <string name="set_chapters_cleared">Downloaded chapters deleted: %1$d</string>
 
     <string name="set_backup">Backup and sync</string>
     <string name="set_backup_sum">Backup file, automatic backups, folder sync</string>

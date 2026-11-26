@@ -25,6 +25,7 @@ import app.yomu.domain.library.SavedQueryShelf
 import app.yomu.domain.model.CommonReaderSettings
 import app.yomu.domain.model.CustomAction
 import app.yomu.domain.model.DictionaryApp
+import app.yomu.domain.model.ExternalMetadata
 import app.yomu.domain.model.LibraryFilter
 import app.yomu.domain.model.LibrarySort
 import app.yomu.domain.model.MangaDirection
@@ -41,6 +42,7 @@ import app.yomu.domain.translation.TranslationMode
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -422,6 +424,13 @@ class AppSettings(context: Context) {
 
     /** The shelf the home-screen "Shelf" widget shows; 0 = the whole online library. */
     val widgetShelfId = long("widget_shelf_id", 0)
+
+    /** Confirmed external metadata per online title (entry id → AniList); shown over the source's own fields. */
+    val metadataLinks = json(
+        "metadata_links",
+        emptyMap<Long, ExternalMetadata>(),
+        MapSerializer(Long.serializer(), ExternalMetadata.serializer()),
+    )
 
     // PDF annotations (2.0.0)
     /** Highlights and notes of PDF books are also written into the PDF file (as standard annotations). */

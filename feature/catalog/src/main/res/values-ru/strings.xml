@@ -10,6 +10,14 @@
     <string name="title_add_edition_separately">Добавить отдельно</string>
     <string name="title_duplicate_check_failed">Не удалось проверить библиотеку. Попробуйте добавить тайтл ещё раз.</string>
     <string name="title_find_replacement">Найти замену</string>
+    <string name="metadata_find">AniList</string>
+    <string name="metadata_external_title">Сведения из %1$s</string>
+    <string name="metadata_change">Сменить совпадение</string>
+    <string name="metadata_reset">Вернуть данные источника</string>
+    <string name="metadata_match_title">Совпадение в AniList</string>
+    <string name="metadata_match_query">Название для поиска</string>
+    <string name="metadata_match_search">Найти</string>
+    <string name="metadata_match_empty">Ничего не найдено. Попробуйте другое название.</string>
     <string name="migrate_match_exact_title">Точное название</string>
     <string name="migrate_match_similar_title">Похожее название</string>
     <string name="migrate_target_chapter_count">Глав доступно в источнике: %1$d</string>

@@ -1018,6 +1018,19 @@ class DownloadRepository(
         converted = Files.dirSize(File(context.filesDir, "converted")),
     )
 
+    /** Removes converted files (editor output and converted formats); the original books stay. */
+    fun clearConverted(): Int = StorageCleanup.clearDirectory(File(context.filesDir, "converted"))
+
+    /**
+     * Deletes every downloaded chapter file. Titles, progress, bookmarks and local books stay; the chapters can be
+     * downloaded again. Returns how many chapters were cleared.
+     */
+    suspend fun clearDownloadedChapters(): Int = withContext(Dispatchers.IO) {
+        val ids = StorageCleanup.downloadedChapterIds(db.catalog().allChapters().map { it.toDomain() })
+        deleteChapterFiles(ids)
+        ids.size
+    }
+
     /**
      * Frees derived data only. Deleting the whole cache directory used to pull the floor from under owners that are
      * still working: OkHttp's DiskLruCache, Coil's image cache, a sync `.part` and an editor output being written.

@@ -222,7 +222,8 @@ fun TitleScreen(
     onReplaceSavedEdition: ((Long, Long) -> Unit)? = null,
 ) {
     val cover by viewModel.entry.collectAsStateWithLifecycle()
-    CoverTheme(rememberCoverColor(cover?.coverUrl)) {
+    val external by viewModel.externalMetadata.collectAsStateWithLifecycle()
+    CoverTheme(rememberCoverColor(external?.coverUrl ?: cover?.coverUrl)) {
         TitleContent(viewModel, onBack, onReadChapter, onMigrate, onOpenWebView, onOpenDownloads, inPane, onOpenBook, onPreviewChapter, onOpenSavedEdition, onReplaceSavedEdition)
     }
 }
@@ -244,6 +245,8 @@ private fun TitleContent(
 ) {
     val context = LocalContext.current
     val entry by viewModel.entry.collectAsStateWithLifecycle()
+    val externalMetadata by viewModel.externalMetadata.collectAsStateWithLifecycle()
+    val metadataSearch by viewModel.metadataSearch.collectAsStateWithLifecycle()
     val chapters by viewModel.chapters.collectAsStateWithLifecycle()
     val tabs by viewModel.tabs.collectAsStateWithLifecycle()
     val entryTabs by viewModel.entryTabs.collectAsStateWithLifecycle()
@@ -285,16 +288,20 @@ private fun TitleContent(
     var editTabs by remember { mutableStateOf(false) }
     var updateSchedule by remember { mutableStateOf(false) }
     var showTracking by remember { mutableStateOf(false) }
+    var matchingMetadata by remember { mutableStateOf(false) }
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
 
     CatalogEventsEffect(viewModel.events, snackbar, onOpenWebView = onOpenWebView, onOpenBook = onOpenBook)
     val numberWidth = rememberNumberWidth(chapters, stats.total)
 
     val e = entry
+    // A confirmed AniList match replaces only what is shown; the source keeps the id, chapters and progress.
+    val displayCover = externalMetadata?.coverUrl ?: e?.coverUrl
+    val displayDescription = externalMetadata?.description ?: e?.description
     val isBook = e?.type == ContentType.BOOK || e?.type == ContentType.AUDIO
     // A refresh re-reads the title and asks for its cover again: a source may have replaced the picture.
     val refreshTitle: () -> Unit = {
-        CoverCache.refresh(context, listOf(e?.coverUrl))
+        CoverCache.refresh(context, listOf(displayCover))
         viewModel.refresh()
     }
     val selecting = selection.isNotEmpty()
@@ -557,6 +564,7 @@ private fun TitleContent(
                         e,
                         sourceName ?: if (sourceMissing) stringResource(R.string.source_not_installed) else null,
                         inPane = inPane,
+                        coverUrl = displayCover,
                     )
                 }
                 if (!selecting) {
@@ -611,9 +619,37 @@ private fun TitleContent(
                                 Text(stringResource(R.string.title_open_webview), Modifier.padding(start = Dimens.s))
                             }
                         }
+                        if (!isBook) {
+                            OutlinedButton(onClick = { matchingMetadata = true; viewModel.searchMetadata(e.title) }) {
+                                Text(stringResource(R.string.metadata_find))
+                            }
+                        }
                     }
                 }
-                if (!e.description.isNullOrBlank()) item(key = "description") { Description(e.description!!) }
+                if (!displayDescription.isNullOrBlank()) item(key = "description") { Description(displayDescription!!) }
+                externalMetadata?.let { meta ->
+                    item(key = "metadata") {
+                        Surface(
+                            shape = MaterialTheme.shapes.large,
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs),
+                        ) {
+                            Column(Modifier.padding(Dimens.l), verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
+                                Text(stringResource(R.string.metadata_external_title, meta.provider), style = MaterialTheme.typography.titleSmall)
+                                Text(meta.title, style = MaterialTheme.typography.bodyMedium)
+                                Text(meta.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
+                                    TextButton(onClick = { matchingMetadata = true; viewModel.searchMetadata(e.title) }) {
+                                        Text(stringResource(R.string.metadata_change))
+                                    }
+                                    TextButton(onClick = { viewModel.linkMetadata(null) }) {
+                                        Text(stringResource(R.string.metadata_reset))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 if (e.genres.isNotEmpty()) item(key = "genres") { Genres(e.genres) }
                 item(key = "divider") { HorizontalDivider(Modifier.padding(top = Dimens.s)) }
 
@@ -785,6 +821,15 @@ private fun TitleContent(
             onReplace = onReplaceSavedEdition?.let { replace ->
                 { id -> editionComparison = null; replace(id, comparison.incoming.entry.id) }
             },
+        )
+    }
+    if (matchingMetadata) {
+        MetadataMatchDialog(
+            state = metadataSearch,
+            initialQuery = e?.title.orEmpty(),
+            onSearch = viewModel::searchMetadata,
+            onPick = { viewModel.linkMetadata(it) },
+            onDismiss = { matchingMetadata = false; viewModel.closeMetadataSearch() },
         )
     }
     if (pickTabs) {
@@ -1049,13 +1094,13 @@ private fun FilterRow(label: String, checked: Boolean, summary: String? = null, 
 }
 
 @Composable
-private fun TitleHeader(e: CatalogEntry, sourceName: String?, inPane: Boolean) {
+private fun TitleHeader(e: CatalogEntry, sourceName: String?, inPane: Boolean, coverUrl: String?) {
     val context = LocalContext.current
-    val tint = app.yomu.core.ui.components.rememberCoverColor(e.coverUrl, app.yomu.core.ui.components.coverPlaceholderColor(e.title))
+    val tint = app.yomu.core.ui.components.rememberCoverColor(coverUrl, app.yomu.core.ui.components.coverPlaceholderColor(e.title))
     Box(Modifier.fillMaxWidth()) {
-        if (e.coverUrl != null && !app.yomu.core.ui.components.LocalHideCovers.current) {
+        if (coverUrl != null && !app.yomu.core.ui.components.LocalHideCovers.current) {
             AsyncImage(
-                model = e.coverUrl,
+                model = coverUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.matchParentSize().blur(24.dp).alpha(0.35f),
@@ -1094,14 +1139,14 @@ private fun TitleHeader(e: CatalogEntry, sourceName: String?, inPane: Boolean) {
                     verticalArrangement = Arrangement.spacedBy(Dimens.m),
                 ) {
                     CoverImage(
-                        e.coverUrl, e.title,
+                        coverUrl, e.title,
                         Modifier.width(coverWidth).clip(MaterialTheme.shapes.extraLarge),
                     )
                     Box(Modifier.fillMaxWidth()) { details() }
                 }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(Dimens.l), verticalAlignment = Alignment.CenterVertically) {
-                    CoverImage(e.coverUrl, e.title, Modifier.width(coverWidth))
+                    CoverImage(coverUrl, e.title, Modifier.width(coverWidth))
                     Box(Modifier.weight(1f)) { details() }
                 }
             }

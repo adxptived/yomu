@@ -22,6 +22,7 @@ import app.yomu.data.catalog.CatalogRepository
 import app.yomu.data.catalog.CatalogRepository.BrowseMode
 import app.yomu.data.catalog.GlobalSearchResult
 import app.yomu.data.catalog.HistoryEntry
+import app.yomu.data.catalog.MetadataRepository
 import app.yomu.data.download.DownloadRepository
 import app.yomu.data.library.ImportOutcome
 import app.yomu.data.source.ExtensionManager
@@ -48,6 +49,7 @@ import app.yomu.domain.model.ChapterInfo
 import app.yomu.domain.model.ContentType
 import app.yomu.domain.model.DownloadItem
 import app.yomu.domain.model.DownloadStatus
+import app.yomu.domain.model.ExternalMetadata
 import app.yomu.domain.tracking.TrackEntry
 import app.yomu.domain.tracking.TrackSearchResult
 import app.yomu.domain.tracking.TrackService
@@ -1165,9 +1167,37 @@ class TitleViewModel(
     private val audiobooks: AudiobookStore,
     /** The global update period must follow a title's own interval shortened below it. */
     private val scheduler: WorkScheduler,
+    private val metadata: MetadataRepository,
 ) : ViewModel(), TrackingViewModel {
     val entry: StateFlow<CatalogEntry?> = catalog.observeEntry(entryId).state(this, null)
     val sourceHealth = catalog.health
+
+    /** A confirmed AniList match, shown over the source's cover and description; null = the source's own fields. */
+    val externalMetadata: StateFlow<ExternalMetadata?> = metadata.observeLink(entryId).state(this, null)
+
+    sealed interface MetadataSearchState {
+        data object Idle : MetadataSearchState
+        data object Loading : MetadataSearchState
+        data class Ready(val results: List<ExternalMetadata>) : MetadataSearchState
+    }
+
+    private val _metadataSearch = MutableStateFlow<MetadataSearchState>(MetadataSearchState.Idle)
+    val metadataSearch: StateFlow<MetadataSearchState> = _metadataSearch
+
+    fun searchMetadata(query: String? = null) = viewModelScope.launch(ScreenErrors) {
+        _metadataSearch.value = MetadataSearchState.Loading
+        val text = query?.takeIf { it.isNotBlank() } ?: entry.value?.title.orEmpty()
+        _metadataSearch.value = MetadataSearchState.Ready(metadata.search(text))
+    }
+
+    fun closeMetadataSearch() {
+        _metadataSearch.value = MetadataSearchState.Idle
+    }
+
+    fun linkMetadata(found: ExternalMetadata?) = viewModelScope.launch(ScreenErrors) {
+        metadata.setLink(entryId, found)
+        _metadataSearch.value = MetadataSearchState.Idle
+    }
 
     data class EditionComparison(
         val incoming: app.yomu.data.catalog.CatalogEditionSummary,

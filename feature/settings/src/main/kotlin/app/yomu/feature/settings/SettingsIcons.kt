@@ -218,6 +218,8 @@ internal fun settingIcon(title: Int): ImageVector? = when (title) {
     R.string.set_storage_converted -> Icons.Outlined.Transform
     R.string.set_storage_covers -> Icons.Outlined.Image
     R.string.set_clear_cache -> Icons.Outlined.CleaningServices
+    R.string.set_clear_converted -> Icons.Outlined.Transform
+    R.string.set_clear_chapters -> Icons.Outlined.DeleteSweep
     // Network and traffic
     R.string.set_data_saver -> Icons.Outlined.DataSaverOn
     R.string.set_covers_mobile -> Icons.Outlined.Image

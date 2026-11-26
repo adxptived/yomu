@@ -10,6 +10,14 @@
     <string name="title_add_edition_separately">Add separately</string>
     <string name="title_duplicate_check_failed">Could not check the library. Try adding the title again.</string>
     <string name="title_find_replacement">Find a replacement</string>
+    <string name="metadata_find">AniList</string>
+    <string name="metadata_external_title">Details from %1$s</string>
+    <string name="metadata_change">Change match</string>
+    <string name="metadata_reset">Use source data</string>
+    <string name="metadata_match_title">Match on AniList</string>
+    <string name="metadata_match_query">Title to search</string>
+    <string name="metadata_match_search">Search</string>
+    <string name="metadata_match_empty">Nothing found. Try another title.</string>
     <string name="migrate_match_exact_title">Exact title</string>
     <string name="migrate_match_similar_title">Similar title</string>
     <string name="migrate_target_chapter_count">Chapters available from this source: %1$d</string>

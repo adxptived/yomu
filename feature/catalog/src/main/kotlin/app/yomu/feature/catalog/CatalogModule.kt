@@ -14,7 +14,7 @@ val catalogModule = module {
     viewModel { CatalogHomeViewModel(androidContext(), get(), get(), get(), get(), get()) }
     viewModel { (args: BrowseArgs) -> SourceBrowseViewModel(args.sourceId, args.query, args.navUrl, args.navTitle, args.tab, androidContext(), get(), get(), get()) }
     viewModel { (args: SearchArgs) -> GlobalSearchViewModel(args.query, args.migrateFrom, get(), get(), get()) }
-    viewModel { (entryId: Long) -> TitleViewModel(entryId, get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { (entryId: Long) -> TitleViewModel(entryId, get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { ExtensionsViewModel(androidContext(), get(), get(), get()) }
     viewModel { SourceConnectionViewModel(androidContext(), get(), get(), get(), get(), get()) }
     viewModel { UpcomingViewModel(androidContext(), get(), get()) }

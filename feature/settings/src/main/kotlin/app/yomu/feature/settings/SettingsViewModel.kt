@@ -547,6 +547,18 @@ class SettingsViewModel(
         _events.send(SettingsEvent.Message(R.string.set_cache_cleared))
     }
 
+    fun clearConverted() = viewModelScope.launch(ScreenErrors) {
+        val files = withContext(Dispatchers.IO) { downloads.clearConverted() }
+        refreshUsage()
+        _events.send(SettingsEvent.Message(R.string.set_converted_cleared, listOf(files)))
+    }
+
+    fun clearDownloadedChapters() = viewModelScope.launch(ScreenErrors) {
+        val chapters = withContext(Dispatchers.IO) { downloads.clearDownloadedChapters() }
+        refreshUsage()
+        _events.send(SettingsEvent.Message(R.string.set_chapters_cleared, listOf(chapters)))
+    }
+
     // Fonts
 
     fun loadFonts() { fonts.value = fontsDir.listFiles()?.filter { it.isFile }?.sortedBy { it.name.lowercase() }.orEmpty() }
