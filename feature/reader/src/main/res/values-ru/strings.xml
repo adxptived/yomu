@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="reader_page_select">Выбрать страницы</string>
+    <string name="reader_page_select_cancel">Готово</string>
+    <string name="reader_page_save_selected">Сохранить выбранные (%1$d)</string>
+    <string name="reader_page_saving_selected">Сохраняем выбранные страницы…</string>
+    <string name="reader_page_batch_saved">Сохранено страниц: %1$d</string>
+    <string name="reader_page_batch_partial">Сохранено: %1$d. Не удалось сохранить страницы: %2$s</string>
+    <string name="reader_chapter_preview">Просмотр главы</string>
+    <string name="reader_continue_from_preview">Продолжить отсюда</string>
     <string name="reader_page_actions">Действия со страницей</string>
     <string name="reader_seek_failed">Не удалось перейти в выбранное место. Попробуйте ещё раз.</string>
     <string name="reader_spread_short">%1$d–%2$d из %3$d</string>

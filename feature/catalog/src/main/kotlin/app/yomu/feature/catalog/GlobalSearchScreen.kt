@@ -65,6 +65,7 @@ import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.data.catalog.MigrationCategory
 import app.yomu.data.catalog.MigrationPlan
 import app.yomu.source.SourceContent
+import app.yomu.data.catalog.SearchRanking
 import app.yomu.core.ui.R as CoreR
 
 /** Searches every enabled source at once; in migration mode picking a result moves the reading state there. */
@@ -75,6 +76,7 @@ fun GlobalSearchScreen(
     onBack: () -> Unit,
     onOpenTitle: (Long) -> Unit,
     onOpenSource: (sourceId: Long, query: String) -> Unit,
+    focusSearchOnOpen: Boolean = true,
 ) {
     val query by viewModel.query.collectAsStateWithLifecycle()
     val content by viewModel.content.collectAsStateWithLifecycle()
@@ -144,7 +146,7 @@ fun GlobalSearchScreen(
         )
         val list = results
         if (list == null) {
-            LaunchedEffect(Unit) { if (query.isEmpty()) runCatching { focus.requestFocus() } }
+            LaunchedEffect(Unit) { if (focusSearchOnOpen && query.isEmpty()) runCatching { focus.requestFocus() } }
             EmptyState(
                 title = stringResource(R.string.global_search_empty),
                 message = stringResource(if (viewModel.migrateFrom != null) R.string.migrate_hint else R.string.global_search_empty_hint),
@@ -206,10 +208,21 @@ fun GlobalSearchScreen(
                     if (r.items.isNotEmpty()) {
                         LazyRow(contentPadding = PaddingValues(horizontal = Dimens.l), horizontalArrangement = Arrangement.spacedBy(Dimens.m)) {
                             items(r.items, key = { it.url }) { item ->
+                                val subtitle = if (viewModel.migrateFrom != null) {
+                                    val language = item.language ?: infos[r.sourceId]?.lang
+                                    listOfNotNull(
+                                        language?.takeIf { it.isNotBlank() }?.let { langLabel(it) },
+                                        when (SearchRanking.score(item.title, activeQuery)) {
+                                            0 -> stringResource(R.string.migrate_match_exact_title)
+                                            1, 2, 3 -> stringResource(R.string.migrate_match_similar_title)
+                                            else -> null
+                                        },
+                                    ).joinToString(" · ").ifBlank { item.author }
+                                } else item.author
                                 Box(Modifier.width(112.dp)) {
                                     BookGridItem(
                                         title = item.title,
-                                        subtitle = item.author,
+                                        subtitle = subtitle,
                                         cover = item.thumbnailUrl,
                                         progress = 0f,
                                         onClick = { if (!migrating) viewModel.open(r.sourceId, item) },
@@ -265,6 +278,9 @@ private fun MigrationPreviewDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.s)) {
                 Text(stringResource(R.string.migrate_preview_target, plan.fromTitle, plan.targetTitle), style = MaterialTheme.typography.titleSmall)
+                plan.targetChapterCount?.let { count ->
+                    Text(stringResource(R.string.migrate_target_chapter_count, count), style = MaterialTheme.typography.bodySmall)
+                }
                 Text(
                     stringResource(R.string.migrate_preview_counts, plan.exact.size, plan.likely.size, plan.ambiguous.size, plan.missing.size),
                     style = MaterialTheme.typography.bodySmall,

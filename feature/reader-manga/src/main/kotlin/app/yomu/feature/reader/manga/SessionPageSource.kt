@@ -63,6 +63,9 @@ class SessionPageSource(val chapters: List<MangaChapter>) : PageSource {
 
     override fun name(index: Int): String = sourceOf(index)?.let { (source, local) -> source.name(local) } ?: "${index + 1}"
 
+    override suspend fun previewFile(index: Int): File? =
+        sourceOf(index)?.let { (source, local) -> source.previewFile(local) }
+
     override suspend fun file(index: Int): File {
         if (index !in 0 until count) throw IndexOutOfBoundsException("Page $index is not in the reading window")
         return sourceOf(index)?.let { (source, local) -> source.file(local) }

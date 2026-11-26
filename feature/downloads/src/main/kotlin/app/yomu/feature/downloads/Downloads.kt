@@ -1,5 +1,9 @@
 package app.yomu.feature.downloads
 
+import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +40,7 @@ import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Card
@@ -67,6 +72,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
@@ -85,6 +91,7 @@ import app.yomu.core.ui.components.EmptyState
 import app.yomu.core.ui.components.PreferenceHeader
 import app.yomu.core.ui.components.SwipeAction
 import app.yomu.core.ui.components.SwipeActionsBox
+import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.motionItem
 import app.yomu.core.ui.components.TopLevelBody
 import app.yomu.core.ui.components.barBackdrop
@@ -95,6 +102,7 @@ import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.audio.AudiobookDownloader
 import app.yomu.data.download.AudioDownload
+import app.yomu.data.download.ChapterCbzExport
 import app.yomu.data.download.DownloadOverview
 import app.yomu.data.download.DownloadRepository
 import app.yomu.data.download.DownloadSummary
@@ -116,6 +124,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 import app.yomu.core.ui.R as CoreR
@@ -123,9 +132,11 @@ import app.yomu.core.ui.R as CoreR
 /** Waiting downloads of one title (or a single book download), in queue order. */
 data class QueueGroup(val entryId: Long?, val items: List<DownloadItem>)
 
-/** One-off notifications of the downloads screen (the undo action of a cancellation). */
+/** One-off notifications of the downloads screen (the undo action of a cancellation, the result of an export). */
 sealed interface DownloadsEvent {
     data class Cancelled(val ids: List<Long>) : DownloadsEvent
+    data class Exported(val pages: Int) : DownloadsEvent
+    data class ExportFailed(val error: Throwable) : DownloadsEvent
 }
 
 /** Download queue split into the sections shown on screen. */
@@ -166,6 +177,7 @@ data class DownloadSections(
 }
 
 class DownloadsViewModel(
+    private val context: Context,
     private val repo: DownloadRepository,
     private val settings: AppSettings,
     overview: DownloadOverview,
@@ -226,10 +238,21 @@ class DownloadsViewModel(
         withContext(Dispatchers.IO) { repo.clearCache() }
         refreshUsage()
     }
+
+    /** Saves one finished comic chapter to the file the user picked in the system dialog. */
+    fun exportCbz(item: DownloadItem, uri: Uri) = viewModelScope.launch(ScreenErrors) {
+        runCatching {
+            withContext(Dispatchers.IO) {
+                context.contentResolver.openOutputStream(uri)?.use { out -> repo.exportChapter(item, out) }
+                    ?: error("Cannot open the chosen file")
+            }
+        }.onSuccess { pages -> _events.emit(DownloadsEvent.Exported(pages)) }
+            .onFailure { _events.emit(DownloadsEvent.ExportFailed(it)) }
+    }
 }
 
 val downloadsModule = module {
-    viewModel { DownloadsViewModel(get(), get(), get(), get()) }
+    viewModel { DownloadsViewModel(androidContext(), get(), get(), get(), get()) }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -237,7 +260,9 @@ val downloadsModule = module {
 fun DownloadsScreen(viewModel: DownloadsViewModel, onBack: () -> Unit, onOpenTitle: ((Long) -> Unit)? = null) {
     val backdrop = rememberHazeState()
     val snackbar = remember { SnackbarHostState() }
+    val context = LocalContext.current
     val cancelled = stringResource(R.string.downloads_cancelled)
+    val exported = stringResource(R.string.downloads_saved_cbz)
     val undo = stringResource(CoreR.string.undo)
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
@@ -246,6 +271,8 @@ fun DownloadsScreen(viewModel: DownloadsViewModel, onBack: () -> Unit, onOpenTit
                     val result = snackbar.showSnackbar(cancelled, actionLabel = undo, withDismissAction = true)
                     if (result == SnackbarResult.ActionPerformed) viewModel.resumeIds(event.ids)
                 }
+                is DownloadsEvent.Exported -> snackbar.showSnackbar(exported)
+                is DownloadsEvent.ExportFailed -> snackbar.showSnackbar(errorMessage(context, event.error))
             }
         }
     }
@@ -466,6 +493,9 @@ private fun UsageLine(label: Int, size: String) {
 @Composable
 private fun DownloadRow(item: DownloadItem, vm: DownloadsViewModel, label: String, maxRetries: Int, onOpenTitle: ((Long) -> Unit)?, modifier: Modifier = Modifier) {
     var menu by remember { mutableStateOf(false) }
+    val exportCbz = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(CBZ_MIME)) { uri ->
+        if (uri != null) vm.exportCbz(item, uri)
+    }
     val wait = LocalNetworkWait.current
     val hasError = !item.error.isNullOrBlank()
     // A task sleeping before its next attempt is still RUNNING in the database, a requeued one is QUEUED.
@@ -551,7 +581,15 @@ private fun DownloadRow(item: DownloadItem, vm: DownloadsViewModel, label: Strin
                         else -> Unit
                     }
                     when (item.status) {
-                        DownloadStatus.DONE, DownloadStatus.CANCELLED ->
+                        DownloadStatus.DONE -> {
+                            if (item.kind == DownloadKind.CHAPTER) {
+                                IconButton(onClick = { exportCbz.launch(ChapterCbzExport.suggestedName(item.title)) }) {
+                                    Icon(Icons.Outlined.Save, stringResource(R.string.downloads_save_cbz))
+                                }
+                            }
+                            IconButton(onClick = { vm.remove(item) }) { Icon(Icons.Filled.Delete, stringResource(R.string.downloads_remove)) }
+                        }
+                        DownloadStatus.CANCELLED ->
                             IconButton(onClick = { vm.remove(item) }) { Icon(Icons.Filled.Delete, stringResource(R.string.downloads_remove)) }
                         DownloadStatus.QUEUED, DownloadStatus.PAUSED -> Box {
                             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(CoreR.string.more)) }
@@ -575,6 +613,9 @@ private fun DownloadRow(item: DownloadItem, vm: DownloadsViewModel, label: Strin
         )
     }
 }
+
+/** MIME type the system file dialog uses for a comic archive. */
+private const val CBZ_MIME = "application/vnd.comicbook+zip"
 
 private val LocalNetworkWait = compositionLocalOf { NetworkWait.NONE }
 

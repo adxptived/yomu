@@ -119,7 +119,7 @@ class Release140ScreensTest {
             }
         }
         // The card header is taller than in 1.4 (poster cover and the primary action): scroll the chapters into view.
-        awaitText("Migrate")
+        awaitText("Find a replacement")
         compose.mainClock.advanceTimeBy(1_000)
         compose.onAllNodes(hasScrollAction())[0].performScrollToNode(hasText("Chapter 30", substring = true))
         shot("40_title_chapter_numbers")

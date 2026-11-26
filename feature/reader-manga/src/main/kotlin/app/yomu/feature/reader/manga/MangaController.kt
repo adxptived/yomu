@@ -129,6 +129,7 @@ class MangaController(
     val pageRequests: Flow<Int> = requests.receiveAsFlow()
 
     suspend fun file(index: Int): File = pages.file(index.coerceIn(0, (count - 1).coerceAtLeast(0)))
+    suspend fun previewFile(index: Int): File? = if (index in 0 until count) pages.previewFile(index) else null
 
     fun goTo(index: Int) {
         requests.trySend(index)

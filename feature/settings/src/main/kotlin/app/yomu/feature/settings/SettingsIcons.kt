@@ -112,6 +112,7 @@ import androidx.compose.material.icons.outlined.TrackChanges
 import androidx.compose.material.icons.outlined.Transform
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.outlined.TravelExplore
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Update
 import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.outlined.ViewColumn
@@ -132,6 +133,7 @@ internal fun settingIcon(title: Int): ImageVector? = when (title) {
     R.string.set_nav_labels -> Icons.AutoMirrored.Outlined.Label
     // Library
     R.string.set_grid -> Icons.Outlined.GridView
+    R.string.set_widget_shelf -> Icons.Outlined.GridView
     R.string.set_columns -> Icons.Outlined.ViewColumn
     R.string.set_show_continue -> Icons.Outlined.History
     R.string.set_hide_covers -> Icons.Outlined.HideImage
@@ -233,6 +235,7 @@ internal fun settingIcon(title: Int): ImageVector? = when (title) {
     R.string.set_sync_folder -> Icons.Outlined.FolderShared
     R.string.set_sync_now -> Icons.Outlined.CloudSync
     R.string.set_mihon_import -> Icons.Outlined.ImportExport
+    R.string.set_mihon_export -> Icons.Outlined.ImportExport
     // Sync (2.0.0)
     R.string.set_sync_target, R.string.set_sync_method -> Icons.Outlined.Dns
     R.string.set_webdav_url -> Icons.Outlined.Cloud
@@ -255,6 +258,7 @@ internal fun settingIcon(title: Int): ImageVector? = when (title) {
     R.string.set_page_menu_style -> Icons.Outlined.TouchApp
     R.string.set_selection_menu_style -> Icons.Outlined.TextFields
     R.string.set_page_actions -> Icons.Outlined.Checklist
+    R.string.set_reader_bar -> Icons.Outlined.Tune
     R.string.set_selection_actions -> Icons.Outlined.Reorder
     R.string.set_reset_all -> Icons.Outlined.RestartAlt
     // Security

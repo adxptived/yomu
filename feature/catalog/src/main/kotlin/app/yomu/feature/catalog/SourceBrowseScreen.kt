@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -36,7 +38,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Public
@@ -45,6 +49,7 @@ import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
@@ -53,9 +58,11 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconToggleButton
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
@@ -108,6 +115,7 @@ import app.yomu.core.ui.components.LocalHideCovers
 import app.yomu.core.ui.components.LocalReduceMotion
 import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.SkeletonGrid
+import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.SkeletonList
 import app.yomu.core.ui.components.YomuTab
 import app.yomu.core.ui.components.errorMessage
@@ -467,6 +475,7 @@ private fun SearchPage(
     val onFilterChanged = remember(model) { { model.onFilterChanged() } }
     val onReload = remember(model) { { model.reloadFilters() } }
     val history by model.searchHistory.collectAsStateWithLifecycle()
+    val templates by model.filterTemplates.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     var editing by rememberSaveable { mutableStateOf(false) }
     val showPanel = results == null || editing
@@ -530,6 +539,10 @@ private fun SearchPage(
                     onReset = model::resetFilters,
                     onReload = onReload,
                     onSearch = run,
+                    templates = templates,
+                    onSaveTemplate = model::saveFilterTemplate,
+                    onApplyTemplate = model::applyFilterTemplate,
+                    onDeleteTemplate = model::deleteFilterTemplate,
                 )
             } else {
                 Column(Modifier.fillMaxSize()) {
@@ -576,7 +589,12 @@ private fun SearchPanel(
     onReset: () -> Unit,
     onReload: () -> Unit,
     onSearch: () -> Unit,
+    templates: List<FilterTemplate>,
+    onSaveTemplate: (String) -> Unit,
+    onApplyTemplate: (String) -> Unit,
+    onDeleteTemplate: (String) -> Unit,
 ) {
+    var savingTemplate by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().imePadding()) {
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
             if (history.isNotEmpty()) {
@@ -595,11 +613,36 @@ private fun SearchPanel(
                         Text(stringResource(R.string.filters_reset))
                     }
                 }
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Dimens.l),
+                    horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    templates.forEach { template ->
+                        InputChip(
+                            selected = false,
+                            onClick = { onApplyTemplate(template.name) },
+                            label = { Text(template.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp)) },
+                            trailingIcon = {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    stringResource(R.string.filter_template_delete, template.name),
+                                    Modifier.size(16.dp).clickable { onDeleteTemplate(template.name) },
+                                )
+                            },
+                        )
+                    }
+                    AssistChip(
+                        onClick = { savingTemplate = true },
+                        label = { Text(stringResource(R.string.filter_template_save)) },
+                        leadingIcon = { Icon(Icons.Filled.Add, null, Modifier.size(FilterChipDefaults.IconSize)) },
+                    )
+                }
                 SourceFiltersContent(
                     filters = filters,
                     version = version,
                     onChanged = onChanged,
-                    modifier = Modifier.fillMaxWidth().padding(start = Dimens.l, end = Dimens.l, bottom = Dimens.l),
+                    modifier = Modifier.fillMaxWidth().padding(start = Dimens.l, end = Dimens.l, top = Dimens.xs, bottom = Dimens.l),
                     loading = loading,
                     onReload = onReload,
                 )
@@ -625,6 +668,13 @@ private fun SearchPanel(
                 }
             }
         }
+    }
+    if (savingTemplate) {
+        TextInputDialog(
+            title = stringResource(R.string.filter_template_save_title),
+            onConfirm = { name -> if (name.isNotBlank()) onSaveTemplate(name) },
+            onDismiss = { savingTemplate = false },
+        )
     }
 }
 

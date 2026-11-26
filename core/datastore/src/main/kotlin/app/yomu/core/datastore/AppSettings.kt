@@ -30,6 +30,8 @@ import app.yomu.domain.model.LibrarySort
 import app.yomu.domain.model.MangaDirection
 import app.yomu.domain.model.MangaSettings
 import app.yomu.domain.model.PdfSettings
+import app.yomu.domain.model.ReaderBarActionConfig
+import app.yomu.domain.model.ReaderBarActions
 import app.yomu.domain.model.SelectionAction
 import app.yomu.domain.model.SelectionActionConfig
 import app.yomu.domain.model.TextReaderSettings
@@ -341,6 +343,7 @@ class AppSettings(context: Context) {
 
     /** Mihon parity: vertical chapter navigator for the long-strip reader (off by default). */
     val verticalChapterNavigator = bool("vertical_chapter_navigator", false)
+    val skipFractionalChapters = bool("skip_fractional_chapters", false)
 
     // Backup and sync
     val autoBackupHours = int("auto_backup_hours", 0)
@@ -413,6 +416,12 @@ class AppSettings(context: Context) {
     val selectionMenuStyle = enum("selection_menu_style", app.yomu.domain.model.QuickMenuStyle.BAR)
     val pageActions =
         json("page_actions", app.yomu.domain.model.QuickActions.defaultPageActions, ListSerializer(app.yomu.domain.model.PageActionConfig.serializer()))
+
+    /** Commands of the reader's bottom bar: order and visibility, the "More" sheet keeps every function. */
+    val readerBarActions = json("reader_bar_actions", ReaderBarActions.defaults, ListSerializer(ReaderBarActionConfig.serializer()))
+
+    /** The shelf the home-screen "Shelf" widget shows; 0 = the whole online library. */
+    val widgetShelfId = long("widget_shelf_id", 0)
 
     // PDF annotations (2.0.0)
     /** Highlights and notes of PDF books are also written into the PDF file (as standard annotations). */

@@ -11,7 +11,7 @@ import kotlinx.serialization.Serializable
 // Library & reading
 @Serializable data class BookDetailsRoute(val bookId: Long)
 
-@Serializable data class ReaderRoute(val bookId: Long = -1, val locator: String? = null, val chapterId: Long = -1, val positionReference: String? = null)
+@Serializable data class ReaderRoute(val bookId: Long = -1, val locator: String? = null, val chapterId: Long = -1, val positionReference: String? = null, val preview: Boolean = false)
 
 /** [bookId] < 0 shows the annotations of all books. */
 @Serializable data class AnnotationsRoute(val bookId: Long = -1)
@@ -37,7 +37,7 @@ import kotlinx.serialization.Serializable
 @Serializable data class SourceRoute(val sourceId: Long, val query: String? = null, val navUrl: String? = null, val navTitle: String? = null, val tab: String? = null)
 
 /** [migrateFrom] >= 0 switches the global search to migration of that entry. */
-@Serializable data class GlobalSearchRoute(val query: String? = null, val migrateFrom: Long = -1)
+@Serializable data class GlobalSearchRoute(val query: String? = null, val migrateFrom: Long = -1, val migrateTo: Long = -1)
 
 @Serializable data class TitleRoute(val entryId: Long)
 

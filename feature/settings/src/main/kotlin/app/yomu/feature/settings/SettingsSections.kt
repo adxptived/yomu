@@ -746,6 +746,7 @@ internal fun ColumnScope.MangaSection(vm: SettingsViewModel) {
     val updateManga: MangaSettingsUpdate = { transform -> vm.update(s.mangaSettings, transform) }
     MangaPageSettings(m, updateManga)
     MangaControlSettings(m, updateManga)
+    SwitchPref(vm, s.skipFractionalChapters, R.string.set_skip_fractional_chapters, R.string.set_skip_fractional_chapters_sum)
 
     PreferenceHeader("PDF")
     PreferenceChoice(
@@ -947,6 +948,10 @@ internal fun ColumnScope.CatalogSection(vm: SettingsViewModel, links: SettingsLi
             },
         )
     }
+    ChoicePref(
+        vm, s.widgetShelfId, R.string.set_widget_shelf,
+        listOf(0L to stringResource(R.string.set_widget_shelf_all)) + shelves.map { it.id to it.name },
+    )
     TextPref(vm, s.userAgent, R.string.set_user_agent, summaryWhenEmpty = R.string.set_user_agent_default)
     ChoicePref(
         vm, s.dnsProvider, R.string.set_dns_provider,
@@ -1382,6 +1387,7 @@ internal fun ColumnScope.BackupSection(vm: SettingsViewModel, onOpenSync: () -> 
     Hint(stringResource(R.string.set_backup_scope_hint))
     PreferenceItem(stringResource(R.string.set_backup_restore), stringResource(R.string.set_backup_restore_sum), onClick = { open.launch(arrayOf("*/*")) }, icon = settingIcon(R.string.set_backup_restore))
     MihonImportItem(vm)
+    MihonExportItem()
 
     PreferenceHeader(stringResource(R.string.set_auto_backup))
     ChoicePref(vm, s.autoBackupHours, R.string.set_auto_backup, listOf(0, 12, 24, 72, 168).map { it to hoursLabel(context, it) }, after = { vm.rescheduleBackup() })

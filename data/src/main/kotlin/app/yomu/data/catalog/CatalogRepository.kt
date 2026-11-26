@@ -66,6 +66,14 @@ data class GlobalSearchResult(val sourceId: Long, val sourceName: String, val it
 
 data class HistoryEntry(val chapter: ChapterInfo, val entryTitle: String, val coverUrl: String?, val sourceId: Long, val readAt: Long)
 
+data class CatalogEditionSummary(
+    val entry: CatalogEntry,
+    val chapterCount: Int,
+    val chaptersRead: Int,
+    val lastChapter: ChapterInfo?,
+    val tabIds: Set<Long>,
+)
+
 /** New chapters of one title found by the update check. */
 data class TitleUpdate(val entryId: Long, val title: String, val newChapterIds: List<Long>)
 
@@ -158,6 +166,32 @@ class CatalogRepository(
     suspend fun entry(id: Long): CatalogEntry? = dao.get(id)?.toDomain()
     suspend fun chapters(entryId: Long): List<ChapterInfo> = dao.chapters(entryId).map { it.toDomain() }
     suspend fun chapter(id: Long): ChapterInfo? = dao.chapter(id)?.toDomain()
+
+    suspend fun duplicateEditions(entryId: Long): List<CatalogEditionSummary> = withContext(Dispatchers.IO) {
+        val target = dao.get(entryId) ?: return@withContext emptyList()
+        val title = SearchRanking.normalize(target.title)
+        if (title.isEmpty()) return@withContext emptyList()
+        dao.favorites()
+            .filter { it.id != entryId && it.type == target.type && SearchRanking.normalize(it.title) == title }
+            .map { editionSummary(it) }
+    }
+
+    suspend fun editionSummary(entryId: Long): CatalogEditionSummary? = withContext(Dispatchers.IO) {
+        dao.get(entryId)?.let { editionSummary(it) }
+    }
+
+    private suspend fun editionSummary(entity: CatalogItemEntity): CatalogEditionSummary {
+        val rows = dao.chapters(entity.id)
+        val chapters = ChapterOrder.reading(rows.map { it.toDomain() })
+        val slots = ChapterOrder.slots(chapters)
+        return CatalogEditionSummary(
+            entry = entity.toDomain(),
+            chapterCount = slots.size,
+            chaptersRead = slots.count { releases -> releases.any { it.read } },
+            lastChapter = rows.filter { it.lastReadAt != null }.maxByOrNull { it.lastReadAt ?: 0L }?.toDomain(),
+            tabIds = tabs.onlineTabsOf(entity.id),
+        )
+    }
 
     fun observeHistory(): Flow<List<HistoryEntry>> = dao.observeHistory().map { l ->
         l.map { HistoryEntry(it.chapter.toDomain(), it.itemTitle, it.coverUrl, it.sourceId, it.chapter.lastReadAt ?: 0) }
@@ -606,6 +640,7 @@ class CatalogRepository(
             targetRevision = targetRevision,
             matches = MigrationMatcher.match(fromChapters.map { it.toDomain() }, targets),
             categories = categories,
+            targetChapterCount = targets.size,
         )
     }
 
@@ -805,6 +840,10 @@ class OnlinePageSource(
     private val dir = app.yomu.data.book.PageSources.cacheDirFor(context, cacheKey)
     override val count: Int get() = pages.size
     override fun name(index: Int): String = "${index + 1}"
+
+    override suspend fun previewFile(index: Int): File? = withContext(Dispatchers.IO) {
+        File(dir, "%05d.img".format(index)).takeIf { it.isFile && it.length() > 0 }
+    }
 
     /** One fetch per page: the page on screen and the preloader may ask for the same page at the same time. */
     private val locks = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.coroutines.sync.Mutex>()

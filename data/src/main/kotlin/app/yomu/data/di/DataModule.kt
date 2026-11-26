@@ -9,6 +9,7 @@ import app.yomu.data.audio.AudioSubscriptionRepository
 import app.yomu.data.audio.AudiobookStore
 import app.yomu.data.audio.YouTubeClient
 import app.yomu.data.backup.BackupManager
+import app.yomu.data.backup.MihonExporter
 import app.yomu.data.backup.MihonImporter
 import app.yomu.data.backup.SyncManager
 import app.yomu.data.book.pdf.PdfAnnotationStore
@@ -85,6 +86,7 @@ val dataModule = module {
         val sources = get<SourceManager>()
         MihonImporter(get(), installedSource = { id -> sources.get(id)?.name }, contentOf = { id -> sources.get(id)?.content })
     }
+    single { MihonExporter(get(), get()) }
     single { TrackerStore(androidContext()) }
     // TrackerKeys come from the app module (its BuildConfig). Created at start: reading a chapter moves the trackers.
     single(createdAtStart = true) {

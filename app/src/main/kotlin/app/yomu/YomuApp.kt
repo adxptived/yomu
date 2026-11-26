@@ -35,6 +35,8 @@ import app.yomu.source.SourceNetwork
 import app.yomu.source.WebViewRequiredException
 import app.yomu.widget.ContinueWidgets
 import app.yomu.widget.NewChaptersWidgets
+import app.yomu.widget.ShelfWidgets
+import app.yomu.widget.StreakWidgets
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -120,6 +122,10 @@ class YomuApp : Application(), SingletonImageLoader.Factory {
         ContinueWidgets.start(this)
         // The "New chapters" widget follows the local new-chapter projection; no network request is made for it.
         NewChaptersWidgets.start(this)
+        // The "Reading streak" widget follows the reading sessions; its periodic system update also rolls "today" over.
+        StreakWidgets.start(this)
+        // The "Shelf" widget follows the chosen shelf and its titles; 0 shows the whole online library.
+        ShelfWidgets.start(this)
         get<PdfAnnotationStore>().start(appScope)
 
         val settings = get<AppSettings>()

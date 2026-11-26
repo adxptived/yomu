@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material3.FilterChip
@@ -26,7 +27,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -39,6 +42,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.yomu.core.ui.components.SheetTitle
@@ -59,14 +65,66 @@ internal fun PagesSheet(
     onDismiss: () -> Unit,
     /** Pages with a bookmark, drawn as a mark over the thumbnail. */
     marked: Set<Int> = emptySet(),
+    chapter: Long = -1,
+    export: PageBatchExportState = PageBatchExportState(),
+    onStartSelection: () -> Unit,
+    onExport: (IntArray) -> Unit,
     thumb: @Composable (Int) -> Unit,
 ) {
     var onlyMarked by rememberSaveable { mutableStateOf(false) }
+    var selecting by rememberSaveable(chapter) { mutableStateOf(false) }
+    var selectedPages by rememberSaveable(chapter) { mutableStateOf(intArrayOf()) }
+    val exportResult = export.result.takeIf { export.chapter == chapter }
+    LaunchedEffect(chapter, exportResult) {
+        exportResult?.let {
+            selectedPages = it.failed.toIntArray()
+            selecting = it.failed.isNotEmpty()
+        }
+    }
     val pages = if (onlyMarked) marked.sorted() else (0 until count).toList()
     // The grid opens on the page being read, so a 300-page scan does not start at its cover.
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = current.coerceIn(0, (count - 1).coerceAtLeast(0)))
     YomuSheet(onDismiss = onDismiss) {
         SheetTitle(stringResource(R.string.reader_pages))
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(
+                enabled = !export.running,
+                onClick = {
+                    if (!selecting) onStartSelection()
+                    selecting = !selecting
+                    selectedPages = intArrayOf()
+                },
+            ) { Text(stringResource(if (selecting) R.string.reader_page_select_cancel else R.string.reader_page_select)) }
+            if (selecting) {
+                TextButton(
+                    enabled = selectedPages.isNotEmpty() && !export.running,
+                    onClick = { onExport(selectedPages) },
+                ) { Text(stringResource(R.string.reader_page_save_selected, selectedPages.size)) }
+            }
+        }
+        val exportStatus = when {
+            export.running -> stringResource(R.string.reader_page_saving_selected)
+            exportResult != null && exportResult.failed.isEmpty() ->
+                stringResource(R.string.reader_page_batch_saved, exportResult.saved)
+            exportResult != null -> stringResource(
+                R.string.reader_page_batch_partial,
+                exportResult.saved,
+                exportResult.failed.take(12).joinToString { (it + 1).toString() } +
+                    if (exportResult.failed.size > 12) "…" else "",
+            )
+            else -> null
+        }
+        if (exportStatus != null) {
+            Text(
+                exportStatus,
+                modifier = Modifier.padding(horizontal = 16.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -94,8 +152,15 @@ internal fun PagesSheet(
                 item { Text(stringResource(R.string.reader_pages_marked_empty), Modifier.padding(12.dp)) }
             }
             items(pages, key = { it }) { index ->
-                val selected = index == current
-                Column(Modifier.clickable { onPick(index) }, horizontalAlignment = Alignment.CenterHorizontally) {
+                val selected = if (selecting) index in selectedPages else index == current
+                val action = if (selecting) {
+                    Modifier.selectable(selected, enabled = !export.running) {
+                        selectedPages = if (selected) selectedPages.filterNot { it == index }.toIntArray() else selectedPages + index
+                    }
+                } else {
+                    Modifier.clickable { onPick(index) }
+                }
+                Column(action, horizontalAlignment = Alignment.CenterHorizontally) {
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,

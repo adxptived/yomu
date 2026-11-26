@@ -36,6 +36,7 @@ import app.yomu.data.translation.TranslationService
 import app.yomu.domain.audio.LinkedEditions
 import app.yomu.domain.catalog.ChapterIntent
 import app.yomu.domain.catalog.ChapterNavigation
+import app.yomu.domain.catalog.ChapterNavigationPolicy
 import app.yomu.domain.catalog.ChapterOrder
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.BookFormat
@@ -115,7 +116,7 @@ import timber.log.Timber
 import java.io.File
 
 /** What the reader opens: a library book, or an online chapter of a catalog entry. */
-data class ReaderArgs(val bookId: Long = -1, val locatorJson: String? = null, val chapterId: Long = -1, val positionReference: String? = null)
+data class ReaderArgs(val bookId: Long = -1, val locatorJson: String? = null, val chapterId: Long = -1, val positionReference: String? = null, val preview: Boolean = false)
 
 sealed interface ReaderContent {
     data class Text(val controller: EpubController) : ReaderContent
@@ -319,6 +320,7 @@ class ReaderViewModel(
     /** Global manga toggles (not per-book): Wi-Fi-only preload and the long-strip chapter rail. */
     val readerPreloadWifiOnly: StateFlow<Boolean> = settings.readerPreloadWifiOnly.stateIn(viewModelScope)
     val verticalChapterNavigator: StateFlow<Boolean> = settings.verticalChapterNavigator.stateIn(viewModelScope)
+    private var chapterNavigationPolicy = ChapterNavigationPolicy()
 
     /** Whether the manga reader may preload pages ahead of the current one on the active network. */
     fun mayPreload(): Boolean = preloadAllowed(readerPreloadWifiOnly.value, TrafficMeter.isMetered())
@@ -335,6 +337,9 @@ class ReaderViewModel(
     val selectionMenuStyle = settings.selectionMenuStyle.stateIn(viewModelScope)
     val pageMenuStyle = settings.pageMenuStyle.stateIn(viewModelScope)
     val pageActions = settings.pageActions.stateIn(viewModelScope)
+
+    /** Commands of the reader's bottom bar: order and visibility come from the settings. */
+    val barActions = settings.readerBarActions.stateIn(viewModelScope)
     val pageMenu = MutableStateFlow<PageMenuRequest?>(null)
     val customActions = settings.customActions.stateIn(viewModelScope)
     val perBook: StateFlow<Boolean> = combine(bookOverride, _content) { o, c ->
@@ -405,6 +410,23 @@ class ReaderViewModel(
     val ocrRunning = MutableStateFlow(false)
 
     // ------------------------------------------------------------------ stats
+    private val _preview = MutableStateFlow(savedStateHandle.get<Boolean>("chapterPreview") ?: args.preview)
+    val preview: StateFlow<Boolean> = _preview
+
+    private suspend fun recordsReading(): Boolean = !_preview.value && !settings.incognito.get()
+
+    fun continueFromPreview() {
+        if (!_preview.value || current() == null) return
+        onResume()
+        savedStateHandle["chapterPreview"] = false
+        _preview.value = false
+        val chapter = _chapterId.value
+        val page = if (current() is ReaderContent.Manga) _position.value.page else 0
+        viewModelScope.launch(ScreenErrors) {
+            if (chapter > 0 && recordsReading()) catalog.saveProgress(chapter, page, finished = false)
+        }
+    }
+
     private var sessionStart = 0L
     private var sessionPages = 0
     private var sessionChars = 0L
@@ -591,7 +613,7 @@ class ReaderViewModel(
                 args.locatorJson?.let { runCatching { SettingsJson.decodeFromString(Locator.serializer(), it) }.getOrNull() } ?: books.getProgress(id)
             }
             // Incognito: opening a book must not change its status (the same rule as for progress and sessions).
-            if (b.status == ReadingStatus.NEW && !settings.incognito.get()) books.setStatus(listOf(id), ReadingStatus.READING)
+            if (b.status == ReadingStatus.NEW && recordsReading()) books.setStatus(listOf(id), ReadingStatus.READING)
             when (b.engine) {
                 // Navigation opens audiobooks in the player; the reader never gets one.
                 EngineType.AUDIO -> throw AppError.UnsupportedFormat(b.format.name)
@@ -721,12 +743,17 @@ class ReaderViewModel(
         onlineEntryId = entry.id
         onlineEntry = entry
         onlineType = entry.type
+        chapterNavigationPolicy = ChapterNavigationPolicy(
+            skipFractionalChapters = entry.type == ContentType.MANGA && settings.skipFractionalChapters.get(),
+        )
         // Reading order shared with the title page; groups hidden there are skipped (except the chapter being opened).
         val excluded = catalog.chapterDisplay(entry.id).excludedScanlators
         chapters = ChapterOrder.reading(catalog.chapters(entry.id).filter { it.id == chapterId || it.scanlator.isNullOrBlank() || it.scanlator !in excluded })
         applyChapterHeader(ch)
         // "Download ahead": keep the next chapters of library titles downloaded while reading.
-        viewModelScope.launch(ScreenErrors) { runCatching { downloads.ensureAhead(entry.id, chapterId) }.onFailure { Timber.w(it, "Download ahead failed") } }
+        if (!_preview.value) {
+            viewModelScope.launch(ScreenErrors) { runCatching { downloads.ensureAhead(entry.id, chapterId) }.onFailure { Timber.w(it, "Download ahead failed") } }
+        }
         _imageCanvas.value = SourceConnectionResolver.showImageCanvas(entry.type)
         bookOverride.value = catalog.readerSettings(entry.id)?.let { runCatching { SettingsJson.decodeFromString(BookReaderSettings.serializer(), it) }.getOrNull() } ?: BookReaderSettings()
         when (sourceResolver.windowMode(entry.type)) {
@@ -753,15 +780,16 @@ class ReaderViewModel(
         chapterOf = if (number > 0) context.getString(R.string.reader_chapter_of, number, total) else null
         // One resolver for every way to move between chapters; other releases of the same chapter are skipped only
         // when the numbering can be trusted (see ChapterNavigation).
-        hasPrevChapter.value = ChapterNavigation.resolve(chapters, ch.id, ChapterIntent.PREVIOUS) != null
-        hasNextChapter.value = ChapterNavigation.resolve(chapters, ch.id, ChapterIntent.NEXT) != null
+        hasPrevChapter.value = ChapterNavigation.resolve(chapters, ch.id, ChapterIntent.PREVIOUS, chapterNavigationPolicy) != null
+        hasNextChapter.value = ChapterNavigation.resolve(chapters, ch.id, ChapterIntent.NEXT, chapterNavigationPolicy) != null
     }
 
     /**
      * Reading order of the window: one release per chapter, the current release kept as it is. Other releases of the
      * same chapter are slots, so a neighbour is never a second copy of the chapter being read.
      */
-    private fun windowOrder(chapterId: Long): List<Long> = chapterNavigator.readingOrder(chapters, chapterId)
+    private fun windowOrder(chapterId: Long): List<Long> =
+        chapterNavigator.readingOrder(chapterNavigationPolicy.adjacentCandidates(chapters, chapterId), chapterId)
 
     /** Pages of an online chapter: its downloaded copy when there is one, the source's pages otherwise. */
     private suspend fun openChapterPages(ch: ChapterInfo): PageSource = sourceResolver.openPages(ch)
@@ -878,7 +906,11 @@ class ReaderViewModel(
     /** Opens the previous/next chapter of an online entry. */
     fun openAdjacentChapter(next: Boolean) {
         // Other groups' releases of the current chapter are skipped; the current group is preferred.
-        val target = ChapterNavigation.resolve(chapters, _chapterId.value, if (next) ChapterIntent.NEXT else ChapterIntent.PREVIOUS) ?: return
+        val target = ChapterNavigation.resolve(
+            chapters, _chapterId.value,
+            if (next) ChapterIntent.NEXT else ChapterIntent.PREVIOUS,
+            chapterNavigationPolicy,
+        ) ?: return
         if (moveToLoadedChapter(target.id)) return
         openChapter(target.id, finished = next)
     }
@@ -896,11 +928,12 @@ class ReaderViewModel(
      */
     private fun openChapter(targetId: Long, finished: Boolean, mangaPage: Int? = null) {
         windowJob?.cancel()
+        val finishPrevious = finished && !_preview.value
         chapterNavigator.navigate {
             chapterOpenMutex.withLock {
                 flushStats()
                 // Incognito: chapters read online are not marked read.
-                if (finished && !settings.incognito.get()) catalog.saveProgress(_chapterId.value, 0, finished = true)
+                if (finishPrevious && recordsReading()) catalog.saveProgress(_chapterId.value, 0, finished = true)
                 val target = chapters.firstOrNull { it.id == targetId }
                 val mode = sourceResolver.windowMode(onlineType)
                 val windowed = target != null && onlineEntry != null &&
@@ -1006,7 +1039,7 @@ class ReaderViewModel(
         if (global == _chapterId.value) return
         if (lastTextGlobal > 0 && local > lastTextLocal) {
             val left = lastTextGlobal
-            viewModelScope.launch(ScreenErrors) { catalog.saveProgress(left, 0, finished = true) }
+            queueOnlineProgress(left, 0, finished = true)
         }
         lastTextLocal = local
         lastTextGlobal = global
@@ -1039,12 +1072,12 @@ class ReaderViewModel(
 
     /** Debounced write of the online novel position: the library needs the chapter, not every scroll tick. */
     private fun scheduleTextSave() {
-        if (!isOnline) return
+        if (!isOnline || _preview.value) return
         textSaveJob?.cancel()
         textSaveJob = viewModelScope.launch(ScreenErrors) {
             delay(800)
             val (chapterId, _) = textAnchor ?: return@launch
-            if (!settings.incognito.get()) catalog.saveProgress(chapterId, 0, finished = false)
+            if (recordsReading()) catalog.saveProgress(chapterId, 0, finished = false)
         }
     }
 
@@ -1323,9 +1356,7 @@ class ReaderViewModel(
         if (isOnline) {
             val id = _chapterId.value
             // Incognito: an online chapter is not marked read either.
-            viewModelScope.launch(ScreenErrors) {
-                if (!settings.incognito.get()) catalog.saveProgress(id, page, finished = page >= count - 1)
-            }
+            queueOnlineProgress(id, page, finished = page >= count - 1)
         } else {
             scheduleSave(Locator(chapter = page, progression = 0f, totalProgression = total))
         }
@@ -1356,9 +1387,7 @@ class ReaderViewModel(
                     val left = lastChapterId
                     val page = lastChapterPage
                     val finished = lastChapterCount > 0 && page >= lastChapterCount - 1
-                    viewModelScope.launch(ScreenErrors) {
-                        if (!settings.incognito.get()) catalog.saveProgress(left, page, finished)
-                    }
+                    queueOnlineProgress(left, page, finished)
                 }
                 lastChapterId = chapter.id
                 lastChapterPage = local
@@ -1376,9 +1405,7 @@ class ReaderViewModel(
                 bookPage = local + 1, bookPages = count, chapterTitle = chapterOf,
             )
             // Incognito: an online chapter is not marked read either.
-            viewModelScope.launch(ScreenErrors) {
-                if (!settings.incognito.get()) catalog.saveProgress(chapter.id, local, finished = local >= count - 1)
-            }
+            queueOnlineProgress(chapter.id, local, finished = local >= count - 1)
             return
         }
         // A local publication: the pager spans the whole file.
@@ -1450,7 +1477,7 @@ class ReaderViewModel(
      * Identity and available actions of a page of the currently open content. The page number is the physical page
      * of the engine; a PDF is never described as a manga.
      */
-    private suspend fun pageContext(engine: PageEngine, page: Int): PageContext? = when (val c = current()) {
+    private suspend fun pageContext(engine: PageEngine, page: Int, inspectText: Boolean = true): PageContext? = when (val c = current()) {
         is ReaderContent.Manga -> {
             val controller = c.controller
             val chapter = controller.chapterAt(page)
@@ -1473,7 +1500,7 @@ class ReaderViewModel(
                 chapterId = _chapterId.value,
                 page = page,
                 pageCount = count,
-                capabilities = PageCapabilitiesOf.pdf(args.bookId, hasTextLayer = pdfHasText(c.controller, page)),
+                capabilities = PageCapabilitiesOf.pdf(args.bookId, hasTextLayer = inspectText && pdfHasText(c.controller, page)),
             ).takeIf { it.isValid }
         }
         is ReaderContent.Text -> null
@@ -1570,7 +1597,11 @@ class ReaderViewModel(
      * The bytes of a page for saving or sharing. Manga copies the cached page file as-is; a PDF page is rendered
      * into a PNG under the share/cache directory, so nothing writes into the opened document.
      */
-    private suspend fun pageBytes(context: PageContext, ext: String): Pair<java.io.File, String>? = when (context.engine) {
+    private suspend fun pageBytes(
+        context: PageContext,
+        ext: String,
+        temporaryPdf: Boolean = false,
+    ): Pair<java.io.File, String>? = when (context.engine) {
         PageEngine.MANGA -> {
             val file = pageFile(context) ?: return null
             val mime = withContext(Dispatchers.IO) { imageType(file) }.first
@@ -1580,15 +1611,20 @@ class ReaderViewModel(
             val c = current() as? ReaderContent.Pdf ?: return null
             val out = withContext(Dispatchers.IO) {
                 val dir = app.yomu.core.common.Share.shareDir(this@ReaderViewModel.context)
-                val target = java.io.File(dir, "pdf-" + pageName(context.page, ext))
-                val bmp = runCatching { c.controller.pdf.render(context.page, PDF_EXPORT_WIDTH, annotations = false) }.getOrNull()
-                    ?: error("Cannot render the page")
+                val bmp = c.controller.pdf.render(context.page, PDF_EXPORT_WIDTH, annotations = false)
                 try {
-                    target.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                    val target = if (temporaryPdf) java.io.File.createTempFile("yomu-page-", ".png", dir)
+                    else java.io.File(dir, "pdf-" + pageName(context.page, ext))
+                    try {
+                        target.outputStream().use { check(bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)) }
+                    } catch (e: Exception) {
+                        target.delete()
+                        throw e
+                    }
+                    target
                 } finally {
                     bmp.recycle()
                 }
-                target
             }
             out to "image/png"
         }
@@ -1636,6 +1672,67 @@ class ReaderViewModel(
             withContext(Dispatchers.IO) { (context.contentResolver.openOutputStream(target) ?: error("Cannot save the image")).use { out -> file.inputStream().use { it.copyTo(out) } } }
             events.send(ReaderEvent.Message(R.string.reader_page_saved))
         }.onFailure { events.send(ReaderEvent.Error(it)) }
+    }
+
+    private val _pageBatchExport = MutableStateFlow(PageBatchExportState())
+    internal val pageBatchExport: StateFlow<PageBatchExportState> = _pageBatchExport
+
+    internal fun clearPageBatchResult() {
+        if (!_pageBatchExport.value.running) _pageBatchExport.value = PageBatchExportState()
+    }
+
+    internal fun saveSelectedPages(tree: android.net.Uri, pages: IntArray, selectedChapter: Long) {
+        if (pages.isEmpty() || _pageBatchExport.value.running) return
+        _pageBatchExport.value = PageBatchExportState(running = true, chapter = selectedChapter)
+        val resolver = context.contentResolver
+        val title = _title.value.ifBlank { "Yomu" }
+        pageActionExecutor.execute {
+            try {
+                val result = exportReaderPages(pages.toList()) { page ->
+                    val pageContext = selectedPageContext(page, selectedChapter) ?: error("Page is no longer available")
+                    withContext(Dispatchers.IO) {
+                        val (file, mime) = pageBytes(pageContext, "png", temporaryPdf = true)
+                            ?: error("Cannot read the page")
+                        val temporary = pageContext.engine == PageEngine.PDF
+                        try {
+                            val ext = if (temporary) "png" else imageType(file).second
+                            val number = (page + 1).toString().padStart(pageContext.pageCount.toString().length, '0')
+                            val name = app.yomu.core.common.Files.sanitize("$title - $number.$ext")
+                            val parent = android.provider.DocumentsContract.buildDocumentUriUsingTree(
+                                tree, android.provider.DocumentsContract.getTreeDocumentId(tree),
+                            )
+                            val created = android.provider.DocumentsContract.createDocument(resolver, parent, mime, name)
+                                ?: error("Cannot create an image in this folder")
+                            try {
+                                (resolver.openOutputStream(created) ?: error("Cannot write the image")).use { out ->
+                                    file.inputStream().use { it.copyTo(out) }
+                                }
+                            } catch (e: Exception) {
+                                runCatching { android.provider.DocumentsContract.deleteDocument(resolver, created) }
+                                throw e
+                            }
+                        } finally {
+                            if (temporary) file.delete()
+                        }
+                    }
+                }
+                _pageBatchExport.value = PageBatchExportState(result = result, chapter = selectedChapter)
+            } finally {
+                if (_pageBatchExport.value.running) _pageBatchExport.value = PageBatchExportState()
+            }
+        }
+    }
+
+    private suspend fun selectedPageContext(page: Int, chapter: Long): PageContext? {
+        if (chapter != _chapterId.value) return null
+        return when (val content = current()) {
+            is ReaderContent.Pdf -> pageContext(PageEngine.PDF, page, inspectText = false)
+            is ReaderContent.Manga -> {
+                val index = content.controller.globalIndex(chapter, page) ?: return null
+                pageContext(PageEngine.MANGA, index)
+            }
+            else -> null
+        }
     }
 
     private fun sharePage(context: PageContext) = pageActionExecutor.execute {
@@ -1748,6 +1845,13 @@ class ReaderViewModel(
     }
 
     // ================================================================== progress & stats
+    private fun queueOnlineProgress(chapterId: Long, page: Int, finished: Boolean) {
+        if (_preview.value) return
+        viewModelScope.launch(ScreenErrors) {
+            if (recordsReading()) catalog.saveProgress(chapterId, page, finished)
+        }
+    }
+
     private fun scheduleSave(locator: Locator) {
         if (args.bookId <= 0) return
         pendingLocator = locator
@@ -1763,7 +1867,7 @@ class ReaderViewModel(
         val locator = pendingLocator ?: return
         pendingLocator = null
         // Incognito: the position is kept only while the reader is open.
-        if (settings.incognito.get()) return
+        if (!recordsReading()) return
         withContext(NonCancellable) {
             books.saveProgress(args.bookId, locator)
             // Text books remember every chapter separately: coming back to a chapter restores where it was left.
@@ -1777,7 +1881,7 @@ class ReaderViewModel(
         @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
         kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
             // Incognito: reading a book to the end must not change its status behind the user's back.
-            if (settings.incognito.get()) return@launch
+            if (!recordsReading()) return@launch
             runCatching { books.setStatus(listOf(args.bookId), ReadingStatus.FINISHED) }
         }
     }
@@ -1828,7 +1932,7 @@ class ReaderViewModel(
         sessionChars = 0
         if (duration < 5_000) return
         // Incognito: no reading history or statistics.
-        if (settings.incognito.get()) return
+        if (!recordsReading()) return
         withContext(NonCancellable) {
             stats.recordSession(args.bookId.takeIf { it > 0 }, start, duration, pages, chars, onlineEntryId.takeIf { isOnline })
             if (chars > 500 && duration > 60_000) {

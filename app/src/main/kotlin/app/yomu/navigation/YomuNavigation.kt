@@ -365,6 +365,8 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                             onOpenDownloads = { nav.navigate(DownloadsRoute) },
                             // The library-wide list: annotations of every book, not only the one just read.
                             onOpenNotes = { nav.navigate(AnnotationsRoute(bookId = -1)) },
+                            onOpenLibrary = { tabs.select(TopLevel.LIBRARY) },
+                            onOpenCatalog = { tabs.select(TopLevel.CATALOG) },
                         )
                         TopLevel.CATALOG -> CatalogScreen(
                             viewModel = koinViewModel(),
@@ -457,7 +459,7 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                     onOpenText = { nav.navigate(ReaderRoute(bookId = r.bookId)) { popUpTo<DocxLayoutRoute> { inclusive = true } } },
                 )
                 else -> ReaderScreen(
-                    viewModel = koinViewModel { parametersOf(ReaderArgs(bookId = r.bookId, locatorJson = r.locator, chapterId = r.chapterId, positionReference = r.positionReference)) },
+                    viewModel = koinViewModel { parametersOf(ReaderArgs(bookId = r.bookId, locatorJson = r.locator, chapterId = r.chapterId, positionReference = r.positionReference, preview = r.preview)) },
                     onBack = back,
                     onOpenAnnotations = { nav.navigate(AnnotationsRoute(it)) },
                     onOpenDictionary = { nav.navigate(LookupRoute(it)) },
@@ -545,6 +547,9 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                                 viewModel = koinViewModel(key = "pane-$pane") { parametersOf(pane) },
                                 onBack = { paneTitle = null },
                                 onReadChapter = { nav.navigate(ReaderRoute(chapterId = it)) },
+                                onPreviewChapter = { nav.navigate(ReaderRoute(chapterId = it, preview = true)) },
+                                onOpenSavedEdition = { paneTitle = it },
+                                onReplaceSavedEdition = { from, to -> nav.navigate(GlobalSearchRoute(migrateFrom = from, migrateTo = to)) },
                                 onMigrate = { id, title -> nav.navigate(GlobalSearchRoute(query = title, migrateFrom = id)) },
                                 onOpenWebView = { nav.navigate(WebViewRoute(it)) },
                                 onOpenDownloads = { nav.navigate(DownloadsRoute) },
@@ -559,11 +564,20 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
         screen<GlobalSearchRoute> { entry ->
             val r = entry.toRoute<GlobalSearchRoute>()
             val migrate = r.migrateFrom.takeIf { it >= 0 }
+            val viewModel: app.yomu.feature.catalog.GlobalSearchViewModel = koinViewModel { parametersOf(SearchArgs(r.query, migrate)) }
+            LaunchedEffect(viewModel, r.migrateTo) {
+                if (r.migrateTo > 0) viewModel.previewExistingMigrationTarget(r.migrateTo)
+            }
             GlobalSearchScreen(
-                viewModel = koinViewModel { parametersOf(SearchArgs(r.query, migrate)) },
+                viewModel = viewModel,
                 onBack = back,
                 onOpenTitle = { id ->
-                    if (migrate != null) {
+                    if (r.migrateTo > 0 && migrate != null) {
+                        nav.navigate(TitleRoute(id)) {
+                            popUpTo<GlobalSearchRoute> { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    } else if (migrate != null) {
                         // The old title page is obsolete after a migration.
                         nav.navigate(TitleRoute(id)) { popUpTo<TitleRoute> { inclusive = true } }
                     } else {
@@ -571,6 +585,7 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                     }
                 },
                 onOpenSource = { sourceId, query -> nav.navigate(SourceRoute(sourceId, query = query)) },
+                focusSearchOnOpen = r.migrateTo <= 0,
             )
         }
         screen<TitleRoute> { entry ->
@@ -579,6 +594,9 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                 viewModel = koinViewModel { parametersOf(r.entryId) },
                 onBack = back,
                 onReadChapter = { nav.navigate(ReaderRoute(chapterId = it)) },
+                onPreviewChapter = { nav.navigate(ReaderRoute(chapterId = it, preview = true)) },
+                onOpenSavedEdition = { nav.navigate(TitleRoute(it)) },
+                onReplaceSavedEdition = { from, to -> nav.navigate(GlobalSearchRoute(migrateFrom = from, migrateTo = to)) },
                 onMigrate = { id, title -> nav.navigate(GlobalSearchRoute(query = title, migrateFrom = id)) },
                 onOpenWebView = { nav.navigate(WebViewRoute(it)) },
                 onOpenDownloads = { nav.navigate(DownloadsRoute) },

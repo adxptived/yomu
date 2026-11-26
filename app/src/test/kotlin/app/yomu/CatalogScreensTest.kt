@@ -76,6 +76,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -164,11 +165,12 @@ class CatalogScreensTest {
         id
     }
 
-    private fun showTitle(id: Long) = compose.setContent {
+    private fun showTitle(id: Long, onPreviewChapter: ((Long) -> Unit)? = null) = compose.setContent {
         YomuTheme {
             TitleScreen(
                 viewModel = koinViewModel { parametersOf(id) },
                 onBack = {}, onReadChapter = {}, onMigrate = { _, _ -> }, onOpenWebView = {}, onOpenDownloads = {},
+                onPreviewChapter = onPreviewChapter,
             )
         }
     }
@@ -184,7 +186,7 @@ class CatalogScreensTest {
         showTitle(seed())
         // The card header is taller than the old one (a poster cover and the primary action), so the chapters need a
         // scroll before the last rows are composed.
-        awaitText("Migrate")
+        awaitText("Find a replacement")
         compose.mainClock.advanceTimeBy(1_000)
         shot("29_title_card")
         compose.onAllNodes(hasScrollAction())[0].performScrollToNode(hasText("Chapter 12", substring = true))
@@ -198,21 +200,54 @@ class CatalogScreensTest {
     @Test
     fun titleDownloadMenu() {
         showTitle(seed())
-        awaitText("Migrate")
+        awaitText("Find a replacement")
         topmost("Download").performClick()
         compose.mainClock.advanceTimeBy(1_000)
         shotScreen("32_title_download_menu")
     }
 
     @Test
+    fun duplicateComparisonWaitsForAddSeparately() {
+        val saved = seed()
+        val db = GlobalContext.get().get<YomuDatabase>()
+        val incoming = runBlocking {
+            val original = requireNotNull(db.catalog().get(saved))
+            db.catalog().insert(original.copy(id = 0, sourceId = original.sourceId + 1, url = "/title/edition", favorite = false))
+        }
+        showTitle(incoming)
+        awaitText("Find a replacement")
+        topmost("Add to library").performClick()
+        awaitText("Possible duplicate")
+        awaitText("Read 4 of 12")
+        assertFalse(runBlocking { requireNotNull(db.catalog().get(incoming)).favorite })
+        compose.onAllNodesWithText("Add separately")[0].performClick()
+        awaitText("In library")
+        assertTrue(runBlocking { requireNotNull(db.catalog().get(incoming)).favorite })
+        assertTrue(runBlocking { requireNotNull(db.catalog().get(saved)).favorite })
+    }
+
+    @Test
     fun titleSelection() {
         showTitle(seed())
-        awaitText("Migrate")
+        awaitText("Find a replacement")
         compose.onAllNodes(hasScrollAction())[0].performScrollToNode(hasText("Chapter 11", substring = true))
         compose.onAllNodesWithText("Chapter 11")[0].performTouchInput { longClick() }
         compose.onAllNodesWithText("Chapter 12")[0].performClick()
         compose.mainClock.advanceTimeBy(1_000)
         shot("33_title_selection")
+    }
+
+    @Test
+    fun previewActionOpensSelectedBookmarkedChapter() {
+        val id = seed()
+        val chapter = runBlocking { GlobalContext.get().get<YomuDatabase>().catalog().chapters(id).single { it.bookmarked } }
+        var previewedId: Long? = null
+        showTitle(id) { previewedId = it }
+        awaitText("Find a replacement")
+        compose.onAllNodes(hasScrollAction())[0].performScrollToNode(hasText(chapter.name))
+        compose.onAllNodesWithText(chapter.name)[0].performTouchInput { longClick() }
+        topmost("Preview chapter without saving progress").performClick()
+        compose.runOnIdle { assertEquals(chapter.id, previewedId) }
     }
 
     @Test

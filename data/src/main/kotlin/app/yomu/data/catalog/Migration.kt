@@ -40,6 +40,7 @@ data class MigrationPlan(
     val targetRevision: String,
     val matches: List<MigrationChapterMatch>,
     val categories: Set<MigrationCategory>,
+    val targetChapterCount: Int? = null,
 ) {
     val exact: List<MigrationChapterMatch> get() = matches.filter { it.confidence == MigrationConfidence.EXACT }
     val likely: List<MigrationChapterMatch> get() = matches.filter { it.confidence == MigrationConfidence.LIKELY }

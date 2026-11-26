@@ -76,6 +76,32 @@
                 android:resource="@xml/widget_new_chapters_info" />
         </receiver>
 
+        <!-- "Reading streak" home-screen widget: days in a row and today's reading time, no network. -->
+        <receiver
+            android:name=".widget.StreakWidget"
+            android:exported="false"
+            android:label="@string/widget_streak_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_streak_info" />
+        </receiver>
+
+        <!-- "Shelf" home-screen widget: titles of the shelf chosen in Settings → Library. -->
+        <receiver
+            android:name=".widget.ShelfWidget"
+            android:exported="false"
+            android:label="@string/widget_shelf_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_shelf_info" />
+        </receiver>
+
         <!-- Audiobook transport widget (A03c): state and buttons come from the playback service. -->
         <receiver
             android:name=".widget.AudioWidgetProvider"

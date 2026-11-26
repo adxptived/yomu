@@ -8,6 +8,17 @@ internal fun pageAtSeekFraction(fraction: Float, count: Int): Int =
 internal fun pageSeekFraction(page: Int, count: Int): Float =
     if (count <= 1) 1f else page.coerceIn(0, count - 1).toFloat() / (count - 1)
 
+internal fun seekTrackPoint(start: Float, end: Float, fraction: Float, reversed: Boolean): Float {
+    val progress = fraction.coerceIn(0f, 1f)
+    return start + (end - start) * if (reversed) 1f - progress else progress
+}
+
+internal fun seekPreviewOffset(anchor: Int, contentSize: Int, viewportSize: Int, margin: Int): Int {
+    val available = (viewportSize - contentSize).coerceAtLeast(0)
+    val inset = margin.coerceIn(0, available / 2)
+    return (anchor - contentSize / 2).coerceIn(inset, available - inset)
+}
+
 /**
  * The next search result around [active], wrapping at both ends. A search that was only listed but not opened starts
  * at the first or the last result, depending on the direction.

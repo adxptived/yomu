@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="set_skip_fractional_chapters">Пропускать дробные главы</string>
+    <string name="set_skip_fractional_chapters_sum">Переходить с главы 1 сразу на главу 2. Главу 1.5 можно открыть из списка.</string>
     <string name="set_search">Поиск по настройкам</string>
     <string name="set_search_none">Ничего не найдено</string>
     <string name="set_not_set">Не задано</string>
@@ -47,6 +49,8 @@
     <string name="set_library">Библиотека</string>
     <string name="set_library_sum">Вид, импорт, папки</string>
     <string name="set_grid">Сетка обложек</string>
+    <string name="set_widget_shelf">Полка на главном экране</string>
+    <string name="set_widget_shelf_all">Вся библиотека</string>
     <string name="set_columns">Столбцов в сетке</string>
     <string name="set_show_continue">Показывать «Продолжить чтение»</string>
     <string name="set_catalog_shelf">Ряд «Из каталога»</string>
@@ -740,6 +744,14 @@
     <string name="set_page_actions">Действия со страницей</string>
     <string name="set_page_actions_hint">Долгое нажатие на страницу манги или комикса открывает эти действия. Выключите ненужные и поднимите частые наверх. Если меню выключено, сразу выполняется первое включённое действие.</string>
     <string name="set_page_actions_reset">Вернуть порядок по умолчанию</string>
+    <string name="set_reader_bar">Панель чтения</string>
+    <string name="set_reader_bar_hint">Кнопки над страницей. Самые нужные поднимите выше, остальные отключите; все команды остаются в листе «Ещё».</string>
+    <string name="set_bar_chapters">Главы</string>
+    <string name="set_bar_search">Поиск</string>
+    <string name="set_bar_display">Отображение</string>
+    <string name="set_bar_bookmark">Закладка</string>
+    <string name="set_bar_autoscroll">Автопрокрутка</string>
+    <string name="set_reader_bar_reset">Сбросить панель чтения</string>
 
     <!-- 2.0: Mihon / Tachiyomi import -->
     <string name="set_mihon_import">Импорт из Mihon / Tachiyomi</string>
@@ -752,6 +764,12 @@
     <string name="set_mihon_stores_added">Добавлено репозиториев: %1$d</string>
     <string name="set_mihon_check_updates">Проверить обновления</string>
     <string name="set_mihon_updating">Проверяю обновления библиотеки…</string>
+    <string name="set_mihon_export">Экспорт в Mihon</string>
+    <string name="set_mihon_export_sum">Онлайн-тайтлы, полки и прогресс чтения в файл .tachibk; локальные книги остаются в Yomu</string>
+    <string name="set_mihon_export_done_title">Экспортировано</string>
+    <string name="set_mihon_export_done_text">Тайтлов: %1$d · глав: %2$d · полок: %3$d</string>
+    <string name="set_mihon_export_skipped">Пропущено: %1$d (локальные книги, аудиокниги или тайтлы без адреса)</string>
+    <string name="set_mihon_export_empty">Онлайн-тайтлов для экспорта пока нет.</string>
     <string name="set_sync_track_links_hint">Привязки трекеров также синхронизируются, но не токены и не прогресс трекинга. Войдите в сервисы и обновите записи на каждом устройстве.</string>
     <string name="set_sync_folder_warning">Общая папка не гарантирует защиту от одновременной записи и задержек облака. Синхронизируйте устройства по очереди; WebDAV с надёжным ETag безопаснее.</string>
     <string name="set_sync_webdav_etag_hint">Для синхронизации WebDAV сервер должен поддерживать сильные ETag: без них нельзя надёжно защитить изменения от одновременной записи.</string>

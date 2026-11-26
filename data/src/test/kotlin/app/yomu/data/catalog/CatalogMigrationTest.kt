@@ -114,6 +114,23 @@ class CatalogMigrationTest {
     private fun targetItem() = SItem(url = "target/title", title = "Title", type = SourceContent.MANGA)
 
     @Test
+    fun `duplicate lookup only finds matching saved editions of the same type without changing the library`() = runBlocking {
+        val original = oldEntry()
+        val incoming = catalog.upsert(2, targetItem().copy(title = "Títle!"))
+        catalog.upsert(2, targetItem().copy(url = "target/novel", type = SourceContent.NOVEL)).also {
+            catalog.setFavorite(it, true)
+        }
+        catalog.upsert(2, targetItem().copy(url = "target/sequel", title = "Title 2")).also {
+            catalog.setFavorite(it, true)
+        }
+        val duplicates = catalog.duplicateEditions(incoming)
+        assertEquals(listOf(original), duplicates.map { it.entry.id })
+        assertEquals(2, duplicates.single().chapterCount)
+        assertEquals(1, duplicates.single().chaptersRead)
+        assertFalse(catalog.entry(incoming)!!.favorite)
+    }
+
+    @Test
     fun `a plan writes nothing and apply carries progress, bookmarks and the favourite`() = runBlocking(Dispatchers.IO) {
         stubTarget()
         val fromId = oldEntry()

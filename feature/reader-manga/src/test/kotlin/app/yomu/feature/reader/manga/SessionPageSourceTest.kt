@@ -64,6 +64,25 @@ class SessionPageSourceTest {
     }
 
     @Test
+    fun `a preview delegates only to the preview endpoint`() = kotlinx.coroutines.runBlocking {
+        val cached = object : PageSource {
+            override val count = 2
+            override fun name(index: Int) = index.toString()
+            override suspend fun file(index: Int): File = error("Preview must not fetch the page")
+            override suspend fun previewFile(index: Int): File? = File("cached-1").takeIf { index == 1 }
+            override fun close() = Unit
+        }
+        val controller = MangaController(SessionPageSource(listOf(
+            MangaChapter(20, "Chapter 1", FakeSource("a", 3)),
+            MangaChapter(30, "Chapter 2", cached),
+        )))
+        assertNull(controller.previewFile(2))
+        assertNull(controller.previewFile(3))
+        assertEquals(File("cached-1"), controller.previewFile(4))
+        assertNull(controller.previewFile(5))
+    }
+
+    @Test
     fun `chapter starts and ends describe the pager boundaries`() {
         val s = session()
         assertEquals(listOf(3, 5), s.chapterStarts())

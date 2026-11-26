@@ -13,6 +13,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.East
+import androidx.compose.material.icons.filled.South
+import androidx.compose.material.icons.filled.ViewDay
+import androidx.compose.material.icons.filled.West
 import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FitScreen
@@ -215,10 +219,10 @@ private fun MangaQuick(s: MangaSettings, vm: ReaderViewModel) {
     )
     app.yomu.core.ui.components.OptionTiles(
         listOf(
-            app.yomu.core.ui.components.TileOption(MangaDirection.LTR, stringResource(R.string.rs_dir_ltr)),
-            app.yomu.core.ui.components.TileOption(MangaDirection.RTL, stringResource(R.string.rs_dir_rtl)),
-            app.yomu.core.ui.components.TileOption(MangaDirection.VERTICAL, stringResource(R.string.rs_dir_vertical)),
-            app.yomu.core.ui.components.TileOption(MangaDirection.WEBTOON, stringResource(R.string.rs_dir_webtoon)),
+            app.yomu.core.ui.components.TileOption(MangaDirection.LTR, stringResource(R.string.rs_dir_ltr), Icons.Filled.East),
+            app.yomu.core.ui.components.TileOption(MangaDirection.RTL, stringResource(R.string.rs_dir_rtl), Icons.Filled.West),
+            app.yomu.core.ui.components.TileOption(MangaDirection.VERTICAL, stringResource(R.string.rs_dir_vertical), Icons.Filled.South),
+            app.yomu.core.ui.components.TileOption(MangaDirection.WEBTOON, stringResource(R.string.rs_dir_webtoon), Icons.Filled.ViewDay),
         ),
         s.direction,
         { d -> vm.updateManga { it.copy(direction = d) } },

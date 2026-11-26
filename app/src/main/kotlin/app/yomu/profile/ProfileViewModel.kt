@@ -77,6 +77,7 @@ data class ProfileUi(
     val bestStreak: Int,
     val longestSessionMs: Long,
     val todayMs: Long,
+    val week: List<Pair<LocalDate, Long>>,
     val goalMinutes: Int,
     val titlesCount: Int,
     val finishedBooks: Int,
@@ -119,7 +120,9 @@ class ProfileViewModel(
         }.mapLatest { i ->
             val zone = ZoneId.systemDefault()
             // All-time summary over every session: on a background thread, it is the heaviest part of the tab.
-            val summary = StatsCalculator.compute(i.sessions, StatsPeriod.ALL, System.currentTimeMillis(), zone)
+            val now = System.currentTimeMillis()
+            val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+            val summary = StatsCalculator.compute(i.sessions, StatsPeriod.ALL, now, zone)
             val top = summary.topTitles.take(3)
             val described = if (top.isEmpty()) emptyMap() else history.describe(top.map { it.key })
             ProfileUi(
@@ -133,6 +136,10 @@ class ProfileViewModel(
                 bestStreak = summary.bestStreak,
                 longestSessionMs = summary.longestSessionMs,
                 todayMs = summary.todayMs,
+                week = (6L downTo 0L).map { offset ->
+                    val day = today.minusDays(offset)
+                    day to (summary.heatmap[day] ?: 0L)
+                },
                 goalMinutes = i.goal,
                 titlesCount = summary.titlesCount,
                 finishedBooks = runCatching { history.finishedBooksSince(0) }.getOrDefault(0),

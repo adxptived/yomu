@@ -39,6 +39,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
@@ -216,10 +217,13 @@ fun TitleScreen(
     onOpenDownloads: () -> Unit,
     inPane: Boolean = false,
     onOpenBook: (Long) -> Unit = {},
+    onPreviewChapter: ((Long) -> Unit)? = null,
+    onOpenSavedEdition: ((Long) -> Unit)? = null,
+    onReplaceSavedEdition: ((Long, Long) -> Unit)? = null,
 ) {
     val cover by viewModel.entry.collectAsStateWithLifecycle()
     CoverTheme(rememberCoverColor(cover?.coverUrl)) {
-        TitleContent(viewModel, onBack, onReadChapter, onMigrate, onOpenWebView, onOpenDownloads, inPane, onOpenBook)
+        TitleContent(viewModel, onBack, onReadChapter, onMigrate, onOpenWebView, onOpenDownloads, inPane, onOpenBook, onPreviewChapter, onOpenSavedEdition, onReplaceSavedEdition)
     }
 }
 
@@ -234,6 +238,9 @@ private fun TitleContent(
     onOpenDownloads: () -> Unit,
     inPane: Boolean,
     onOpenBook: (Long) -> Unit,
+    onPreviewChapter: ((Long) -> Unit)?,
+    onOpenSavedEdition: ((Long) -> Unit)?,
+    onReplaceSavedEdition: ((Long, Long) -> Unit)?,
 ) {
     val context = LocalContext.current
     val entry by viewModel.entry.collectAsStateWithLifecycle()
@@ -242,6 +249,7 @@ private fun TitleContent(
     val entryTabs by viewModel.entryTabs.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val loadError by viewModel.loadError.collectAsStateWithLifecycle()
+    val sourceHealth by viewModel.sourceHealth.collectAsStateWithLifecycle()
     val links by viewModel.links.collectAsStateWithLifecycle()
     val selection by viewModel.selection.collectAsStateWithLifecycle()
     val display by viewModel.display.collectAsStateWithLifecycle()
@@ -264,7 +272,7 @@ private fun TitleContent(
     val refreshState = rememberPullToRefreshState()
     val topBarBackdrop = rememberHazeState()
     val compactTitle by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
-    var mobileAsk by remember { mutableStateOf<Long?>(null) }
+    var mobileAsk by remember { mutableStateOf<Pair<Long, Boolean>?>(null) }
     var showMenu by remember { mutableStateOf(false) }
     var showDownloadMenu by remember { mutableStateOf(false) }
     var showSelectMenu by remember { mutableStateOf(false) }
@@ -272,6 +280,8 @@ private fun TitleContent(
     var askCount by remember { mutableStateOf(false) }
     var confirmDeleteAll by remember { mutableStateOf(false) }
     var pickTabs by remember { mutableStateOf(false) }
+    var comparingEditions by remember { mutableStateOf(false) }
+    var editionComparison by remember { mutableStateOf<TitleViewModel.EditionComparison?>(null) }
     var editTabs by remember { mutableStateOf(false) }
     var updateSchedule by remember { mutableStateOf(false) }
     var showTracking by remember { mutableStateOf(false) }
@@ -294,8 +304,39 @@ private fun TitleContent(
         wasSelecting = selecting
     }
     // "Ask before reading online on mobile data": chapters that are not downloaded would be loaded over it.
-    val read: (ChapterInfo) -> Unit = { ch ->
-        if (warnMobile && !ch.downloaded && TrafficMeter.isMetered()) mobileAsk = ch.id else onReadChapter(ch.id)
+    fun openChapter(id: Long, preview: Boolean) {
+        if (preview) onPreviewChapter?.invoke(id) else onReadChapter(id)
+    }
+    fun read(ch: ChapterInfo, preview: Boolean = false) {
+        if (warnMobile && !ch.downloaded && TrafficMeter.isMetered()) mobileAsk = ch.id to preview
+        else openChapter(ch.id, preview)
+    }
+
+    fun addEdition() {
+        if (tabs.isNotEmpty()) pickTabs = true else viewModel.setFavorite(true)
+    }
+
+    fun toggleFavorite(item: CatalogEntry) {
+        if (comparingEditions) return
+        haptic.toggle(!item.favorite)
+        if (item.favorite) {
+            viewModel.setFavorite(false)
+        } else if (item.type == ContentType.MANGA || item.type == ContentType.NOVEL) {
+            comparingEditions = true
+            scope.launch {
+                try {
+                    viewModel.editionComparison()
+                        .onSuccess { comparison ->
+                            if (comparison == null) addEdition() else editionComparison = comparison
+                        }
+                        .onFailure { snackbar.showSnackbar(context.getString(R.string.title_duplicate_check_failed)) }
+                } finally {
+                    comparingEditions = false
+                }
+            }
+        } else {
+            addEdition()
+        }
     }
 
     Scaffold(
@@ -343,8 +384,7 @@ private fun TitleContent(
                     actions = {
                         if (e != null) {
                             IconButton(onClick = {
-                                haptic.toggle(!e.favorite)
-                                if (e.favorite) viewModel.setFavorite(false) else if (tabs.isNotEmpty()) pickTabs = true else viewModel.setFavorite(true)
+                                toggleFavorite(e)
                             }) {
                                 PopIcon(
                                     on = e.favorite,
@@ -467,6 +507,11 @@ private fun TitleContent(
                         }
                     }
                     if (selected.size == 1) {
+                        if (onPreviewChapter != null) {
+                            IconButton(onClick = { viewModel.clearSelection(); read(selected.first(), preview = true) }) {
+                                Icon(Icons.Outlined.Visibility, stringResource(R.string.chapter_preview_action))
+                            }
+                        }
                         TextButton(onClick = { haptic.confirm(); viewModel.markPreviousRead(selected.first()); viewModel.clearSelection() }) {
                             Text(stringResource(R.string.mark_previous_read))
                         }
@@ -523,7 +568,7 @@ private fun TitleContent(
                                 target = continueAt!!,
                                 started = started,
                                 stats = stats,
-                                onRead = { continueAt?.let(read) },
+                                onRead = { continueAt?.let { read(it) } },
                             )
                         } else if (bound == null && stats.total > 0) {
                             // The first chapters are still loading: reserve the place, the button appears with them.
@@ -554,8 +599,7 @@ private fun TitleContent(
                         horizontalArrangement = Arrangement.spacedBy(Dimens.s),
                     ) {
                         FilledTonalButton(onClick = {
-                            haptic.toggle(!e.favorite)
-                            if (e.favorite) viewModel.setFavorite(false) else if (tabs.isNotEmpty()) pickTabs = true else viewModel.setFavorite(true)
+                            toggleFavorite(e)
                         }) {
                             PopIcon(e.favorite, Icons.Filled.Favorite, Icons.Filled.FavoriteBorder, null, Modifier.size(18.dp))
                             Text(stringResource(if (e.favorite) R.string.in_library else R.string.title_add_to_library), Modifier.padding(start = Dimens.s))
@@ -583,6 +627,14 @@ private fun TitleContent(
                             secondaryLabel = if (app is AppError.NeedsWebView) stringResource(CoreR.string.open_webview) else null,
                             onSecondary = if (app is AppError.NeedsWebView) ({ onOpenWebView(app.url) }) else null,
                         )
+                        if (!sourceMissing && app !is AppError.NoNetwork && app !is AppError.NeedsWebView &&
+                            (sourceHealth[e.sourceId]?.unstable == true || app is AppError.Incompatible ||
+                                app is AppError.Http && app.code in listOf(404, 410))
+                        ) {
+                            TextButton(onClick = { onMigrate(e.id, e.title) }, modifier = Modifier.padding(horizontal = Dimens.l)) {
+                                Text(stringResource(R.string.title_find_replacement))
+                            }
+                        }
                     }
                 }
 
@@ -723,6 +775,18 @@ private fun TitleContent(
         }
     }
 
+    editionComparison?.let { comparison ->
+        EditionComparisonDialog(
+            comparison = comparison,
+            tabNames = tabs.associate { it.id to it.name },
+            onDismiss = { editionComparison = null },
+            onAddSeparately = { editionComparison = null; addEdition() },
+            onOpenSaved = onOpenSavedEdition?.let { open -> { id -> editionComparison = null; open(id) } },
+            onReplace = onReplaceSavedEdition?.let { replace ->
+                { id -> editionComparison = null; replace(id, comparison.incoming.entry.id) }
+            },
+        )
+    }
     if (pickTabs) {
         // Hearting a title when tabs exist: pick its tabs first (none is fine).
         var chosen by remember { mutableStateOf(emptySet<Long>()) }
@@ -826,13 +890,13 @@ private fun TitleContent(
             onDismiss = { confirmDeleteAll = false },
         )
     }
-    mobileAsk?.let { id ->
+    mobileAsk?.let { (id, preview) ->
         AlertDialog(
             onDismissRequest = { mobileAsk = null },
             icon = { Icon(Icons.Outlined.SignalCellularAlt, null) },
             title = { Text(stringResource(R.string.mobile_read_title)) },
             text = { Text(stringResource(R.string.mobile_read_text)) },
-            confirmButton = { TextButton(onClick = { mobileAsk = null; onReadChapter(id) }) { Text(stringResource(R.string.mobile_read_anyway)) } },
+            confirmButton = { TextButton(onClick = { mobileAsk = null; openChapter(id, preview) }) { Text(stringResource(R.string.mobile_read_anyway)) } },
             dismissButton = {
                 Row {
                     TextButton(onClick = { mobileAsk = null; viewModel.download(listOf(id)) }) { Text(stringResource(R.string.download)) }
@@ -1099,7 +1163,7 @@ private fun MissingSourceCard(onMigrate: () -> Unit) {
         ) {
             Icon(Icons.Outlined.ExtensionOff, null)
             Text(stringResource(R.string.title_source_missing), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            TextButton(onClick = onMigrate) { Text(stringResource(R.string.migrate)) }
+            TextButton(onClick = onMigrate) { Text(stringResource(R.string.title_find_replacement)) }
         }
     }
 }

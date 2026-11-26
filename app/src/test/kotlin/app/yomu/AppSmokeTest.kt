@@ -2,6 +2,7 @@ package app.yomu
 
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.activity.ComponentDialog
@@ -123,6 +124,9 @@ class AppSmokeTest {
         val settings = GlobalContext.get().get<app.yomu.core.datastore.AppSettings>()
         runBlocking { settings.onboardingDone.set(false) }
         awaitText("Welcome to Yomu")
+        awaitText("Appearance")
+        compose.onAllNodesWithText("Light", substring = false)[0].performClick()
+        compose.waitUntil(10_000) { runBlocking { settings.themeMode.get() == "LIGHT" } }
         compose.onAllNodesWithText("Next")[0].performClick()
         awaitText("Find a book in the catalog")
         compose.onAllNodesWithText("Find a book in the catalog")[0].performClick()
@@ -132,6 +136,20 @@ class AppSmokeTest {
     private fun shot(name: String) {
         compose.waitForIdle()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/$name.png")
+    }
+
+    @Test
+    fun emptyProfileCanOpenLibraryAndCatalog() {
+        val settings = GlobalContext.get().get<app.yomu.core.datastore.AppSettings>()
+        runBlocking { settings.onboardingDone.set(true) }
+        clickTab("Profile")
+        awaitText("Start reading")
+        compose.onAllNodesWithText("Open library")[0].performClick()
+        awaitText("Your library is empty")
+
+        clickTab("Profile")
+        compose.onAllNodesWithText("Open catalog")[0].performClick()
+        awaitText("MangaDex")
     }
 
     /** Every ViewModel of every screen can be created from the real Koin graph (catches missing definitions). */
@@ -279,6 +297,44 @@ class AppSmokeTest {
                 zip.closeEntry()
             }
         }
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun pageGridSelectsMultipleComicPages() {
+        val koin = GlobalContext.get()
+        runBlocking {
+            val settings = koin.get<app.yomu.core.datastore.AppSettings>()
+            settings.onboardingDone.set(true)
+            settings.commonReader.update { it.copy(autoHideMenuSeconds = 0) }
+        }
+        val cbz = File(compose.activity.cacheDir, "Select comic pages.cbz")
+        writeCbz(cbz, 4)
+        val outcome = runBlocking { koin.get<ImportService>().importLocalFile(cbz, cbz.name) }
+        assertTrue("import failed: $outcome", outcome is ImportOutcome.Added)
+        clickTab("Library")
+        awaitText("Select comic pages")
+        compose.onAllNodesWithText("Select comic pages")[0].performClick()
+        awaitText("Read")
+        compose.onNode(hasText("Read", substring = false) and hasClickAction()).performClick()
+        awaitText("1 / 4")
+        val actions = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.CustomActions), useUnmergedTree = true)
+            .fetchSemanticsNodes().flatMap { it.config[SemanticsActions.CustomActions] }
+        actions.firstOrNull { it.label == "Show the reading controls" }?.let { action ->
+            compose.runOnIdle { action.action() }
+        }
+        val more = hasContentDescription("More")
+        compose.waitUntil(10_000) { compose.onAllNodes(more, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(more, useUnmergedTree = true).performTouchInput { click(center) }
+        awaitText("Pages")
+        compose.onNode(hasText("Pages", substring = false) and hasClickAction()).performClick()
+        awaitText("Select pages")
+        compose.onNode(hasText("Select pages", substring = false)).performClick()
+        compose.onNode(hasText("2", substring = false) and hasClickAction()).performClick()
+        compose.onNode(hasText("3", substring = false) and hasClickAction()).performClick()
+        awaitText("Save selected (2)")
+        compose.onNode(hasText("2", substring = false) and hasClickAction()).performClick()
+        awaitText("Save selected (1)")
     }
 
     /** Whole screen including dialogs and bottom sheets (they live in their own windows). */

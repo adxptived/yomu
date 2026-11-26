@@ -36,6 +36,8 @@
     <string name="onboarding_folder_hint">You can skip this step and import single files from the library later.</string>
     <string name="onboarding_language_title">Translate into</string>
     <string name="onboarding_language_text">Words and sentences you look up will be translated into this language. You can change it in the settings.</string>
+    <string name="onboarding_restore_hint">Already used Yomu? Restore a backup to bring back the library, progress, notes and settings.</string>
+    <string name="onboarding_restore_failed">Could not restore this file. It may be damaged or made by a newer version.</string>
     <plurals name="import_result">
         <item quantity="one">%d book added</item>
         <item quantity="other">%d books added</item>
@@ -269,6 +271,11 @@
     <string name="profile_unit_words">words</string>
     <string name="profile_top">Most read</string>
     <string name="profile_recent">Recently read</string>
+    <string name="profile_continue_reading">Continue reading</string>
+    <string name="profile_start_reading">Start reading</string>
+    <string name="profile_open_library">Open library</string>
+    <string name="profile_open_catalog">Open catalog</string>
+    <string name="profile_reading_week">Last seven days</string>
     <string name="profile_all_history">All history</string>
     <string name="profile_share_section">Share and transfer</string>
     <string name="profile_share_summary">Statistics card, history CSV, backup</string>
@@ -317,6 +324,22 @@
     <string name="widget_audio_back">Back a few seconds</string>
     <string name="widget_audio_forward">Forward a few seconds</string>
     <string name="widget_audio_open">Open the audiobook</string>
+    <string name="widget_shelf_label">Shelf</string>
+    <string name="widget_shelf_description">Titles from the shelf you pick in Settings → Library.</string>
+    <string name="widget_shelf_all">All library</string>
+    <string name="widget_shelf_empty">This shelf is empty. Add titles in Yomu.</string>
+    <string name="widget_streak_label">Reading streak</string>
+    <string name="widget_streak_description">Days in a row and today\'s reading time.</string>
+    <string name="widget_streak_days_zero">No reading yet</string>
+    <string name="widget_streak_empty">Start reading and your streak appears here.</string>
+    <string name="widget_streak_today">Today: %1$s</string>
+    <string name="widget_streak_today_none">Nothing read today</string>
+    <string name="widget_streak_minutes">%1$d min</string>
+    <string name="widget_streak_hours">%1$d h %2$d min</string>
+    <plurals name="widget_streak_days">
+        <item quantity="one">%1$d day in a row</item>
+        <item quantity="other">%1$d days in a row</item>
+    </plurals>
     <plurals name="widget_unread_chapters">
         <item quantity="one">%1$d unread chapter</item>
         <item quantity="other">%1$d unread chapters</item>
@@ -356,4 +379,6 @@
         <item quantity="other">%1$d changes still wait: no network or the service did not answer</item>
     </plurals>
     <string name="onboarding_open_catalog">Find a book in the catalog</string>
+    <string name="onboarding_yomu_accent">Yomu accent</string>
+    <string name="onboarding_classic_accent">Classic accent</string>
 </resources>

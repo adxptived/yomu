@@ -30,16 +30,19 @@ import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -49,18 +52,32 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yomu.R
 import app.yomu.core.common.ScreenErrors
 import app.yomu.core.datastore.AppSettings
+import app.yomu.core.ui.theme.Accent
+import app.yomu.core.ui.theme.ThemeMode
+import app.yomu.data.backup.BackupManager
+import app.yomu.data.backup.BackupPreview
+import app.yomu.data.backup.RestoreResult
 import app.yomu.data.library.ImportOutcome
 import app.yomu.data.library.ImportService
 import app.yomu.data.work.LibraryScanWorker
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
+import app.yomu.core.ui.R as CoreR
+import app.yomu.feature.settings.R as SettingsR
 
 private val LANGUAGES = listOf("en", "ru", "uk", "de", "fr", "es", "it", "pt", "pl", "tr", "ja", "zh", "ko")
 
@@ -130,6 +147,7 @@ fun OnboardingScreen(settings: AppSettings, onDone: (openCatalog: Boolean) -> Un
                                 stringResource(R.string.onboarding_welcome_title),
                                 stringResource(R.string.onboarding_goal_title),
                             )
+                            OnboardingAppearance(settings)
                             Text(
                                 stringResource(R.string.onboarding_goal_text),
                                 style = MaterialTheme.typography.bodySmall,
@@ -194,6 +212,7 @@ fun OnboardingScreen(settings: AppSettings, onDone: (openCatalog: Boolean) -> Un
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
                             )
+                            OnboardingRestore()
                             TextButton(onClick = { finish(openCatalog = true) }) {
                                 Text(stringResource(R.string.onboarding_open_catalog))
                             }
@@ -248,6 +267,162 @@ fun OnboardingScreen(settings: AppSettings, onDone: (openCatalog: Boolean) -> Un
                     ),
                 )
             }
+        }
+    }
+}
+
+/**
+ * Moving from another phone: a backup brings back the library, progress, notes and settings. The archive is previewed
+ * before anything is written, and the step can be skipped like every other one.
+ */
+@Composable
+private fun OnboardingRestore() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val backup: BackupManager = koinInject()
+    var selected by remember { mutableStateOf<Uri?>(null) }
+    var preview by remember { mutableStateOf<BackupPreview?>(null) }
+    var restored by remember { mutableStateOf<RestoreResult?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+
+    fun apply(uri: Uri) {
+        preview = null
+        scope.launch(ScreenErrors) {
+            busy = true
+            failed = false
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { backup.restore(it) } ?: error("Cannot read the file")
+                }
+            }.onSuccess { result ->
+                restored = result
+                LibraryScanWorker.runNow(context)
+            }.onFailure {
+                failed = true
+            }
+            busy = false
+        }
+    }
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch(ScreenErrors) {
+            busy = true
+            failed = false
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { backup.preview(it) } ?: error("Cannot read the file")
+                }
+            }.onSuccess { manifest ->
+                selected = uri
+                preview = manifest
+            }.onFailure {
+                failed = true
+            }
+            busy = false
+        }
+    }
+
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            stringResource(R.string.onboarding_restore_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        val done = restored
+        if (done != null) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Outlined.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
+                Text(stringResource(SettingsR.string.set_restore_done, done.rows, done.files), style = MaterialTheme.typography.bodyLarge)
+            }
+        } else {
+            OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }, enabled = !busy) {
+                Text(stringResource(SettingsR.string.set_backup_restore))
+            }
+        }
+        if (failed) {
+            Text(
+                stringResource(R.string.onboarding_restore_failed),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+
+    preview?.let { p ->
+        AlertDialog(
+            onDismissRequest = { preview = null },
+            title = { Text(stringResource(SettingsR.string.set_restore_preview_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (p.createdAt > 0) {
+                        Text(
+                            stringResource(
+                                SettingsR.string.set_restore_preview_date,
+                                SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(p.createdAt)),
+                            ),
+                        )
+                    }
+                    Text(stringResource(SettingsR.string.set_restore_preview_counts, p.books, p.highlights, p.notes, p.bookmarks, p.words))
+                    if (p.files > 0) {
+                        Text(stringResource(SettingsR.string.set_restore_preview_files, p.files, android.text.format.Formatter.formatShortFileSize(context, p.bytes)))
+                    }
+                    Text(stringResource(SettingsR.string.set_restore_preview_merge), style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selected?.let(::apply) }) { Text(stringResource(SettingsR.string.set_restore)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { preview = null }) { Text(stringResource(CoreR.string.cancel)) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun OnboardingAppearance(settings: AppSettings) {
+    val scope = rememberCoroutineScope()
+    val mode by settings.themeMode.flow.collectAsStateWithLifecycle(initialValue = settings.themeMode.default)
+    val accent by settings.accent.flow.collectAsStateWithLifecycle(initialValue = settings.accent.default)
+    val amoled by settings.amoled.flow.collectAsStateWithLifecycle(initialValue = settings.amoled.default)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(stringResource(SettingsR.string.set_appearance), style = MaterialTheme.typography.titleMedium)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ThemeMode.entries.forEach { choice ->
+                val label = when (choice) {
+                    ThemeMode.SYSTEM -> SettingsR.string.set_theme_system
+                    ThemeMode.LIGHT -> SettingsR.string.set_theme_light
+                    ThemeMode.DARK -> SettingsR.string.set_theme_dark
+                }
+                FilterChip(
+                    selected = mode == choice.name,
+                    onClick = { scope.launch(ScreenErrors) { settings.themeMode.set(choice.name) } },
+                    label = { Text(stringResource(label)) },
+                )
+            }
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(Accent.YOMU to R.string.onboarding_yomu_accent, Accent.CLASSIC to R.string.onboarding_classic_accent)
+                .forEach { (choice, label) ->
+                    FilterChip(
+                        selected = accent == choice.name,
+                        onClick = { scope.launch(ScreenErrors) { settings.accent.set(choice.name) } },
+                        label = { Text(stringResource(label)) },
+                    )
+                }
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            val label = stringResource(SettingsR.string.set_amoled)
+            Text(label, modifier = Modifier.weight(1f))
+            Switch(
+                checked = amoled,
+                onCheckedChange = { checked -> scope.launch(ScreenErrors) { settings.amoled.set(checked) } },
+                modifier = Modifier.semantics { contentDescription = label },
+            )
         }
     }
 }

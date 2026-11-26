@@ -79,6 +79,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -154,6 +156,8 @@ fun ProfileScreen(
     onOpenSettings: (SettingsSection) -> Unit,
     onOpenDownloads: (() -> Unit)? = null,
     onOpenNotes: (() -> Unit)? = null,
+    onOpenLibrary: (() -> Unit)? = null,
+    onOpenCatalog: (() -> Unit)? = null,
 ) {
     var tab by rememberSaveable { mutableStateOf(ProfileTab.OVERVIEW) }
     var page by rememberSaveable { mutableStateOf(ProfilePage.NONE) }
@@ -230,6 +234,8 @@ fun ProfileScreen(
                                 onOpenTracking = { page = ProfilePage.TRACKING },
                                 onOpenDownloads = onOpenDownloads,
                                 onOpenNotes = onOpenNotes,
+                                onOpenLibrary = onOpenLibrary,
+                                onOpenCatalog = onOpenCatalog,
                                 onOpenBook = onOpenBook,
                                 onReadChapter = onReadChapter,
                                 onOpenTitle = onOpenTitle,
@@ -280,6 +286,8 @@ private fun ProfileOverview(
     onOpenTracking: () -> Unit,
     onOpenDownloads: (() -> Unit)?,
     onOpenNotes: (() -> Unit)?,
+    onOpenLibrary: (() -> Unit)?,
+    onOpenCatalog: (() -> Unit)?,
     onOpenBook: (Long) -> Unit,
     onReadChapter: (Long) -> Unit,
     onOpenTitle: (Long) -> Unit,
@@ -341,10 +349,37 @@ private fun ProfileOverview(
             }
             return@LazyColumn
         }
-        if (showRecent && recent.isNotEmpty()) {
-            item(key = "recent") { RecentCard(recent, onOpen = ::openRecent, onOpenHistory = onOpenHistory) }
+        if (showRecent) {
+            if (recent.isNotEmpty()) {
+                item(key = "continue") {
+                    RecentCard(
+                        recent.take(1),
+                        onOpen = ::openRecent,
+                        onOpenHistory = onOpenHistory,
+                        title = R.string.profile_continue_reading,
+                    )
+                }
+            } else if (onOpenLibrary != null && onOpenCatalog != null) {
+                item(key = "start") {
+                    Surface(
+                        shape = MaterialTheme.shapes.large,
+                        color = colors.primaryContainer,
+                        contentColor = colors.onPrimaryContainer,
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(Dimens.l)) {
+                            Text(stringResource(R.string.profile_start_reading), style = MaterialTheme.typography.titleLarge)
+                            FlowRow {
+                                TextButton(onClick = onOpenLibrary) { Text(stringResource(R.string.profile_open_library)) }
+                                TextButton(onClick = onOpenCatalog) { Text(stringResource(R.string.profile_open_catalog)) }
+                            }
+                        }
+                    }
+                }
+            }
         }
-        item(key = "time") { TimeCard(state, onOpenStats) }
+        if (showStats && state.sessions > 0) {
+            item(key = "time") { TimeCard(state, onOpenStats) }
+        }
         item(key = "entries") {
             Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
                 Column {
@@ -433,7 +468,7 @@ private fun ProfileHeader(state: ProfileUi?, onEdit: () -> Unit) {
         Modifier.fillMaxWidth().clickable(onClick = onEdit, onClickLabel = editLabel, role = Role.Button).padding(vertical = Dimens.s),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Avatar(state?.avatar.orEmpty(), state?.name.orEmpty(), Modifier.size(72.dp))
+        Avatar(state?.avatar.orEmpty(), state?.name.orEmpty(), Modifier.size(52.dp))
         Spacer(Modifier.width(Dimens.l))
         Column(Modifier.weight(1f)) {
             Text(name, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -524,6 +559,32 @@ private fun TimeCard(state: ProfileUi, onOpenStats: () -> Unit) {
                 drawStopIndicator = {},
                 modifier = Modifier.fillMaxWidth().padding(top = Dimens.s).height(6.dp),
             )
+            Spacer(Modifier.height(Dimens.m))
+            Text(stringResource(R.string.profile_reading_week), style = MaterialTheme.typography.titleSmall)
+            val context = LocalContext.current
+            val maximum = state.week.maxOfOrNull { it.second }?.coerceAtLeast(1L) ?: 1L
+            val weekday = DateTimeFormatter.ofPattern("EEE", Locale.getDefault())
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                state.week.forEach { (day, readingMs) ->
+                    val description = "${formatDate(day)}, ${duration(context, readingMs)}"
+                    val barHeight = (readingMs.toFloat() / maximum * 30).coerceAtLeast(2f)
+                    Column(
+                        Modifier.weight(1f).semantics { contentDescription = description },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Box(Modifier.height(32.dp), contentAlignment = Alignment.BottomCenter) {
+                            Box(
+                                Modifier.width(12.dp).height(barHeight.dp).background(
+                                    if (readingMs > 0) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outlineVariant,
+                                    RoundedCornerShape(4.dp),
+                                ),
+                            )
+                        }
+                        Text(weekday.format(day), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                    }
+                }
+            }
         }
     }
 }
@@ -662,10 +723,15 @@ private fun TopTitlesCard(titles: List<TopTitle>, onOpenStats: () -> Unit) {
 }
 
 @Composable
-private fun RecentCard(items: List<ReadingHistoryItem>, onOpen: (ReadingHistoryItem) -> Unit, onOpenHistory: () -> Unit) {
+private fun RecentCard(
+    items: List<ReadingHistoryItem>,
+    onOpen: (ReadingHistoryItem) -> Unit,
+    onOpenHistory: () -> Unit,
+    @StringRes title: Int,
+) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(vertical = Dimens.m)) {
-            SectionTitle(stringResource(R.string.profile_recent), action = stringResource(R.string.profile_all_history), onAction = onOpenHistory)
+            SectionTitle(stringResource(title), action = stringResource(R.string.profile_all_history), onAction = onOpenHistory)
             items.forEach { item ->
                 BookListItem(
                     title = item.title,

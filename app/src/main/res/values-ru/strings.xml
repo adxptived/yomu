@@ -35,6 +35,8 @@
     <string name="onboarding_folder_hint">Этот шаг можно пропустить и позже импортировать отдельные файлы из библиотеки.</string>
     <string name="onboarding_language_title">Язык перевода</string>
     <string name="onboarding_language_text">На этот язык будут переводиться слова и фразы. Его можно поменять в настройках.</string>
+    <string name="onboarding_restore_hint">Уже пользовались Yomu? Восстановите копию — вернутся библиотека, прогресс, заметки и настройки.</string>
+    <string name="onboarding_restore_failed">Не удалось восстановить файл. Возможно, он повреждён или создан более новой версией.</string>
     <plurals name="import_result">
         <item quantity="one">Добавлена %d книга</item>
         <item quantity="few">Добавлено %d книги</item>
@@ -270,6 +272,13 @@
     <string name="profile_unit_words">сл.</string>
     <string name="profile_top">Больше всего читали</string>
     <string name="profile_recent">Недавно читали</string>
+    <string name="profile_continue_reading">Продолжить чтение</string>
+    <string name="profile_start_reading">Начать чтение</string>
+    <string name="profile_open_library">Открыть библиотеку</string>
+    <string name="profile_open_catalog">Открыть каталог</string>
+    <string name="profile_reading_week">Последние семь дней</string>
+    <string name="onboarding_yomu_accent">Акцент Yomu</string>
+    <string name="onboarding_classic_accent">Классический акцент</string>
     <string name="profile_all_history">Вся история</string>
     <string name="profile_share_section">Поделиться и перенести</string>
     <string name="profile_share_summary">Карточка статистики, CSV истории, резервная копия</string>
@@ -320,6 +329,24 @@
     <string name="widget_audio_back">Назад на несколько секунд</string>
     <string name="widget_audio_forward">Вперёд на несколько секунд</string>
     <string name="widget_audio_open">Открыть аудиокнигу</string>
+    <string name="widget_shelf_label">Полка</string>
+    <string name="widget_shelf_description">Тайтлы с полки, выбранной в «Настройки → Библиотека».</string>
+    <string name="widget_shelf_all">Вся библиотека</string>
+    <string name="widget_shelf_empty">На этой полке пусто. Добавьте тайтлы в Yomu.</string>
+    <string name="widget_streak_label">Серия чтения</string>
+    <string name="widget_streak_description">Дни чтения подряд и время чтения сегодня.</string>
+    <string name="widget_streak_days_zero">Пока нет чтения</string>
+    <string name="widget_streak_empty">Начните читать — и серия появится здесь.</string>
+    <string name="widget_streak_today">Сегодня: %1$s</string>
+    <string name="widget_streak_today_none">Сегодня ещё не читали</string>
+    <string name="widget_streak_minutes">%1$d мин</string>
+    <string name="widget_streak_hours">%1$d ч %2$d мин</string>
+    <plurals name="widget_streak_days">
+        <item quantity="one">%1$d день подряд</item>
+        <item quantity="few">%1$d дня подряд</item>
+        <item quantity="many">%1$d дней подряд</item>
+        <item quantity="other">%1$d дня подряд</item>
+    </plurals>
     <plurals name="widget_unread_chapters">
         <item quantity="one">%1$d непрочитанная глава</item>
         <item quantity="few">%1$d непрочитанные главы</item>

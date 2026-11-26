@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="title_duplicate_heading">Возможный дубль</string>
+    <string name="title_duplicate_hint">Сравните это издание с уже сохранёнными версиями в библиотеке.</string>
+    <string name="title_duplicate_saved">В вашей библиотеке</string>
+    <string name="title_duplicate_missing_source">Источник %1$d не установлен</string>
+    <string name="title_duplicate_last_chapter">Последнее чтение: %1$s · страница %2$d</string>
+    <string name="title_open_saved_edition">Открыть мою версию</string>
+    <string name="title_replace_saved_edition">Сменить источник</string>
+    <string name="title_add_edition_separately">Добавить отдельно</string>
+    <string name="title_duplicate_check_failed">Не удалось проверить библиотеку. Попробуйте добавить тайтл ещё раз.</string>
+    <string name="title_find_replacement">Найти замену</string>
+    <string name="migrate_match_exact_title">Точное название</string>
+    <string name="migrate_match_similar_title">Похожее название</string>
+    <string name="migrate_target_chapter_count">Глав доступно в источнике: %1$d</string>
+    <string name="chapter_preview_action">Посмотреть главу без сохранения</string>
     <string name="catalog_title">Каталог</string>
     <string name="catalog_section_external">Добавленные источники</string>
     <string name="catalog_show_installed_adult">Показать установленные источники 18+</string>
@@ -133,6 +147,9 @@
     <string name="filters">Фильтры</string>
     <string name="filters_reset">Сбросить</string>
     <string name="filters_apply">Применить</string>
+    <string name="filter_template_save">Сохранить фильтры</string>
+    <string name="filter_template_save_title">Сохранить фильтры как</string>
+    <string name="filter_template_delete">Удалить шаблон «%1$s»</string>
     <string name="toggle_layout">Сменить вид</string>
     <string name="search_in_source">Поиск в %1$s</string>
     <string name="browse_popular">Популярное</string>
@@ -157,7 +174,7 @@
     <string name="migrate_preview_target">%1$s → %2$s</string>
     <string name="migrate_preview_counts">Точных: %1$d · вероятных: %2$d · проверить: %3$d · нет: %4$d</string>
     <string name="migrate_preview_page_warning">Номера страниц не переносятся между разными релизами; отметки чтения и закладки переносятся.</string>
-    <string name="migrate_preview_old_kept">Старый тайтл и скачанные главы остаются в библиотеке.</string>
+    <string name="migrate_preview_old_kept">Скачанные главы и привязки трекеров остаются у старой версии. При переносе записи библиотеки её место в избранном займёт новая версия.</string>
     <string name="migrate_category_progress">Прогресс чтения</string>
     <string name="migrate_category_bookmarks">Закладки</string>
     <string name="migrate_category_tabs">Полки</string>

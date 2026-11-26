@@ -477,6 +477,7 @@ enum class BrowseTab { POPULAR, LATEST, SEARCH }
 
 private val NotLoading: StateFlow<Boolean> = MutableStateFlow(false).asStateFlow()
 private val NoVariants: StateFlow<List<SourceVariant>> = MutableStateFlow(emptyList<SourceVariant>()).asStateFlow()
+private val NoFilterTemplates: StateFlow<List<FilterTemplate>> = MutableStateFlow(emptyList<FilterTemplate>()).asStateFlow()
 
 /** One language of a source that comes in several (an extension with a source per language). */
 data class SourceVariant(val sourceId: Long, val lang: String)
@@ -539,6 +540,9 @@ interface BrowseModel {
     /** The source is still building its filters (some extensions load their tags in the background). */
     val filtersLoading: StateFlow<Boolean> get() = NotLoading
 
+    /** Named filter sets of this source, in the order they were saved; empty for a source without filters. */
+    val filterTemplates: StateFlow<List<FilterTemplate>> get() = NoFilterTemplates
+
     /** Filters that differ from the source's defaults (chips above the results, the badge on the filter button). */
     val activeFilters: StateFlow<List<ActiveFilter>>
 
@@ -555,6 +559,14 @@ interface BrowseModel {
     fun clearSearchHistory()
     fun onFilterChanged()
     fun resetFilters()
+
+    /** Saves the chosen filters under [name]; a name already used is replaced. */
+    fun saveFilterTemplate(name: String) = Unit
+
+    /** Applies a saved set to the panel; the page is not searched again until "Show results". */
+    fun applyFilterTemplate(name: String) = Unit
+
+    fun deleteFilterTemplate(name: String) = Unit
 
     /** Asks the source for its filters again, keeping the choices (for "press reset to load the tags" sources). */
     fun reloadFilters() = Unit
@@ -599,9 +611,13 @@ class SourceBrowseViewModel(
     override val webUrl: String? = (source as? CatalogSource)?.homeUrl ?: (source as? HttpSource)?.baseUrl
 
     private val filtersFile = File(context.filesDir, "filters/$sourceId.json")
+    private val templatesFile = File(context.filesDir, "filters/${sourceId}_templates.json")
 
     /** The filters of the panel; empty until the source has built them (off the main thread, see [loadFilters]). */
     override val filters = MutableStateFlow(FilterList())
+
+    /** Named filter sets of this source, loaded from [templatesFile] when the screen opens. */
+    override val filterTemplates = MutableStateFlow<List<FilterTemplate>>(emptyList())
     override val filterVersion = MutableStateFlow(0)
     private val epoch = MutableStateFlow(0)
     override val filterEpoch: StateFlow<Int> = epoch.asStateFlow()
@@ -676,6 +692,7 @@ class SourceBrowseViewModel(
 
     init {
         loadFilters(restoreSaved = true)
+        loadFilterTemplates()
         initialSearch?.let(::startSearch)
     }
 
@@ -791,6 +808,50 @@ class SourceBrowseViewModel(
         }
     }
 
+    private fun loadFilterTemplates() = viewModelScope.launch(ScreenErrors) {
+        filterTemplates.value = withContext(Dispatchers.IO) {
+            runCatching { if (templatesFile.isFile) FilterTemplateCodec.decode(templatesFile.readText()) else emptyList() }
+                .getOrDefault(emptyList())
+        }
+    }
+
+    override fun saveFilterTemplate(name: String) {
+        val clean = name.trim().take(MAX_TEMPLATE_NAME)
+        if (clean.isEmpty() || !filtersReady.isCompleted) return
+        val state = runCatching { filters.value.saveState().toString() }.getOrNull() ?: return
+        val next = filterTemplates.value.filterNot { it.name.equals(clean, ignoreCase = true) } + FilterTemplate(clean, state)
+        filterTemplates.value = next
+        writeFilterTemplates(next)
+    }
+
+    override fun applyFilterTemplate(name: String) {
+        val template = filterTemplates.value.firstOrNull { it.name == name } ?: return
+        viewModelScope.launch(ScreenErrors) {
+            val applied = withContext(Dispatchers.Default) {
+                runCatching { filters.value.restoreState(Json.parseToJsonElement(template.state)) }.isSuccess
+            }
+            if (applied) {
+                filterVersion.value++
+                saveFilters()
+            }
+        }
+    }
+
+    override fun deleteFilterTemplate(name: String) {
+        val next = filterTemplates.value.filterNot { it.name == name }
+        filterTemplates.value = next
+        writeFilterTemplates(next)
+    }
+
+    private fun writeFilterTemplates(templates: List<FilterTemplate>) {
+        viewModelScope.launch(fileWrites) {
+            runCatching {
+                templatesFile.parentFile?.mkdirs()
+                templatesFile.writeText(FilterTemplateCodec.encode(templates))
+            }
+        }
+    }
+
     /** A copy of the filters as they are now: editing the panel later doesn't change the pages of a running search. */
     private fun snapshotFilters(): FilterList = filters.value.deepCopy()
 
@@ -894,6 +955,7 @@ class SourceBrowseViewModel(
 
 /** Recent searches kept for the search field of a source. */
 private const val SEARCH_HISTORY_MAX = 10
+private const val MAX_TEMPLATE_NAME = 40
 
 /** Pauses before asking a source again for filters it is still loading: about half a minute in all. */
 private val RELOAD_DELAYS_MS = longArrayOf(1_500, 3_000, 5_000, 8_000, 12_000)
@@ -1016,6 +1078,26 @@ class GlobalSearchViewModel(
         }
     }
 
+    private var initialMigrationTarget: Long? = null
+
+    fun previewExistingMigrationTarget(entryId: Long) {
+        if (migrateFrom == null || migrateFrom == entryId || initialMigrationTarget == entryId) return
+        initialMigrationTarget = entryId
+        viewModelScope.launch(ScreenErrors) {
+            migrating.value = true
+            try {
+                runCatchingApp {
+                    val target = catalog.entry(entryId) ?: error("Target title not found")
+                    val item = catalog.sItem(entryId) ?: error("Target title not found")
+                    catalog.planMigration(migrateFrom, target.sourceId, item, migrationCategories.value)
+                }.onSuccess { migrationPlan.value = it }
+                    .onFailure { _events.send(CatalogEvent.Failure(it)) }
+            } finally {
+                migrating.value = false
+            }
+        }
+    }
+
     fun applyMigration() {
         val plan = migrationPlan.value ?: return
         viewModelScope.launch(ScreenErrors) {
@@ -1085,6 +1167,19 @@ class TitleViewModel(
     private val scheduler: WorkScheduler,
 ) : ViewModel(), TrackingViewModel {
     val entry: StateFlow<CatalogEntry?> = catalog.observeEntry(entryId).state(this, null)
+    val sourceHealth = catalog.health
+
+    data class EditionComparison(
+        val incoming: app.yomu.data.catalog.CatalogEditionSummary,
+        val saved: List<app.yomu.data.catalog.CatalogEditionSummary>,
+        val sourceNames: Map<Long, String>,
+    )
+
+    suspend fun editionComparison(): Result<EditionComparison?> = runCatchingApp {
+        val saved = catalog.duplicateEditions(entryId)
+        val incoming = if (saved.isEmpty()) null else catalog.editionSummary(entryId)
+        incoming?.let { EditionComparison(it, saved, sources.infos.value.associate { info -> info.id to info.name }) }
+    }
     private val allChapters: StateFlow<List<ChapterInfo>?> = catalog.observeChapters(entryId).state(this, null)
 
     /** Sort and filters of the chapter list (the title's own or the default of all titles). */

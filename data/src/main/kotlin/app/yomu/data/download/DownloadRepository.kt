@@ -56,6 +56,7 @@ import okhttp3.Request
 import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
+import java.io.OutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipEntry
@@ -820,6 +821,32 @@ class DownloadRepository(
         val ids = catalog.chapters(entryId).filter { it.downloaded }.map { it.id }
         deleteChapterFiles(ids)
         return ids.size
+    }
+
+    /**
+     * Writes one finished download into [out] as a single CBZ. An already packed archive is copied as is; a folder of
+     * pages is zipped in page order with a ComicInfo.xml when the title and chapter are still known. Only local files
+     * are read: the export works offline and never asks the source again.
+     */
+    suspend fun exportChapter(item: DownloadItem, out: OutputStream): Int = withContext(Dispatchers.IO) {
+        val path = item.destPath?.takeIf { it.isNotBlank() } ?: error("This download has no file")
+        val file = File(path)
+        require(file.exists()) { "The downloaded file is missing" }
+        if (file.isFile) {
+            require(file.extension.lowercase() == "cbz") { "Only comic chapters can be saved as CBZ" }
+            file.inputStream().use { it.copyTo(out) }
+            return@withContext item.pagesTotal
+        }
+        val pages = file.listFiles(::isPageFile)?.sortedBy { it.name }.orEmpty()
+        require(pages.isNotEmpty()) { "No pages in this download" }
+        val entry = item.entryId?.let { catalog.entry(it) }
+        val chapter = entry?.let { e -> item.chapterId?.let { id -> catalog.chapters(e.id).firstOrNull { it.id == id } } }
+        val info = if (entry != null && chapter != null) {
+            comicInfo(entry.title, chapter.name, chapter.number, entry.author, entry.description, pages.size, chapter.uploadDate)
+        } else {
+            null
+        }
+        ChapterCbzExport.write(pages, out, info)
     }
 
     /** Deletes downloaded files of chapters (used manually and by auto delete after reading). */

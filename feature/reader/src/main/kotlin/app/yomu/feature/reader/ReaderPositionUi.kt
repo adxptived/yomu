@@ -106,7 +106,7 @@ internal fun PageChip(
     }
 }
 
-/** Big card in the middle of the screen while the slider is dragged: where the reader will land. */
+/** Destination shown beside the active page slider while the thumb is dragged. */
 @Composable
 internal fun SeekPreviewCard(preview: SeekPreview, value: Float, modifier: Modifier = Modifier, thumbnail: File? = null) {
     Surface(
@@ -114,15 +114,15 @@ internal fun SeekPreviewCard(preview: SeekPreview, value: Float, modifier: Modif
         color = MaterialTheme.colorScheme.inverseSurface,
         contentColor = MaterialTheme.colorScheme.inverseOnSurface,
         shadowElevation = 8.dp,
-        modifier = modifier.widthIn(min = 180.dp, max = 320.dp).semantics { liveRegion = LiveRegionMode.Polite },
+        modifier = modifier.widthIn(min = 144.dp, max = 240.dp).semantics { liveRegion = LiveRegionMode.Polite },
     ) {
-        Column(Modifier.padding(horizontal = 24.dp, vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             if (thumbnail != null) {
                 AsyncImage(
                     model = thumbnail,
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(width = 150.dp, height = 210.dp).clip(MaterialTheme.shapes.small),
+                    modifier = Modifier.size(width = 96.dp, height = 128.dp).clip(MaterialTheme.shapes.small),
                 )
                 Spacer(Modifier.height(8.dp))
             }

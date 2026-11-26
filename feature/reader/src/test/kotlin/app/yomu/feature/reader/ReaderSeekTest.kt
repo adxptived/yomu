@@ -5,6 +5,20 @@ import org.junit.jupiter.api.Test
 
 class ReaderSeekTest {
     @Test
+    fun `preview stays inside the viewport at either track endpoint`() {
+        assertEquals(8, seekPreviewOffset(0, 120, 320, 8))
+        assertEquals(192, seekPreviewOffset(320, 120, 320, 8))
+        assertEquals(100, seekPreviewOffset(160, 120, 320, 8))
+        assertEquals(0, seekPreviewOffset(10, 120, 120, 8))
+    }
+
+    @Test
+    fun `track fractions mirror for a right to left slider`() {
+        assertEquals(40f, seekTrackPoint(20f, 100f, 0.25f, false))
+        assertEquals(80f, seekTrackPoint(20f, 100f, 0.25f, true))
+    }
+
+    @Test
     fun `the closest page is used including both endpoints`() {
         assertEquals(0, pageAtSeekFraction(0f, 8))
         assertEquals(4, pageAtSeekFraction(0.56f, 8))

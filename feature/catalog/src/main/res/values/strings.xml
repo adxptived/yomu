@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="title_duplicate_heading">Possible duplicate</string>
+    <string name="title_duplicate_hint">Compare this edition with versions already saved in your library.</string>
+    <string name="title_duplicate_saved">In your library</string>
+    <string name="title_duplicate_missing_source">Source %1$d is not installed</string>
+    <string name="title_duplicate_last_chapter">Last read: %1$s · page %2$d</string>
+    <string name="title_open_saved_edition">Open saved version</string>
+    <string name="title_replace_saved_edition">Change source</string>
+    <string name="title_add_edition_separately">Add separately</string>
+    <string name="title_duplicate_check_failed">Could not check the library. Try adding the title again.</string>
+    <string name="title_find_replacement">Find a replacement</string>
+    <string name="migrate_match_exact_title">Exact title</string>
+    <string name="migrate_match_similar_title">Similar title</string>
+    <string name="migrate_target_chapter_count">Chapters available from this source: %1$d</string>
+    <string name="chapter_preview_action">Preview chapter without saving progress</string>
     <string name="catalog_title">Catalog</string>
     <string name="catalog_section_external">Added sources</string>
     <string name="catalog_show_installed_adult">Show installed 18+ sources</string>
@@ -133,6 +147,9 @@
     <string name="filters">Filters</string>
     <string name="filters_reset">Reset</string>
     <string name="filters_apply">Apply</string>
+    <string name="filter_template_save">Save filters</string>
+    <string name="filter_template_save_title">Save these filters as</string>
+    <string name="filter_template_delete">Delete template “%1$s”</string>
     <string name="toggle_layout">Switch layout</string>
     <string name="search_in_source">Search in %1$s</string>
     <string name="browse_popular">Popular</string>
@@ -157,7 +174,7 @@
     <string name="migrate_preview_target">%1$s → %2$s</string>
     <string name="migrate_preview_counts">Exact %1$d · likely %2$d · to review %3$d · missing %4$d</string>
     <string name="migrate_preview_page_warning">Page numbers are not transferred between different releases; read marks and bookmarks are.</string>
-    <string name="migrate_preview_old_kept">The old title and its downloaded chapters stay in the library.</string>
+    <string name="migrate_preview_old_kept">Downloads and tracker links stay with the old version. If you transfer the library entry, the new version takes its place in favorites.</string>
     <string name="migrate_category_progress">Read progress</string>
     <string name="migrate_category_bookmarks">Bookmarks</string>
     <string name="migrate_category_tabs">Shelves</string>

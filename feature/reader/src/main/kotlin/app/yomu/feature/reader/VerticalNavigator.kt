@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,9 +48,13 @@ internal fun VerticalNavigator(
     total: Int,
     onCommit: (Float) -> Unit,
     modifier: Modifier = Modifier,
+    onDrag: (Float?) -> Unit = {},
 ) {
     if (side == NavigatorSide.OFF) return
     var seek by remember { mutableStateOf(NavigatorSeek()) }
+    val latestProgress by rememberUpdatedState(progress)
+    val commit by rememberUpdatedState(onCommit)
+    val reportDrag by rememberUpdatedState(onDrag)
     val haptics = LocalHapticFeedback.current
     val label = stringResource(R.string.reader_navigator_position, current.coerceAtLeast(1), total.coerceAtLeast(1))
     val accent = MaterialTheme.colorScheme.primary
@@ -67,22 +72,30 @@ internal fun VerticalNavigator(
             }
             .pointerInput(side) {
                 detectDragGestures(
-                    onDragStart = { seek = seek.start(progress) },
+                    onDragStart = {
+                        seek = seek.start(latestProgress)
+                        reportDrag(seek.thumb(latestProgress))
+                    },
                     onDrag = { change, drag ->
                         change.consume()
                         val height = size.height.coerceAtLeast(1).toFloat()
                         // The track starts at the top: dragging down moves forward in the book.
-                        seek = seek.drag(seek.thumb(progress) + drag.y / height)
+                        seek = seek.drag(seek.thumb(latestProgress) + drag.y / height)
+                        reportDrag(seek.thumb(latestProgress))
                     },
                     onDragEnd = {
                         val released = seek.release()
                         seek = released.state
+                        reportDrag(null)
                         released.commit?.let {
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onCommit(it)
+                            commit(it)
                         }
                     },
-                    onDragCancel = { seek = seek.cancel() },
+                    onDragCancel = {
+                        seek = seek.cancel()
+                        reportDrag(null)
+                    },
                 )
             },
     ) {

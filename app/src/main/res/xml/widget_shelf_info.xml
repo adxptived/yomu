@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Shelf" (2.x). The app refreshes it when the library changes; the system asks for it every six hours. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_shelf_description"
+    android:initialLayout="@layout/widget_shelf"
+    android:minWidth="180dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="80dp"
+    android:previewLayout="@layout/widget_shelf"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="21600000"
+    android:widgetCategory="home_screen" />

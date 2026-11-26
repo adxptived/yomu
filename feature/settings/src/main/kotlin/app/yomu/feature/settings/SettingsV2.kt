@@ -16,10 +16,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SlowMotionVideo
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.CloudSync
@@ -46,6 +51,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -61,18 +67,26 @@ import app.yomu.core.common.Share
 import app.yomu.core.common.TimeFormat
 import app.yomu.core.ui.components.ConfirmDialog
 import app.yomu.core.ui.components.PreferenceHeader
+import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.audio.YouTubeAuth
 import app.yomu.data.audio.YouTubeClient
 import app.yomu.data.backup.GitHubSyncBackend
+import app.yomu.data.backup.MihonExportResult
+import app.yomu.data.backup.MihonExporter
 import app.yomu.data.backup.SyncManager
 import app.yomu.domain.model.QuickActions
 import app.yomu.domain.model.QuickMenuStyle
+import app.yomu.domain.model.ReaderBarAction
+import app.yomu.domain.model.ReaderBarActions
 import app.yomu.domain.tracking.TrackService
 import app.yomu.feature.annotations.icon
 import app.yomu.feature.annotations.label
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import app.yomu.core.ui.R as CoreR
 
@@ -421,6 +435,14 @@ internal fun QuickActionsSection(vm: SettingsViewModel, onOpenSelection: () -> U
         if (j in l.indices) l.add(j, l.removeAt(i))
         l
     }
+    val storedBar by s.readerBarActions.state()
+    val bar = remember(storedBar) { ReaderBarActions.normalize(storedBar) }
+    fun moveBar(i: Int, d: Int) = vm.update(s.readerBarActions) { list ->
+        val l = ReaderBarActions.normalize(list).toMutableList()
+        val j = i + d
+        if (j in l.indices) l.add(j, l.removeAt(i))
+        l
+    }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl))) {
         item(key = "radial-drag") {
             SwitchPref(vm, s.radialDrag, R.string.set_radial_drag, R.string.set_radial_drag_sum)
@@ -466,7 +488,41 @@ internal fun QuickActionsSection(vm: SettingsViewModel, onOpenSelection: () -> U
         item(key = "page-reset") {
             PreferenceItem(stringResource(R.string.set_page_actions_reset), onClick = { vm.set(s.pageActions, QuickActions.defaultPageActions) }, icon = Icons.Outlined.RestartAlt)
         }
+        item(key = "bar-h") { PreferenceHeader(stringResource(R.string.set_reader_bar)) }
+        item(key = "bar-hint") { Hint(stringResource(R.string.set_reader_bar_hint)) }
+        itemsIndexed(bar, key = { _, a -> "bar-${a.action.name}" }) { i, a ->
+            ListItem(
+                headlineContent = { Text(stringResource(a.action.barLabel())) },
+                leadingContent = { Icon(a.action.barIcon(), null) },
+                trailingContent = {
+                    Row {
+                        IconButton(onClick = { moveBar(i, -1) }, enabled = i > 0) { Icon(Icons.Filled.ArrowUpward, stringResource(R.string.set_move_up)) }
+                        IconButton(onClick = { moveBar(i, 1) }, enabled = i < bar.lastIndex) { Icon(Icons.Filled.ArrowDownward, stringResource(R.string.set_move_down)) }
+                        Switch(checked = a.enabled, onCheckedChange = { on -> vm.update(s.readerBarActions) { l -> ReaderBarActions.normalize(l).map { if (it.action == a.action) it.copy(enabled = on) else it } } })
+                    }
+                },
+            )
+        }
+        item(key = "bar-reset") {
+            PreferenceItem(stringResource(R.string.set_reader_bar_reset), onClick = { vm.set(s.readerBarActions, ReaderBarActions.defaults) }, icon = Icons.Outlined.RestartAlt)
+        }
     }
+}
+
+private fun ReaderBarAction.barLabel(): Int = when (this) {
+    ReaderBarAction.CHAPTERS -> R.string.set_bar_chapters
+    ReaderBarAction.SEARCH -> R.string.set_bar_search
+    ReaderBarAction.DISPLAY -> R.string.set_bar_display
+    ReaderBarAction.BOOKMARK -> R.string.set_bar_bookmark
+    ReaderBarAction.AUTOSCROLL -> R.string.set_bar_autoscroll
+}
+
+private fun ReaderBarAction.barIcon(): androidx.compose.ui.graphics.vector.ImageVector = when (this) {
+    ReaderBarAction.CHAPTERS -> Icons.AutoMirrored.Filled.FormatListBulleted
+    ReaderBarAction.SEARCH -> Icons.Default.Search
+    ReaderBarAction.DISPLAY -> Icons.Default.Settings
+    ReaderBarAction.BOOKMARK -> Icons.Default.BookmarkBorder
+    ReaderBarAction.AUTOSCROLL -> Icons.Default.SlowMotionVideo
 }
 
 // endregion
@@ -502,5 +558,68 @@ internal fun MihonImportItem(vm: SettingsViewModel) {
         )
     }
 }
+
+/**
+ * The reverse of the Mihon import: Yomu's online library as a `.tachibk` file. Only titles with a source and an
+ * address are written; local books and audiobooks are counted as skipped and stay in Yomu's own backup.
+ */
+@Composable
+internal fun MihonExportItem() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val exporter: MihonExporter = koinInject()
+    var result by remember { mutableStateOf<MihonExportResult?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val create = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)?.use { exporter.export(it) } ?: error("Cannot write the file")
+                }
+            }.onSuccess { result = it }
+                .onFailure { error = errorMessage(context, it) }
+        }
+    }
+    PreferenceItem(
+        stringResource(R.string.set_mihon_export),
+        stringResource(R.string.set_mihon_export_sum),
+        onClick = { create.launch(mihonExportName()) },
+        icon = settingIcon(R.string.set_mihon_export),
+    )
+    result?.let { report ->
+        AlertDialog(
+            onDismissRequest = { result = null },
+            title = { Text(stringResource(R.string.set_mihon_export_done_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Dimens.s)) {
+                    Text(stringResource(R.string.set_mihon_export_done_text, report.titles, report.chapters, report.categories))
+                    if (report.skipped > 0) {
+                        Text(
+                            stringResource(R.string.set_mihon_export_skipped, report.skipped),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (!report.hasAnything) {
+                        Text(stringResource(R.string.set_mihon_export_empty), color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { result = null }) { Text(stringResource(CoreR.string.close)) } },
+        )
+    }
+    error?.let { message ->
+        AlertDialog(
+            onDismissRequest = { error = null },
+            title = { Text(stringResource(R.string.set_mihon_export)) },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { error = null }) { Text(stringResource(CoreR.string.close)) } },
+        )
+    }
+}
+
+private fun mihonExportName(): String =
+    "yomu_" + java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm", java.util.Locale.US).format(java.util.Date()) + ".tachibk"
 
 // endregion

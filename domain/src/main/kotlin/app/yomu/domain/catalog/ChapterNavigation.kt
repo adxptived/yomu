@@ -31,11 +31,21 @@ data class ChapterNavigationPolicy(
     val excludedScanlators: Set<String> = emptySet(),
     /** Skip other releases of the same chapter: one chapter, one target. */
     val skipDuplicateReleases: Boolean = true,
+    val skipFractionalChapters: Boolean = false,
 ) {
     /** Chapters the navigation may choose from, in the order given (already reading order). */
     fun candidates(chapters: List<ChapterInfo>): List<ChapterInfo> =
         if (excludedScanlators.isEmpty()) chapters
         else chapters.filter { it.scanlator.isNullOrBlank() || it.scanlator !in excludedScanlators }
+
+    fun adjacentCandidates(chapters: List<ChapterInfo>, currentId: Long): List<ChapterInfo> {
+        val eligible = candidates(chapters)
+        if (!skipFractionalChapters) return eligible
+        return eligible.filter {
+            val number = it.number
+            it.id == currentId || !number.isFinite() || number < 0f || number % 1f == 0f
+        }
+    }
 }
 
 object ChapterNavigation {
@@ -51,14 +61,13 @@ object ChapterNavigation {
         intent: ChapterIntent,
         policy: ChapterNavigationPolicy = ChapterNavigationPolicy(),
     ): ChapterInfo? {
-        val candidates = policy.candidates(readingOrder)
-        if (candidates.isEmpty()) return null
-        val reliable = ChapterOrder.numbersReliable(candidates)
         return when (intent) {
             // Resuming is defined by skipping what was read, whatever the policy says.
-            ChapterIntent.RESUME -> ChapterOrder.continueWith(candidates)
+            ChapterIntent.RESUME -> ChapterOrder.continueWith(policy.candidates(readingOrder))
             ChapterIntent.NEXT, ChapterIntent.PREVIOUS -> {
                 val id = currentId ?: return null
+                val candidates = policy.adjacentCandidates(readingOrder, id)
+                val reliable = ChapterOrder.numbersReliable(policy.candidates(readingOrder))
                 val target = if (policy.skipDuplicateReleases && reliable) {
                     ChapterOrder.adjacent(candidates, id, forward = intent == ChapterIntent.NEXT)
                 } else {

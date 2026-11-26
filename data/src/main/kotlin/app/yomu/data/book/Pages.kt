@@ -24,6 +24,8 @@ interface PageSource : Closeable {
     val count: Int
     fun name(index: Int): String
     suspend fun file(index: Int): File
+    /** A preview may read local pages and cached network pages without fetching. */
+    suspend fun previewFile(index: Int): File? = null
 
     /**
      * Pixel size of page [index] when it can be read without fetching the page; null when the page is not available
@@ -49,6 +51,7 @@ class ArchivePageSource(
     private val sizes = java.util.concurrent.ConcurrentHashMap<Int, ImageSize>()
     override val count: Int get() = pages.size
     override fun name(index: Int): String = pages[index]
+    override suspend fun previewFile(index: Int): File = file(index)
 
     /**
      * Reads the image header straight from the archive, so the split decision does not have to unpack every page.

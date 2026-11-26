@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="reader_page_select">Select pages</string>
+    <string name="reader_page_select_cancel">Done selecting</string>
+    <string name="reader_page_save_selected">Save selected (%1$d)</string>
+    <string name="reader_page_saving_selected">Saving selected pages…</string>
+    <string name="reader_page_batch_saved">Pages saved: %1$d</string>
+    <string name="reader_page_batch_partial">Saved: %1$d. Could not save pages: %2$s</string>
+    <string name="reader_chapter_preview">Chapter preview</string>
+    <string name="reader_continue_from_preview">Continue from here</string>
     <string name="reader_page_actions">Page actions</string>
     <string name="reader_seek_failed">The reader did not reach that location. Try again.</string>
     <string name="reader_spread_short">%1$d–%2$d of %3$d</string>

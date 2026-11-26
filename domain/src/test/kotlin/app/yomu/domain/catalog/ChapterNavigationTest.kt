@@ -43,6 +43,17 @@ class ChapterNavigationTest {
     }
 
     @Test
+    fun `fractional chapters are skipped only as adjacent destinations`() {
+        val order = listOf(chapter(1, 1f), chapter(2, 1.5f), chapter(3, 2f), chapter(4, -1f))
+        val policy = ChapterNavigationPolicy(skipFractionalChapters = true)
+        assertEquals(3L, ChapterNavigation.resolve(order, 1, ChapterIntent.NEXT, policy)?.id)
+        assertEquals(1L, ChapterNavigation.resolve(order, 3, ChapterIntent.PREVIOUS, policy)?.id)
+        assertEquals(3L, ChapterNavigation.resolve(order, 2, ChapterIntent.NEXT, policy)?.id)
+        assertEquals(4L, ChapterNavigation.resolve(order, 3, ChapterIntent.NEXT, policy)?.id)
+        assertEquals(2L, ChapterNavigation.resolve(order, 1, ChapterIntent.NEXT)?.id)
+    }
+
+    @Test
     fun `excluded groups are never chosen`() {
         val order = listOf(chapter(1, 1f, group = "A"), chapter(2, 2f, group = "B"), chapter(3, 3f, group = "A"))
         val policy = ChapterNavigationPolicy(excludedScanlators = setOf("B"))

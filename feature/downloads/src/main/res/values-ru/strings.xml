@@ -52,4 +52,6 @@
     <string name="downloads_audiobook_untitled">Аудиокнига</string>
     <string name="downloads_cancel_all">Отменить все</string>
     <string name="downloads_open_title">Открыть произведение</string>
+    <string name="downloads_save_cbz">Сохранить как CBZ</string>
+    <string name="downloads_saved_cbz">Сохранено в CBZ</string>
 </resources>

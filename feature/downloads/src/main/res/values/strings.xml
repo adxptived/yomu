@@ -51,4 +51,6 @@
     <string name="downloads_audiobook_untitled">Audiobook</string>
     <string name="downloads_cancel_all">Cancel all</string>
     <string name="downloads_open_title">Open title</string>
+    <string name="downloads_save_cbz">Save as CBZ</string>
+    <string name="downloads_saved_cbz">Saved as CBZ</string>
 </resources>
