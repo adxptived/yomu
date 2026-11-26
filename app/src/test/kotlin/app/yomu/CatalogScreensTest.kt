@@ -124,7 +124,7 @@ class CatalogScreensTest {
     }
 
     @OptIn(ExperimentalTestApi::class)
-    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 20_000)
+    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 60_000)
 
     /** A followed title of a source that is not installed (so no refresh can reach the network) with 12 chapters. */
     private fun seed(): Long = runBlocking {

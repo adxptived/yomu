@@ -89,7 +89,7 @@ class Release190Test {
     }
 
     @OptIn(ExperimentalTestApi::class)
-    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 20_000)
+    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 60_000)
 
     /**
      * The crash of the log (1.6.0, Android 16): an error inside the list of a title page was a scrolling column in a

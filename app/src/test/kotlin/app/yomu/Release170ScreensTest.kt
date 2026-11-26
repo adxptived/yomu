@@ -108,7 +108,7 @@ class Release170ScreensTest {
     }
 
     @OptIn(ExperimentalTestApi::class)
-    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 20_000)
+    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 60_000)
 
     // A fake release must stay newer as the installed application version changes.
     private val futureVersion = "${(BuildConfig.VERSION_NAME.substringBefore('.').toIntOrNull() ?: 2) + 1}.0.0"

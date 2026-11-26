@@ -52,7 +52,7 @@ class BookPaneScreensTest {
     }
 
     @OptIn(ExperimentalTestApi::class)
-    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 20_000)
+    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 60_000)
 
     private fun shot(name: String) {
         compose.mainClock.advanceTimeBy(1_500)

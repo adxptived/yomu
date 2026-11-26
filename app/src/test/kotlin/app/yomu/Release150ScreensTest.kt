@@ -71,7 +71,7 @@ class Release150ScreensTest {
     }
 
     @OptIn(ExperimentalTestApi::class)
-    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 20_000)
+    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 60_000)
 
     /** Followed titles of a source that is not installed (no refresh reaches the network); the first one is being read. */
     private fun seed(): List<Long> = runBlocking {

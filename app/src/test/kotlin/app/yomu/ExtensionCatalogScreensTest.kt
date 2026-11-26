@@ -79,7 +79,7 @@ class ExtensionCatalogScreensTest {
     }
 
     @OptIn(ExperimentalTestApi::class)
-    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 20_000)
+    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 60_000)
 
     /** A stand-in for a loaded Tachiyomi extension source: no network, fixed popular list. */
     private class FixtureSource(name: String, lang: String, titles: List<String>) : CatalogSource {

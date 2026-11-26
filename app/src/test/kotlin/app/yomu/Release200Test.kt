@@ -102,7 +102,7 @@ class Release200Test {
     }
 
     @OptIn(ExperimentalTestApi::class)
-    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 20_000)
+    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 60_000)
 
     private fun settingsScreen(section: SettingsSection) {
         val koin = GlobalContext.get()

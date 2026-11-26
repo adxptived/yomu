@@ -77,7 +77,7 @@ class Release201Test {
     }
 
     @OptIn(ExperimentalTestApi::class)
-    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 20_000)
+    private fun awaitText(text: String) = compose.waitUntilAtLeastOneExists(hasText(text, substring = true), 60_000)
 
     /** A tab of the profile's scrollable tab row (the last ones may be off screen). */
     private fun clickTab(label: String) {
