@@ -416,7 +416,7 @@ class AppSmokeTest {
         back()
         awaitText("MangaDex")
 
-        compose.onNode(hasText("Extensions") and hasClickAction()).performClick()
+        compose.onNode(hasContentDescription("Extensions") and hasClickAction()).performClick()
         awaitText("Installed")
         compose.mainClock.advanceTimeBy(2_000)
 

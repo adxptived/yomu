@@ -22,8 +22,10 @@ import app.yomu.data.source.SourceInfo
 import app.yomu.domain.catalog.ChapterDisplay
 import app.yomu.domain.catalog.ChapterNavigation
 import app.yomu.domain.catalog.ChapterOrder
+import app.yomu.domain.catalog.PublicationStatus
 import app.yomu.domain.catalog.UpdatePolicy
 import app.yomu.domain.catalog.UpdateRestriction
+import app.yomu.domain.catalog.UpdateSkip
 import app.yomu.domain.catalog.UpdateTitleState
 import app.yomu.domain.model.CatalogEntry
 import app.yomu.domain.model.ChapterInfo
@@ -83,6 +85,8 @@ data class UpdateCheckResult(
     val failed: List<Pair<String, Throwable>>,
     val checked: Int,
     val skipped: Int = 0,
+    /** The skipped titles with the rule that held them back, for the results screen (E2). */
+    val skippedTitles: List<Pair<String, UpdateSkip>> = emptyList(),
 ) {
     val newChapters: Int get() = updated.sumOf { it.newChapterIds.size }
 }
@@ -368,6 +372,10 @@ class CatalogRepository(
                 val reading = ChapterOrder.reading(dao.chapters(itemId).map { it.toDomain() })
                 val alternatives = ChapterNavigation.alternativeReleases(reading, chapterId)
                 if (alternatives.isNotEmpty()) dao.setRead(alternatives, true)
+                val key = itemId.toString()
+                if (key !in settings.trackPromptCompletedTitles.get()) {
+                    settings.trackPromptCompletedTitles.update { it + key }
+                }
                 chaptersReadListeners.forEach { it(itemId) }
             }
         }
@@ -459,13 +467,19 @@ class CatalogRepository(
         val shelves = db.collections().allItemRefs().groupBy({ it.itemId }, { it.collectionId })
         val dates = if (rows.isEmpty()) emptyMap() else dao.uploadDates(rows.map { it.item.id }).groupBy({ it.itemId }, { it.uploadDate })
         val now = System.currentTimeMillis()
+        val skippedTitles = mutableListOf<Pair<String, UpdateSkip>>()
         val due = rows.filter { row ->
             val status = when {
                 row.lastReadAt == null -> "NEW"
                 row.unread > 0 -> "READING"
                 else -> "FINISHED"
             }
-            UpdatePolicy.decide(
+            val publication = when (row.item.status) {
+                2 -> PublicationStatus.ENDED
+                1 -> PublicationStatus.ONGOING
+                else -> PublicationStatus.UNKNOWN
+            }
+            val decision = UpdatePolicy.decide(
                 title = UpdateTitleState(
                     status = status,
                     unreadChapters = row.unread,
@@ -475,6 +489,7 @@ class CatalogRepository(
                     lastSuccessAt = row.item.lastCheckSuccessAt,
                     intervalOverrideHours = row.item.updateIntervalHours,
                     excludedFromUpdates = row.item.updateExcluded,
+                    publication = publication,
                 ),
                 now = now,
                 intervalHours = interval,
@@ -482,7 +497,9 @@ class CatalogRepository(
                 excludedShelves = excluded,
                 uploadDates = dates[row.item.id].orEmpty(),
                 force = force,
-            ).eligible
+            )
+            if (!decision.eligible) skippedTitles += row.item.title to (decision.reason ?: UpdateSkip.INTERVAL)
+            decision.eligible
         }
         val updated = mutableListOf<TitleUpdate>()
         val failed = mutableListOf<Pair<String, Throwable>>()
@@ -510,7 +527,7 @@ class CatalogRepository(
                 }
             }.forEach { it.await() }
         }
-        UpdateCheckResult(updated.sortedBy { it.title.lowercase() }, failed, due.size, skipped = rows.size - due.size)
+        UpdateCheckResult(updated.sortedBy { it.title.lowercase() }, failed, due.size, skipped = rows.size - due.size, skippedTitles = skippedTitles.sortedBy { it.first.lowercase() })
     }
 
     /** Sources asked by global search, in the order of the source list: pinned, recently used, then by name. */

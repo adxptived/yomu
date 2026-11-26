@@ -41,6 +41,9 @@ import kotlinx.serialization.Serializable
 
 @Serializable data class TitleRoute(val entryId: Long)
 
+/** C3: the public page of a tracker title (service = [app.yomu.domain.tracking.TrackService.id]). */
+@Serializable data class TrackerTitleRoute(val service: Int, val remoteId: Long)
+
 @Serializable data class ExtensionsRoute(val addStore: String? = null)
 
 /**

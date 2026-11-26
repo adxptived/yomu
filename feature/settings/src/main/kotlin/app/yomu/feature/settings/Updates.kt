@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,10 +21,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -37,6 +42,18 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 
+/** How the APK of a release can be reached, which decides the action the dialog offers. */
+enum class ApkAvailability {
+    /** A downloaded APK for this device and the checksums are announced. */
+    READY,
+
+    /** Only the tag was readable (the API refused the request): the release page has the files. */
+    METADATA_UNAVAILABLE,
+
+    /** The API answered, but this release has no APK for the device's ABIs. */
+    NO_APK_FOR_DEVICE,
+}
+
 /** A release published on GitHub: its version (without the "v"), its page and the APK for this device, if any. */
 data class ReleaseInfo(
     val version: String,
@@ -48,9 +65,18 @@ data class ReleaseInfo(
     val checksumsUrl: String? = null,
     /** Release notes as written on GitHub (Markdown). */
     val notes: String = "",
+    /** When only the public release redirect was available. */
+    val metadataUnavailable: Boolean = false,
 ) {
     /** File name of the APK, the way SHA256SUMS.txt lists it. */
     val apkName: String? get() = apkUrl?.substringBefore('?')?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+
+    val apkAvailability: ApkAvailability
+        get() = when {
+            apkUrl != null -> ApkAvailability.READY
+            metadataUnavailable -> ApkAvailability.METADATA_UNAVAILABLE
+            else -> ApkAvailability.NO_APK_FOR_DEVICE
+        }
 }
 
 sealed interface UpdateState {
@@ -68,34 +94,115 @@ sealed interface UpdateState {
     /** The repository has no published release yet. */
     data object NoReleases : UpdateState
 
-    /** The check or the download of [release] failed. */
-    data class Failed(val error: Throwable, val release: ReleaseInfo? = null) : UpdateState
+    /**
+     * The check or the download of [release] failed. A check failure after an earlier success keeps that release in
+     * [release] and the moment it was found in [lastKnownAt], so the screen can show the last trustworthy result.
+     */
+    data class Failed(val error: Throwable, val release: ReleaseInfo? = null, val lastKnownAt: Long = 0) : UpdateState
 }
 
 /** The downloaded APK does not match SHA256SUMS.txt of its release (or is not listed there): it is deleted, not installed. */
 class UpdateChecksumException(file: String) : IOException("SHA-256 of $file does not match SHA256SUMS.txt")
 
+/** GitHub refused the check: [rateLimited] is true when the answer was 429 or the limit headers said so. */
+internal class UpdateCheckAccessException(val code: Int, val rateLimited: Boolean, val retryAfterMs: Long? = null) :
+    IOException("GitHub HTTP $code")
+
+/** The release object cannot be trusted: a draft, a tag that is not a version, or a broken body. */
+internal class UpdateReleaseFormatException(reason: String) : IOException("Unusable GitHub release: $reason")
+
+/** One check: the newest release (null = the repository has no published release) and the retry hint GitHub gave. */
+data class UpdateCheckOutcome(val release: ReleaseInfo?, val retryAfterMs: Long? = null)
+
 /**
- * Asks GitHub for the newest release: one small anonymous request, when the user taps "Check for updates" or, if they
- * turned it on, once a day at start (see [AppUpdates]).
+ * Asks GitHub for the newest release anonymously, falling back to the public release redirect if the API denies access.
+ * The API endpoint returns the latest non-draft, non-prerelease release, so stable releases are the default.
  */
 object UpdateChecker {
-    suspend fun latest(api: String = ProjectLinks.LATEST_RELEASE_API): ReleaseInfo? = withContext(Dispatchers.IO) {
-        val c = (URL(api).openConnection() as HttpURLConnection).apply {
-            connectTimeout = TIMEOUT_MS
-            readTimeout = TIMEOUT_MS
-            setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", "Yomu")
+    suspend fun latest(api: String = ProjectLinks.LATEST_RELEASE_API): ReleaseInfo? =
+        check(api, "${ProjectLinks.RELEASES_URL}/latest", Build.SUPPORTED_ABIS?.toList().orEmpty()).release
+
+    internal suspend fun latest(api: String, releasePage: String): ReleaseInfo? =
+        check(api, releasePage, Build.SUPPORTED_ABIS?.toList().orEmpty()).release
+
+    internal suspend fun check(
+        api: String,
+        releasePage: String,
+        abis: List<String>,
+        timeoutMs: Int = TIMEOUT_MS,
+    ): UpdateCheckOutcome =
+        withContext(Dispatchers.IO) {
+            try {
+                latestFromApi(api, abis, timeoutMs)
+            } catch (error: UpdateCheckAccessException) {
+                if (error.code != HttpURLConnection.HTTP_FORBIDDEN && error.code != 429) throw error
+                val release = try {
+                    latestFromPage(releasePage, timeoutMs)
+                } catch (fallbackError: IOException) {
+                    error.addSuppressed(fallbackError)
+                    null
+                }
+                if (release != null) UpdateCheckOutcome(release, error.retryAfterMs) else throw error
+            }
         }
-        try {
+
+    private fun latestFromApi(api: String, abis: List<String>, timeoutMs: Int): UpdateCheckOutcome {
+        val c = connection(api, timeoutMs).apply {
+            setRequestProperty("Accept", "application/vnd.github+json")
+        }
+        return try {
             when (val code = c.responseCode) {
-                HttpURLConnection.HTTP_NOT_FOUND -> null
-                in 200..299 -> parse(c.inputStream.bufferedReader().use { it.readText() })
-                else -> throw IOException("HTTP $code")
+                HttpURLConnection.HTTP_NOT_FOUND -> UpdateCheckOutcome(null, retryAfterMs(c))
+                HttpURLConnection.HTTP_FORBIDDEN, 429 -> throw UpdateCheckAccessException(
+                    code,
+                    rateLimited = code == 429 || c.getHeaderField("X-RateLimit-Remaining") == "0" ||
+                        c.getHeaderField("Retry-After") != null,
+                    retryAfterMs = retryAfterMs(c),
+                )
+                in 200..299 -> UpdateCheckOutcome(parse(c.inputStream.bufferedReader().use { it.readText() }, abis))
+                else -> throw UpdateCheckAccessException(code, rateLimited = false, retryAfterMs = retryAfterMs(c))
             }
         } finally {
             c.disconnect()
         }
+    }
+
+    /** The version from a redirect to a tag of this repository only; anything else is not a release of Yomu. */
+    private fun latestFromPage(url: String, timeoutMs: Int): ReleaseInfo? {
+        val c = connection(url, timeoutMs).apply { instanceFollowRedirects = false }
+        try {
+            if (c.responseCode !in 300..399) return null
+            val location = c.getHeaderField("Location") ?: return null
+            val prefix = "${ProjectLinks.RELEASES_URL}/tag/v"
+            if (!location.startsWith(prefix)) return null
+            val version = location.removePrefix(prefix).substringBefore('#').trim()
+            if (!STABLE_VERSION.matches(version)) return null
+            return ReleaseInfo(version, location, apkUrl = null, metadataUnavailable = true)
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    private fun retryAfterMs(c: HttpURLConnection): Long? {
+        c.getHeaderField("Retry-After")?.let { value ->
+            val seconds = value.toLongOrNull()
+            if (seconds != null) return seconds.coerceIn(0, MAX_RETRY_AFTER_MS / 1000) * 1000
+            val retryAt = runCatching {
+                java.time.ZonedDateTime.parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli()
+            }.getOrNull()
+            if (retryAt != null) return (retryAt - System.currentTimeMillis()).coerceIn(0, MAX_RETRY_AFTER_MS)
+        }
+        c.getHeaderField("X-RateLimit-Reset")?.toLongOrNull()?.let { reset ->
+            val wait = reset * 1000 - System.currentTimeMillis()
+            return wait.coerceIn(0, MAX_RETRY_AFTER_MS)
+        }
+        return null
+    }
+
+    private fun connection(url: String, timeoutMs: Int = TIMEOUT_MS) = (URL(url).openConnection() as HttpURLConnection).apply {
+        connectTimeout = timeoutMs
+        readTimeout = timeoutMs
+        setRequestProperty("User-Agent", "Yomu")
     }
 
     /**
@@ -105,8 +212,12 @@ object UpdateChecker {
      */
     fun parse(json: String, abis: List<String> = Build.SUPPORTED_ABIS?.toList().orEmpty()): ReleaseInfo {
         val o = Json.parseToJsonElement(json).jsonObject
-        val tag = o["tag_name"]?.jsonPrimitive?.content.orEmpty()
-        val page = o["html_url"]?.jsonPrimitive?.content ?: ProjectLinks.RELEASES_URL
+        if (o["draft"]?.jsonPrimitive?.booleanOrNull == true) throw UpdateReleaseFormatException("draft")
+        if (o["prerelease"]?.jsonPrimitive?.booleanOrNull == true) throw UpdateReleaseFormatException("prerelease")
+        val tag = o["tag_name"]?.jsonPrimitive?.content.orEmpty().trim()
+        val version = tag.removePrefix("v")
+        if (!RELEASE_VERSION.matches(version)) throw UpdateReleaseFormatException("tag \"$tag\"")
+        val page = o["html_url"]?.jsonPrimitive?.contentOrNull?.takeIf { it.startsWith("https://") } ?: ProjectLinks.RELEASES_URL
         val assets = o["assets"]?.jsonArray.orEmpty().mapNotNull { a ->
             val asset = a.jsonObject
             val url = asset["browser_download_url"]?.jsonPrimitive?.contentOrNull?.takeIf { it.startsWith("https://") } ?: return@mapNotNull null
@@ -115,9 +226,11 @@ object UpdateChecker {
         val apks = assets.filter { it.name.endsWith(".apk", ignoreCase = true) }
         val apk = abis.firstNotNullOfOrNull { abi -> apks.firstOrNull { it.name.substringBeforeLast('.').endsWith("-$abi", ignoreCase = true) } }
             ?: apks.firstOrNull { it.name.contains("universal", ignoreCase = true) }
-            ?: apks.singleOrNull()
+            ?: apks.singleOrNull()?.takeUnless { asset ->
+                APK_ABIS.any { asset.name.substringBeforeLast('.').endsWith("-$it", ignoreCase = true) }
+            }
         return ReleaseInfo(
-            version = tag.removePrefix("v"),
+            version = version,
             pageUrl = page,
             apkUrl = apk?.url,
             apkSize = apk?.size ?: 0,
@@ -126,7 +239,12 @@ object UpdateChecker {
         )
     }
 
-    /** Whether [remote] is a higher version than [current]; suffixes such as "-debug" or "-nightly.12" are ignored. */
+    /**
+     * Whether [remote] is a higher version than [current]; build suffixes such as "-debug" or "-nightly.12" are ignored
+     * for the numbers. A stable release of the same number is newer than its beta (`1.7.0` over `1.7.0-beta.2`), while
+     * an unknown build suffix of the same number (`1.7.0-debug`) stays equal, so a debug build is never offered its own
+     * release every day.
+     */
     fun isNewer(remote: String, current: String): Boolean {
         val r = numbers(remote)
         val c = numbers(current)
@@ -135,8 +253,12 @@ object UpdateChecker {
             val b = c.getOrElse(i) { 0 }
             if (a != b) return a > b
         }
-        return false
+        val remotePre = isPrerelease(remote)
+        val currentPre = isPrerelease(current)
+        return currentPre && !remotePre
     }
+
+    private fun isPrerelease(v: String): Boolean = PRERELEASE.containsMatchIn(v)
 
     /** "<sha256>  <file>" lines as written by `sha256sum` (a "*" marks binary mode): file name to lowercase hash. */
     fun parseChecksums(text: String): Map<String, String> = text.lineSequence()
@@ -149,8 +271,13 @@ object UpdateChecker {
     private class Asset(val name: String, val url: String, val size: Long)
 
     const val CHECKSUMS = "SHA256SUMS.txt"
+    private val STABLE_VERSION = Regex("""\d+\.\d+\.\d+""")
+    private val APK_ABIS = listOf("arm64-v8a", "armeabi-v7a", "armeabi", "x86_64", "x86", "mips64", "mips", "riscv64")
+    private val RELEASE_VERSION = Regex("""\d+\.\d+(\.\d+)?([-+][0-9A-Za-z.+-]+)?""")
+    private val PRERELEASE = Regex("""-(alpha|beta|rc|pre|nightly|dev)""", RegexOption.IGNORE_CASE)
     private val CHECKSUM_LINE = Regex("""^([0-9a-fA-F]{64})\s+\*?(.+)$""")
     private const val TIMEOUT_MS = 10_000
+    private const val MAX_RETRY_AFTER_MS = 24L * 60 * 60 * 1000
 }
 
 /**
@@ -178,7 +305,7 @@ interface UpdateBackground {
 }
 
 /**
- * Updates of the app from GitHub Releases. Checking is one anonymous request: when the user taps "Check for updates",
+ * Updates of the app from GitHub Releases. Checking is anonymous: when the user taps "Check for updates",
  * or once a day at start if they turned that on (off by default, the app goes online only when asked). The APK built
  * for this device is downloaded into the cache, its SHA-256 is compared with SHA256SUMS.txt of the release, and the
  * system installer takes over; Android itself only accepts an update signed with the same key.
@@ -188,7 +315,7 @@ interface UpdateBackground {
 class AppUpdates(
     private val context: Context,
     private val settings: AppSettings,
-    private val fetch: suspend () -> ReleaseInfo? = { UpdateChecker.latest() },
+    private val fetch: (suspend () -> ReleaseInfo?)? = null,
     private val downloader: suspend (ReleaseInfo, File, (Float?) -> Unit) -> File = UpdateDownloader::download,
     private val installer: (File) -> Unit = { file ->
         UpdateDownloader.checkPackage(context, file)
@@ -196,9 +323,23 @@ class AppUpdates(
     },
     private val now: () -> Long = System::currentTimeMillis,
     private val background: UpdateBackground? = null,
+    /** A check that also reports GitHub's retry hint; when absent, [fetch] is used. */
+    private val fetchCheck: (suspend () -> UpdateCheckOutcome)? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var job: Job? = null
+
+    /** One request at a time: an automatic check at start and a tap on "Check" share the same answer. */
+    private val checkLock = Mutex()
+
+    /** The last trustworthy answer; [hasOutcome] tells a "no releases" answer from "never checked in this process". */
+    private var lastOutcome: UpdateCheckOutcome? = null
+    private var hasOutcome = false
+    private var lastSuccessAt = 0L
+    private var nextAttemptAt = 0L
+    private var failures = 0
+    private var restored = false
+    private var fetchedInProcess = false
 
     /** The installed version name ("1.7.0", "1.7.0-debug"). */
     val current: String = appVersion(context).first
@@ -221,12 +362,20 @@ class AppUpdates(
         latest.takeIf { it.isNotBlank() && UpdateChecker.isNewer(it, current) && !SkipUpdate.isSkipped(it, skipped, current) }
     }.distinctUntilChanged()
 
+    /** Version whose catalog banner the user closed; a newer release brings the banner back. */
+    val dismissedVersion: Flow<String?> = settings.updateDismissedVersion.flow.map { it.takeIf(String::isNotBlank) }
+
+    /** The cross of the catalog banner: gone for this version only, the dot on Settings stays. */
+    fun dismissBanner(version: String) {
+        scope.launch { settings.updateDismissedVersion.set(SkipUpdate.normalize(version)) }
+    }
+
     /** At start: the daily check, if the user turned it on. Quiet, only a newer release changes anything. */
     fun checkIfDue() {
         scope.launch {
             if (!settings.updateAutoCheck.get()) return@launch
             if (now() - settings.updateCheckedAt.get() < CHECK_EVERY_MS) return@launch
-            runCheck(quiet = true, openDialog = false)
+            runCheck(quiet = true, openDialog = false, manual = false)
         }
     }
 
@@ -235,7 +384,7 @@ class AppUpdates(
         val s = _state.value
         if (s is UpdateState.Checking || s is UpdateState.Downloading) return
         _state.value = UpdateState.Checking
-        job = scope.launch { runCheck(quiet = false, openDialog = openDialog) }
+        job = scope.launch { runCheck(quiet = false, openDialog = openDialog, manual = true) }
     }
 
     /** A tap on the update card or item: the release, checking first if this run of the app has not yet. */
@@ -251,6 +400,15 @@ class AppUpdates(
 
     fun dismissDialog() {
         _dialog.value = null
+    }
+
+    /**
+     * Stops background work and drops the scope. The app keeps one instance for its whole life and never calls this;
+     * a test (or a replacement of the object) calls it so no late write outlives the screens.
+     */
+    fun shutdown() {
+        job?.cancel()
+        scope.cancel()
     }
 
     /**
@@ -361,42 +519,125 @@ class AppUpdates(
         }
     }
 
-    private suspend fun runCheck(quiet: Boolean, openDialog: Boolean) {
+    private suspend fun runCheck(quiet: Boolean, openDialog: Boolean, manual: Boolean) {
         val result = try {
-            val latest = fetch()
-            settings.updateCheckedAt.set(now())
-            settings.updateLatest.set(latest?.version.orEmpty())
-            when {
-                latest == null -> UpdateState.NoReleases
-                UpdateChecker.isNewer(latest.version, current) -> UpdateState.Available(latest)
-                else -> UpdateState.UpToDate(current.substringBefore('-'))
-            }
+            checkOnce(manual)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Timber.i(e, "Update check failed")
-            UpdateState.Failed(e)
+            CheckResult.Failed(e)
         }
+        val state = stateOf(result)
         val skipped = settings.skipUpdateVersion.get()
         if (quiet) {
             // The check at start speaks up only for a newer version, and never over a download in progress or one
             // the user chose to skip. The dot is filtered separately by [available].
             val s = _state.value
-            if (result is UpdateState.Available && !SkipUpdate.isSkipped(result.release.version, skipped, current) &&
+            if (state is UpdateState.Available && !SkipUpdate.isSkipped(state.release.version, skipped, current) &&
                 (s is UpdateState.Idle || s is UpdateState.UpToDate || s is UpdateState.NoReleases || s is UpdateState.Failed)
             ) {
-                _state.value = result
+                _state.value = state
             }
             return
         }
         // A manual check still reports the version it found; only the automatic prompt/dialog stays quiet.
-        _state.value = result
-        if (openDialog && result is UpdateState.Available && !SkipUpdate.isSkipped(result.release.version, skipped, current)) _dialog.value = result.release
+        _state.value = state
+        if (openDialog && state is UpdateState.Available && !SkipUpdate.isSkipped(state.release.version, skipped, current)) {
+            _dialog.value = state.release
+        }
+    }
+
+    /** The last answer when it is still current, otherwise one anonymous request. Callers see one request at most. */
+    private suspend fun checkOnce(manual: Boolean): CheckResult = checkLock.withLock {
+        restore()
+        val fresh = if (manual) {
+            hasOutcome && now() - lastSuccessAt in 0 until SUCCESS_INTERVAL_MS &&
+                (fetchedInProcess || lastOutcome?.release?.metadataUnavailable != true)
+        } else {
+            now() < nextAttemptAt
+        }
+        if (fresh) return@withLock CheckResult.Cached(lastOutcome)
+        try {
+            val outcome = fetchCheck?.invoke() ?: fetch?.let { UpdateCheckOutcome(it()) } ?: UpdateChecker.check(
+                ProjectLinks.LATEST_RELEASE_API,
+                "${ProjectLinks.RELEASES_URL}/latest",
+                Build.SUPPORTED_ABIS?.toList().orEmpty(),
+            )
+            lastOutcome = outcome
+            hasOutcome = true
+            fetchedInProcess = true
+            lastSuccessAt = now()
+            failures = 0
+            nextAttemptAt = lastSuccessAt + maxOf(SUCCESS_INTERVAL_MS, outcome.retryAfterMs ?: 0)
+            settings.updateCheckedAt.set(if (outcome.release?.metadataUnavailable == true) 0 else lastSuccessAt)
+            settings.updateLastSuccessAt.set(lastSuccessAt)
+            settings.updateNextAttemptAt.set(nextAttemptAt)
+            settings.updateLatest.set(outcome.release?.version.orEmpty())
+            CheckResult.Cached(outcome)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            failures = (failures + 1).coerceAtMost(MAX_FAILURES)
+            nextAttemptAt = now() + backoffMs(e)
+            settings.updateNextAttemptAt.set(nextAttemptAt)
+            throw e
+        }
+    }
+
+    private fun stateOf(result: CheckResult): UpdateState = when (result) {
+        is CheckResult.Failed -> UpdateState.Failed(result.error, lastOutcome?.release, lastSuccessAt)
+        is CheckResult.Cached -> when (val release = result.outcome?.release) {
+            null -> UpdateState.NoReleases
+            else -> if (UpdateChecker.isNewer(release.version, current)) {
+                UpdateState.Available(release)
+            } else {
+                UpdateState.UpToDate(current.substringBefore('-'))
+            }
+        }
+    }
+
+    /** Nothing is remembered between processes except the version found: a restarted app starts from it. */
+    private suspend fun restore() {
+        if (restored) return
+        restored = true
+        lastSuccessAt = settings.updateLastSuccessAt.get()
+        nextAttemptAt = settings.updateNextAttemptAt.get()
+        val version = settings.updateLatest.get()
+        if (version.isNotBlank()) {
+            lastOutcome = UpdateCheckOutcome(
+                ReleaseInfo(version, "${ProjectLinks.RELEASES_URL}/tag/v$version", apkUrl = null, metadataUnavailable = true),
+            )
+            hasOutcome = true
+        } else if (lastSuccessAt > 0) {
+            lastOutcome = UpdateCheckOutcome(null)
+            hasOutcome = true
+        }
+    }
+
+    /** A temporary failure waits a little longer each time; GitHub's own retry hint wins when it has one. */
+    private fun backoffMs(error: Throwable): Long {
+        val hinted = (error as? UpdateCheckAccessException)?.retryAfterMs
+        if (hinted != null && hinted > 0) return hinted
+        val exponent = (failures - 1).coerceIn(0, 6)
+        return (BACKOFF_STEP_MS shl exponent).coerceAtMost(MAX_BACKOFF_MS)
+    }
+
+    private sealed interface CheckResult {
+        data class Cached(val outcome: UpdateCheckOutcome?) : CheckResult
+        data class Failed(val error: Throwable) : CheckResult
     }
 
     companion object {
         /** A little less than a day, so a phone opened at about the same time every morning checks every day. */
         const val CHECK_EVERY_MS = 20L * 60 * 60 * 1000
+
+        /** Two taps, or a start and a tap, within this window share one answer. */
+        const val SUCCESS_INTERVAL_MS = 60_000L
+
+        private const val BACKOFF_STEP_MS = 20_000L
+        private const val MAX_BACKOFF_MS = 15L * 60 * 1000
+        private const val MAX_FAILURES = 6
     }
 }
 

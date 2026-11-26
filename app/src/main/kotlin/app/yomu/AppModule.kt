@@ -217,6 +217,14 @@ class MainViewModel(
     /** Incognito mode: a strip above every screen says it is on. */
     val incognito: StateFlow<Boolean> = settings.incognito.flow.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    /** The "new chapters" widget asked for the updates feed: the catalog opens on it once, then clears this. */
+    private val _openUpdates = MutableStateFlow(false)
+    val openUpdates: StateFlow<Boolean> = _openUpdates.asStateFlow()
+
+    fun updatesOpened() {
+        _openUpdates.value = false
+    }
+
     fun setIncognito(on: Boolean) = viewModelScope.launch(ScreenErrors) { settings.incognito.set(on) }
 
     val hideCovers: StateFlow<Boolean> = settings.hideCovers.flow.stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -291,6 +299,11 @@ class MainViewModel(
             // Rows of the "New chapters" widget open the chapter itself.
             NewChaptersWidgets.ACTION_OPEN_CHAPTER -> intent.getLongExtra(NewChaptersWidgets.EXTRA_ID, -1).takeIf { it > 0 }
                 ?.let { _events.trySend(MainEvent.OpenChapter(it)) }
+            // The header of that widget opens the updates feed of the catalog.
+            NewChaptersWidgets.ACTION_OPEN_UPDATES -> {
+                _openUpdates.value = true
+                _events.trySend(MainEvent.OpenCatalog)
+            }
         }
     }
 

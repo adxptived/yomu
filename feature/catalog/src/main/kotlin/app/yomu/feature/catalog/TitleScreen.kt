@@ -5,10 +5,12 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -177,6 +179,7 @@ import app.yomu.core.ui.components.TabsPickerSheet
 import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.animateMotionFloat
+import app.yomu.core.ui.components.pressPulse
 import app.yomu.core.ui.components.coverTint
 import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.motionItem
@@ -221,11 +224,13 @@ fun TitleScreen(
     onPreviewChapter: ((Long) -> Unit)? = null,
     onOpenSavedEdition: ((Long) -> Unit)? = null,
     onReplaceSavedEdition: ((Long, Long) -> Unit)? = null,
+    /** C3: opens the tracking service's own page for a linked title. */
+    onOpenTrackerPage: ((app.yomu.domain.tracking.TrackService, Long) -> Unit)? = null,
 ) {
     val cover by viewModel.entry.collectAsStateWithLifecycle()
     val external by viewModel.externalMetadata.collectAsStateWithLifecycle()
     CoverTheme(rememberCoverColor(external?.coverUrl ?: cover?.coverUrl)) {
-        TitleContent(viewModel, onBack, onReadChapter, onMigrate, onOpenWebView, onOpenDownloads, inPane, onOpenBook, onPreviewChapter, onOpenSavedEdition, onReplaceSavedEdition)
+        TitleContent(viewModel, onBack, onReadChapter, onMigrate, onOpenWebView, onOpenDownloads, inPane, onOpenBook, onPreviewChapter, onOpenSavedEdition, onReplaceSavedEdition, onOpenTrackerPage)
     }
 }
 
@@ -243,6 +248,7 @@ private fun TitleContent(
     onPreviewChapter: ((Long) -> Unit)?,
     onOpenSavedEdition: ((Long) -> Unit)?,
     onReplaceSavedEdition: ((Long, Long) -> Unit)?,
+    onOpenTrackerPage: ((app.yomu.domain.tracking.TrackService, Long) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val entry by viewModel.entry.collectAsStateWithLifecycle()
@@ -293,6 +299,12 @@ private fun TitleContent(
     var showTracking by remember { mutableStateOf(false) }
     var matchingMetadata by remember { mutableStateOf(false) }
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
+    val trackPromptState by viewModel.trackPromptState.collectAsStateWithLifecycle()
+    val trackerVersion by viewModel.trackerVersion.collectAsStateWithLifecycle()
+    val trackPromptEligible by viewModel.trackPromptEligible.collectAsStateWithLifecycle()
+    val anyTrackerSignedIn = remember(trackerVersion) {
+        app.yomu.domain.tracking.TrackService.entries.any { viewModel.trackerSignedIn(it) }
+    }
 
     CatalogEventsEffect(viewModel.events, snackbar, onOpenWebView = onOpenWebView, onOpenBook = onOpenBook)
     val numberWidth = rememberNumberWidth(chapters, stats.total)
@@ -609,9 +621,12 @@ private fun TitleContent(
                         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Dimens.l, vertical = Dimens.s),
                         horizontalArrangement = Arrangement.spacedBy(Dimens.s),
                     ) {
-                        FilledTonalButton(onClick = {
-                            toggleFavorite(e)
-                        }) {
+                        val favoriteInteraction = remember { MutableInteractionSource() }
+                        FilledTonalButton(
+                            onClick = { toggleFavorite(e) },
+                            interactionSource = favoriteInteraction,
+                            modifier = Modifier.clip(CircleShape).pressPulse(favoriteInteraction, scaleOnPress = true),
+                        ) {
                             PopIcon(e.favorite, Icons.Filled.Favorite, Icons.Filled.FavoriteBorder, null, Modifier.size(18.dp))
                             Text(stringResource(if (e.favorite) R.string.in_library else R.string.title_add_to_library), Modifier.padding(start = Dimens.s))
                         }
@@ -623,13 +638,27 @@ private fun TitleContent(
                             }
                         }
                         if (!isBook) {
-                            OutlinedButton(onClick = { matchingMetadata = true; viewModel.searchMetadata(e.title) }) {
+                            OutlinedButton(onClick = { matchingMetadata = true; viewModel.openMetadataSearch() }) {
                                 Text(stringResource(R.string.metadata_find))
                             }
                         }
                     }
                 }
                 if (!displayDescription.isNullOrBlank()) item(key = "description") { Description(displayDescription!!) }
+
+                // C2: one quiet hint after the first read chapter of a title with no tracker, only while a service is
+                // signed in. "Later" waits a week, "Never" keeps it away for this title.
+                if (!isBook && e.favorite && trackPromptEligible && stats.read > 0 && tracks.isEmpty() && anyTrackerSignedIn &&
+                    !app.yomu.domain.tracking.TrackPrompt.hidden(trackPromptState, e.id, System.currentTimeMillis())
+                ) {
+                    item(key = "track-prompt") {
+                        TrackPromptCard(
+                            onLink = { showTracking = true; viewModel.openSuggestedTrack() },
+                            onLater = { viewModel.snoozeTrackPrompt(forever = false) },
+                            onNever = { viewModel.snoozeTrackPrompt(forever = true) },
+                        )
+                    }
+                }
                 externalMetadata?.let { meta ->
                     item(key = "metadata") {
                         Surface(
@@ -642,7 +671,7 @@ private fun TitleContent(
                                 Text(meta.title, style = MaterialTheme.typography.bodyMedium)
                                 Text(meta.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Row(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
-                                    TextButton(onClick = { matchingMetadata = true; viewModel.searchMetadata(e.title) }) {
+                                    TextButton(onClick = { matchingMetadata = true; viewModel.openMetadataSearch() }) {
                                         Text(stringResource(R.string.metadata_change))
                                     }
                                     TextButton(onClick = { viewModel.linkMetadata(null) }) {
@@ -844,11 +873,17 @@ private fun TitleContent(
         )
     }
     if (matchingMetadata) {
+        val metadataProviders by viewModel.metadataProviders.collectAsStateWithLifecycle()
+        val metadataProvider by viewModel.metadataProvider.collectAsStateWithLifecycle()
         MetadataMatchDialog(
             state = metadataSearch,
             initialQuery = e?.title.orEmpty(),
-            onSearch = viewModel::searchMetadata,
+            providers = metadataProviders,
+            provider = metadataProvider,
+            onProvider = { provider, query -> viewModel.searchMetadata(query, provider) },
+            onSearch = { query -> viewModel.searchMetadata(query) },
             onPick = { viewModel.linkMetadata(it) },
+            onUseSource = { viewModel.linkMetadata(null); matchingMetadata = false },
             onDismiss = { matchingMetadata = false; viewModel.closeMetadataSearch() },
         )
     }
@@ -924,7 +959,7 @@ private fun TitleContent(
             dismissButton = { TextButton(onClick = { updateSchedule = false }) { Text(stringResource(CoreR.string.cancel)) } },
         )
     }
-    if (showTracking) TrackingSheet(viewModel, onDismiss = { showTracking = false })
+    if (showTracking) TrackingSheet(viewModel, onDismiss = { showTracking = false }, onOpenTrackerPage = onOpenTrackerPage)
     if (showDisplay) {
         ChapterDisplaySheet(
             display = display,
@@ -1187,7 +1222,12 @@ private fun TitlePrimaryAction(
         Modifier.fillMaxWidth().padding(horizontal = Dimens.l),
         verticalArrangement = Arrangement.spacedBy(Dimens.s),
     ) {
-        Button(onClick = onRead, modifier = Modifier.fillMaxWidth()) {
+        val interaction = remember { MutableInteractionSource() }
+        Button(
+            onClick = onRead,
+            interactionSource = interaction,
+            modifier = Modifier.fillMaxWidth().clip(CircleShape).pressPulse(interaction, scaleOnPress = true),
+        ) {
             Icon(Icons.Filled.PlayArrow, null)
             Text(
                 bookLabel ?: stringResource(

@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Subject
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BrightnessMedium
@@ -29,10 +30,13 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.ViewDay
 import androidx.compose.material.icons.filled.WbTwilight
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.FormatLineSpacing
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Margin
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Public
@@ -549,11 +553,7 @@ private fun TextSettings(s: TextReaderSettings, vm: ReaderViewModel, query: Stri
             else -> 1
         }
         OptionTiles(
-            listOf(
-                TileOption(0, stringResource(R.string.rs_mode_paged)),
-                TileOption(1, stringResource(R.string.rs_mode_scroll)),
-                TileOption(2, stringResource(R.string.rs_mode_strip)),
-            ),
+            textReadingModeTiles(),
             mode,
             { v -> vm.updateText { it.copy(paged = v != 1, longStrip = v == 2) } },
         )
@@ -832,6 +832,19 @@ fun ReaderTheme.label(): Int = when (this) {
     ReaderTheme.CUSTOM -> R.string.theme_custom
 }
 
+@Composable
+internal fun textReadingModeTiles() = listOf(
+    TileOption(0, stringResource(R.string.rs_mode_paged), Icons.AutoMirrored.Outlined.MenuBook),
+    TileOption(1, stringResource(R.string.rs_mode_scroll), Icons.Filled.SwapVert),
+    TileOption(2, stringResource(R.string.rs_mode_strip), Icons.Filled.ViewDay),
+)
+
+@Composable
+internal fun pdfRepresentationTiles() = listOf(
+    TileOption(false, stringResource(R.string.rs_pdf_original), Icons.AutoMirrored.Outlined.InsertDriveFile),
+    TileOption(true, stringResource(R.string.rs_pdf_text), Icons.AutoMirrored.Filled.Subject),
+)
+
 /** PDF: the layout, the crop of empty margins and the look of the scan. */
 @Composable
 private fun PdfSettingsContent(s: PdfSettings, vm: ReaderViewModel, query: String) {
@@ -844,10 +857,7 @@ private fun PdfSettingsContent(s: PdfSettings, vm: ReaderViewModel, query: Strin
     ) {
         Text(stringResource(R.string.rs_pdf_representation), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = Dimens.l, top = Dimens.m))
         OptionTiles(
-            listOf(
-                TileOption(false, stringResource(R.string.rs_pdf_original)),
-                TileOption(true, stringResource(R.string.rs_pdf_text)),
-            ),
+            pdfRepresentationTiles(),
             s.reflow,
             { reflow -> vm.updatePdf { it.copy(reflow = reflow) } },
         )
@@ -1186,7 +1196,7 @@ private fun ControlSettings(
             // differently, and the old behaviour is kept for every existing installation.
             Text(stringResource(R.string.rs_tap_zones_pdf), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = Dimens.l, top = Dimens.s))
             OptionTiles(
-                listOf(TileOption<TapZoneLayout?>(null, stringResource(R.string.rs_zones_same_as_text))) +
+                listOf(TileOption<TapZoneLayout?>(null, stringResource(R.string.rs_zones_same_as_text), Icons.Outlined.Link)) +
                     TapZoneLayout.entries.map { layout ->
                         TileOption<TapZoneLayout?>(layout, zoneLabel(layout), preview = { _ -> TapZonesDiagram(layout, invertX = false, invertY = false, rtl = false, sideFraction = 0.25f) })
                     },

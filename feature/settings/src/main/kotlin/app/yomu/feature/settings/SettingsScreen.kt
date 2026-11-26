@@ -5,6 +5,9 @@ import android.content.Context
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -118,9 +121,9 @@ enum class SettingsSection(val title: Int, val summary: Int, val icon: ImageVect
     SELECTION(R.string.set_selection, R.string.set_selection_sum, Icons.Outlined.TextFields, listOf(R.string.set_selection_actions, R.string.set_custom_actions)),
     QUICK_ACTIONS(R.string.set_quick, R.string.set_quick_sum, Icons.Outlined.TouchApp, listOf(R.string.set_page_menu_style, R.string.set_selection_menu_style, R.string.set_page_actions, R.string.set_reader_bar)),
     TRANSLATION(R.string.set_translation, R.string.set_translation_sum, Icons.Outlined.Translate, listOf(R.string.set_translation_mode, R.string.set_engine, R.string.set_target_lang, R.string.set_source_lang, R.string.set_deepl_key, R.string.set_libre_url, R.string.set_llm_url, R.string.set_llm_model, R.string.set_llm_prompt, R.string.set_language_packs, R.string.set_online_dictionary, R.string.set_dictionaries, R.string.set_daily_goal, R.string.set_reminder, R.string.set_review_modes)),
-    CATALOG(R.string.set_catalog, R.string.set_catalog_sum, Icons.Outlined.Public, listOf(R.string.set_update_interval, R.string.set_update_wifi, R.string.set_show_nsfw, R.string.set_incognito, R.string.set_extensions, R.string.set_hidden_sources, R.string.set_revoke_trust)),
+    CATALOG(R.string.set_catalog, R.string.set_catalog_sum, Icons.Outlined.Public, listOf(R.string.set_metadata_provider, R.string.set_metadata_provider_manga, R.string.set_metadata_provider_novel, R.string.set_update_interval, R.string.set_update_restrictions, R.string.set_update_restriction_started, R.string.set_update_restriction_unread, R.string.set_update_restriction_unstarted, R.string.set_update_restriction_completed, R.string.set_update_restriction_publication_ended, R.string.set_update_excluded_shelves, R.string.set_update_wifi, R.string.set_show_nsfw, R.string.set_incognito, R.string.set_extensions, R.string.set_hidden_sources, R.string.set_revoke_trust)),
     YOUTUBE(R.string.set_youtube, R.string.set_youtube_sum, Icons.Outlined.SmartDisplay, listOf(R.string.set_youtube_account, R.string.set_youtube_sign_in, R.string.set_youtube_sign_out)),
-    TRACKING(R.string.set_tracking, R.string.set_tracking_sum, Icons.Outlined.TrackChanges, listOf(R.string.set_track_auto, R.string.set_track_push, R.string.set_track_keys)),
+    TRACKING(R.string.set_tracking, R.string.set_tracking_sum, Icons.Outlined.TrackChanges, listOf(R.string.set_track_auto, R.string.set_track_align, R.string.set_track_push, R.string.set_track_keys)),
     DOWNLOADS(R.string.set_downloads, R.string.set_downloads_sum, Icons.Outlined.Download, listOf(R.string.set_download_wifi, R.string.set_parallel, R.string.set_page_threads, R.string.set_auto_download_new, R.string.set_download_ahead, R.string.set_download_retries, R.string.set_auto_delete, R.string.set_pack_cbz, R.string.set_storage, R.string.set_clear_cache)),
     NETWORK(R.string.set_network, R.string.set_network_sum, Icons.Outlined.DataUsage, listOf(R.string.set_download_wifi, R.string.set_net_update_wifi, R.string.set_models_wifi, R.string.set_data_saver, R.string.set_covers_mobile, R.string.set_warn_mobile, R.string.set_traffic, R.string.set_traffic_reset)),
     BACKUP(R.string.set_backup, R.string.set_backup_sum, Icons.Outlined.Backup, listOf(R.string.set_backup_create, R.string.set_backup_restore, R.string.set_mihon_import, R.string.set_auto_backup, R.string.set_backup_folder, R.string.set_backup_keep, R.string.set_reset_all)),
@@ -226,7 +229,15 @@ fun SettingsScreen(
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        TopLevelBody(padding, Modifier.hazeSource(topBarBackdrop), drawBehindTopBar = true) { CompositionLocalProvider(LocalSettingsFocus provides focus) { AnimatedContent(targetState = current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "settings") { s ->
+        val reduceMotion = app.yomu.core.ui.components.LocalReduceMotion.current
+        TopLevelBody(padding, Modifier.hazeSource(topBarBackdrop), drawBehindTopBar = true) { CompositionLocalProvider(LocalSettingsFocus provides focus) { AnimatedContent(
+            targetState = current,
+            transitionSpec = {
+                if (reduceMotion) EnterTransition.None togetherWith ExitTransition.None
+                else fadeIn(tween(170)) togetherWith fadeOut(tween(110))
+            },
+            label = "settings",
+        ) { s ->
             if (s == null) {
                 SettingsRoot(
                     query = query,
@@ -299,6 +310,12 @@ private fun SettingsRoot(
                 }
             }
         } else {
+            // The app card stays on top of the root: icon, name, version and author, one tap to "About".
+            item(key = "about") {
+                val context = LocalContext.current
+                val (version, code) = remember { appVersion(context) }
+                AboutHeader(version, code, onClick = { onOpen(SettingsSection.ABOUT) })
+            }
             if (update != null) item(key = "update") { UpdateCard(update, ready = updateReady, onClick = onUpdate) }
             item(key = "quick") {
                 SettingsGroup {
@@ -337,11 +354,23 @@ private fun SettingsRoot(
     }
 }
 
+/**
+ * The compact root of the settings (B2): appearance, reading, library and catalog, trackers and sync, downloads and
+ * storage, backups, and the app itself. Rare network and diagnostic screens live inside the group they belong to.
+ */
 private val ROOT_GROUPS = listOf(
-    R.string.set_group_reading to listOf(SettingsSection.LIBRARY, SettingsSection.READER, SettingsSection.MANGA, SettingsSection.SELECTION, SettingsSection.QUICK_ACTIONS, SettingsSection.FONTS),
-    R.string.set_group_personalization to listOf(SettingsSection.APPEARANCE, SettingsSection.NAVIGATION, SettingsSection.PROFILE),
-    R.string.set_group_online to listOf(SettingsSection.CATALOG, SettingsSection.DOWNLOADS, SettingsSection.TRANSLATION, SettingsSection.TRACKING, SettingsSection.YOUTUBE, SettingsSection.NETWORK),
-    R.string.set_group_app to listOf(SettingsSection.BACKUP, SettingsSection.SYNC, SettingsSection.SECURITY, SettingsSection.NOTIFICATIONS, SettingsSection.ADVANCED, SettingsSection.ABOUT),
+    R.string.set_group_appearance to listOf(SettingsSection.APPEARANCE, SettingsSection.NAVIGATION),
+    R.string.set_group_reading to listOf(
+        SettingsSection.READER, SettingsSection.MANGA, SettingsSection.SELECTION, SettingsSection.QUICK_ACTIONS, SettingsSection.FONTS,
+        SettingsSection.TRANSLATION,
+    ),
+    R.string.set_group_library to listOf(
+        SettingsSection.LIBRARY, SettingsSection.CATALOG, SettingsSection.PROFILE, SettingsSection.NOTIFICATIONS,
+    ),
+    R.string.set_group_trackers to listOf(SettingsSection.TRACKING, SettingsSection.SYNC),
+    R.string.set_group_downloads to listOf(SettingsSection.DOWNLOADS, SettingsSection.NETWORK, SettingsSection.YOUTUBE),
+    R.string.set_group_backup to listOf(SettingsSection.BACKUP, SettingsSection.SECURITY),
+    R.string.set_group_about to listOf(SettingsSection.ABOUT, SettingsSection.ADVANCED),
 )
 
 @Composable

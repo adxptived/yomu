@@ -54,6 +54,12 @@
     <string name="whats_new_title">Что нового в Yomu</string>
     <string name="whats_new_ok">Понятно</string>
     <string name="whats_new_all">Все изменения</string>
+    <string-array name="whats_new_2_19_0">
+        <item>Источники в каталоге можно показать списком или сеткой. Кнопки остаются читаемыми при крупном шрифте.</item>
+        <item>Подбирайте сведения через AniList, MangaBaka и MyAnimeList и открывайте страницы трекеров.</item>
+        <item>Синхронизация сохраняет дальний прогресс. В отчёте проверки глав видны причины пропуска.</item>
+        <item>Обновили настройки и виджеты, ускорили отклик на нажатие и учли уменьшение движения.</item>
+    </string-array>
     <string-array name="whats_new_2_18_0">
         <item>Нижнюю панель читалки можно настроить: главы, поиск, отображение, закладка и автопрокрутка.</item>
         <item>Метаданные AniList: подтверждённое совпадение меняет обложку и описание и так же легко убирается.</item>
@@ -324,10 +330,11 @@
     <string name="track_login_failed">Не удалось войти в %1$s: %2$s</string>
     <string name="widget_continue_label">Продолжить чтение</string>
     <string name="widget_continue_description">Книги и онлайн-тайтлы, которые вы читаете: продолжение в одно касание.</string>
-    <string name="widget_continue_empty">Пока ничего не читается. Откройте книгу в Yomu — она появится здесь.</string>
+    <string name="widget_continue_empty">Пока ничего не читается. Нажмите, чтобы открыть библиотеку и начать книгу.</string>
     <string name="widget_new_chapters_label">Новые главы</string>
+    <string name="widget_new_chapters_count">%1$d новых</string>
     <string name="widget_new_chapters_description">Новые непрочитанные главы тайтлов из библиотеки по последней проверке.</string>
-    <string name="widget_new_chapters_empty">Новых глав нет. Последняя проверка не нашла непрочитанного.</string>
+    <string name="widget_new_chapters_empty">Новых глав нет. Нажмите, чтобы открыть обновления.</string>
     <string name="widget_audio_label">Аудиоплеер</string>
     <string name="widget_audio_description">Слушайте, ставьте на паузу и перематывайте аудиокнигу с главного экрана.</string>
     <string name="widget_audio_empty">Ничего не играет. Запустите аудиокнигу в Yomu.</string>

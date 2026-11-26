@@ -20,10 +20,18 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.grid.LazyGridItemScope
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -32,9 +40,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 
 /** The "Reduce motion" setting: decorative animations are skipped when it is on (provided by the app root). */
 val LocalReduceMotion = staticCompositionLocalOf { false }
@@ -95,6 +108,78 @@ fun <S> MotionContent(
         label = label,
         content = content,
     )
+}
+
+/**
+ * A target that answers a press with a short, local change of tone (and an optional tiny scale) that returns when the
+ * finger lifts or the gesture is cancelled (B3). Only the pressed target changes: no layout moves, focus indication and
+ * the Material ripple stay, and reduced motion keeps an instant tone without scaling. Long press stays available for TalkBack.
+ */
+@Composable
+fun PulseClickable(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    onClickLabel: String? = null,
+    onLongClickLabel: String? = null,
+    enabled: Boolean = true,
+    role: Role? = Role.Button,
+    shape: Shape = RectangleShape,
+    /** A press also shrinks the target a little; off for rows and other full-width actions. */
+    scaleOnPress: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        modifier
+            .pressPulse(interaction, enabled = enabled, scaleOnPress = scaleOnPress, pulseShape = shape)
+            .combinedClickable(
+                interactionSource = interaction,
+                indication = LocalIndication.current,
+                enabled = enabled,
+                role = role,
+                onClickLabel = onClickLabel,
+                onLongClickLabel = onLongClickLabel,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
+        content = { content() },
+    )
+}
+
+/**
+ * The same press tone for a target that keeps its own gesture (`selectable`, a custom clickable): pass the interaction
+ * source the gesture uses. Draws behind the content, so text and icons stay crisp.
+ */
+@Composable
+fun Modifier.pressPulse(
+    interaction: InteractionSource,
+    enabled: Boolean = true,
+    scaleOnPress: Boolean = false,
+    pulseShape: Shape = RectangleShape,
+): Modifier {
+    val pressed by interaction.collectIsPressedAsState()
+    val reduce = LocalReduceMotion.current
+    val active = pressed && enabled
+    val duration = if (active) 75 else 150
+    val tone by animateColorAsState(
+        targetValue = if (active) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f) else Color.Transparent,
+        animationSpec = motionSpec(tween(durationMillis = duration)),
+        label = "press-pulse-tone",
+    )
+    val factor by animateFloatAsState(
+        targetValue = if (active && scaleOnPress && !reduce) 0.97f else 1f,
+        animationSpec = motionSpec(tween(durationMillis = duration)),
+        label = "press-pulse-scale",
+    )
+    return this
+        .graphicsLayer {
+            scaleX = factor
+            scaleY = factor
+            shape = pulseShape
+            clip = pulseShape != RectangleShape
+        }
+        .background(tone)
 }
 
 /**

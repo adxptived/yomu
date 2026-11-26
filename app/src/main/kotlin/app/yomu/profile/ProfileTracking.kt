@@ -3,6 +3,7 @@ package app.yomu.profile
 import android.content.Context
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -172,6 +173,7 @@ fun TrackingPane(
     onBookDetails: (Long) -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenTrackerPage: ((TrackService, Long) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -218,7 +220,7 @@ fun TrackingPane(
             }
         }
         items(shown, key = { "${it.isBook}:${it.itemId}" }) { t ->
-            TrackedTitleCard(t, s.accounts, onClick = { if (t.isBook) onBookDetails(t.itemId) else onOpenTitle(t.itemId) })
+            TrackedTitleCard(t, s.accounts, onOpenTrackerPage) { if (t.isBook) onBookDetails(t.itemId) else onOpenTitle(t.itemId) }
         }
     }
 }
@@ -267,7 +269,12 @@ private fun AccountsCard(s: TrackingUi, busy: Boolean, onOpenSettings: () -> Uni
 }
 
 @Composable
-private fun TrackedTitleCard(t: TrackedTitle, accounts: List<TrackerAccount>, onClick: () -> Unit) {
+private fun TrackedTitleCard(
+    t: TrackedTitle,
+    accounts: List<TrackerAccount>,
+    onOpenTrackerPage: ((TrackService, Long) -> Unit)?,
+    onClick: () -> Unit,
+) {
     ElevatedCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(Dimens.m), verticalAlignment = Alignment.Top) {
             CoverImage(t.cover, t.title, Modifier.width(48.dp))
@@ -277,7 +284,10 @@ private fun TrackedTitleCard(t: TrackedTitle, accounts: List<TrackerAccount>, on
                 t.entries.forEach { e ->
                     val service = TrackService.of(e.service)
                     val signedIn = accounts.firstOrNull { it.service == service }?.signedIn == true
-                    EntryLine(service?.displayName ?: "#${e.service}", e, signedIn)
+                    val openPage: (() -> Unit)? = if (onOpenTrackerPage != null && (service == TrackService.ANILIST || service == TrackService.MYANIMELIST)) {
+                        { onOpenTrackerPage(service, e.remoteId) }
+                    } else null
+                    EntryLine(service?.displayName ?: "#${e.service}", e, signedIn, openPage)
                 }
             }
         }
@@ -285,10 +295,14 @@ private fun TrackedTitleCard(t: TrackedTitle, accounts: List<TrackerAccount>, on
 }
 
 @Composable
-private fun EntryLine(service: String, e: TrackEntity, signedIn: Boolean) {
+private fun EntryLine(service: String, e: TrackEntity, signedIn: Boolean, onOpenPage: (() -> Unit)?) {
     val read = e.lastChapterRead.toInt()
     val chapters = if (e.totalChapters > 0) stringResource(CatalogR.string.track_chapters_of, read, e.totalChapters) else stringResource(CatalogR.string.track_chapters, read)
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = if (onOpenPage == null) Modifier else Modifier.clickable(onClick = onOpenPage)
+            .padding(vertical = Dimens.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(service, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         Text(
             if (e.libraryId == TrackerManager.NEEDS_REMOTE_REFRESH)

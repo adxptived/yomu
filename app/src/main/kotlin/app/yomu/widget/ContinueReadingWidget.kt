@@ -166,7 +166,11 @@ object ContinueWidgets : KoinComponent {
             val cached = synchronized(coverCache) { coverCache[cacheKey] }
             e.key to (cached ?: loadCover(context, e)?.also { b -> synchronized(coverCache) { coverCache[cacheKey] = b } })
         }
-        ids.forEach { id -> manager.updateAppWidget(id, views(context, list, covers, rowsFor(manager.getAppWidgetOptions(id)), id)) }
+        ids.forEach { id ->
+            manager.updateAppWidget(id, sizedWidgetViews(manager.getAppWidgetOptions(id)) { width, height ->
+                views(context, list, covers, rowsFor(width, height), id)
+            })
+        }
     }
 
     private val WidgetEntry.key: String get() = (if (online) "o" else "b") + id
@@ -176,13 +180,20 @@ object ContinueWidgets : KoinComponent {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?): Boolean = size > COVER_CACHE
     }
 
-    /** How many rows fit the height of the widget. */
-    private fun rowsFor(options: Bundle?): Int {
-        val h = options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)?.takeIf { it > 0 }
-            ?: options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)?.takeIf { it > 0 }
-            ?: return MAX_ROWS
-        return ((h - HEADER_DP) / ROW_DP).coerceIn(1, MAX_ROWS)
+    /** How many rows fit the widget: a small tile shows one useful item, a wide one shows the list. */
+    private fun rowsFor(w: Int?, h: Int?): Int {
+        if (h != null && h < SMALL_HEIGHT_DP) return 1
+        val byHeight = h?.let { ((it - HEADER_DP) / ROW_DP).coerceAtLeast(1) } ?: MAX_ROWS
+        val byWidth = when {
+            w == null -> MAX_ROWS
+            w < SMALL_WIDTH_DP -> 1
+            w < WIDE_WIDTH_DP -> 2
+            else -> MAX_ROWS
+        }
+        return minOf(byHeight, byWidth).coerceIn(1, MAX_ROWS)
     }
+
+    internal fun rowsForTest(width: Int, height: Int): Int = rowsFor(width, height)
 
     private fun views(context: Context, list: List<WidgetEntry>, covers: Map<String, Bitmap?>, rows: Int, widgetId: Int): RemoteViews {
         val v = RemoteViews(context.packageName, R.layout.widget_continue)
@@ -206,7 +217,7 @@ object ContinueWidgets : KoinComponent {
             v.setTextViewText(titleIds[i], e.title)
             val percent = (e.progress.coerceIn(0f, 1f) * 100).roundToInt()
             val subtitle = if (e.online) {
-                context.resources.getQuantityString(R.plurals.widget_unread_chapters, e.unread, e.unread)
+                context.resources.getQuantityString(R.plurals.widget_unread_chapters, e.unread, e.unread) + " · $percent%"
             } else {
                 listOfNotNull(e.author?.takeIf { it.isNotBlank() }, "$percent%").joinToString(" · ")
             }
@@ -267,6 +278,9 @@ object ContinueWidgets : KoinComponent {
     private const val PROGRESS_MAX = 1000
     private const val HEADER_DP = 52
     private const val ROW_DP = 62
+    private const val SMALL_HEIGHT_DP = 120
+    private const val SMALL_WIDTH_DP = 200
+    private const val WIDE_WIDTH_DP = 300
     private const val REQUESTS_PER_WIDGET = 8
     private const val CORNER_PX = 10f
     private const val COVER_CACHE = 6

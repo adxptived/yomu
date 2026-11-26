@@ -341,6 +341,7 @@ internal fun ColumnScope.TrackingSection(vm: SettingsViewModel) {
         )
     }
     SwitchPref(vm, s.trackAutoUpdate, R.string.set_track_auto, R.string.set_track_auto_sum)
+    SwitchPref(vm, s.trackAlignProgress, R.string.set_track_align, R.string.set_track_align_sum)
     PreferenceItem(stringResource(R.string.set_track_push), stringResource(R.string.set_track_push_sum), onClick = vm::pushTracking, icon = settingIcon(R.string.set_track_push))
 
     PreferenceHeader(stringResource(R.string.set_track_keys))

@@ -14,7 +14,9 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.util.SizeF
 import android.view.View
 import android.widget.RemoteViews
 import app.yomu.AppLockController
@@ -80,12 +82,16 @@ class NewChaptersWidget : AppWidgetProvider() {
 
 object NewChaptersWidgets : KoinComponent {
     const val ACTION_OPEN_CHAPTER = "app.yomu.action.WIDGET_OPEN_CHAPTER"
+    const val ACTION_OPEN_UPDATES = "app.yomu.action.WIDGET_OPEN_UPDATES"
     const val EXTRA_ID = "app.yomu.extra.ID"
     private const val MAX_ROWS = 3
     private const val COVER_W = 108
     private const val COVER_H = 150
     private const val HEADER_DP = 52
     private const val ROW_DP = 62
+    private const val SMALL_HEIGHT_DP = 120
+    private const val SMALL_WIDTH_DP = 200
+    private const val WIDE_WIDTH_DP = 300
 
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
@@ -124,58 +130,91 @@ object NewChaptersWidgets : KoinComponent {
         }
     }
 
-    private fun entries(): Flow<List<app.yomu.core.database.NewChapterRow>> {
+    private fun entries(): Flow<WidgetData> {
         val catalog = get<CatalogRepository>()
         val settings = get<app.yomu.core.datastore.AppSettings>()
         val lock = get<AppLockController>()
         return combine(
             catalog.observeNewChapters(MAX_ROWS),
+            catalog.observeNewCount(),
             settings.incognito.flow,
             lock.locked,
-        ) { chapters, incognito, locked ->
-            if (incognito || locked == true) emptyList() else chapters
+        ) { chapters, total, incognito, locked ->
+            if (incognito || locked == true) WidgetData(emptyList(), 0) else WidgetData(chapters, total)
         }
     }
 
-    private suspend fun render(context: Context, list: List<app.yomu.core.database.NewChapterRow>) {
+    /** The newest chapters and the number of all new ones (the header count is not limited to the visible rows). */
+    private data class WidgetData(val chapters: List<app.yomu.core.database.NewChapterRow>, val total: Int)
+
+    private suspend fun render(context: Context, data: WidgetData) {
         val ids = widgetIds(context)
         if (ids.isEmpty()) return
         val manager = AppWidgetManager.getInstance(context)
-        val covers = list.associate { row ->
+        val covers = data.chapters.associate { row ->
             row.chapterId to loadCover(context, row.coverUrl)
         }
         val hidden = get<app.yomu.core.datastore.AppSettings>().incognito.get() || get<AppLockController>().locked.value == true
-        val visible = if (hidden) emptyList() else list
-        ids.forEach { id -> manager.updateAppWidget(id, views(context, visible, covers, rowsFor(manager.getAppWidgetOptions(id)), id)) }
+        val visible = if (hidden) WidgetData(emptyList(), 0) else data
+        ids.forEach { id ->
+            val options = manager.getAppWidgetOptions(id)
+            manager.updateAppWidget(id, sizedWidgetViews(options) { width, height ->
+                views(context, visible, covers, rowsFor(width, height), id, compact = width?.let { it < SMALL_WIDTH_DP } == true,
+                    tiny = width?.let { it < 125 } == true || height?.let { it < 92 } == true)
+            })
+        }
     }
 
-    private fun rowsFor(options: Bundle?): Int {
-        val h = options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)?.takeIf { it > 0 }
-            ?: options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)?.takeIf { it > 0 }
-            ?: return MAX_ROWS
-        return ((h - HEADER_DP) / ROW_DP).coerceIn(1, MAX_ROWS)
+    /** A small tile shows one item; a wide one shows up to three. */
+    private fun rowsFor(w: Int?, h: Int?): Int {
+        if (h != null && h < SMALL_HEIGHT_DP) return 1
+        val byHeight = h?.let { ((it - HEADER_DP) / ROW_DP).coerceAtLeast(1) } ?: MAX_ROWS
+        val byWidth = when {
+            w == null -> MAX_ROWS
+            w < SMALL_WIDTH_DP -> 1
+            w < WIDE_WIDTH_DP -> 2
+            else -> MAX_ROWS
+        }
+        return minOf(byHeight, byWidth).coerceIn(1, MAX_ROWS)
     }
+
+    internal fun rowsForTest(width: Int, height: Int): Int = rowsFor(width, height)
 
     private fun views(
         context: Context,
-        list: List<app.yomu.core.database.NewChapterRow>,
+        data: WidgetData,
         covers: Map<Long, Bitmap?>,
         rows: Int,
         widgetId: Int,
+        compact: Boolean,
+        tiny: Boolean,
     ): RemoteViews {
-        val v = RemoteViews(context.packageName, R.layout.widget_new_chapters)
-        val openApp = PendingIntent.getActivity(
+        val v = RemoteViews(context.packageName, if (tiny) R.layout.widget_new_chapters_tiny else R.layout.widget_new_chapters)
+        // The header leads to the whole updates feed, not only the three newest chapters.
+        val openUpdates = PendingIntent.getActivity(
             context,
             widgetId * REQUESTS_PER_WIDGET,
-            Intent(context, YomuActivity::class.java).setAction(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            Intent(context, YomuActivity::class.java).setAction(ACTION_OPEN_UPDATES)
+                .setData(Uri.parse("yomu-new-chapters://updates"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        v.setOnClickPendingIntent(R.id.nc_header, openApp)
-        v.setOnClickPendingIntent(R.id.nc_empty, openApp)
-        v.setViewVisibility(R.id.nc_empty, if (list.isEmpty()) View.VISIBLE else View.GONE)
+        v.setOnClickPendingIntent(R.id.nc_header, openUpdates)
+        if (tiny) {
+            v.setTextViewText(R.id.nc_count, if (data.total > 0) {
+                context.getString(R.string.widget_new_chapters_count, data.total)
+            } else {
+                context.getString(R.string.widget_new_chapters_label)
+            })
+            return v
+        }
+        v.setOnClickPendingIntent(R.id.nc_empty, openUpdates)
+        v.setViewVisibility(R.id.nc_count, if (data.total > 0) View.VISIBLE else View.GONE)
+        if (data.total > 0) v.setTextViewText(R.id.nc_count, context.getString(R.string.widget_new_chapters_count, data.total))
+        v.setViewVisibility(R.id.nc_label, if (compact && data.total > 0) View.GONE else View.VISIBLE)
+        v.setViewVisibility(R.id.nc_empty, if (data.chapters.isEmpty()) View.VISIBLE else View.GONE)
         for (i in 0 until MAX_ROWS) {
-            val row = list.getOrNull(i)
+            val row = data.chapters.getOrNull(i)
             if (row == null || i >= rows) {
                 v.setViewVisibility(rowIds[i], View.GONE)
                 continue
@@ -221,4 +260,23 @@ object NewChaptersWidgets : KoinComponent {
     private const val DEBOUNCE_MS = 1_500L
     private const val REQUESTS_PER_WIDGET = 8
     private const val CORNER_PX = 10f
+}
+
+/** Resolve actual width/height pairs on newer launchers, with portrait and landscape estimates on older ones. */
+internal fun sizedWidgetViews(options: Bundle?, create: (width: Int?, height: Int?) -> RemoteViews): RemoteViews {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        @Suppress("DEPRECATION")
+        val sizes = options?.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
+            .orEmpty().filter { it.width > 0 && it.height > 0 }.distinct().take(8)
+        if (sizes.isNotEmpty()) return RemoteViews(sizes.associateWith { create(it.width.toInt(), it.height.toInt()) })
+    }
+    fun dimension(key: String) = options?.getInt(key)?.takeIf { it > 0 }
+    val minWidth = dimension(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
+    val maxWidth = dimension(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH)
+    val minHeight = dimension(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
+    val maxHeight = dimension(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)
+    val portrait = create(minWidth ?: maxWidth, maxHeight ?: minHeight)
+    return if (minWidth != null && minHeight != null && maxWidth != null && maxHeight != null &&
+        (minWidth != maxWidth || minHeight != maxHeight)
+    ) RemoteViews(create(maxWidth, minHeight), portrait) else portrait
 }

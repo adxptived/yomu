@@ -953,6 +953,10 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE itemId = :itemId AND service = :service")
     suspend fun get(itemId: Long, service: Int): TrackEntity?
 
+    /** The reader's own entry of a tracker title, used by the tracker title page to show private fields. */
+    @Query("SELECT * FROM tracks WHERE service = :service AND remoteId = :remoteId ORDER BY (itemId IS NULL), updatedAt DESC, id LIMIT 1")
+    suspend fun byRemote(service: Int, remoteId: Long): TrackEntity?
+
     @Query("SELECT * FROM tracks")
     suspend fun all(): List<TrackEntity>
 

@@ -97,6 +97,7 @@ import app.yomu.feature.catalog.SourceBrowseViewModel
 import app.yomu.feature.catalog.SourceConnectionScreen
 import app.yomu.feature.catalog.SourceSettingsScreen
 import app.yomu.feature.catalog.TitleScreen
+import app.yomu.feature.catalog.TrackerTitleScreen
 import app.yomu.feature.catalog.UpcomingScreen
 import app.yomu.feature.catalog.WebViewScreen
 import app.yomu.feature.dictionary.DictionariesScreen
@@ -111,6 +112,8 @@ import app.yomu.feature.reader.DocxLayoutScreen
 import app.yomu.feature.reader.ReaderArgs
 import app.yomu.feature.reader.ReaderScreen
 import app.yomu.feature.reader.ReadingStatsScreen
+import app.yomu.feature.settings.AppUpdates
+import app.yomu.feature.settings.CatalogUpdateBanner
 import app.yomu.feature.settings.SettingsLinks
 import app.yomu.feature.settings.SettingsScreen
 import app.yomu.feature.settings.SettingsSection
@@ -204,6 +207,7 @@ fun YomuNavigation(main: MainViewModel, reduceMotion: Boolean, navLabels: Boolea
 
     val adaptive = NavigationSuiteScaffoldDefaults.calculateFromAdaptiveInfo(currentWindowAdaptiveInfo())
     val update by main.updateAvailable.collectAsStateWithLifecycle()
+    val openUpdates by main.openUpdates.collectAsStateWithLifecycle()
     val items = shown.map { top -> top.tab.item().let { if (top.tab == NavTab.SETTINGS && update != null) it.copy(badge = true) else it } }
     // A top-level screen can hide the bar for a while (the library's own bar for selected books takes its place).
     val barHidden = remember { mutableStateOf(false) }
@@ -229,7 +233,7 @@ fun YomuNavigation(main: MainViewModel, reduceMotion: Boolean, navLabels: Boolea
             // The mini player floats above the navigation bar; the screens leave room for it in their lists.
             val density = LocalDensity.current
             var miniHeight by remember(density) { mutableStateOf(MINI_PLAYER_ROOM) }
-            Shell(adaptive, onHome, barVisible, tabsState.selected, barHidden, items, shown, navLabels, tabsState, barInset + if (playing != null) miniHeight else 0.dp, nav, reduceMotion)
+            Shell(adaptive, onHome, barVisible, tabsState.selected, barHidden, items, shown, navLabels, tabsState, barInset + if (playing != null) miniHeight else 0.dp, nav, reduceMotion, main)
             playing?.let { np ->
                 MiniPlayer(
                     audio, np,
@@ -281,6 +285,7 @@ private fun Shell(
     barInset: androidx.compose.ui.unit.Dp,
     nav: NavHostController,
     reduceMotion: Boolean,
+    main: MainViewModel,
 ) {
     NavShell(
         type = adaptive,
@@ -307,15 +312,16 @@ private fun Shell(
                 // Every screen draws under the floating bar and leaves room for it in its lists, FABs and snackbars.
                 LocalNavBarInset provides if (barVisible) barInset else 0.dp,
             ) {
-                YomuNavHost(nav, reduceMotion, tabsState)
+                YomuNavHost(nav, reduceMotion, tabsState, main)
             }
         }
     }
 }
 
 @Composable
-private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: TabsState) {
+private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: TabsState, main: MainViewModel) {
     val back: () -> Unit = { nav.popBackStack() }
+    val openUpdates by main.openUpdates.collectAsStateWithLifecycle()
     NavHost(
         navController = nav,
         startDestination = HomeRoute,
@@ -352,6 +358,7 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                             statsViewModel = koinViewModel(),
                             onOpenBook = { nav.navigate(ReaderRoute(bookId = it)) },
                             onBookDetails = { nav.navigate(BookDetailsRoute(it)) },
+                            onOpenTrackerPage = { service, id -> nav.navigate(TrackerTitleRoute(service.id, id)) },
                             onReadChapter = { nav.navigate(ReaderRoute(chapterId = it)) },
                             onOpenTitle = { nav.navigate(TitleRoute(it)) },
                             onOpenSettings = { section ->
@@ -370,6 +377,9 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                         )
                         TopLevel.CATALOG -> CatalogScreen(
                             viewModel = koinViewModel(),
+                            updateBanner = { CatalogUpdateBanner(koinInject<AppUpdates>()) },
+                            openUpdatesTab = openUpdates,
+                            onUpdatesTabOpened = main::updatesOpened,
                             onOpenSource = { nav.navigate(SourceRoute(it)) },
                             onOpenTitle = { nav.navigate(TitleRoute(it)) },
                             onReadChapter = { nav.navigate(ReaderRoute(chapterId = it)) },
@@ -421,6 +431,7 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                 onOpenEditor = { nav.navigate(EditorRoute(it.id)) },
                 onOpenAnnotations = { nav.navigate(AnnotationsRoute(it.id)) },
                 onOpenPageLayout = { nav.navigate(DocxLayoutRoute(it.id)) },
+                onOpenTrackerPage = { service, id -> nav.navigate(TrackerTitleRoute(service.id, id)) },
             )
         }
         screen<ReaderRoute> { entry ->
@@ -601,6 +612,21 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                 onOpenWebView = { nav.navigate(WebViewRoute(it)) },
                 onOpenDownloads = { nav.navigate(DownloadsRoute) },
                 onOpenBook = { nav.navigate(ReaderRoute(bookId = it)) },
+                onOpenTrackerPage = { service, id -> nav.navigate(TrackerTitleRoute(service.id, id)) },
+            )
+        }
+        // C3: a tracker title opens in Yomu too. A confirmed local link goes to its card; otherwise the reader can
+        // look for a source of the same title without leaving the app.
+        screen<TrackerTitleRoute> { entry ->
+            val r = entry.toRoute<TrackerTitleRoute>()
+            TrackerTitleScreen(
+                viewModel = koinViewModel { parametersOf(r.service, r.remoteId) },
+                onBack = back,
+                onOpenLocal = { nav.navigate(TitleRoute(it)) },
+                onOpenLocalBook = { nav.navigate(BookDetailsRoute(it)) },
+                onOpenTrackerTitle = { service, id -> nav.navigate(TrackerTitleRoute(service.id, id)) },
+                onFindSource = { title -> nav.navigate(GlobalSearchRoute(query = title)) },
+                onOpenWeb = { nav.navigate(WebViewRoute(it)) },
             )
         }
         screen<ExtensionsRoute> { entry ->
@@ -718,6 +744,7 @@ private fun LibraryTab(nav: NavHostController, tabs: TabsState) {
                         onOpenAnnotations = { nav.navigate(AnnotationsRoute(it.id)) },
                         onOpenPageLayout = { nav.navigate(DocxLayoutRoute(it.id)) },
                         inPane = true,
+                        onOpenTrackerPage = { service, id -> nav.navigate(TrackerTitleRoute(service.id, id)) },
                     )
                 }
             }

@@ -63,7 +63,7 @@ object ChapterOrder {
      * Numbers are trusted unless they repeat inside one group: several "Chapter 1" of the same scanlator mean that the
      * numbering restarts every volume, and sorting by number would mix the volumes. Occasional re-uploads are tolerated.
      */
-    internal fun numbersReliable(reading: List<ChapterInfo>): Boolean {
+    fun numbersReliable(reading: List<ChapterInfo>): Boolean {
         val numbered = reading.filter { it.number >= 0f }
         if (numbered.isEmpty()) return false
         val seen = HashSet<Pair<String, Float>>()

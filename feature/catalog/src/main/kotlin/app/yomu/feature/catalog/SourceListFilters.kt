@@ -1,9 +1,9 @@
 package app.yomu.feature.catalog
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -90,6 +90,7 @@ internal fun languagesSummary(langs: Set<String>): String = when {
  * The bar over the source list: Filters (with the number of active filters), Languages and Sort buttons, then every
  * active filter as a chip that removes it. The count excludes results unrelated to the current search.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SourceFilterBar(
     filter: SourceListFilter,
@@ -106,20 +107,14 @@ internal fun SourceFilterBar(
     val context = LocalContext.current
     val allLanguages = SourceManager.ALL_LANGUAGES in langs
     Column(modifier.fillMaxWidth()) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = Dimens.l),
-            horizontalArrangement = Arrangement.spacedBy(Dimens.s),
-            verticalAlignment = Alignment.CenterVertically,
+        FlowRow(
+            Modifier.fillMaxWidth().padding(horizontal = Dimens.l),
+            horizontalArrangement = Arrangement.spacedBy(Dimens.xs),
+            verticalArrangement = Arrangement.spacedBy(Dimens.xs),
         ) {
-            item(key = "filters") {
-                ToolbarPill(Icons.Filled.FilterList, stringResource(R.string.source_filters), onClick = onOpenFilters, badge = filter.activeCount)
-            }
-            item(key = "languages") {
-                ToolbarPill(Icons.Filled.Translate, languagesSummary(langs), onClick = onOpenLanguages, badge = if (allLanguages) 0 else langs.size)
-            }
-            item(key = "sort") {
-                ToolbarPill(Icons.AutoMirrored.Filled.Sort, sourceSortLabel(sort), onClick = onOpenFilters)
-            }
+            ToolbarPill(Icons.Filled.FilterList, stringResource(R.string.source_filters), onClick = onOpenFilters, badge = filter.activeCount)
+            ToolbarPill(Icons.Filled.Translate, languagesSummary(langs), onClick = onOpenLanguages, badge = if (allLanguages) 0 else langs.size)
+            ToolbarPill(Icons.AutoMirrored.Filled.Sort, sourceSortLabel(sort), onClick = onOpenFilters)
         }
         if (filter.isActive && !listing.showingExcluded) LazyRow(
             Modifier.fillMaxWidth(),

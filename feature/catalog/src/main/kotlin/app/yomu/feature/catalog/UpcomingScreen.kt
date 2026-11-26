@@ -5,6 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -26,9 +29,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -149,6 +155,7 @@ class UpcomingViewModel(
 fun UpcomingScreen(viewModel: UpcomingViewModel, onBack: () -> Unit, onOpenTitle: (Long) -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val lastRun by viewModel.lastRun.collectAsStateWithLifecycle()
+    var showRunDetails by rememberSaveable { mutableStateOf(false) }
     val shelves by viewModel.shelves.collectAsStateWithLifecycle()
     val filter by viewModel.shelfFilter.collectAsStateWithLifecycle()
     val checking by viewModel.checking.collectAsStateWithLifecycle()
@@ -158,6 +165,41 @@ fun UpcomingScreen(viewModel: UpcomingViewModel, onBack: () -> Unit, onOpenTitle
     val dateFormat = rememberFormat()
     val today = LocalDate.now()
     val topBarBackdrop = rememberHazeState()
+    val report = lastRun
+    if (showRunDetails && report != null) {
+        AlertDialog(
+            onDismissRequest = { showRunDetails = false },
+            title = { Text(stringResource(R.string.upcoming_run_details)) },
+            text = {
+                val entries = remember(report) {
+                    report.titles.sortedBy { if (it.failed) 0 else if (it.skip != null) 1 else 2 }
+                }
+                LazyColumn(
+                    Modifier.fillMaxWidth().heightIn(max = 440.dp),
+                    verticalArrangement = Arrangement.spacedBy(Dimens.m),
+                ) {
+                    items(entries) { title ->
+                        Column(verticalArrangement = Arrangement.spacedBy(Dimens.xxs)) {
+                            Text(title.title, style = MaterialTheme.typography.titleSmall)
+                            val label = when {
+                                title.failed -> stringResource(R.string.upcoming_run_failed)
+                                title.skip != null -> stringResource(skipLabel(title.skip))
+                                else -> stringResource(R.string.upcoming_run_new, title.newChapters)
+                            }
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (title.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showRunDetails = false }) { Text(stringResource(app.yomu.core.ui.R.string.close)) }
+            },
+        )
+    }
     Scaffold(
         contentWindowInsets = topLevelContentInsets(),
         topBar = {
@@ -204,8 +246,9 @@ fun UpcomingScreen(viewModel: UpcomingViewModel, onBack: () -> Unit, onOpenTitle
                                 report.checked,
                                 report.newChapters,
                                 report.failed,
+                                report.skipped,
                             ),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyMedium,
                         )
                         if (report.queuedDownloads > 0) {
                             Text(
@@ -214,14 +257,8 @@ fun UpcomingScreen(viewModel: UpcomingViewModel, onBack: () -> Unit, onOpenTitle
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        report.titles.filter { it.failed }.take(3).forEach { title ->
-                            Text(
-                                stringResource(R.string.upcoming_last_run_failed, title.title),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                        if (report.titles.isNotEmpty()) {
+                            TextButton(onClick = { showRunDetails = true }) { Text(stringResource(R.string.upcoming_run_details)) }
                         }
                     }
                 }
@@ -353,4 +390,14 @@ private fun reasonLabel(reason: UpdateSkip): String = stringResource(
 @Composable
 private fun rememberFormat(): DateTimeFormatter = androidx.compose.runtime.remember {
     DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(java.util.Locale.getDefault())
+}
+
+/** The rule that held a skipped title back, in the reader's words (E2). */
+internal fun skipLabel(skip: String?): Int = when (skip) {
+    "INTERVAL" -> R.string.upcoming_skip_interval
+    "NO_SOURCE" -> R.string.upcoming_skip_source
+    "EXCLUDED_SHELF" -> R.string.upcoming_skip_shelf
+    "EXCLUDED_TITLE" -> R.string.upcoming_skip_title
+    "RESTRICTION" -> R.string.upcoming_skip_restriction
+    else -> R.string.upcoming_skip_unknown
 }

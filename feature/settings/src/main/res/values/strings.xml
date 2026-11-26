@@ -248,9 +248,17 @@
     <string name="set_update_restrictions">Check automatically</string>
     <string name="set_update_restrictions_all">Every library title, at the interval above</string>
     <string name="set_update_restrictions_some">Only titles matching one of these</string>
-    <string name="set_update_restriction_started">Started titles</string>
+    <string name="set_update_restriction_started">Titles in progress</string>
     <string name="set_update_restriction_unread">Titles with unread chapters</string>
     <string name="set_update_restriction_completed">Finished titles</string>
+    <string name="set_updates_section">New chapter checks</string>
+    <string name="set_update_restriction_started_sum">Titles you have started with chapters still unread</string>
+    <string name="set_update_restriction_unread_sum">At least one chapter is unread</string>
+    <string name="set_update_restriction_unstarted_sum">Nothing has been read yet</string>
+    <string name="set_update_restriction_completed_sum">You marked the title as finished</string>
+    <string name="set_update_restriction_publication_ended_sum">The source marks the publication as finished</string>
+    <string name="set_update_restriction_unstarted">Titles not started yet</string>
+    <string name="set_update_restriction_publication_ended">Publications that ended at the source</string>
     <string name="set_update_excluded_shelves">Shelves excluded from checks</string>
     <string name="set_update_excluded_none">Every shelf is checked</string>
     <string name="set_update_excluded_title">Exclude shelves from updates</string>
@@ -258,6 +266,10 @@
     <string name="set_update_excluded_empty">No shelves yet</string>
     <string name="set_update_wifi">Check only over Wi‑Fi</string>
     <string name="set_show_nsfw">Show 18+ sources</string>
+    <string name="set_metadata_provider">Details on the title card</string>
+    <string name="set_metadata_provider_hint">Which service the card asks for a cover, description and year. The source still owns the id, chapters and progress; the match can be changed or removed on the card.</string>
+    <string name="set_metadata_provider_manga">Manga</string>
+    <string name="set_metadata_provider_novel">Novels</string>
     <string name="set_user_agent">User-Agent</string>
     <string name="set_user_agent_default">Default (a current browser)</string>
     <string name="set_dns_provider">DNS-over-HTTPS</string>
@@ -538,8 +550,10 @@
     <string name="set_update_available">Version %1$s is available, tap to update</string>
     <string name="set_update_none">No releases published yet</string>
     <string name="set_update_failed">Couldn\'t check: %1$s</string>
+    <string name="set_update_rate_limited">GitHub has limited update checks. Try again later or open Releases below.</string>
+    <string name="set_update_access_denied">GitHub denied the update check. Try again later or open Releases below.</string>
     <string name="set_update_auto">Check automatically</string>
-    <string name="set_update_auto_sum">Once a day at start, one request to GitHub. A dot on Settings tells about a new version</string>
+    <string name="set_update_auto_sum">Checks GitHub once a day at startup. A dot on Settings tells about a new version</string>
     <string name="set_update_skip">Skip this version</string>
     <string name="set_update_skip_clear">Clear skipped version</string>
     <string name="set_update_skipped">Skipped version: %1$s</string>
@@ -552,6 +566,7 @@
     <string name="set_update_download_failed">Couldn\'t download: %1$s. Tap to try again</string>
     <string name="set_update_dialog_title">Yomu %1$s</string>
     <string name="set_update_no_notes">The release has no notes.</string>
+    <string name="set_update_metadata_unavailable">Open the release page on GitHub for the release notes and APK files.</string>
     <string name="set_update_no_apk">This release has no APK for your device: get it from the release page.</string>
     <string name="set_update_size">Download: %1$s</string>
     <string name="set_update_debug_note">This is a debug build: the release installs as a separate app next to it, with its own library.</string>
@@ -563,6 +578,11 @@
     <string name="set_update_card_text">Tap to see what\'s new and update</string>
     <string name="set_update_card_ready_title">Yomu %1$s is ready to install</string>
     <string name="set_update_card_ready_text">The update is downloaded and verified — tap to install</string>
+    <string name="set_update_banner_action">Update</string>
+    <string name="set_update_banner_dismiss">Hide for this version</string>
+    <string name="set_update_last_known">Last successful check: %1$s</string>
+    <string name="set_update_known_available">Version %1$s was found earlier</string>
+    <string name="set_update_bad_release">GitHub answered with a release that cannot be read: %1$s</string>
     <string name="set_app_icon">App icon</string>
     <string name="set_app_icon_hint">The icon changes when you leave the app; the pick is remembered even if Yomu is closed. Some launchers keep the old shortcut on the home screen: then add Yomu again from the app list.</string>
     <!-- 2.0: sync -->
@@ -720,6 +740,8 @@
     <string name="set_track_enter_key">Enter key</string>
     <string name="set_track_auto">Update progress automatically</string>
     <string name="set_track_auto_sum">When you finish an online chapter, the read count is sent to linked trackers. Local files use manual chapter counts.</string>
+    <string name="set_track_align">The furthest progress wins</string>
+    <string name="set_track_align_sum">After a chapter, the maximum of Yomu and the linked services moves the participants that are behind. Chapters the source lacks yet are shown and applied later.</string>
     <string name="set_track_push">Send pending changes</string>
     <string name="set_track_push_sum">Changes made offline are also sent automatically when the network is back</string>
     <string name="set_track_pushed">All changes sent</string>
@@ -823,7 +845,13 @@
     <string name="set_notify_test_text">This is how Yomu notifies you about new chapters, downloads and sync.</string>
     <string name="set_secret_show">Show</string>
     <string name="set_secret_hide">Hide</string>
-    <string name="set_group_reading">Reading and library</string>
+    <string name="set_group_reading">Reading</string>
+    <string name="set_group_appearance">Appearance</string>
+    <string name="set_group_library">Library and catalog</string>
+    <string name="set_group_trackers">Trackers and sync</string>
+    <string name="set_group_downloads">Downloads and storage</string>
+    <string name="set_group_backup">Backups</string>
+    <string name="set_group_about">About the app</string>
     <string name="set_group_personalization">Personalization</string>
     <string name="set_group_online">Online services</string>
     <string name="set_group_app">Data and app</string>

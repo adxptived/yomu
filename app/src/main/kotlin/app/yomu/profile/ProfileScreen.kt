@@ -158,6 +158,7 @@ fun ProfileScreen(
     onOpenNotes: (() -> Unit)? = null,
     onOpenLibrary: (() -> Unit)? = null,
     onOpenCatalog: (() -> Unit)? = null,
+    onOpenTrackerPage: ((app.yomu.domain.tracking.TrackService, Long) -> Unit)? = null,
 ) {
     var tab by rememberSaveable { mutableStateOf(ProfileTab.OVERVIEW) }
     var page by rememberSaveable { mutableStateOf(ProfilePage.NONE) }
@@ -208,6 +209,7 @@ fun ProfileScreen(
                             snackbar = snackbar,
                             onOpenTitle = onOpenTitle,
                             onBookDetails = onBookDetails,
+                            onOpenTrackerPage = onOpenTrackerPage,
                             onOpenSettings = { onOpenSettings(SettingsSection.TRACKING) },
                             modifier = Modifier.fillMaxSize(),
                         )

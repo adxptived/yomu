@@ -5,4 +5,5 @@ dependencies {
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.lifecycle.process)
+    testImplementation(libs.okhttp.mockwebserver)
 }

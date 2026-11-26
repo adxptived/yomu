@@ -8,6 +8,8 @@ data class UpdateRunTitle(
     val title: String,
     val newChapters: Int = 0,
     val failed: Boolean = false,
+    /** Why it was not asked (name of `UpdateSkip`): "INTERVAL", "RESTRICTION", "NO_SOURCE"… */
+    val skip: String? = null,
 )
 
 /**

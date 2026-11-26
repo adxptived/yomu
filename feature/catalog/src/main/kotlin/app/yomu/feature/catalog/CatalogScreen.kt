@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.combinedClickable
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -34,6 +36,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -44,9 +47,12 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInBrowser
@@ -69,6 +75,7 @@ import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -79,7 +86,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -102,12 +109,14 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -122,6 +131,7 @@ import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.PillTab
 import app.yomu.core.ui.components.PillTabRow
+import app.yomu.core.ui.components.PulseClickable
 import app.yomu.core.ui.components.SearchField
 import app.yomu.core.ui.components.SheetAction
 import app.yomu.core.ui.components.SheetTitle
@@ -171,6 +181,11 @@ fun CatalogScreen(
     onAddSource: () -> Unit = {},
     /** The plan of the next automatic checks (U02). */
     onOpenUpdatesPlan: () -> Unit = {},
+    /** A newer app release: the compact banner under the search (A1). */
+    updateBanner: (@Composable () -> Unit)? = null,
+    /** A widget or a notification asked for the updates feed: the catalog opens on that tab once. */
+    openUpdatesTab: Boolean = false,
+    onUpdatesTabOpened: () -> Unit = {},
 ) {
     val ready by viewModel.ready.collectAsStateWithLifecycle()
     val sourceListing by viewModel.sourceListing.collectAsStateWithLifecycle()
@@ -198,6 +213,12 @@ fun CatalogScreen(
     // Pencil of the Sources tab: pick many sources and pin, enable or hide them at once.
     var editingSources by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(tab) { if (HomeTab.entries[tab] != HomeTab.SOURCES) editingSources = false }
+    LaunchedEffect(openUpdatesTab) {
+        if (openUpdatesTab) {
+            tab = HomeTab.UPDATES.ordinal
+            onUpdatesTabOpened()
+        }
+    }
     val pickFolder =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(viewModel::configureLocal) }
 
@@ -250,15 +271,21 @@ fun CatalogScreen(
                         }
                     },
                 )
-                PrimaryTabRow(selectedTabIndex = tab, containerColor = Color.Transparent, divider = {}) {
+                // A scrollable row keeps long labels whole; a fixed row clipped them into "Ис…" at large fonts.
+                PrimaryScrollableTabRow(
+                    selectedTabIndex = tab,
+                    containerColor = Color.Transparent,
+                    divider = {},
+                    edgePadding = 0.dp,
+                ) {
                     HomeTab.entries.forEachIndexed { i, t ->
                         YomuTab(
                             selected = tab == i,
                             onClick = { tab = i },
                             text = {
                                 when (t) {
-                                    HomeTab.SOURCES -> Text(stringResource(R.string.catalog_tab_sources))
-                                    HomeTab.LIBRARY -> Text(stringResource(R.string.catalog_tab_library))
+                                    HomeTab.SOURCES -> Text(stringResource(R.string.catalog_tab_sources), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                                    HomeTab.LIBRARY -> Text(stringResource(R.string.catalog_tab_library), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                                     HomeTab.UPDATES -> BadgedBox(
                                         badge = {
                                             if (newCount > 0) {
@@ -268,9 +295,9 @@ fun CatalogScreen(
                                             }
                                         },
                                     ) {
-                                        Text(stringResource(R.string.catalog_tab_updates))
+                                        Text(stringResource(R.string.catalog_tab_updates), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                                     }
-                                    HomeTab.HISTORY -> Text(stringResource(R.string.catalog_tab_history))
+                                    HomeTab.HISTORY -> Text(stringResource(R.string.catalog_tab_history), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                                 }
                             },
                         )
@@ -305,6 +332,7 @@ fun CatalogScreen(
                     editing = editingSources,
                     onToggleEditing = { editingSources = !editingSources },
                     extensionUpdates = extensionUpdates,
+                    updateBanner = updateBanner,
                 )
                 HomeTab.LIBRARY -> LibraryTab(favorites, libraryTotal, libraryDisplay, tabs, tabMembers, viewModel, onOpenTitle, onBrowse = { tab = 0 }, topInset = padding.calculateTopPadding())
                 HomeTab.UPDATES -> {
@@ -394,17 +422,33 @@ private fun SourcesTab(
     editing: Boolean,
     onToggleEditing: () -> Unit,
     extensionUpdates: Int,
+    updateBanner: (@Composable () -> Unit)? = null,
 ) {
     val sources = listing.sources
     var menuFor by remember { mutableStateOf<SourceInfo?>(null) }
     var removeFor by remember { mutableStateOf<SourceInfo?>(null) }
     var showFilters by remember { mutableStateOf(false) }
     var showLanguages by remember { mutableStateOf(false) }
+    var universalOpen by rememberSaveable { mutableStateOf(true) }
     var selected by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showBulk by remember { mutableStateOf(false) }
     val refreshing by viewModel.refreshingSources.collectAsStateWithLifecycle()
     val checkingSources by viewModel.checkingSources.collectAsStateWithLifecycle()
     val installedAdultSourcesHidden by viewModel.installedAdultSourcesHidden.collectAsStateWithLifecycle()
+    val grid by viewModel.sourceGrid.collectAsStateWithLifecycle()
+    val configuration = LocalConfiguration.current
+    // Four tiles on an ordinary phone (B1); a narrow screen or a large font leaves room for two or three.
+    val columns = remember(configuration.screenWidthDp, configuration.fontScale) {
+        val width = configuration.screenWidthDp
+        when {
+            configuration.fontScale >= 1.6f -> 2
+            configuration.fontScale >= 1.25f -> if (width >= 500) 3 else 2
+            width >= 600 -> 5
+            width >= 400 -> 4
+            width >= 330 -> 3
+            else -> 2
+        }
+    }
     val visibleIds = remember(sources) { sources.mapTo(HashSet()) { it.id } }
     val selectedVisible = remember(selected, visibleIds) { selected.intersect(visibleIds) }
     BackHandler(enabled = editing && !showBulk) { onToggleEditing() }
@@ -457,6 +501,16 @@ private fun SourcesTab(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(top = topInset, bottom = navBarBottomPadding(Dimens.xl)),
         ) {
+            val wideSourceAction = configuration.fontScale >= 1.35f || configuration.screenWidthDp < 340
+            if (!editing && wideSourceAction) item(key = "source-add") {
+                FilledTonalButton(
+                    onClick = onAddSource,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs),
+                ) {
+                    Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
+                    Text(stringResource(R.string.connection_title), Modifier.padding(start = Dimens.xs))
+                }
+            }
             item(key = "source-actions") {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs),
@@ -464,15 +518,26 @@ private fun SourcesTab(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (!editing) {
-                        FilledTonalButton(onClick = onAddSource, modifier = Modifier.weight(1f)) {
+                        if (wideSourceAction) Spacer(Modifier.weight(1f))
+                        else FilledTonalButton(onClick = onAddSource, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
-                            Text(stringResource(R.string.connection_title), Modifier.padding(start = Dimens.xs))
+                            Text(
+                                stringResource(R.string.connection_title),
+                                Modifier.padding(start = Dimens.xs),
+                            )
                         }
-                        TextButton(onClick = onOpenExtensions) {
-                            Icon(Icons.Filled.Extension, null, Modifier.size(18.dp))
-                            Text(stringResource(R.string.ext_title), Modifier.padding(start = Dimens.xs))
-                            if (extensionUpdates > 0) {
-                                Badge(Modifier.padding(start = Dimens.xs)) { Text(extensionUpdates.coerceAtMost(99).toString()) }
+                        // "Manage": the installed extensions and their repositories, with the update count on the icon.
+                        IconButton(onClick = onOpenExtensions) {
+                            BadgedBox(
+                                badge = {
+                                    if (extensionUpdates > 0) {
+                                        Badge(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) {
+                                            Text(extensionUpdates.coerceAtMost(99).toString())
+                                        }
+                                    }
+                                },
+                            ) {
+                                Icon(Icons.Filled.Extension, stringResource(R.string.ext_title))
                             }
                         }
                     } else {
@@ -487,6 +552,13 @@ private fun SourcesTab(
                             onToggleEditing,
                         )
                     }
+                    if (!editing && sources.isNotEmpty()) {
+                        CircleIconButton(
+                            if (grid) Icons.AutoMirrored.Outlined.ViewList else Icons.Filled.GridView,
+                            stringResource(if (grid) R.string.sources_show_list else R.string.sources_show_grid),
+                            { viewModel.setSourceGrid(!grid) },
+                        )
+                    }
                 }
             }
             if (sources.isNotEmpty() || filtered || query.isNotEmpty() || listing.showingExcluded) {
@@ -498,6 +570,9 @@ private fun SourcesTab(
                             placeholder = stringResource(R.string.sources_search_hint),
                             modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
                         )
+                        // A newer Yomu sits right under the search field: one line, one action, and a cross that
+                        // hides it for this version (the dot on Settings and the manual check stay).
+                        if (!editing && query.isBlank()) updateBanner?.invoke()
                         SourceFilterBar(
                             filter = filter,
                             langs = langs,
@@ -569,19 +644,55 @@ private fun SourcesTab(
                     modifier = Modifier.animateItem(),
                 )
             }
+            // One section is either rows or a grid of large icons; the headers, search and pinning stay the same.
+            fun LazyListScope.sourceEntries(sectionKey: String, list: List<SourceInfo>) {
+                if (!grid) {
+                    items(list, key = { it.id }) { row(it) }
+                    return
+                }
+                list.chunked(columns).forEachIndexed { index, chunk ->
+                    item(key = "g-$sectionKey-$index") {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = Dimens.m),
+                            horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+                        ) {
+                            chunk.forEach { s ->
+                                SourceTile(
+                                    s = s,
+                                    health = health[s.id],
+                                    checking = s.id in checkingSources,
+                                    editing = editing,
+                                    selected = s.id in selectedVisible,
+                                    onOpen = { if (editing) toggle(s.id) else onOpenSource(s) },
+                                    onMenu = { menuFor = s },
+                                    onPin = { viewModel.setPinned(s.id, !s.pinned) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            repeat(columns - chunk.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                }
+            }
             if (external.isNotEmpty()) {
                 item(key = "h-external") { ListHeader(stringResource(R.string.catalog_section_external), Modifier.animateItem()) }
-                items(external, key = { it.id }) { row(it) }
+                sourceEntries("external", external)
             }
             if (pinned.isNotEmpty()) {
                 item(key = "h-pinned") { ListHeader(stringResource(R.string.catalog_section_pinned), Modifier.animateItem()) }
-                items(pinned, key = { it.id }) { row(it) }
+                sourceEntries("pinned", pinned)
             }
             sections.forEach { (key, label, list) ->
                 if (label != null && list.isNotEmpty()) {
-                    item(key = "h-$key") { ListHeader("$label · ${list.size}", Modifier.animateItem()) }
+                    if (key == "universal") {
+                        item(key = "h-$key") {
+                            CollapsibleHeader("$label · ${list.size}", open = universalOpen) { universalOpen = !universalOpen }
+                        }
+                    } else {
+                        item(key = "h-$key") { ListHeader("$label · ${list.size}", Modifier.animateItem()) }
+                    }
                 }
-                items(list, key = { it.id }) { row(it) }
+                if (key != "universal" || universalOpen) sourceEntries(key, list)
             }
         }
     }
@@ -821,6 +932,89 @@ private fun SourceRow(
             .alpha(if (s.enabled && !s.hidden) 1f else 0.55f)
             .combinedClickable(onClick = onOpen, onLongClick = if (editing) onOpen else onMenu),
     )
+}
+
+/**
+ * A source as a big icon with a two-line name (B1). Long press opens the same menu as a row, which is also how TalkBack
+ * reaches pin, settings and the other actions.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SourceTile(
+    s: SourceInfo,
+    health: SourceHealth?,
+    checking: Boolean,
+    editing: Boolean,
+    selected: Boolean,
+    onOpen: () -> Unit,
+    onMenu: () -> Unit,
+    onPin: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val unavailable = !s.enabled || s.hidden
+    val openLabel = stringResource(R.string.ext_open_source)
+    PulseClickable(
+        onClick = onOpen,
+        onLongClick = if (editing) onOpen else onMenu,
+        onClickLabel = openLabel,
+        onLongClickLabel = stringResource(CoreR.string.more),
+        shape = MaterialTheme.shapes.large,
+        scaleOnPress = true,
+        modifier = modifier
+            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f) else Color.Transparent)
+            .alpha(if (unavailable) 0.55f else 1f),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(vertical = Dimens.s, horizontal = Dimens.xxs),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Dimens.xs),
+        ) {
+            Box {
+                SourceIcon(s, size = 56.dp)
+                when {
+                    editing -> Checkbox(checked = selected, onCheckedChange = null, modifier = Modifier.align(Alignment.TopEnd))
+                    s.pinned -> Icon(
+                        Icons.Filled.PushPin,
+                        stringResource(R.string.catalog_section_pinned),
+                        Modifier.align(Alignment.TopEnd).size(16.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                            .padding(2.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                if (checking || health?.slow == true) {
+                    CircularProgressIndicator(Modifier.align(Alignment.BottomEnd).size(14.dp), strokeWidth = 2.dp)
+                }
+            }
+            Text(
+                s.name,
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 32.dp),
+            )
+        }
+    }
+}
+
+/** A language section that folds away; the multilingual one starts open and remembers its state. */
+@Composable
+private fun CollapsibleHeader(text: String, open: Boolean, onToggle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onToggle)
+            .padding(start = Dimens.l, end = Dimens.l, top = Dimens.l, bottom = Dimens.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+        Icon(
+            if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+            null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+    }
 }
 
 /** "Manga" / "Novels" / "Books" / "Audiobooks" in a colour of its own: the kind of a source is seen at once. */

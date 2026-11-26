@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -123,6 +124,7 @@ class ExtensionCatalogScreensTest {
         return BitmapDrawable(compose.activity.resources, bmp)
     }
 
+    @OptIn(ExperimentalTestApi::class)
     private fun runExtensionScreens(dark: Boolean, catalogShot: String, browseShot: String, extensionsShot: String) {
         val settings = GlobalContext.get().get<AppSettings>()
         val manager = GlobalContext.get().get<ExtensionManager>()
@@ -210,10 +212,10 @@ class ExtensionCatalogScreensTest {
         shot(browseShot)
 
         compose.runOnIdle { browseId = null }
-        // The top of the list (the buttons) is always composed; "MangaDex" itself sits below the extension rows.
-        awaitText("Extensions")
-
-        compose.onAllNodesWithText("Extensions")[0].performClick()
+        // "Manage" is the extensions icon of the action row; its label lives in the content description (B1).
+        val manageExtensions = hasContentDescription("Extensions") and hasClickAction()
+        compose.waitUntilAtLeastOneExists(manageExtensions, 60_000)
+        compose.onNode(manageExtensions).performClick()
         awaitText("Installed")
         compose.mainClock.advanceTimeBy(1_000)
         // The screen's own scan keeps replacing the list (the startup reload and the store refresh): put the device

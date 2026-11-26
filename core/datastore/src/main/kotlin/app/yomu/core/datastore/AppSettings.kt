@@ -30,6 +30,7 @@ import app.yomu.domain.model.LibraryFilter
 import app.yomu.domain.model.LibrarySort
 import app.yomu.domain.model.MangaDirection
 import app.yomu.domain.model.MangaSettings
+import app.yomu.domain.model.MetadataProvider
 import app.yomu.domain.model.PdfSettings
 import app.yomu.domain.model.ReaderBarActionConfig
 import app.yomu.domain.model.ReaderBarActions
@@ -294,6 +295,9 @@ class AppSettings(context: Context) {
     /** Filters of the source list besides the languages (1.8.0). */
     val catalogSourceFilter = json("catalog_source_filter", SourceListFilter(), SourceListFilter.serializer())
 
+    /** Sources as a grid of icons instead of rows (B1); the choice survives restarts. */
+    val catalogSourcesGrid = bool("catalog_sources_grid", false)
+
     /** Global search hides sources without results. */
     val globalSearchOnlyResults = bool("global_search_only_results", false)
 
@@ -432,6 +436,10 @@ class AppSettings(context: Context) {
         MapSerializer(Long.serializer(), ExternalMetadata.serializer()),
     )
 
+    /** Preferred metadata provider for manga and for novels (C1); both default to AniList as before. */
+    val metadataProviderManga = enum("metadata_provider_manga", MetadataProvider.ANILIST)
+    val metadataProviderNovel = enum("metadata_provider_novel", MetadataProvider.ANILIST)
+
     // PDF annotations (2.0.0)
     /** Highlights and notes of PDF books are also written into the PDF file (as standard annotations). */
     val pdfWriteAnnotations = bool("pdf_write_annotations", true)
@@ -474,6 +482,22 @@ class AppSettings(context: Context) {
     /** Mihon parity: release tag the user chose to skip; the update dot/check stay quiet for this version. */
     val skipUpdateVersion = string("skip_update_version", "")
 
+    /** Version whose catalog banner the user closed with its cross; a newer release brings the banner back. */
+    val updateDismissedVersion = string("update_dismissed_version", "")
+
+    /** When the last successful check finished: the release dialog shows it after a later failure. */
+    val updateLastSuccessAt = long("update_last_success_at", 0)
+
+    /** Earliest moment of the next request (interval after a success, short backoff after a failure). */
+    val updateNextAttemptAt = long("update_next_attempt_at", 0)
+
+    /** Per-title state of the "link a tracker" hint (C2): "<itemId>:<time>" or "<itemId>:forever". */
+    val trackPromptState = stringSet("track_prompt_state")
+    val trackPromptCompletedTitles = stringSet("track_prompt_completed_titles")
+
+    /** "The furthest progress wins" (D2): the maximum of Yomu and the linked services moves the laggards. */
+    val trackAlignProgress = bool("track_align_progress", false)
+
     /** versionCode whose "What's new" the user has seen; 0 = none yet. */
     val whatsNewSeen = long("whats_new_seen", 0)
 
@@ -485,7 +509,10 @@ class AppSettings(context: Context) {
 
     /** State of this installation, not a preference: never exported, and a backup never overwrites it. */
     private val deviceKeys =
-        setOf("update_checked_at", "update_latest", "whats_new_seen", "crash_seen_at", "last_sync_error", "extension_trust_migrated")
+        setOf(
+            "update_checked_at", "update_latest", "whats_new_seen", "crash_seen_at", "last_sync_error", "extension_trust_migrated",
+            "update_dismissed_version", "update_last_success_at", "update_next_attempt_at",
+        )
 
     /** Exports all stored preferences as typed JSON (used by backup). Secrets are skipped unless [includeSecrets]. */
     suspend fun exportJson(includeSecrets: Boolean = false): JsonObject {

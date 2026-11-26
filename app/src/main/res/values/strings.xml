@@ -53,6 +53,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_19_0">
+        <item>Switch between list and grid in Catalog. Large text keeps source controls readable.</item>
+        <item>Match title details with AniList, MangaBaka or MyAnimeList and explore tracker pages.</item>
+        <item>Keep reading progress moving forward across linked trackers. See why a chapter check skipped a title.</item>
+        <item>New layout for settings and widgets, with quicker press feedback and support for reduced motion.</item>
+    </string-array>
     <string-array name="whats_new_2_18_0">
         <item>The bottom reading bar is yours: chapters, search, display, bookmark and auto-scroll.</item>
         <item>AniList metadata: a confirmed match replaces the cover and description and can be removed again.</item>
@@ -319,10 +325,11 @@
     <string name="track_login_failed">Could not sign in to %1$s: %2$s</string>
     <string name="widget_continue_label">Continue reading</string>
     <string name="widget_continue_description">The books and online titles you are reading: one tap to go on.</string>
-    <string name="widget_continue_empty">Nothing in progress yet. Open a book in Yomu and it shows up here.</string>
+    <string name="widget_continue_empty">Nothing in progress yet. Tap to open your library and start a book.</string>
     <string name="widget_new_chapters_label">New chapters</string>
+    <string name="widget_new_chapters_count">%1$d new</string>
     <string name="widget_new_chapters_description">New unread chapters of the titles in your library, from the last check.</string>
-    <string name="widget_new_chapters_empty">No new chapters. The last check found nothing unread.</string>
+    <string name="widget_new_chapters_empty">No new chapters. Tap to open the updates feed.</string>
     <string name="widget_audio_label">Audiobook player</string>
     <string name="widget_audio_description">Play, pause and skip the audiobook from the home screen.</string>
     <string name="widget_audio_empty">Nothing playing. Start an audiobook in Yomu.</string>

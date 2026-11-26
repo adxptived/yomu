@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.19.0 - catalog, metadata and progress sync
+
+### Catalog and settings
+
+- Switch between a source grid and list. On small screens with large text, the add-source button gets its own row and filters wrap.
+- Settings has a reorganized home screen, theme previews, readable accent labels and search shortcuts that scroll to the matching chapter-check restriction.
+- Press feedback is quicker and stays within the tapped control. Reduced motion removes scaling and settings transitions.
+
+### Metadata and trackers
+
+- Choose AniList, MangaBaka or MyAnimeList for title details, with separate defaults for manga and novels. Preview a match before applying it or restore the source details.
+- Open AniList and MyAnimeList title pages from a tracked title, including linked local books. AniList can show characters, staff and recommendations. Retry a failed page while keeping the cards already loaded.
+- Tracker suggestions use confirmed metadata where available. A title can offer tracking after a completed chapter, with options to snooze or dismiss the prompt.
+- Progress alignment checks the live tracker records before moving progress forward. A queued update preserves progress already recorded further ahead.
+
+### Updates and widgets
+
+- Catalog can show a banner for a newer Yomu release. Check for updates keeps the last known result through network errors and selects an APK for the device's architecture.
+- Chapter-check reports show totals and individual skip reasons. Automatic checks can use unread and publication-status filters.
+- Continue Reading and New Chapters adapt to their available space. New Chapters has a compact count tile and opens the updates feed from its header.
+
+### Reader
+
+- Restored frosted reading controls and refined the reader's quick settings.
+
 ## 2.18.0 - reading bar, widgets and AniList metadata
 
 ### First start and profile

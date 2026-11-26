@@ -33,6 +33,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.DataUsage
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Public
@@ -43,6 +45,7 @@ import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -74,6 +77,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -83,6 +87,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.os.LocaleListCompat
@@ -96,6 +101,7 @@ import app.yomu.core.ui.components.LauncherIcon
 import app.yomu.core.ui.components.LauncherIconImage
 import app.yomu.core.ui.components.LocalLauncherIcons
 import app.yomu.core.ui.components.PreferenceHeader
+import app.yomu.core.ui.components.pressPulse
 import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.animateMotionFloat
 import app.yomu.core.ui.components.rememberHaptic
@@ -228,27 +234,13 @@ internal fun ColumnScope.AppearanceSection(vm: SettingsViewModel) {
     val accent by s.accent.state()
     val custom by s.accentCustom.state()
     val dynamicOn = dynamic && Build.VERSION.SDK_INT >= 31
+    val yomuAccent = runCatching { Accent.valueOf(accent) }.getOrDefault(Accent.YOMU)
 
-    ThemePreview(Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s))
-
-    PreferenceHeader(stringResource(R.string.set_theme))
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs)) {
-        val modes =
-            listOf(ThemeMode.SYSTEM to R.string.set_theme_system, ThemeMode.LIGHT to R.string.set_theme_light, ThemeMode.DARK to R.string.set_theme_dark)
-        modes.forEachIndexed { i, (m, label) ->
-            SegmentedButton(
-                selected = mode == m.name,
-                onClick = { vm.set(s.themeMode, m.name) },
-                shape = SegmentedButtonDefaults.itemShape(i, modes.size),
-            ) { Text(stringResource(label), maxLines = 1, overflow = TextOverflow.Ellipsis) }
-        }
-    }
-    SwitchPref(vm, s.amoled, R.string.set_amoled, R.string.set_amoled_sum)
-    if (Build.VERSION.SDK_INT >= 31) SwitchPref(vm, s.dynamicColor, R.string.set_dynamic_color, R.string.set_dynamic_color_sum)
-
-    PreferenceHeader(stringResource(R.string.set_accent))
+    // Accents first, then the three theme previews on Yomu's own colours: the choice is seen, not read (B2).
+    val accentLabel = stringResource(R.string.set_accent)
+    SettingsAnchor(accentLabel) { PreferenceHeader(accentLabel) }
     AccentPicker(
-        selected = runCatching { Accent.valueOf(accent) }.getOrDefault(Accent.YOMU),
+        selected = yomuAccent,
         custom = custom,
         amoled = amoled,
         dimmed = dynamicOn,
@@ -265,14 +257,23 @@ internal fun ColumnScope.AppearanceSection(vm: SettingsViewModel) {
         Text(stringResource(accentHint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs))
     }
 
-    LocalLauncherIcons.current?.let { launcher ->
-        val current by launcher.current.collectAsStateWithLifecycle()
-        PreferenceHeader(stringResource(R.string.set_app_icon))
-        AppIconPicker(launcher.icons, current, onSelect = launcher::select)
-        Text(stringResource(R.string.set_app_icon_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs))
+    SettingsAnchor(stringResource(R.string.set_theme)) {
+        Column {
+            PreferenceHeader(stringResource(R.string.set_theme))
+            ThemeModeCards(
+                selected = mode,
+                accent = yomuAccent,
+                custom = custom,
+                amoled = amoled,
+                onSelect = { vm.set(s.themeMode, it.name) },
+            )
+        }
     }
+    ThemePreview(Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s))
 
     PreferenceHeader(stringResource(R.string.set_interface))
+    SwitchPref(vm, s.amoled, R.string.set_amoled, R.string.set_amoled_sum)
+    if (Build.VERSION.SDK_INT >= 31) SwitchPref(vm, s.dynamicColor, R.string.set_dynamic_color, R.string.set_dynamic_color_sum)
     var locale by remember { mutableStateOf(AppCompatDelegate.getApplicationLocales().toLanguageTags()) }
     PreferenceChoice(
         stringResource(R.string.set_language),
@@ -294,6 +295,78 @@ internal fun ColumnScope.AppearanceSection(vm: SettingsViewModel) {
     )
     SwitchPref(vm, s.haptics, R.string.set_haptics)
     SwitchPref(vm, s.reduceMotion, R.string.set_reduce_motion, R.string.set_reduce_motion_sum)
+
+    LocalLauncherIcons.current?.let { launcher ->
+        val current by launcher.current.collectAsStateWithLifecycle()
+        PreferenceHeader(stringResource(R.string.set_app_icon))
+        AppIconPicker(launcher.icons, current, onSelect = launcher::select)
+        Text(stringResource(R.string.set_app_icon_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs))
+    }
+}
+
+/**
+ * "System / Light / Dark" as three small mocks drawn in the picked accent: the selected one carries a check and its
+ * name, the others stay quiet. A press answers immediately (B3) and haptics follow the system setting.
+ */
+@Composable
+private fun ThemeModeCards(selected: String, accent: Accent, custom: Long, amoled: Boolean, onSelect: (ThemeMode) -> Unit) {
+    val haptic = rememberHaptic()
+    val darkNow = isDarkScheme()
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs),
+        horizontalArrangement = Arrangement.spacedBy(Dimens.m),
+    ) {
+        listOf(
+            Triple(ThemeMode.SYSTEM, R.string.set_theme_system, darkNow),
+            Triple(ThemeMode.LIGHT, R.string.set_theme_light, false),
+            Triple(ThemeMode.DARK, R.string.set_theme_dark, true),
+        ).forEach { (mode, label, dark) ->
+            val scheme = remember(accent, custom, amoled, dark) { schemeFor(accent, dark, amoled && dark, custom) }
+            val isSelected = selected == mode.name
+            val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            Column(
+                Modifier.weight(1f)
+                    .clip(MaterialTheme.shapes.medium)
+                    .pressPulse(interaction, scaleOnPress = true)
+                    .border(
+                        if (isSelected) 2.dp else 1.dp,
+                        if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                        MaterialTheme.shapes.medium,
+                    )
+                    .selectable(
+                        selected = isSelected,
+                        interactionSource = interaction,
+                        indication = androidx.compose.foundation.LocalIndication.current,
+                        role = Role.RadioButton,
+                        onClick = {
+                            if (!isSelected) haptic.perform()
+                            onSelect(mode)
+                        },
+                    )
+                    .padding(Dimens.s),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(Dimens.xs),
+            ) {
+                Surface(color = scheme.background, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(Dimens.s), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(Modifier.fillMaxWidth(0.55f).height(8.dp).clip(CircleShape).background(scheme.primary))
+                        Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(scheme.surfaceVariant))
+                        Box(Modifier.fillMaxWidth(0.75f).height(4.dp).clip(CircleShape).background(scheme.surfaceVariant))
+                        Box(Modifier.fillMaxWidth(0.35f).height(8.dp).clip(CircleShape).background(scheme.secondary))
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (isSelected) Icon(Icons.Filled.Check, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                    Text(
+                        stringResource(label),
+                        style = MaterialTheme.typography.labelMedium,
+                        textAlign = TextAlign.Center,
+                        color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
 }
 
 /** The launcher icons as the launcher draws them, in the same tiles as the accents above. */
@@ -410,6 +483,7 @@ private fun AccentPicker(selected: Accent, custom: Long, amoled: Boolean, dimmed
     var hue by remember(custom) { mutableFloatStateOf(h0) }
     var sat by remember(custom) { mutableFloatStateOf(s0.coerceIn(SAT_MIN, SAT_MAX)) }
     val customArgb = Color.hsl(hue, sat, 0.6f).toArgb().toLong() and 0xFFFFFFFFL
+    val swatchWidth = (90f * LocalDensity.current.fontScale.coerceIn(1f, 1.6f)).dp
     val swatches = remember(dark, amoled, customArgb) {
         Accent.entries.associateWith { schemeFor(it, dark, amoled, customArgb).primary }
     }
@@ -422,7 +496,7 @@ private fun AccentPicker(selected: Accent, custom: Long, amoled: Boolean, dimmed
             val isSelected = a == selected
             val name = stringResource(a.label())
             Column(
-                Modifier.width(76.dp).clip(MaterialTheme.shapes.medium)
+                Modifier.width(swatchWidth).clip(MaterialTheme.shapes.medium)
                     .selectable(selected = isSelected, role = Role.RadioButton, onClick = { onSelect(a) })
                     .padding(vertical = Dimens.s),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -450,7 +524,13 @@ private fun AccentPicker(selected: Accent, custom: Long, amoled: Boolean, dimmed
                         a == Accent.YOMU -> Text("読", color = markOn(color), fontFamily = FontFamily.Serif, style = MaterialTheme.typography.titleMedium)
                     }
                 }
-                Text(name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    name,
+                    style = MaterialTheme.typography.labelMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = Dimens.xxs),
+                    color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -853,47 +933,90 @@ internal fun ColumnScope.TranslationSection(vm: SettingsViewModel, links: Settin
     }
 }
 
+/** A rounded card around a few related settings rows (the catalog section groups its schedule and filters). */
 @Composable
-internal fun ColumnScope.CatalogSection(vm: SettingsViewModel, links: SettingsLinks) {
-    val s = vm.settings
+internal fun SettingsCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs),
+    ) {
+        Column(Modifier.padding(vertical = Dimens.xs), content = content)
+    }
+}
+
+/** One update filter: the condition and what it means, with the whole row as the switch target. */
+@Composable
+private fun RestrictionRow(label: String, summary: String, checked: Boolean, onToggle: (Boolean) -> Unit) = SettingsAnchor(label) {
+    Row(
+        Modifier.fillMaxWidth().toggleable(value = checked, role = Role.Checkbox, onValueChange = onToggle)
+            .padding(horizontal = Dimens.l, vertical = Dimens.s),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Dimens.m),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Checkbox(checked = checked, onCheckedChange = null)
+    }
+}
+
+private fun app.yomu.domain.catalog.UpdateRestriction.label(): Int = when (this) {
+    app.yomu.domain.catalog.UpdateRestriction.STARTED -> R.string.set_update_restriction_started
+    app.yomu.domain.catalog.UpdateRestriction.UNREAD -> R.string.set_update_restriction_unread
+    app.yomu.domain.catalog.UpdateRestriction.UNSTARTED -> R.string.set_update_restriction_unstarted
+    app.yomu.domain.catalog.UpdateRestriction.COMPLETED -> R.string.set_update_restriction_completed
+    app.yomu.domain.catalog.UpdateRestriction.PUBLICATION_ENDED -> R.string.set_update_restriction_publication_ended
+}
+
+private fun app.yomu.domain.catalog.UpdateRestriction.summary(): Int = when (this) {
+    app.yomu.domain.catalog.UpdateRestriction.STARTED -> R.string.set_update_restriction_started_sum
+    app.yomu.domain.catalog.UpdateRestriction.UNREAD -> R.string.set_update_restriction_unread_sum
+    app.yomu.domain.catalog.UpdateRestriction.UNSTARTED -> R.string.set_update_restriction_unstarted_sum
+    app.yomu.domain.catalog.UpdateRestriction.COMPLETED -> R.string.set_update_restriction_completed_sum
+    app.yomu.domain.catalog.UpdateRestriction.PUBLICATION_ENDED -> R.string.set_update_restriction_publication_ended_sum
+}
+
+@Composable
+internal fun ColumnScope.CatalogSection(vm: SettingsViewModel, links: SettingsLinks) {    val s = vm.settings
     val context = LocalContext.current
     val trusted by s.trustedExtensions.state()
     var revoke by remember { mutableStateOf(false) }
-    ChoicePref(vm, s.updateIntervalHours, R.string.set_update_interval, listOf(0, 3, 6, 12, 24, 48).map { it to hoursLabel(context, it) }, after = { vm.rescheduleUpdates() })
-    SwitchPref(vm, s.updateWifiOnly, R.string.set_update_wifi, after = { vm.rescheduleUpdates() })
+    // C1: which service the title card asks for a cover and a description, per kind of title.
+    val providerLabel = stringResource(R.string.set_metadata_provider)
+    SettingsAnchor(providerLabel) { PreferenceHeader(providerLabel) }
+    val providers = app.yomu.domain.model.MetadataProvider.entries.map { it to it.displayName }
+    SettingsCard {
+        ChoicePref(vm, s.metadataProviderManga, R.string.set_metadata_provider_manga, providers, icon = Icons.Outlined.AutoStories)
+        ChoicePref(vm, s.metadataProviderNovel, R.string.set_metadata_provider_novel, providers, icon = Icons.AutoMirrored.Outlined.MenuBook)
+    }
+    Hint(stringResource(R.string.set_metadata_provider_hint))
+
+    PreferenceHeader(stringResource(R.string.set_updates_section))
+    SettingsCard {
+        ChoicePref(vm, s.updateIntervalHours, R.string.set_update_interval, listOf(0, 3, 6, 12, 24, 48).map { it to hoursLabel(context, it) }, after = { vm.rescheduleUpdates() })
+        SwitchPref(vm, s.updateWifiOnly, R.string.set_update_wifi, after = { vm.rescheduleUpdates() })
+    }
+
     // What the automatic check is allowed to look at. Nothing selected means every title, which is the old behaviour.
     val restrictions by s.updateRestrictions.state()
-    Text(
-        stringResource(R.string.set_update_restrictions),
-        style = MaterialTheme.typography.titleSmall,
-        modifier = Modifier.padding(start = Dimens.l, top = Dimens.s, end = Dimens.l),
-    )
-    Text(
-        stringResource(if (restrictions.isEmpty()) R.string.set_update_restrictions_all else R.string.set_update_restrictions_some),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
-    )
-    app.yomu.domain.catalog.UpdateRestriction.entries.forEach { restriction ->
-        val checked = restriction.name in restrictions
-        Row(
-            Modifier.fillMaxWidth().clickable {
-                val next = if (checked) restrictions - restriction.name else restrictions + restriction.name
-                vm.set(s.updateRestrictions, next)
-            }.padding(horizontal = Dimens.l, vertical = Dimens.xs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Checkbox(checked = checked, onCheckedChange = null)
-            Text(
-                stringResource(
-                    when (restriction) {
-                        app.yomu.domain.catalog.UpdateRestriction.STARTED -> R.string.set_update_restriction_started
-                        app.yomu.domain.catalog.UpdateRestriction.UNREAD -> R.string.set_update_restriction_unread
-                        app.yomu.domain.catalog.UpdateRestriction.COMPLETED -> R.string.set_update_restriction_completed
-                    },
-                ),
-                modifier = Modifier.padding(start = Dimens.s),
-            )
+    val restrictionsLabel = stringResource(R.string.set_update_restrictions)
+    SettingsAnchor(restrictionsLabel) { PreferenceHeader(restrictionsLabel) }
+    SettingsCard {
+        Text(
+            stringResource(if (restrictions.isEmpty()) R.string.set_update_restrictions_all else R.string.set_update_restrictions_some),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.s),
+        )
+        app.yomu.domain.catalog.UpdateRestriction.entries.forEachIndexed { index, restriction ->
+            if (index > 0) HorizontalDivider(Modifier.padding(horizontal = Dimens.l))
+            RestrictionRow(
+                label = stringResource(restriction.label()),
+                summary = stringResource(restriction.summary()),
+                checked = restriction.name in restrictions,
+            ) { on -> vm.set(s.updateRestrictions, if (on) restrictions + restriction.name else restrictions - restriction.name) }
         }
     }
     // A shelf excluded here is never passed to the update worker, even by a manual check of everything.

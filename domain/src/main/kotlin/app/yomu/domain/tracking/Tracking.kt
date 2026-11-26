@@ -43,6 +43,10 @@ data class TrackSearchResult(
     val totalChapters: Int = 0,
     val year: Int? = null,
     val description: String? = null,
+    /** Country of origin ("JP", "KR", "CN"), when the service reports it: remakes of the same name come from elsewhere. */
+    val country: String? = null,
+    /** Confirmed tags of the work: the matcher uses them only when both sides know them. */
+    val tags: List<String> = emptyList(),
 )
 
 /** The user's list entry for a title on a service. Dates are epoch milliseconds, 0 = not set; score is 0–10. */

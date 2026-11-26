@@ -21,6 +21,9 @@ import app.yomu.data.translation.TranslationService
 import app.yomu.domain.model.Book
 import app.yomu.domain.model.ReadingStatus
 import app.yomu.domain.tracking.TrackEntry
+import app.yomu.domain.tracking.TrackMatcher
+import app.yomu.domain.tracking.TrackQuery
+import app.yomu.domain.tracking.TrackQueryType
 import app.yomu.domain.tracking.TrackSearchResult
 import app.yomu.domain.tracking.TrackService
 import app.yomu.feature.catalog.TrackSearchState
@@ -126,9 +129,27 @@ class BookDetailsViewModel(
         trackSearch.value = state.copy(query = query, loading = true, error = null)
         trackSearchJob = viewModelScope.launch(ScreenErrors) {
             runCatchingApp { trackers.tracker(state.service).search(query.trim()) }
-                .onSuccess { found -> trackSearch.update { it?.copy(loading = false, results = found) } }
+                .onSuccess { found ->
+                    val q = trackQuery()
+                    trackSearch.update {
+                        it?.copy(loading = false, results = TrackMatcher.rank(q, found).map { c -> c.result }, match = TrackMatcher.match(q, found))
+                    }
+                }
                 .onFailure { e -> trackSearch.update { it?.copy(loading = false, error = e) } }
         }
+    }
+
+    /** A local book has no tags or year: the matcher ranks by name and, when known, the kind of the file. */
+    private fun trackQuery(): TrackQuery {
+        val b = book.value ?: return TrackQuery("")
+        return TrackQuery(
+            title = b.title,
+            altTitles = listOfNotNull(b.series?.takeIf { it.isNotBlank() && it != b.title }),
+            type = when {
+                b.format.isComic || b.isManga -> TrackQueryType.MANGA
+                else -> TrackQueryType.UNKNOWN
+            },
+        )
     }
     override fun bindTrack(result: TrackSearchResult) = viewModelScope.launch(ScreenErrors) {
         val state = trackSearch.value ?: return@launch

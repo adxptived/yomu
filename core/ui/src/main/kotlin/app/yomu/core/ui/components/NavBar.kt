@@ -53,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
@@ -175,6 +176,8 @@ fun FloatingNavBar(
 @Composable
 private fun NavBarItems(items: List<NavItem>, selected: Int, showLabels: Boolean, onSelect: (Int) -> Unit, onPress: (Int) -> Unit, modifier: Modifier) {
     val reduce = LocalReduceMotion.current
+    val configuration = LocalConfiguration.current
+    val iconsOnly = configuration.screenWidthDp < 520 && configuration.fontScale >= 1.35f
     val interactions = rememberPressReports(items.size, onPress)
     val haptic = rememberHaptic()
     val colors = MaterialTheme.colorScheme
@@ -247,7 +250,9 @@ private fun NavBarItems(items: List<NavItem>, selected: Int, showLabels: Boolean
             // 4: names
             {
                 items.forEachIndexed { i, item ->
-                    if (showLabels) {
+                    if (iconsOnly) {
+                        Box(Modifier)
+                    } else if (showLabels) {
                         Text(
                             item.label,
                             style = labelStyle,
@@ -295,7 +300,21 @@ private fun NavBarItems(items: List<NavItem>, selected: Int, showLabels: Boolean
         var indicatorWidth = 0f
         val indicatorHeight: Int
 
-        if (showLabels) {
+        if (iconsOnly) {
+            val slot = width.toFloat() / n
+            indicatorHeight = height
+            indicatorWidth = slot
+            for (i in 0 until n) {
+                slotLeft[i] = i * slot
+                slotWidth[i] = slot
+                val icon = icons[i].measure(Constraints())
+                iconPlaceables[i] = icon
+                filledPlaceables[i] = filledIcons[i].measure(Constraints())
+                iconX[i] = (slotLeft[i] + (slot - icon.width) / 2f).roundToInt()
+                iconY[i] = (height - icon.height) / 2
+                if (total > 0f) indicatorLeft += fractions[i] * slotLeft[i] / total
+            }
+        } else if (showLabels) {
             // Equal slots; a 56×30 pill behind the icon, the name under it.
             val slot = width.toFloat() / n
             val pillW = minOf(56.dp.toPx(), slot - 4.dp.toPx())

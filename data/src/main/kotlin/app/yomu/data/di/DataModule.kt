@@ -79,7 +79,7 @@ val dataModule = module {
     single { SourceHealthTracker() }
     single { LibraryTabs(get()) }
     single { CatalogRepository(androidContext(), get(), get(), get(), get(), get(), get()) }
-    single { MetadataRepository(get(), get()) }
+    single { MetadataRepository(get(), get(), { get<NetworkClients>().client }) } bind app.yomu.data.catalog.TrackerPageSource::class
     single { DownloadRepository(androidContext(), get(), get(), get(), get(), get(), get()) }
     single { DownloadOverview(get(), get(), get(), get(), get()) }
     single { BackupManager(androidContext(), get(), get()) }

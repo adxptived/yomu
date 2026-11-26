@@ -132,12 +132,13 @@ fun BookDetailsScreen(
     onOpenAnnotations: (Book) -> Unit,
     onOpenPageLayout: ((Book) -> Unit)? = null,
     inPane: Boolean = false,
+    onOpenTrackerPage: ((app.yomu.domain.tracking.TrackService, Long) -> Unit)? = null,
 ) {
     val book by viewModel.book.collectAsStateWithLifecycle()
     val hideCovers = app.yomu.core.ui.components.LocalHideCovers.current
     val coverModel = book?.coverPath?.takeIf { !hideCovers }?.let { File(it) }
     CoverTheme(rememberCoverColor(coverModel)) {
-        BookDetailsContent(viewModel, onBack, onRead, onOpenEditor, onOpenAnnotations, onOpenPageLayout, inPane)
+        BookDetailsContent(viewModel, onBack, onRead, onOpenEditor, onOpenAnnotations, onOpenPageLayout, inPane, onOpenTrackerPage)
     }
 }
 
@@ -150,6 +151,7 @@ private fun BookDetailsContent(
     onOpenAnnotations: (Book) -> Unit,
     onOpenPageLayout: ((Book) -> Unit)?,
     inPane: Boolean,
+    onOpenTrackerPage: ((app.yomu.domain.tracking.TrackService, Long) -> Unit)?,
 ) {
     val book by viewModel.book.collectAsStateWithLifecycle()
     val extras by viewModel.extras.collectAsStateWithLifecycle()
@@ -489,7 +491,7 @@ private fun BookDetailsContent(
             }
         }
     }
-    if (showTracking) TrackingSheet(viewModel, onDismiss = { showTracking = false })
+    if (showTracking) TrackingSheet(viewModel, onDismiss = { showTracking = false }, onOpenTrackerPage = onOpenTrackerPage)
     if (editing && current != null) {
         MetadataDialog(current, onDismiss = { editing = false }, onSave = { viewModel.save(it); editing = false })
     }

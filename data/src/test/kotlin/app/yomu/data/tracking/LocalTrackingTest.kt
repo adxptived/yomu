@@ -183,4 +183,37 @@ class LocalTrackingTest {
         db.books().delete(listOf(id))
         assertEquals(1, db.tracks().all().size); assertEquals(online, db.tracks().all().single().itemId)
     }
+
+    @Test fun automaticAlignmentKeepsRemoteProgressWhenTheSourceIsBehind() = runBlocking {
+        val settings = app.yomu.core.datastore.AppSettings(context)
+        settings.trackAlignProgress.set(true)
+        try {
+            val aligned = TrackerManager(null, db, store, TrackerKeys(), { OkHttpClient() }, settings, listOf(fake))
+            store.saveTokens(service, "token", null, 0)
+            val title = db.catalog().insert(CatalogItemEntity(sourceId = 1, url = "/22", title = "Series", author = null, artist = null,
+                description = null, genres = "", status = 0, coverUrl = null, type = "MANGA", favorite = true, categoryId = null,
+                addedAt = 1, lastUpdateAt = 1, initialized = true))
+            db.catalog().insertChapters(listOf(ChapterEntity(itemId = title, url = "/22/12", name = "12", number = 12f,
+                scanlator = null, uploadDate = 0, read = true, bookmarked = false, lastPageRead = 0, downloaded = false,
+                localPath = null, isNew = false, sourceOrder = 0, fetchedAt = 0, lastReadAt = 1)))
+            db.tracks().insert(TrackEntity(itemId = title, service = service.id, remoteId = 22, title = "Series", url = result.url,
+                status = TrackStatus.READING.code, lastChapterRead = 10f))
+            fake.remote = TrackEntry(service, 22, title = "Series", url = result.url, status = TrackStatus.READING, lastChapterRead = 20f)
+
+            assertEquals(0, aligned.advance(title))
+            assertEquals(20f, fake.remote!!.lastChapterRead, .001f)
+            assertTrue(fake.saved.isEmpty())
+
+            val previous = db.tracks().get(title, service.id)!!
+            db.tracks().update(previous.copy(lastChapterRead = 12f, pending = true))
+            fake.failFind = true
+            assertEquals(1, aligned.pushPending())
+            assertTrue(fake.saved.isEmpty())
+            fake.failFind = false
+            assertEquals(0, aligned.pushPending())
+            assertEquals(20f, fake.remote!!.lastChapterRead, .001f)
+        } finally {
+            settings.trackAlignProgress.set(false)
+        }
+    }
 }

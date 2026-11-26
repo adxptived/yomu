@@ -1,0 +1,4 @@
+• Switch between list and grid in Catalog. Large text keeps source controls readable.
+• Match title details with AniList, MangaBaka or MyAnimeList and explore tracker pages.
+• Keep reading progress moving forward across linked trackers. See why a chapter check skipped a title.
+• New layout for settings and widgets, with quicker press feedback and support for reduced motion.

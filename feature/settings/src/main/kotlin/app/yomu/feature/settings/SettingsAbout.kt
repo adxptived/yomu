@@ -60,6 +60,7 @@ import app.yomu.core.ui.components.LocalLauncherIcons
 import app.yomu.core.ui.components.PreferenceHeader
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.theme.Dimens
+import app.yomu.core.common.TimeFormat
 import kotlin.math.roundToInt
 import app.yomu.core.ui.R as CoreR
 
@@ -93,7 +94,8 @@ internal fun ColumnScope.AboutSection(vm: SettingsViewModel) {
     AboutHeader(version, code)
 
     PreferenceHeader(stringResource(R.string.set_about_project))
-    UpdateItem(vm.updates, version)
+    val timeFormat by vm.settings.timeFormat.state()
+    UpdateItem(vm.updates, version, timeFormat)
     SwitchPref(vm, vm.settings.updateAutoCheck, R.string.set_update_auto, R.string.set_update_auto_sum)
     if (skipped.isNotBlank()) {
         PreferenceItem(
@@ -132,7 +134,8 @@ internal fun ColumnScope.AboutSection(vm: SettingsViewModel) {
 
 /** "Check for updates": every step from the check to the installer, in one row. */
 @Composable
-private fun UpdateItem(updates: AppUpdates, version: String) {
+private fun UpdateItem(updates: AppUpdates, version: String, timeFormat: String) {
+    val context = LocalContext.current
     val state by updates.state.collectAsStateWithLifecycle()
     val u = state
     PreferenceItem(
@@ -146,10 +149,25 @@ private fun UpdateItem(updates: AppUpdates, version: String) {
                 ?: stringResource(R.string.set_update_downloading, u.release.version)
             is UpdateState.ReadyToInstall -> stringResource(R.string.set_update_ready, u.release.version)
             UpdateState.NoReleases -> stringResource(R.string.set_update_none)
-            is UpdateState.Failed -> when {
-                u.error is UpdateChecksumException -> stringResource(R.string.set_update_bad_checksum)
-                u.release != null -> stringResource(R.string.set_update_download_failed, errorMessage(u.error))
-                else -> stringResource(R.string.set_update_failed, errorMessage(u.error))
+            is UpdateState.Failed -> {
+                val base = when {
+                    u.error is UpdateChecksumException -> stringResource(R.string.set_update_bad_checksum)
+                    u.release != null && u.lastKnownAt == 0L -> stringResource(R.string.set_update_download_failed, errorMessage(u.error))
+                    u.error is UpdateReleaseFormatException -> stringResource(R.string.set_update_bad_release, errorMessage(u.error))
+                    u.error is UpdateCheckAccessException -> stringResource(
+                        if (u.error.rateLimited) R.string.set_update_rate_limited else R.string.set_update_access_denied,
+                    )
+                    else -> stringResource(R.string.set_update_failed, errorMessage(u.error))
+                }
+                if (u.release != null && u.lastKnownAt > 0) {
+                    base + " · " + stringResource(
+                        R.string.set_update_known_available, u.release.version,
+                    ) + " · " + stringResource(
+                        R.string.set_update_last_known, TimeFormat.formatDateTime(context, timeFormat, u.lastKnownAt),
+                    )
+                } else {
+                    base
+                }
             }
         },
         icon = Icons.Outlined.SystemUpdate,
@@ -199,7 +217,7 @@ internal fun UpdateDialog(release: ReleaseInfo, updates: AppUpdates) {
         title = { Text(stringResource(R.string.set_update_dialog_title, release.version)) },
         text = {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Dimens.s)) {
-                if (notes.isEmpty()) {
+                if (notes.isEmpty() && !release.metadataUnavailable) {
                     Text(stringResource(R.string.set_update_no_notes), style = MaterialTheme.typography.bodyMedium)
                 }
                 notes.forEach { block ->
@@ -219,7 +237,8 @@ internal fun UpdateDialog(release: ReleaseInfo, updates: AppUpdates) {
                     }
                 }
                 val hints = buildList {
-                    if (release.apkUrl == null) add(stringResource(R.string.set_update_no_apk))
+                    if (release.metadataUnavailable) add(stringResource(R.string.set_update_metadata_unavailable))
+                    else if (release.apkUrl == null) add(stringResource(R.string.set_update_no_apk))
                     else {
                         if (release.apkSize > 0) add(stringResource(R.string.set_update_size, Formatter.formatShortFileSize(context, release.apkSize)))
                         if (updates.isDebugBuild) add(stringResource(R.string.set_update_debug_note))
@@ -276,6 +295,59 @@ internal fun UpdateCard(version: String, ready: Boolean, onClick: () -> Unit) {
                 )
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+        }
+    }
+}
+
+/**
+ * The compact banner under the catalog search: "Yomu X.Y.Z is available", Update, and a cross that hides it for this
+ * version only (the dot on Settings and "Check for updates" stay). A release that is only a tag still offers its page.
+ */
+@Composable
+fun CatalogUpdateBanner(updates: AppUpdates, modifier: Modifier = Modifier) {
+    val version by updates.available.collectAsStateWithLifecycle(null)
+    val dismissed by updates.dismissedVersion.collectAsStateWithLifecycle(null)
+    val state by updates.state.collectAsStateWithLifecycle()
+    val dialog by updates.dialog.collectAsStateWithLifecycle()
+    // The banner opens the same details as the settings: notes, the suitable action and "Skip this version".
+    dialog?.let { release -> UpdateDialog(release, updates) }
+    val shown = version?.takeIf { it != dismissed } ?: return
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs),
+    ) {
+        Row(
+            Modifier.padding(start = Dimens.m, end = Dimens.xs, top = Dimens.xs, bottom = Dimens.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+        ) {
+            Icon(Icons.Outlined.SystemUpdate, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Column(Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.set_update_card_title, shown),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    stringResource(if (state is UpdateState.ReadyToInstall) R.string.set_update_card_ready_text else R.string.set_update_card_text),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                    maxLines = 2,
+                )
+            }
+            when (state) {
+                UpdateState.Checking -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                else -> TextButton(onClick = updates::openDetails) {
+                    Text(stringResource(R.string.set_update_banner_action), color = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+            }
+            IconButton(onClick = { updates.dismissBanner(shown) }) {
+                Icon(
+                    Icons.Filled.Close, stringResource(R.string.set_update_banner_dismiss), Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
         }
     }
 }

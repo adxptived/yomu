@@ -47,11 +47,19 @@ import app.yomu.domain.model.BookCollection
 import app.yomu.domain.model.CatalogEntry
 import app.yomu.domain.model.ChapterInfo
 import app.yomu.domain.model.ContentType
+import app.yomu.domain.model.MetadataAvailability
+import app.yomu.domain.model.MetadataProvider
+import app.yomu.domain.model.MetadataProviderState
+import app.yomu.domain.model.MetadataUnavailableException
 import app.yomu.domain.model.DownloadItem
 import app.yomu.domain.model.DownloadStatus
 import app.yomu.domain.model.ExternalMetadata
 import app.yomu.domain.model.RelatedTitle
 import app.yomu.domain.tracking.TrackEntry
+import app.yomu.domain.tracking.TrackMatcher
+import app.yomu.domain.tracking.TrackPrompt
+import app.yomu.domain.tracking.TrackQuery
+import app.yomu.domain.tracking.TrackQueryType
 import app.yomu.domain.tracking.TrackSearchResult
 import app.yomu.domain.tracking.TrackService
 import app.yomu.source.CatalogSource
@@ -69,6 +77,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
@@ -217,6 +226,11 @@ class CatalogHomeViewModel(
 
     /** Order of the source list. */
     val sourceSort: StateFlow<SourceSortMode> = settings.sourceSort.stateIn(viewModelScope)
+
+    /** Sources as a grid of icons (B1). */
+    val sourceGrid: StateFlow<Boolean> = settings.catalogSourcesGrid.stateIn(viewModelScope)
+
+    fun setSourceGrid(grid: Boolean) = viewModelScope.launch(ScreenErrors) { settings.catalogSourcesGrid.set(grid) }
 
     /** Filter of the source list by name. */
     val sourceQuery = MutableStateFlow("")
@@ -1182,25 +1196,60 @@ class TitleViewModel(
     sealed interface MetadataSearchState {
         data object Idle : MetadataSearchState
         data object Loading : MetadataSearchState
-        data class Ready(val results: List<ExternalMetadata>) : MetadataSearchState
+        data class Ready(val provider: MetadataProvider, val results: List<ExternalMetadata>) : MetadataSearchState
+
+        /** The provider cannot be asked (no client id, not configured): the dialog says what is missing. */
+        data class Failed(val provider: MetadataProvider, val availability: MetadataAvailability, val message: String? = null) :
+            MetadataSearchState
     }
 
     private val _metadataSearch = MutableStateFlow<MetadataSearchState>(MetadataSearchState.Idle)
     val metadataSearch: StateFlow<MetadataSearchState> = _metadataSearch
 
-    fun searchMetadata(query: String? = null) = viewModelScope.launch(ScreenErrors) {
+    /** The provider picked in the dialog; null = the preferred one for this title's kind. */
+    private val _metadataProvider = MutableStateFlow<MetadataProvider?>(null)
+    val metadataProvider: StateFlow<MetadataProvider?> = _metadataProvider
+
+    /** Providers with their availability; recomputed after a client id is entered in the tracker settings. */
+    val metadataProviders: StateFlow<List<MetadataProviderState>> =
+        trackers.store.version.map { metadata.providers() }.state(this, metadata.providers())
+
+    /** Opening the dialog asks the preferred provider for this kind of title right away. */
+    fun openMetadataSearch() = searchMetadata(provider = null)
+
+    private var metadataSearchJob: Job? = null
+
+    fun searchMetadata(query: String? = null, provider: MetadataProvider? = _metadataProvider.value) {
+        metadataSearchJob?.cancel()
         _metadataSearch.value = MetadataSearchState.Loading
-        val text = query?.takeIf { it.isNotBlank() } ?: entry.value?.title.orEmpty()
-        _metadataSearch.value = MetadataSearchState.Ready(metadata.search(text))
+        if (provider != null) _metadataProvider.value = provider
+        metadataSearchJob = viewModelScope.launch(ScreenErrors) {
+            val type = entry.value?.type ?: ContentType.MANGA
+            val chosen = provider ?: metadata.preferred(type)
+            _metadataProvider.value = chosen
+            val text = query?.takeIf { it.isNotBlank() } ?: entry.value?.title.orEmpty()
+            val result = try {
+                MetadataSearchState.Ready(chosen, metadata.search(text, chosen, type))
+            } catch (e: MetadataUnavailableException) {
+                MetadataSearchState.Failed(chosen, e.availability, e.message)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                MetadataSearchState.Failed(chosen, MetadataAvailability.READY, e.message)
+            }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            _metadataSearch.value = result
+        }
     }
 
     fun closeMetadataSearch() {
+        metadataSearchJob?.cancel()
         _metadataSearch.value = MetadataSearchState.Idle
     }
 
     fun linkMetadata(found: ExternalMetadata?) = viewModelScope.launch(ScreenErrors) {
+        closeMetadataSearch()
         metadata.setLink(entryId, found)
-        _metadataSearch.value = MetadataSearchState.Idle
     }
 
     /** Explicit relations of the confirmed match, loaded when the match appears and cleared with it. */
@@ -1289,14 +1338,35 @@ class TitleViewModel(
     override val trackSearch = MutableStateFlow<TrackSearchState?>(null)
     private var trackSearchJob: Job? = null
 
+    /** Per-title state of the "link a tracker" hint (C2). */
+    val trackPromptState: StateFlow<Set<String>> = settings.trackPromptState.stateIn(viewModelScope)
+    val trackPromptEligible = combine(settings.trackPromptCompletedTitles.flow, settings.incognito.flow) { completed, incognito ->
+        !incognito && entryId.toString() in completed
+    }.state(this, false)
+
+    /** "Later" (a week) or "Never" for this title; the hint is offered again only after the first. */
+    fun snoozeTrackPrompt(forever: Boolean = false) = viewModelScope.launch(ScreenErrors) {
+        settings.trackPromptState.update { records ->
+            val pruned = TrackPrompt.prune(records, System.currentTimeMillis())
+            if (forever) TrackPrompt.hideForever(pruned, entryId) else TrackPrompt.snooze(pruned, entryId, System.currentTimeMillis())
+        }
+    }
+
     override fun trackerSignedIn(service: TrackService): Boolean = trackers.tracker(service).loggedIn()
 
     /** Reads the entries from the services again when the sheet opens (quietly: offline is fine). */
     override fun refreshTracks() = viewModelScope.launch(ScreenErrors) { runCatchingApp { trackers.refresh(entryId) } }
 
+    fun openSuggestedTrack() {
+        val provider = externalMetadata.value?.providerKind?.displayName
+        val signedIn = TrackService.entries.filter(::trackerSignedIn)
+        (signedIn.firstOrNull { it.displayName == provider } ?: signedIn.firstOrNull())?.let(::openTrackSearch)
+    }
+
     override fun openTrackSearch(service: TrackService) {
-        trackSearch.value = TrackSearchState(service, entry.value?.title.orEmpty())
-        searchTrack(trackSearch.value!!.query)
+        val query = entry.value?.title.orEmpty()
+        trackSearch.value = TrackSearchState(service, query)
+        searchTrack(query)
     }
 
     override fun closeTrackSearch() {
@@ -1311,12 +1381,58 @@ class TitleViewModel(
             trackSearch.value = state.copy(query = query, loading = false, results = null, error = null)
             return
         }
-        trackSearch.value = state.copy(query = query, loading = true, error = null)
+        trackSearch.value = state.copy(query = query, loading = true, results = null, error = null, match = null)
         trackSearchJob = viewModelScope.launch(ScreenErrors) {
-            runCatchingApp { trackers.tracker(state.service).search(query.trim()) }
-                .onSuccess { found -> trackSearch.update { it?.copy(loading = false, results = found) } }
+            val q = trackQuery(state.service)
+            val tracker = trackers.tracker(state.service)
+            runCatchingApp {
+                val confirmed = externalMetadata.value?.takeIf { meta ->
+                    query.trim() == q.title && meta.id == q.knownRemoteId
+                }
+                if (confirmed != null) return@runCatchingApp listOf(
+                    TrackSearchResult(
+                        remoteId = confirmed.id,
+                        title = confirmed.title,
+                        altTitle = confirmed.altTitle,
+                        coverUrl = confirmed.coverUrl,
+                        url = confirmed.url ?: state.service.site,
+                        format = confirmed.format,
+                        year = confirmed.year,
+                        country = confirmed.country,
+                    ),
+                )
+                val found = tracker.search(query.trim())
+                val alternative = q.altTitles.firstOrNull { !it.equals(query.trim(), ignoreCase = true) }
+                if (query.trim() != q.title || alternative == null || TrackMatcher.match(q, found).automatic) {
+                    found
+                } else {
+                    val additional = runCatchingApp { tracker.search(alternative) }.getOrDefault(emptyList())
+                    (found + additional).distinctBy { it.remoteId }
+                }
+            }.onSuccess { found ->
+                    trackSearch.update { it?.copy(loading = false, results = TrackMatcher.rank(q, found).map { c -> c.result }, match = TrackMatcher.match(q, found)) }
+                }
                 .onFailure { e -> trackSearch.update { it?.copy(loading = false, error = e) } }
         }
+    }
+
+    /** What Yomu knows about this title for the matcher (C2): names, kind and the source's confirmed tags. */
+    private fun trackQuery(service: TrackService): TrackQuery {
+        val e = entry.value ?: return TrackQuery("")
+        val linked = externalMetadata.value
+        return TrackQuery(
+            title = e.title,
+            altTitles = listOfNotNull(linked?.title, linked?.altTitle).distinct(),
+            year = linked?.year,
+            country = linked?.country,
+            knownRemoteId = linked?.id?.takeIf { linked.providerKind?.displayName == service.displayName },
+            type = when (e.type) {
+                ContentType.NOVEL -> TrackQueryType.NOVEL
+                ContentType.MANGA -> TrackQueryType.MANGA
+                else -> TrackQueryType.UNKNOWN
+            },
+            tags = e.genres.toSet(),
+        )
     }
 
     override fun bindTrack(result: TrackSearchResult) = viewModelScope.launch(ScreenErrors) {
@@ -1339,6 +1455,26 @@ class TitleViewModel(
 
     override fun unbindTrack(track: TrackEntity, removeRemote: Boolean) = viewModelScope.launch(ScreenErrors) {
         runCatchingApp { trackers.unbind(track, removeRemote) }.onFailure { _events.send(CatalogEvent.Failure(it)) }
+    }
+
+    override fun alignTrackProgress() = viewModelScope.launch(ScreenErrors) {
+        runCatchingApp { trackers.alignProgress(entryId) }
+            .onSuccess { result ->
+                _events.send(
+                    CatalogEvent.Message(
+                        when {
+                            result.failed.isNotEmpty() -> R.string.track_align_failed
+                            result.deferredRemote != null -> R.string.track_align_deferred
+                            result.changes.isNotEmpty() || result.localApplied != null -> R.string.track_align_done
+                            else -> R.string.track_align_none
+                        },
+                        result.deferredRemote?.takeIf { result.failed.isEmpty() }?.let {
+                            java.text.NumberFormat.getNumberInstance().format(it)
+                        },
+                    ),
+                )
+            }
+            .onFailure { _events.send(CatalogEvent.Failure(it)) }
     }
 
     // endregion

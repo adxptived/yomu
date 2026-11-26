@@ -189,6 +189,9 @@ internal fun settingIcon(title: Int): ImageVector? = when (title) {
     R.string.set_reminder_time -> Icons.Outlined.Alarm
     // Catalog
     R.string.set_update_interval -> Icons.Outlined.Update
+    R.string.set_metadata_provider -> Icons.Outlined.Style
+    R.string.set_metadata_provider_manga -> Icons.Outlined.AutoStories
+    R.string.set_metadata_provider_novel -> Icons.AutoMirrored.Outlined.MenuBook
     R.string.set_update_wifi -> Icons.Outlined.Wifi
     R.string.set_net_update_wifi -> Icons.Outlined.Update
     R.string.set_show_nsfw -> Icons.Outlined.Explicit

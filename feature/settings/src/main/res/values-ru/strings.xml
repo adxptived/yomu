@@ -250,9 +250,17 @@
     <string name="set_update_restrictions">Проверять автоматически</string>
     <string name="set_update_restrictions_all">Все тайтлы библиотеки, с выбранным интервалом</string>
     <string name="set_update_restrictions_some">Только тайтлы, подходящие хотя бы под один пункт</string>
-    <string name="set_update_restriction_started">Начатые тайтлы</string>
+    <string name="set_update_restriction_started">Тайтлы в процессе чтения</string>
     <string name="set_update_restriction_unread">Тайтлы с непрочитанными главами</string>
     <string name="set_update_restriction_completed">Завершённые тайтлы</string>
+    <string name="set_updates_section">Проверка новых глав</string>
+    <string name="set_update_restriction_started_sum">Начатые тайтлы, в которых остались непрочитанные главы</string>
+    <string name="set_update_restriction_unread_sum">Есть хотя бы одна непрочитанная глава</string>
+    <string name="set_update_restriction_unstarted_sum">Вы ещё не начинали читать</string>
+    <string name="set_update_restriction_completed_sum">Вы отметили тайтл как завершённый</string>
+    <string name="set_update_restriction_publication_ended_sum">Источник помечает публикацию как завершённую</string>
+    <string name="set_update_restriction_unstarted">Ещё не начатые тайтлы</string>
+    <string name="set_update_restriction_publication_ended">Завершённые публикации источника</string>
     <string name="set_update_excluded_shelves">Полки без проверок</string>
     <string name="set_update_excluded_none">Проверяются все полки</string>
     <string name="set_update_excluded_title">Исключить полки из обновлений</string>
@@ -260,6 +268,10 @@
     <string name="set_update_excluded_empty">Полок пока нет</string>
     <string name="set_update_wifi">Проверять только по Wi‑Fi</string>
     <string name="set_show_nsfw">Показывать источники 18+</string>
+    <string name="set_metadata_provider">Сведения на карточке тайтла</string>
+    <string name="set_metadata_provider_hint">У какого сервиса карточка берёт обложку, описание и год. Идентификатор, главы и прогресс остаются у источника; совпадение можно сменить или убрать на карточке.</string>
+    <string name="set_metadata_provider_manga">Манга</string>
+    <string name="set_metadata_provider_novel">Новеллы</string>
     <string name="set_user_agent">User-Agent</string>
     <string name="set_user_agent_default">По умолчанию (обычный браузер)</string>
     <string name="set_dns_provider">DNS-over-HTTPS</string>
@@ -542,8 +554,10 @@
     <string name="set_update_available">Доступна версия %1$s — нажмите, чтобы обновить</string>
     <string name="set_update_none">Релизов пока нет</string>
     <string name="set_update_failed">Не удалось проверить: %1$s</string>
+    <string name="set_update_rate_limited">GitHub ограничил запросы на обновление. Попробуйте позже или откройте «Релизы» ниже.</string>
+    <string name="set_update_access_denied">GitHub отклонил запрос на обновление. Попробуйте позже или откройте «Релизы» ниже.</string>
     <string name="set_update_auto">Проверять автоматически</string>
-    <string name="set_update_auto_sum">Раз в день при запуске — один запрос к GitHub. О новой версии подскажет точка на «Настройках»</string>
+    <string name="set_update_auto_sum">Проверяет обновления на GitHub раз в день при запуске. О новой версии подскажет точка на «Настройках»</string>
     <string name="set_update_skip">Пропустить эту версию</string>
     <string name="set_update_skip_clear">Сбросить пропущенную версию</string>
     <string name="set_update_skipped">Пропущенная версия: %1$s</string>
@@ -556,6 +570,7 @@
     <string name="set_update_download_failed">Не удалось скачать: %1$s. Нажмите, чтобы повторить</string>
     <string name="set_update_dialog_title">Yomu %1$s</string>
     <string name="set_update_no_notes">К релизу не приложено описание.</string>
+    <string name="set_update_metadata_unavailable">Описание и APK-файлы доступны на странице релиза на GitHub.</string>
     <string name="set_update_no_apk">В этом релизе нет APK для вашего устройства — скачайте его со страницы релиза.</string>
     <string name="set_update_size">Размер загрузки: %1$s</string>
     <string name="set_update_debug_note">Это отладочная сборка: релиз установится рядом с ней отдельным приложением, со своей библиотекой.</string>
@@ -567,6 +582,11 @@
     <string name="set_update_card_text">Нажмите, чтобы посмотреть, что нового, и обновить</string>
     <string name="set_update_card_ready_title">Yomu %1$s готова к установке</string>
     <string name="set_update_card_ready_text">Обнова скачана и проверена — нажмите, чтобы установить</string>
+    <string name="set_update_banner_action">Обновить</string>
+    <string name="set_update_banner_dismiss">Скрыть для этой версии</string>
+    <string name="set_update_last_known">Последняя удачная проверка: %1$s</string>
+    <string name="set_update_known_available">Ранее была найдена версия %1$s</string>
+    <string name="set_update_bad_release">GitHub вернул релиз, который не удалось прочитать: %1$s</string>
     <string name="set_app_icon">Значок приложения</string>
     <string name="set_app_icon_hint">Значок меняется, когда вы выходите из приложения; выбор запоминается, даже если Yomu закрыть. Некоторые лаунчеры оставляют старый ярлык на рабочем столе — тогда добавьте Yomu заново из списка приложений.</string>
     <!-- 2.0: sync -->
@@ -724,6 +744,8 @@
     <string name="set_track_enter_key">Ввести ключ</string>
     <string name="set_track_auto">Обновлять прогресс автоматически</string>
     <string name="set_track_auto_sum">Когда вы дочитываете онлайн-главу, число прочитанных отправляется в трекеры. Для локальных файлов главы указываются вручную.</string>
+    <string name="set_track_align">Побеждает дальний прогресс</string>
+    <string name="set_track_align_sum">После главы дальний прогресс Yomu и связанных сервисов подтягивает отстающих. Главы, которых ещё нет в источнике, показываются и применяются позже.</string>
     <string name="set_track_push">Отправить отложенные изменения</string>
     <string name="set_track_push_sum">Изменения без сети отправляются и автоматически, когда сеть появится</string>
     <string name="set_track_pushed">Все изменения отправлены</string>
@@ -827,7 +849,13 @@
     <string name="set_notify_test_text">Так Yomu сообщает о новых главах, загрузках и синхронизации.</string>
     <string name="set_secret_show">Показать</string>
     <string name="set_secret_hide">Скрыть</string>
-    <string name="set_group_reading">Чтение и библиотека</string>
+    <string name="set_group_reading">Чтение</string>
+    <string name="set_group_appearance">Оформление</string>
+    <string name="set_group_library">Библиотека и каталог</string>
+    <string name="set_group_trackers">Трекеры и синхронизация</string>
+    <string name="set_group_downloads">Загрузки и хранилище</string>
+    <string name="set_group_backup">Резервные копии</string>
+    <string name="set_group_about">О приложении</string>
     <string name="set_group_personalization">Персонализация</string>
     <string name="set_group_online">Онлайн-сервисы</string>
     <string name="set_group_app">Данные и приложение</string>

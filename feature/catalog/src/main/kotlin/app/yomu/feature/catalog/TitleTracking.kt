@@ -1,7 +1,10 @@
 package app.yomu.feature.catalog
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -20,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LinkOff
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Star
@@ -37,17 +42,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -62,13 +70,17 @@ import app.yomu.core.ui.components.SheetTitle
 import app.yomu.core.ui.components.TextInputDialog
 import app.yomu.core.ui.components.YomuSheet
 import app.yomu.core.ui.components.errorMessage
+import app.yomu.core.ui.components.pressPulse
 import app.yomu.core.ui.theme.Dimens
 import app.yomu.data.tracking.TrackerManager
+import app.yomu.domain.tracking.MatchReason
 import app.yomu.domain.tracking.TrackEntry
+import app.yomu.domain.tracking.TrackMatch
 import app.yomu.domain.tracking.TrackSearchResult
 import app.yomu.domain.tracking.TrackService
 import app.yomu.domain.tracking.TrackStatus
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import app.yomu.core.ui.R as CoreR
 
@@ -79,6 +91,8 @@ data class TrackSearchState(
     val loading: Boolean = false,
     val results: List<TrackSearchResult>? = null,
     val error: Throwable? = null,
+    /** The ranking of [results] against this title (C2): shown first, with its reason. */
+    val match: TrackMatch? = null,
 )
 
 /** Shared editor for online titles and local books; the host owns persistence and errors. */
@@ -95,14 +109,60 @@ interface TrackingViewModel {
     fun bindTrack(result: TrackSearchResult): Job
     fun updateTrack(track: TrackEntity, transform: (TrackEntry) -> TrackEntry): Job
     fun unbindTrack(track: TrackEntity, removeRemote: Boolean): Job
+
+    /** "The furthest progress wins" (D2): reads the services and moves the lagging ones to the maximum. */
+    fun alignTrackProgress(): Job? = null
 }
 
 /** "Tracking" button of the title page: the number of linked services when there are any. */
 @Composable
 fun TrackingButton(count: Int, onClick: () -> Unit) {
-    OutlinedButton(onClick = onClick) {
+    val interaction = remember { MutableInteractionSource() }
+    OutlinedButton(
+        onClick = onClick,
+        interactionSource = interaction,
+        modifier = Modifier.clip(CircleShape).pressPulse(interaction, scaleOnPress = true),
+    ) {
         Icon(Icons.Outlined.TrackChanges, null, Modifier.size(18.dp))
         Text(if (count > 0) stringResource(R.string.track_button_n, count) else stringResource(R.string.track_button), Modifier.padding(start = Dimens.s))
+    }
+}
+
+/**
+ * The one-time, non-blocking hint after a first read chapter of a title without a link (C2): link now, later (a week)
+ * or never for this title. It never covers the reading actions and disappears once a tracker is linked.
+ */
+@Composable
+fun TrackPromptCard(onLink: () -> Unit, onLater: () -> Unit, onNever: () -> Unit) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs),
+    ) {
+        Column(Modifier.padding(start = Dimens.l, end = Dimens.l, top = Dimens.m, bottom = Dimens.s), verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
+                Icon(Icons.Outlined.TrackChanges, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                Text(
+                    stringResource(R.string.track_prompt_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+            Text(
+                stringResource(R.string.track_prompt_text),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onNever) {
+                    Text(stringResource(R.string.track_prompt_never), color = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
+                TextButton(onClick = onLater) {
+                    Text(stringResource(R.string.track_prompt_later), color = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
+                FilledTonalButton(onClick = onLink) { Text(stringResource(R.string.track_prompt_link)) }
+            }
+        }
     }
 }
 
@@ -121,16 +181,55 @@ fun TrackStatus.label(): String = stringResource(
 
 /** The title's entries on every tracking service: link, edit status, chapters and score, unlink. */
 @Composable
-fun TrackingSheet(viewModel: TrackingViewModel, onDismiss: () -> Unit) {
+fun TrackingSheet(
+    viewModel: TrackingViewModel,
+    onDismiss: () -> Unit,
+    /** Opens the service's own title page inside Yomu (C3); absent in hosts that cannot navigate. */
+    onOpenTrackerPage: ((TrackService, Long) -> Unit)? = null,
+) {
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
     val version by viewModel.trackerVersion.collectAsStateWithLifecycle()
     val search by viewModel.trackSearch.collectAsStateWithLifecycle()
     var unlink by remember { mutableStateOf<TrackEntity?>(null) }
+    var aligning by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { viewModel.refreshTracks() }
 
     YomuSheet(onDismiss = onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = Dimens.l)) {
             SheetTitle(stringResource(R.string.track_title))
+            if (tracks.isNotEmpty() && !viewModel.localFile) {
+                // D2: the furthest value of Yomu and the linked services moves the laggards; a manual run shows what
+                // happened instead of silently changing entries.
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = Dimens.touch).padding(horizontal = Dimens.xl),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+                ) {
+                    Text(
+                        stringResource(R.string.track_align_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            aligning = true
+                            scope.launch {
+                                try {
+                                    viewModel.alignTrackProgress()?.join()
+                                } finally {
+                                    aligning = false
+                                }
+                            }
+                        },
+                        enabled = !aligning,
+                    ) {
+                        if (aligning) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        else Text(stringResource(R.string.track_align_action))
+                    }
+                }
+            }
             if (viewModel.localFile) Text(
                 stringResource(R.string.track_local_hint),
                 style = MaterialTheme.typography.bodySmall,
@@ -143,7 +242,12 @@ fun TrackingSheet(viewModel: TrackingViewModel, onDismiss: () -> Unit) {
                 if (signedIn) anySignedIn = true
                 val track = tracks.firstOrNull { it.service == service.id }
                 if (track != null) {
-                    TrackCard(service, track, signedIn, viewModel, onUnlink = { unlink = track })
+                    TrackCard(
+                        service, track, signedIn, viewModel,
+                        onUnlink = { unlink = track },
+                        onOpenPage = onOpenTrackerPage?.takeIf { service == TrackService.ANILIST || service == TrackService.MYANIMELIST }
+                            ?.let { open -> { open(service, track.remoteId) } },
+                    )
                 } else {
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = Dimens.touch).padding(horizontal = Dimens.xl),
@@ -196,7 +300,14 @@ fun TrackingSheet(viewModel: TrackingViewModel, onDismiss: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TrackCard(service: TrackService, track: TrackEntity, signedIn: Boolean, viewModel: TrackingViewModel, onUnlink: () -> Unit) {
+private fun TrackCard(
+    service: TrackService,
+    track: TrackEntity,
+    signedIn: Boolean,
+    viewModel: TrackingViewModel,
+    onUnlink: () -> Unit,
+    onOpenPage: (() -> Unit)? = null,
+) {
     val context = LocalContext.current
     var statusMenu by remember { mutableStateOf(false) }
     var scoreMenu by remember { mutableStateOf(false) }
@@ -212,6 +323,11 @@ private fun TrackCard(service: TrackService, track: TrackEntity, signedIn: Boole
                 if (track.url.isNotBlank()) {
                     IconButton(onClick = { Share.openUrl(context, track.url) }) {
                         Icon(Icons.AutoMirrored.Outlined.OpenInNew, stringResource(R.string.track_open))
+                    }
+                }
+                if (onOpenPage != null) {
+                    IconButton(onClick = onOpenPage) {
+                        Icon(Icons.Outlined.Info, stringResource(R.string.tracker_page_open))
                     }
                 }
                 IconButton(onClick = onUnlink) { Icon(Icons.Outlined.LinkOff, stringResource(R.string.track_unlink)) }
@@ -317,8 +433,29 @@ private fun TrackSearchDialog(state: TrackSearchState, viewModel: TrackingViewMo
                     state.error != null -> Text(errorMessage(state.error), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     results == null -> Unit
                     results.isEmpty() -> Text(stringResource(R.string.track_no_results), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    else -> LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
-                        items(results, key = { it.remoteId }) { r -> TrackResultRow(r) { viewModel.bindTrack(r) } }
+                    else -> {
+                        // The best hit is first and says why; close rivals stay a choice, never an automatic link.
+                        val match = state.match
+                        val automatic = match?.automatic == true
+                        val best = match?.best
+                        if (best != null) {
+                            Text(
+                                stringResource(
+                                    if (automatic) R.string.track_best_match else R.string.track_choose_manually,
+                                    best.result.title,
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (automatic) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            best.reasons.firstOrNull()?.let { reason ->
+                                Text(stringResource(reason.label()), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                            items(results, key = { it.remoteId }) { r ->
+                                TrackResultRow(r, best = r.remoteId == match?.best?.result?.remoteId) { viewModel.bindTrack(r) }
+                            }
+                        }
                     }
                 }
             }
@@ -328,7 +465,7 @@ private fun TrackSearchDialog(state: TrackSearchState, viewModel: TrackingViewMo
 }
 
 @Composable
-private fun TrackResultRow(result: TrackSearchResult, onClick: () -> Unit) {
+private fun TrackResultRow(result: TrackSearchResult, best: Boolean = false, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = Dimens.s),
         horizontalArrangement = Arrangement.spacedBy(Dimens.m),
@@ -336,7 +473,26 @@ private fun TrackResultRow(result: TrackSearchResult, onClick: () -> Unit) {
     ) {
         CoverImage(result.coverUrl, result.title, Modifier.size(width = 44.dp, height = 62.dp))
         Column(Modifier.weight(1f)) {
-            Text(result.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Dimens.xs)) {
+                Text(
+                    result.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (best) {
+                    Text(
+                        stringResource(R.string.track_best_badge),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer)
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+            }
             result.altTitle?.takeIf { it.isNotBlank() && it != result.title }?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -349,4 +505,21 @@ private fun TrackResultRow(result: TrackSearchResult, onClick: () -> Unit) {
             if (meta.isNotEmpty()) Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+/** Why the matcher put a candidate first, in the reader's words. */
+@Composable
+internal fun MatchReason.label(): Int = when (this) {
+    MatchReason.EXTERNAL_ID -> R.string.track_match_id
+    MatchReason.EXACT_TITLE -> R.string.track_match_exact
+    MatchReason.ALT_TITLE -> R.string.track_match_alt
+    MatchReason.TITLE_IN_TITLE -> R.string.track_match_inside
+    MatchReason.TITLE_WORDS -> R.string.track_match_words
+    MatchReason.SAME_YEAR -> R.string.track_match_year
+    MatchReason.SAME_TYPE -> R.string.track_match_type
+    MatchReason.SAME_COUNTRY -> R.string.track_match_country
+    MatchReason.SHARED_TAGS -> R.string.track_match_tags
+    MatchReason.TYPE_CONFLICT -> R.string.track_match_type_conflict
+    MatchReason.YEAR_GAP -> R.string.track_match_year_gap
+    MatchReason.DIFFERENT_WORK -> R.string.track_match_different
 }

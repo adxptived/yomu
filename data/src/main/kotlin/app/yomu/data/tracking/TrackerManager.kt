@@ -12,6 +12,10 @@ import androidx.work.WorkerParameters
 import app.yomu.core.database.TrackEntity
 import app.yomu.core.database.YomuDatabase
 import app.yomu.core.datastore.AppSettings
+import app.yomu.data.repository.toDomain
+import app.yomu.domain.catalog.ChapterOrder
+import app.yomu.domain.tracking.ProgressAlign
+import app.yomu.domain.tracking.ProgressParticipant
 import app.yomu.domain.tracking.TrackEntry
 import app.yomu.domain.tracking.TrackProgress
 import app.yomu.domain.tracking.TrackSearchResult
@@ -66,6 +70,19 @@ class TrackerManager(
 
     fun observe(itemId: Long): Flow<List<TrackEntity>> = db.tracks().observe(itemId)
     fun observeBook(bookId: Long): Flow<List<TrackEntity>> = db.tracks().observeBook(bookId)
+
+    /** The reader's entry of a tracker title (C3): private fields are shown only when one exists. */
+    suspend fun trackFor(service: TrackService, remoteId: Long): TrackEntity? {
+        val linked = db.tracks().byRemote(service.id, remoteId)
+        return tracker(service).find(remoteId)?.toEntity(linked?.itemId, linked?.id ?: 0L, System.currentTimeMillis(), linked?.bookId)
+    }
+
+    /** The local online title behind a tracker title, when the reader linked one; null = offer "Find a source". */
+    suspend fun localItemId(service: TrackService, remoteId: Long): Long? =
+        db.tracks().byRemote(service.id, remoteId)?.itemId?.takeIf { it > 0 }
+
+    suspend fun localBookId(service: TrackService, remoteId: Long): Long? =
+        db.tracks().byRemote(service.id, remoteId)?.bookId?.takeIf { it > 0 }
 
     /** Highest chapter number read in the title (0 = none). */
     private suspend fun readUpTo(itemId: Long): Float = db.catalog().chapters(itemId).filter { it.read && it.number > 0 }.maxOfOrNull { it.number } ?: 0f
@@ -198,7 +215,7 @@ class TrackerManager(
             return@withLock
         }
         if (track.pending) {
-            push(track)
+            push(track, reconcileQueuedProgress = true)
             return@withLock
         }
         val remote = t.find(track.remoteId) ?: return@withLock
@@ -219,8 +236,12 @@ class TrackerManager(
     /**
      * Applies the read chapters to every entry of the title; returns the number of entries changed. One title at a time:
      * two chapters finished in a row must not send the older progress last.
+     *
+     * With "The furthest progress wins" on (D2) the linked services are read first: the maximum of Yomu and the
+     * services is applied to the ones behind, before the local chapters move anything forward.
      */
     suspend fun advance(itemId: Long): Int = mutex.withLock {
+        if (settings?.trackAlignProgress?.get() == true) return@withLock alignLocked(itemId).changes.size
         val tracks = db.tracks().forItem(itemId)
         if (tracks.isEmpty()) return@withLock 0
         val read = readUpTo(itemId)
@@ -239,22 +260,120 @@ class TrackerManager(
         changed
     }
 
+    /** Outcome of one alignment: what moved, what was already waiting and what could not be read. */
+    data class AlignResult(
+        val target: Float,
+        val changes: List<Pair<TrackService, Float>>,
+        val localApplied: Float?,
+        val deferredRemote: Float?,
+        val failed: Map<TrackService, String>,
+    ) {
+        val anything: Boolean get() = changes.isNotEmpty() || localApplied != null || deferredRemote != null || failed.isNotEmpty()
+    }
+
+    /**
+     * "The furthest progress wins" (D2) for the title's explicitly linked services: reads their fresh values, takes
+     * the maximum of the comparable ones and moves only the lagging participants. Nothing is inferred when the source
+     * lacks the chapter, the numbers are fractional or the value is unknown; those cases are returned, not written.
+     */
+    suspend fun alignProgress(itemId: Long): AlignResult = mutex.withLock { alignLocked(itemId) }
+
+    private suspend fun alignLocked(itemId: Long): AlignResult {
+        val tracks = db.tracks().forItem(itemId)
+        if (tracks.isEmpty()) return AlignResult(0f, emptyList(), null, null, emptyMap())
+        val failed = LinkedHashMap<TrackService, String>()
+        val remotes = mutableListOf<ProgressParticipant>()
+        val remoteEntries = LinkedHashMap<String, Pair<TrackEntity, TrackEntry>>()
+        for (track in tracks) {
+            val service = TrackService.of(track.service) ?: continue
+            val t = tracker(service)
+            if (!t.loggedIn()) {
+                if (track.pending) remotes += ProgressParticipant(service.name, track.lastChapterRead, pending = true)
+                continue
+            }
+            val entry = try {
+                t.find(track.remoteId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failed[service] = e.message.orEmpty()
+                null
+            }
+            if (entry != null) remoteEntries[service.name] = track to entry
+            else if (service !in failed) failed[service] = ""
+            val pending = track.lastChapterRead.takeIf { track.pending }
+            val confirmed = entry?.lastChapterRead
+            val best = listOfNotNull(confirmed, pending).filter { it.isFinite() && it >= 0f }.maxOrNull()
+            if (best != null) remotes += ProgressParticipant(service.name, best, pending = track.pending)
+        }
+        val chapters = db.catalog().chapters(itemId)
+        val reliable = ChapterOrder.numbersReliable(chapters.map { it.toDomain() })
+        val numbers = chapters.map { it.number }.filter { it.isFinite() && it > 0f }.toSet()
+        val localRead = chapters.filter { it.read && it.number in numbers }.maxOfOrNull { it.number } ?: 0f
+        val plan = ProgressAlign.plan(
+            local = ProgressParticipant("local", localRead),
+            remote = remotes,
+            localHasChapter = { target ->
+                reliable && target in numbers &&
+                    numbers.count { it % 1f == 0f && it > localRead && it <= target } >= target - kotlin.math.floor(localRead)
+            },
+        )
+        val written = mutableListOf<Pair<TrackService, Float>>()
+        if (reliable && failed.isEmpty()) {
+            for (change in plan.changes) {
+                val (track, remote) = remoteEntries[change.key] ?: continue
+                val service = remote.service
+                val desired = remote.copy(lastChapterRead = change.to)
+                try {
+                    val saved = tracker(service).save(desired)
+                    db.tracks().update(saved.withLocal(desired).toEntity(itemId, track.id, System.currentTimeMillis()))
+                    written += service to saved.lastChapterRead
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // A later alignment re-reads the remote value before attempting this change again.
+                    failed[service] = e.message.orEmpty()
+                }
+            }
+        }
+        val applied = plan.applyLocal?.takeIf { failed.isEmpty() }?.let { target ->
+            val ids = chapters.filter { !it.read && it.number in numbers && it.number <= target }.map { it.id }
+            if (ids.isEmpty()) null else {
+                catalogSetRead(ids)
+                target
+            }
+        }
+        return AlignResult(plan.target, written, applied, plan.deferred, failed)
+    }
+
+    /** Marks chapters read without firing the reader listeners again: alignment is a background correction. */
+    private suspend fun catalogSetRead(ids: Collection<Long>) {
+        db.catalog().setRead(ids, true)
+    }
+
     /**
      * Sends every pending change; returns how many are still pending on services the user is signed in to. Changes for a
      * signed-out service wait for the sign-in (which sends them), so the background retry does not run for them forever.
      */
     suspend fun pushPending(): Int = mutex.withLock {
-        db.tracks().pending().forEach { push(it) }
+        db.tracks().pending().forEach { push(it, reconcileQueuedProgress = true) }
         db.tracks().pending().count { track -> TrackService.of(track.service)?.let { tracker(it).loggedIn() } == true }
     }
 
-    private suspend fun push(track: TrackEntity): Boolean {
+    private suspend fun push(track: TrackEntity, reconcileQueuedProgress: Boolean = false): Boolean {
         val service = TrackService.of(track.service) ?: return false
         val t = tracker(service)
         if (!t.loggedIn()) return false
         return try {
-            val saved = t.save(track.toEntry())
-            db.tracks().update(saved.withLocal(track.toEntry()).toEntity(track.itemId, track.id, System.currentTimeMillis(), track.bookId).copy(pending = false))
+            val local = track.toEntry()
+            val remote = if (reconcileQueuedProgress && track.itemId != null && settings?.trackAlignProgress?.get() == true) {
+                t.find(track.remoteId)
+            } else null
+            val desired = if (remote != null && remote.lastChapterRead > local.lastChapterRead) {
+                local.copy(lastChapterRead = remote.lastChapterRead)
+            } else local
+            val saved = t.save(desired)
+            db.tracks().update(saved.withLocal(desired).toEntity(track.itemId, track.id, System.currentTimeMillis(), track.bookId).copy(pending = false))
             true
         } catch (e: CancellationException) {
             throw e

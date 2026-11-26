@@ -51,6 +51,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.yomu.core.ui.components.OptionTiles
 import app.yomu.core.ui.components.PreferenceChoice
 import app.yomu.core.ui.components.PreferenceItem
 import app.yomu.core.ui.components.PreferenceSlider
@@ -170,21 +171,12 @@ private fun TextQuick(s: TextReaderSettings, vm: ReaderViewModel) {
         style = MaterialTheme.typography.titleSmall,
         modifier = Modifier.padding(start = Dimens.l, top = Dimens.s),
     )
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs)) {
-        val mode = when {
-            s.longStrip -> 2
-            s.paged -> 0
-            else -> 1
-        }
-        val options = listOf(R.string.rs_mode_paged, R.string.rs_mode_scroll, R.string.rs_mode_strip)
-        options.forEachIndexed { i, label ->
-            SegmentedButton(
-                selected = mode == i,
-                onClick = { vm.updateText { it.copy(paged = i != 1, longStrip = i == 2) } },
-                shape = SegmentedButtonDefaults.itemShape(i, options.size),
-            ) { Text(stringResource(label)) }
-        }
+    val mode = when {
+        s.longStrip -> 2
+        s.paged -> 0
+        else -> 1
     }
+    OptionTiles(textReadingModeTiles(), mode, { v -> vm.updateText { it.copy(paged = v != 1, longStrip = v == 2) } })
     Text(
         stringResource(
             when {
@@ -217,7 +209,7 @@ private fun MangaQuick(s: MangaSettings, vm: ReaderViewModel) {
         style = MaterialTheme.typography.titleSmall,
         modifier = Modifier.padding(start = Dimens.l, top = Dimens.s),
     )
-    app.yomu.core.ui.components.OptionTiles(
+    OptionTiles(
         listOf(
             app.yomu.core.ui.components.TileOption(MangaDirection.LTR, stringResource(R.string.rs_dir_ltr), Icons.Filled.East),
             app.yomu.core.ui.components.TileOption(MangaDirection.RTL, stringResource(R.string.rs_dir_rtl), Icons.Filled.West),
@@ -277,16 +269,7 @@ private fun PdfQuick(s: PdfSettings, vm: ReaderViewModel) {
         style = MaterialTheme.typography.titleSmall,
         modifier = Modifier.padding(start = Dimens.l, top = Dimens.s),
     )
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.xs)) {
-        val options = listOf(false to R.string.rs_pdf_original, true to R.string.rs_pdf_text)
-        options.forEachIndexed { i, (reflow, label) ->
-            SegmentedButton(
-                selected = s.reflow == reflow,
-                onClick = { vm.updatePdf { it.copy(reflow = reflow) } },
-                shape = SegmentedButtonDefaults.itemShape(i, options.size),
-            ) { Text(stringResource(label)) }
-        }
-    }
+    OptionTiles(pdfRepresentationTiles(), s.reflow, { reflow -> vm.updatePdf { it.copy(reflow = reflow) } })
     if (!s.reflow) {
         Text(
             stringResource(R.string.rs_pdf_mode),

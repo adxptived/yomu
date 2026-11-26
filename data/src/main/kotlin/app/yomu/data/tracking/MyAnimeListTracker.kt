@@ -1,5 +1,6 @@
 package app.yomu.data.tracking
 
+import app.yomu.domain.model.TrackerTitleDetails
 import app.yomu.domain.tracking.TrackEntry
 import app.yomu.domain.tracking.TrackSearchResult
 import app.yomu.domain.tracking.TrackService
@@ -149,6 +150,46 @@ class MyAnimeListTracker(
 
     override suspend fun delete(entry: TrackEntry) {
         send({ url("$apiUrl/manga/${entry.remoteId}/my_list_status").delete() }, allowNotFound = true)
+    }
+
+    /**
+     * The public title page (C3): MAL answers it with a client id and no account, which is also how search works.
+     * MAL's v2 has no characters, staff or recommendations, so those sections are simply absent for this provider.
+     */
+    suspend fun details(remoteId: Long): TrackerTitleDetails? {
+        val fields = "id,title,alternative_titles,synopsis,main_picture,media_type,status,start_date,mean,genres"
+        val url = "$apiUrl/manga/$remoteId".toHttpUrl().newBuilder()
+            .addQueryParameter("fields", fields)
+            .build().toString()
+        val text = if (loggedIn()) {
+            get(url, allowNotFound = true)
+        } else {
+            execute(Request.Builder().url(url).header("X-MAL-CLIENT-ID", clientId()).build(), allowNotFound = true)
+        } ?: return null
+        val n = json.parseToJsonElement(text)
+        val id = n["id"].long() ?: remoteId
+        val title = n["title"].str()?.takeIf { it.isNotBlank() } ?: return null
+        val alternative = n["alternative_titles"]
+        val alt = listOfNotNull(
+            alternative["en"].str(),
+            alternative["ja"].str(),
+            *alternative["synonyms"].list().mapNotNull { it.str() }.toTypedArray(),
+        ).filter { it.isNotBlank() && it != title }.distinct()
+        return TrackerTitleDetails(
+            service = service,
+            id = id,
+            title = title,
+            altTitles = alt,
+            coverUrl = n["main_picture"]["large"].str() ?: n["main_picture"]["medium"].str(),
+            description = n["synopsis"].str()?.trim()?.takeIf { it.isNotBlank() },
+            url = "https://myanimelist.net/manga/$id",
+            format = n["media_type"].str(),
+            status = n["status"].str(),
+            year = n["start_date"].str()?.take(4)?.toIntOrNull(),
+            score = n["mean"].float()?.times(10f),
+            tags = n["genres"].list().mapNotNull { it["name"].str() },
+            sections = emptySet(),
+        )
     }
 
     private fun entry(id: Long, title: String, total: Int, s: JsonElement): TrackEntry {

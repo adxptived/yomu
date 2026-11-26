@@ -1,6 +1,11 @@
 package app.yomu.data.tracking
 
 import app.yomu.domain.model.RelatedTitle
+import app.yomu.domain.model.TrackerPage
+import app.yomu.domain.model.TrackerPerson
+import app.yomu.domain.model.TrackerRecommendation
+import app.yomu.domain.model.TrackerSection
+import app.yomu.domain.model.TrackerTitleDetails
 import app.yomu.domain.tracking.TrackEntry
 import app.yomu.domain.tracking.TrackSearchResult
 import app.yomu.domain.tracking.TrackService
@@ -73,7 +78,7 @@ class AniListTracker(
               Page(perPage: 30) {
                 media(search: ${'$'}query, type: MANGA) {
                   id title { userPreferred romaji english native } coverImage { large } format status chapters
-                  description(asHtml: false) startDate { year } siteUrl
+                  description(asHtml: false) startDate { year } countryOfOrigin genres siteUrl
                 }
               }
             }
@@ -93,6 +98,8 @@ class AniListTracker(
                 publishing = m["status"].str(),
                 totalChapters = m["chapters"].int() ?: 0,
                 year = m["startDate"]["year"].int(),
+                country = m["countryOfOrigin"].str(),
+                tags = m["genres"].list().mapNotNull { it.str() },
                 description = m["description"].str()?.replace(Regex("<[^>]+>"), "")?.trim(),
             )
         }
@@ -180,8 +187,114 @@ class AniListTracker(
         return parseRelations(query(q, buildJsonObject { put("id", mediaId) }, authorized = false))
     }
 
+    /**
+     * The public title page (C3): description, alternative names, score and tags. Works without an account, so a
+     * reader can look at a title from a recommendation before signing in.
+     */
+    suspend fun details(mediaId: Long): TrackerTitleDetails? {
+        val q = """
+            query Details(${'$'}id: Int) {
+              Media(id: ${'$'}id, type: MANGA) {
+                id title { userPreferred romaji english native } coverImage { extraLarge large }
+                description(asHtml: false) siteUrl format status averageScore
+                startDate { year } genres
+              }
+            }
+        """.trimIndent()
+        val media = query(q, buildJsonObject { put("id", mediaId) }, authorized = false)["Media"] ?: return null
+        val titles = media["title"]
+        val main = titles["userPreferred"].str() ?: titles["romaji"].str() ?: titles["english"].str() ?: return null
+        val alt = listOfNotNull(titles["english"].str(), titles["native"].str(), titles["romaji"].str())
+            .filter { it.isNotBlank() && it != main }.distinct()
+        return TrackerTitleDetails(
+            service = service,
+            id = mediaId,
+            title = main,
+            altTitles = alt,
+            coverUrl = media["coverImage"]["extraLarge"].str() ?: media["coverImage"]["large"].str(),
+            description = media["description"].str()?.replace(Regex("<[^>]+>"), "")?.trim()?.takeIf { it.isNotBlank() },
+            url = media["siteUrl"].str() ?: "https://anilist.co/manga/$mediaId",
+            format = media["format"].str(),
+            status = media["status"].str(),
+            year = media["startDate"]["year"].int(),
+            score = media["averageScore"].float(),
+            tags = media["genres"].list().mapNotNull { it.str() },
+            sections = SECTIONS,
+        )
+    }
+
+    /** Characters, paged (AniList returns 25 per page). */
+    suspend fun characters(mediaId: Long, page: Int): TrackerPage<TrackerPerson> {
+        val q = """
+            query Characters(${'$'}id: Int, ${'$'}page: Int) {
+              Media(id: ${'$'}id, type: MANGA) {
+                characters(page: ${'$'}page, perPage: 25, sort: [ROLE, RELEVANCE, ID]) {
+                  pageInfo { hasNextPage }
+                  edges { role node { id name { full } image { large } } }
+                }
+              }
+            }
+        """.trimIndent()
+        val data = query(q, buildJsonObject { put("id", mediaId); put("page", page.coerceAtLeast(1)) }, authorized = false)
+        val section = data["Media"]["characters"]
+        val items = section["edges"].list().mapNotNull { edge ->
+            val node = edge["node"]
+            val id = node["id"].long() ?: return@mapNotNull null
+            val name = node["name"]["full"].str()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            TrackerPerson(id, name, node["image"]["large"].str(), edge["role"].str())
+        }
+        return TrackerPage(items, section["pageInfo"]["hasNextPage"].str() == "true")
+    }
+
+    /** Staff of the work, paged. */
+    suspend fun staff(mediaId: Long, page: Int): TrackerPage<TrackerPerson> {
+        val q = """
+            query Staff(${'$'}id: Int, ${'$'}page: Int) {
+              Media(id: ${'$'}id, type: MANGA) {
+                staff(page: ${'$'}page, perPage: 25) {
+                  pageInfo { hasNextPage }
+                  edges { role node { id name { full } image { large } } }
+                }
+              }
+            }
+        """.trimIndent()
+        val data = query(q, buildJsonObject { put("id", mediaId); put("page", page.coerceAtLeast(1)) }, authorized = false)
+        val section = data["Media"]["staff"]
+        val items = section["edges"].list().mapNotNull { edge ->
+            val node = edge["node"]
+            val id = node["id"].long() ?: return@mapNotNull null
+            val name = node["name"]["full"].str()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            TrackerPerson(id, name, node["image"]["large"].str(), edge["role"].str())
+        }
+        return TrackerPage(items, section["pageInfo"]["hasNextPage"].str() == "true")
+    }
+
+    /** "If you liked this" of the service itself, paged; each item opens the same page with its own id. */
+    suspend fun recommendations(mediaId: Long, page: Int): TrackerPage<TrackerRecommendation> {
+        val q = """
+            query Recommendations(${'$'}id: Int, ${'$'}page: Int) {
+              Media(id: ${'$'}id, type: MANGA) {
+                recommendations(page: ${'$'}page, perPage: 25) {
+                  pageInfo { hasNextPage }
+                  nodes { mediaRecommendation { id title { userPreferred romaji } coverImage { large } siteUrl } }
+                }
+              }
+            }
+        """.trimIndent()
+        val data = query(q, buildJsonObject { put("id", mediaId); put("page", page.coerceAtLeast(1)) }, authorized = false)
+        val section = data["Media"]["recommendations"]
+        val items = section["nodes"].list().mapNotNull { node ->
+            val media = node["mediaRecommendation"] ?: return@mapNotNull null
+            val id = media["id"].long() ?: return@mapNotNull null
+            val title = media["title"]["userPreferred"].str() ?: media["title"]["romaji"].str() ?: return@mapNotNull null
+            TrackerRecommendation(id, title, media["coverImage"]["large"].str(), media["siteUrl"].str() ?: "https://anilist.co/manga/$id")
+        }
+        return TrackerPage(items, section["pageInfo"]["hasNextPage"].str() == "true")
+    }
+
     companion object {
         private val JSON = "application/json; charset=utf-8".toMediaType()
+        private val SECTIONS = setOf(TrackerSection.CHARACTERS, TrackerSection.STAFF, TrackerSection.RECOMMENDATIONS)
         private const val ENTRY_FIELDS = "id status progress score(format: POINT_100) startedAt { year month day } completedAt { year month day } " +
             "media { id title { userPreferred } chapters siteUrl }"
 

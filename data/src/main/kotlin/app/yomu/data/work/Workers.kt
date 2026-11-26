@@ -362,7 +362,8 @@ class UpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                     failed = result.failed.size,
                     queuedDownloads = queued,
                     titles = result.updated.map { UpdateRunTitle(it.title, it.newChapterIds.size) } +
-                        result.failed.map { (title, _) -> UpdateRunTitle(title, failed = true) },
+                        result.failed.map { (title, _) -> UpdateRunTitle(title, failed = true) } +
+                        result.skippedTitles.map { (title, reason) -> UpdateRunTitle(title, skip = reason.name) },
                 ),
             )
         }.onFailure { Timber.w(it, "Recording the update run failed") }

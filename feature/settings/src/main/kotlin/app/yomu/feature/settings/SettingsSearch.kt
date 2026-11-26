@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import app.yomu.core.ui.components.LocalReduceMotion
 import kotlinx.coroutines.delay
 
 /**
@@ -114,13 +115,19 @@ internal fun SettingsAnchor(title: String, content: @Composable () -> Unit) {
     val flash = remember { Animatable(0f) }
     val color = MaterialTheme.colorScheme.primary
     val hit = focus.target == title
-    LaunchedEffect(hit, focus.nonce) {
+    val reducedMotion = LocalReduceMotion.current
+    LaunchedEffect(hit, focus.nonce, reducedMotion) {
         if (!hit) return@LaunchedEffect
         delay(300) // let the section transition finish and the scroll range settle
         requester.bringIntoView()
-        repeat(2) {
-            flash.animateTo(1f, tween(260))
-            flash.animateTo(0f, tween(260))
+        if (reducedMotion) {
+            flash.snapTo(1f)
+            delay(650)
+            flash.snapTo(0f)
+        } else {
+            flash.animateTo(1f, tween(180))
+            delay(300)
+            flash.animateTo(0f, tween(240))
         }
         focus.request(null)
     }

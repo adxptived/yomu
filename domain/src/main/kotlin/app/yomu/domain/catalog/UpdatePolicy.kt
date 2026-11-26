@@ -8,9 +8,18 @@ enum class UpdateRestriction {
     /** Titles with unread chapters. */
     UNREAD,
 
-    /** Finished titles, for extra chapters or side stories. */
+    /** Titles the reader has not started yet (nothing read). */
+    UNSTARTED,
+
+    /** Finished titles, for extra chapters or side stories (the reader's own status). */
     COMPLETED,
+
+    /** Titles whose publication ended at the source. An unknown source status never matches. */
+    PUBLICATION_ENDED,
 }
+
+/** What the source says about the work; [UNKNOWN] is kept apart instead of guessed as "ended". */
+enum class PublicationStatus { ONGOING, ENDED, UNKNOWN }
 
 /** Why a title was not asked this time. */
 enum class UpdateSkip {
@@ -45,6 +54,8 @@ data class UpdateTitleState(
     val intervalOverrideHours: Int? = null,
     /** The user asked for this title to be left out of every automatic check. */
     val excludedFromUpdates: Boolean = false,
+    /** What the source says about the work; unknown stays unknown and never matches "publication ended". */
+    val publication: PublicationStatus = PublicationStatus.UNKNOWN,
 )
 
 /** The answer of [UpdatePolicy]: ask now, or wait until [nextCheckAt] for [reason]. */
@@ -145,5 +156,7 @@ object UpdatePolicy {
     private fun allowedBy(title: UpdateTitleState, restrictions: Set<UpdateRestriction>): Boolean =
         (UpdateRestriction.UNREAD in restrictions && title.unreadChapters > 0) ||
             (UpdateRestriction.STARTED in restrictions && title.status in setOf("READING", "ON_HOLD", "DROPPED")) ||
-            (UpdateRestriction.COMPLETED in restrictions && title.status == "FINISHED")
+            (UpdateRestriction.UNSTARTED in restrictions && title.status == "NEW") ||
+            (UpdateRestriction.COMPLETED in restrictions && title.status == "FINISHED") ||
+            (UpdateRestriction.PUBLICATION_ENDED in restrictions && title.publication == PublicationStatus.ENDED)
 }
