@@ -168,6 +168,7 @@
     <string name="filter_template_save">Сохранить фильтры</string>
     <string name="filter_template_save_title">Сохранить фильтры как</string>
     <string name="filter_template_delete">Удалить шаблон «%1$s»</string>
+    <string name="filter_template_failed">Шаблон больше не подходит к источнику после его обновления</string>
     <string name="toggle_layout">Сменить вид</string>
     <string name="search_in_source">Поиск в %1$s</string>
     <string name="browse_popular">Популярное</string>

@@ -831,11 +831,14 @@ class SourceBrowseViewModel(
         val template = filterTemplates.value.firstOrNull { it.name == name } ?: return
         viewModelScope.launch(ScreenErrors) {
             val applied = withContext(Dispatchers.Default) {
-                runCatching { filters.value.restoreState(Json.parseToJsonElement(template.state)) }.isSuccess
+                runCatching { filters.value.restoreState(Json.parseToJsonElement(template.state)) }
             }
-            if (applied) {
+            if (applied.isSuccess) {
                 filterVersion.value++
                 saveFilters()
+            } else {
+                // The source changed since the template was saved: say so instead of doing nothing.
+                _events.send(CatalogEvent.Message(R.string.filter_template_failed))
             }
         }
     }

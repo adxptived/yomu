@@ -168,6 +168,7 @@
     <string name="filter_template_save">Save filters</string>
     <string name="filter_template_save_title">Save these filters as</string>
     <string name="filter_template_delete">Delete template “%1$s”</string>
+    <string name="filter_template_failed">This template no longer fits the source after its update</string>
     <string name="toggle_layout">Switch layout</string>
     <string name="search_in_source">Search in %1$s</string>
     <string name="browse_popular">Popular</string>
