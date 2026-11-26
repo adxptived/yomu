@@ -106,7 +106,8 @@ class Release210ScreensTest {
         awaitText("Transparent reader bars")
         val preference = compose.onNodeWithText("Transparent reader bars").performScrollTo()
         fun awaitSetting(enabled: Boolean) {
-            compose.waitUntil(5_000) { runBlocking { settings.commonReader.get().transparentBars } == enabled }
+            // A DataStore write of a cold test JVM can take longer than a few seconds on a loaded CI runner.
+            compose.waitUntil(30_000) { runBlocking { settings.commonReader.get().transparentBars } == enabled }
         }
 
         preference.performClick()
