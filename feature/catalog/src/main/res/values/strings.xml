@@ -18,6 +18,16 @@
     <string name="metadata_match_query">Title to search</string>
     <string name="metadata_match_search">Search</string>
     <string name="metadata_match_empty">Nothing found. Try another title.</string>
+    <string name="metadata_related">Related</string>
+    <string name="relation_sequel">Sequel</string>
+    <string name="relation_prequel">Prequel</string>
+    <string name="relation_side_story">Side story</string>
+    <string name="relation_spin_off">Spin-off</string>
+    <string name="relation_alternative">Alternative</string>
+    <string name="relation_adaptation">Adaptation</string>
+    <string name="relation_summary">Summary</string>
+    <string name="relation_character">Characters</string>
+    <string name="relation_other">Related</string>
     <string name="migrate_match_exact_title">Exact title</string>
     <string name="migrate_match_similar_title">Similar title</string>
     <string name="migrate_target_chapter_count">Chapters available from this source: %1$d</string>

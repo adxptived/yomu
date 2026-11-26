@@ -1,5 +1,6 @@
 package app.yomu.data.tracking
 
+import app.yomu.domain.model.RelatedTitle
 import app.yomu.domain.tracking.TrackEntry
 import app.yomu.domain.tracking.TrackSearchResult
 import app.yomu.domain.tracking.TrackService
@@ -162,6 +163,23 @@ class AniListTracker(
         return millisOf(java.time.LocalDate.of(y, d["month"].int() ?: 1, d["day"].int() ?: 1))
     }
 
+    /** Explicit relations of a title (sequel, prequel, side story); the public query works without an account. */
+    suspend fun relations(mediaId: Long): List<RelatedTitle> {
+        val q = """
+            query Relations(${'$'}id: Int) {
+              Media(id: ${'$'}id, type: MANGA) {
+                relations {
+                  edges {
+                    relationType
+                    node { id title { userPreferred romaji } coverImage { large } siteUrl }
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+        return parseRelations(query(q, buildJsonObject { put("id", mediaId) }, authorized = false))
+    }
+
     companion object {
         private val JSON = "application/json; charset=utf-8".toMediaType()
         private const val ENTRY_FIELDS = "id status progress score(format: POINT_100) startedAt { year month day } completedAt { year month day } " +
@@ -186,3 +204,18 @@ class AniListTracker(
         }
     }
 }
+
+/** Reads the `Media.relations.edges` answer; a node without an id or a title is skipped rather than shown blank. */
+internal fun parseRelations(data: JsonElement?): List<RelatedTitle> =
+    data["Media"]["relations"]["edges"].list().mapNotNull { edge ->
+        val node = edge["node"]
+        val id = node["id"].long() ?: return@mapNotNull null
+        val title = node["title"]["userPreferred"].str() ?: node["title"]["romaji"].str() ?: return@mapNotNull null
+        RelatedTitle(
+            relation = edge["relationType"].str().orEmpty(),
+            id = id,
+            title = title,
+            coverUrl = node["coverImage"]["large"].str(),
+            url = node["siteUrl"].str() ?: "https://anilist.co/manga/$id",
+        )
+    }

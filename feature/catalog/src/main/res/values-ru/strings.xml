@@ -18,6 +18,16 @@
     <string name="metadata_match_query">Название для поиска</string>
     <string name="metadata_match_search">Найти</string>
     <string name="metadata_match_empty">Ничего не найдено. Попробуйте другое название.</string>
+    <string name="metadata_related">Связанное</string>
+    <string name="relation_sequel">Продолжение</string>
+    <string name="relation_prequel">Приквел</string>
+    <string name="relation_side_story">Побочная история</string>
+    <string name="relation_spin_off">Спин-офф</string>
+    <string name="relation_alternative">Альтернатива</string>
+    <string name="relation_adaptation">Адаптация</string>
+    <string name="relation_summary">Краткое изложение</string>
+    <string name="relation_character">Персонажи</string>
+    <string name="relation_other">Связанное</string>
     <string name="migrate_match_exact_title">Точное название</string>
     <string name="migrate_match_similar_title">Похожее название</string>
     <string name="migrate_target_chapter_count">Глав доступно в источнике: %1$d</string>

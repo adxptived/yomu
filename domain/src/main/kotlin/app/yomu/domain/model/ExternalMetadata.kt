@@ -20,3 +20,12 @@ data class ExternalMetadata(
     /** "AniList · 2021 · MANGA" for the card under the title. */
     val subtitle: String get() = listOfNotNull(provider, year?.toString(), format).joinToString(" · ")
 }
+
+/** A title AniList explicitly relates to the matched one: a sequel, a prequel, a side story. */
+data class RelatedTitle(
+    val relation: String,
+    val id: Long,
+    val title: String,
+    val coverUrl: String? = null,
+    val url: String,
+)

@@ -193,6 +193,7 @@ import app.yomu.domain.model.ChapterInfo
 import app.yomu.domain.model.ContentType
 import app.yomu.domain.model.DownloadItem
 import app.yomu.domain.model.DownloadStatus
+import app.yomu.domain.model.RelatedTitle
 import app.yomu.source.SBookLink
 import app.yomu.source.Status
 import coil3.compose.AsyncImage
@@ -247,6 +248,7 @@ private fun TitleContent(
     val entry by viewModel.entry.collectAsStateWithLifecycle()
     val externalMetadata by viewModel.externalMetadata.collectAsStateWithLifecycle()
     val metadataSearch by viewModel.metadataSearch.collectAsStateWithLifecycle()
+    val related by viewModel.related.collectAsStateWithLifecycle()
     val chapters by viewModel.chapters.collectAsStateWithLifecycle()
     val tabs by viewModel.tabs.collectAsStateWithLifecycle()
     val entryTabs by viewModel.entryTabs.collectAsStateWithLifecycle()
@@ -646,6 +648,23 @@ private fun TitleContent(
                                         Text(stringResource(R.string.metadata_reset))
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+                if (related.isNotEmpty()) {
+                    item(key = "related") {
+                        Column {
+                            Text(
+                                stringResource(R.string.metadata_related),
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.padding(start = Dimens.l, top = Dimens.m, bottom = Dimens.xs),
+                            )
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Dimens.l),
+                                horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+                            ) {
+                                related.forEach { item -> RelatedCard(item) { onOpenWebView(item.url) } }
                             }
                         }
                     }
@@ -1212,6 +1231,42 @@ private fun MissingSourceCard(onMigrate: () -> Unit) {
         }
     }
 }
+
+/** One explicit relation of the matched title: a cover, what it is and its name. A tap opens its AniList page. */
+@Composable
+private fun RelatedCard(related: RelatedTitle, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.width(140.dp),
+    ) {
+        Column(Modifier.padding(Dimens.s), verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
+            CoverImage(related.coverUrl, related.title, Modifier.fillMaxWidth().height(120.dp))
+            Text(
+                relationLabel(related.relation),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(related.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun relationLabel(relation: String): String = stringResource(
+    when (relation) {
+        "SEQUEL" -> R.string.relation_sequel
+        "PREQUEL" -> R.string.relation_prequel
+        "SIDE_STORY" -> R.string.relation_side_story
+        "SPIN_OFF" -> R.string.relation_spin_off
+        "ALTERNATIVE" -> R.string.relation_alternative
+        "ADAPTATION" -> R.string.relation_adaptation
+        "SUMMARY" -> R.string.relation_summary
+        "CHARACTER" -> R.string.relation_character
+        else -> R.string.relation_other
+    },
+)
 
 @Composable
 private fun Description(text: String) {

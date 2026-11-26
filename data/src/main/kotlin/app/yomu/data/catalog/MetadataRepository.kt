@@ -1,8 +1,10 @@
 package app.yomu.data.catalog
 
 import app.yomu.core.datastore.AppSettings
+import app.yomu.data.tracking.AniListTracker
 import app.yomu.data.tracking.TrackerManager
 import app.yomu.domain.model.ExternalMetadata
+import app.yomu.domain.model.RelatedTitle
 import app.yomu.domain.tracking.TrackSearchResult
 import app.yomu.domain.tracking.TrackService
 import kotlinx.coroutines.flow.Flow
@@ -25,6 +27,12 @@ class MetadataRepository(
     }
 
     fun observeLink(entryId: Long): Flow<ExternalMetadata?> = settings.metadataLinks.flow.map { it[entryId] }
+
+    /** Explicit relations of a confirmed match; an offline or failing answer leaves the card without the list. */
+    suspend fun related(metadata: ExternalMetadata): List<RelatedTitle> =
+        runCatching { (trackers.tracker(TrackService.ANILIST) as? AniListTracker)?.relations(metadata.id) }
+            .getOrNull()
+            .orEmpty()
 
     /** A null [metadata] removes the match and brings back the source's own cover and description. */
     suspend fun setLink(entryId: Long, metadata: ExternalMetadata?) {

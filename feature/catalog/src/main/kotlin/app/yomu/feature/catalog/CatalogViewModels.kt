@@ -50,6 +50,7 @@ import app.yomu.domain.model.ContentType
 import app.yomu.domain.model.DownloadItem
 import app.yomu.domain.model.DownloadStatus
 import app.yomu.domain.model.ExternalMetadata
+import app.yomu.domain.model.RelatedTitle
 import app.yomu.domain.tracking.TrackEntry
 import app.yomu.domain.tracking.TrackSearchResult
 import app.yomu.domain.tracking.TrackService
@@ -1197,6 +1198,18 @@ class TitleViewModel(
     fun linkMetadata(found: ExternalMetadata?) = viewModelScope.launch(ScreenErrors) {
         metadata.setLink(entryId, found)
         _metadataSearch.value = MetadataSearchState.Idle
+    }
+
+    /** Explicit relations of the confirmed match, loaded when the match appears and cleared with it. */
+    private val _related = MutableStateFlow<List<RelatedTitle>>(emptyList())
+    val related: StateFlow<List<RelatedTitle>> = _related
+
+    init {
+        viewModelScope.launch(ScreenErrors) {
+            externalMetadata.collect { meta ->
+                _related.value = if (meta == null) emptyList() else metadata.related(meta)
+            }
+        }
     }
 
     data class EditionComparison(
