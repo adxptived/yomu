@@ -119,63 +119,70 @@ fun MetadataMatchDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Dimens.s),
-                ) {
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        label = { Text(stringResource(R.string.metadata_match_query)) },
-                    )
-                    TextButton(onClick = { searchFor(query) }, enabled = query.isNotBlank() && unavailable == null) {
-                        Text(stringResource(R.string.metadata_match_search))
+                    if (unavailable.availability == MetadataAvailability.NEEDS_CLIENT_ID) {
+                        Text(
+                            stringResource(R.string.metadata_needs_client_id_where),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
-                }
-                // The answer always lives in one scrolling list: a stable, bounded measure for results, an empty
-                // answer and an error alike (without it the dialog measured its content against its cap forever).
-                LazyColumn(
-                    Modifier.fillMaxWidth().heightIn(min = 120.dp, max = if (preview == null) 320.dp else 190.dp),
-                    verticalArrangement = Arrangement.spacedBy(Dimens.xs),
-                ) {
-                    if (unavailable == null) when (val state = activeState) {
-                        TitleViewModel.MetadataSearchState.Idle -> Unit
-                        TitleViewModel.MetadataSearchState.Loading -> item(key = "loading") {
-                            Box(Modifier.fillMaxWidth().padding(Dimens.l), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator()
-                            }
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Dimens.s),
+                    ) {
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            label = { Text(stringResource(R.string.metadata_match_query)) },
+                        )
+                        TextButton(onClick = { searchFor(query) }, enabled = query.isNotBlank()) {
+                            Text(stringResource(R.string.metadata_match_search))
                         }
-                        is TitleViewModel.MetadataSearchState.Failed -> item(key = "failed") {
-                            Column(verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
-                                Text(
-                                    stringResource(R.string.metadata_provider_failed, state.provider.displayName, state.message.orEmpty()),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                                if (state.availability == MetadataAvailability.READY) {
+                    }
+                    // The answer always lives in one scrolling list: a stable, bounded measure for results, an empty
+                    // answer and an error alike (without it the dialog measured its content against its cap forever).
+                    LazyColumn(
+                        Modifier.fillMaxWidth().heightIn(min = 120.dp, max = if (preview == null) 320.dp else 190.dp),
+                        verticalArrangement = Arrangement.spacedBy(Dimens.xs),
+                    ) {
+                        when (val state = activeState) {
+                            TitleViewModel.MetadataSearchState.Idle -> Unit
+                            TitleViewModel.MetadataSearchState.Loading -> item(key = "loading") {
+                                Box(Modifier.fillMaxWidth().padding(Dimens.l), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator()
+                                }
+                            }
+                            is TitleViewModel.MetadataSearchState.Failed -> item(key = "failed") {
+                                Column(verticalArrangement = Arrangement.spacedBy(Dimens.xs)) {
                                     Text(
-                                        stringResource(R.string.metadata_provider_try_other),
+                                        stringResource(R.string.metadata_provider_failed, state.provider.displayName, state.message.orEmpty()),
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = MaterialTheme.colorScheme.error,
                                     )
+                                    if (state.availability == MetadataAvailability.READY) {
+                                        Text(
+                                            stringResource(R.string.metadata_provider_try_other),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
                             }
-                        }
-                        is TitleViewModel.MetadataSearchState.Ready -> {
-                            if (state.results.isEmpty()) {
-                                item(key = "empty") {
-                                    Text(stringResource(R.string.metadata_match_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            } else {
-                                items(state.results, key = { "${it.provider}:${it.id}" }) { item ->
-                                    MetadataResultRow(
-                                        item,
-                                        selected = item.provider == preview?.provider && item.id == preview?.id,
-                                    ) { selected = item }
+                            is TitleViewModel.MetadataSearchState.Ready -> {
+                                if (state.results.isEmpty()) {
+                                    item(key = "empty") {
+                                        Text(stringResource(R.string.metadata_match_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                } else {
+                                    items(state.results, key = { "${it.provider}:${it.id}" }) { item ->
+                                        MetadataResultRow(
+                                            item,
+                                            selected = item.provider == preview?.provider && item.id == preview?.id,
+                                        ) { selected = item }
+                                    }
                                 }
                             }
                         }
@@ -216,13 +223,6 @@ fun MetadataMatchDialog(
                             )
                         }
                     }
-                }
-                if (unavailable?.availability == MetadataAvailability.NEEDS_CLIENT_ID) {
-                    Text(
-                        stringResource(R.string.metadata_needs_client_id_where),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
             }
         },
