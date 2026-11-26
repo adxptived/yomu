@@ -312,7 +312,7 @@ class CatalogScreensTest {
                 )
             }
         }
-        awaitText("MangaDex")
+        awaitText("Internet Archive")
         assertTrue(model.sourceListing.value.sources.any { it.name == "Wikisource" && it.lang == "fr" })
     }
 
@@ -328,7 +328,7 @@ class CatalogScreensTest {
                 )
             }
         }
-        awaitText("MangaDex")
+        awaitText("Internet Archive")
         compose.runOnIdle { model.sourceQuery.value = "Wikisource fr" }
         compose.waitUntil(5_000) {
             model.sourceListing.value.sources.singleOrNull()?.let { it.name == "Wikisource" && it.lang == "fr" } == true
@@ -349,7 +349,7 @@ class CatalogScreensTest {
                 )
             }
         }
-        awaitText("MangaDex")
+        awaitText("Internet Archive")
 
         val pkg = "eu.kanade.tachiyomi.extension.en.testexternal"
         shadowOf(context.packageManager).installPackage(PackageInfo().apply {

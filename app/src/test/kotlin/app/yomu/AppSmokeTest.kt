@@ -130,7 +130,7 @@ class AppSmokeTest {
         compose.onAllNodesWithText("Next")[0].performClick()
         awaitText("Find a book in the catalog")
         compose.onAllNodesWithText("Find a book in the catalog")[0].performClick()
-        awaitText("MangaDex")
+        awaitText("Internet Archive")
     }
 
     private fun shot(name: String) {
@@ -149,7 +149,7 @@ class AppSmokeTest {
 
         clickTab("Profile")
         compose.onAllNodesWithText("Open catalog")[0].performClick()
-        awaitText("MangaDex")
+        awaitText("Internet Archive")
     }
 
     /** Every ViewModel of every screen can be created from the real Koin graph (catches missing definitions). */
@@ -211,7 +211,7 @@ class AppSmokeTest {
         awaitText("Your library is empty")
         shot("03_library")
         for ((tab, file, marker) in listOf(
-            Triple("Catalog", "04_catalog", "MangaDex"),
+            Triple("Catalog", "04_catalog", "Internet Archive"),
             Triple("Words", "05_dictionary", "Look up a word"),
             Triple("Settings", "06_settings", "Search settings"),
         )) {
@@ -406,7 +406,7 @@ class AppSmokeTest {
         compose.waitUntilAtLeastOneExists(tab, 20_000)
 
         clickTab("Catalog")
-        awaitText("MangaDex")
+        awaitText("Internet Archive")
         compose.mainClock.advanceTimeBy(1_000)
         shot("20_catalog_sources")
 
@@ -414,7 +414,7 @@ class AppSmokeTest {
         awaitText("What do you want to add?")
         shot("25_add_source")
         back()
-        awaitText("MangaDex")
+        awaitText("Internet Archive")
 
         compose.onNode(hasContentDescription("Extensions") and hasClickAction()).performClick()
         awaitText("Installed")

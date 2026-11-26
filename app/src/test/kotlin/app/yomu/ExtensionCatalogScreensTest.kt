@@ -177,7 +177,7 @@ class ExtensionCatalogScreensTest {
                 }
             }
         }
-        awaitText("MangaDex")
+        awaitText("Internet Archive")
         // The device state: six installed extensions, four of them loaded with working sources. A scan that a
         // previous screen started can still overwrite the list, so put the state back until it stays.
         val fakes = listOf(weeb, mangaToday, comick, asm, untrusted, broken)
