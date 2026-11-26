@@ -1,6 +1,44 @@
 # Changelog
 
-## 2.17.0 — transparent reader controls
+## 2.18.0 - reading bar, widgets and AniList metadata
+
+### First start and profile
+
+- The first-start wizard offers theme, accent and OLED choices, plus a "Restore from a backup" step that shows the archive's date, records and files before anything is written.
+- The profile continues the last book or chapter, offers library and catalog actions on a fresh install, and shows the last seven days as a small chart.
+
+### Reader
+
+- "View the chapter" opens a chapter without moving the saved progress; "Continue from here" turns it back into normal reading.
+- The seek preview follows the bottom slider or the side navigator and stays inside the reader; a manga page comes from the local or cached copy.
+- Select several pages in the manga or PDF grid and save them to a system folder.
+- Adjacent and continuous reading can skip fractional chapters; opening one from the list still works.
+- The bottom reading bar is configurable: chapters, search, display, bookmark and auto-scroll. The More sheet keeps every command.
+
+### Catalog, metadata and duplicates
+
+- Adding a manga or novel checks the saved editions and shows a comparison: source, chapters, progress, shelves and the last chapter. Open the saved version, add separately, or move to another source through the existing preview.
+- "Find a replacement" appears when a source keeps failing or answers 404/410, and leads to the same migration preview.
+- Saved filter templates for a source: save the current set under a name, apply it with a chip, delete it; a template that no longer fits after an extension update says so.
+- AniList search without an account: a confirmed match shows the external cover and description over the source's fields, with "Change match" and "Use source data". The title id, chapters, bookmarks and progress stay unchanged.
+- Explicit AniList relations (sequel, prequel, side story, spin-off and others) with covers; a tap opens the page on AniList.
+
+### Downloads, storage and services
+
+- A downloaded chapter can be saved as a single CBZ from the Downloads screen.
+- The online library can be exported to a Mihon/Tachiyomi `.tachibk` file: titles, chapters with progress and bookmarks, shelves as categories.
+- Storage shows and clears converted files and all downloaded chapters separately, with size and a confirmation.
+
+### Widgets
+
+- "Reading streak": days in a row and today's reading time.
+- "Shelf": up to three titles from the shelf chosen in Settings → Library.
+
+### Beta
+
+- Discord Rich Presence is off by default; it stays a beta experiment.
+
+## 2.17.0 - transparent reader controls
 
 ### Reading and interface
 

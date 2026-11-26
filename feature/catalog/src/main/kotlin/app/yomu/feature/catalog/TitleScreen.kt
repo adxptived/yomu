@@ -269,6 +269,7 @@ private fun TitleContent(
     val stats by viewModel.chapterStats.collectAsStateWithLifecycle()
     val warnMobile by viewModel.warnMobileReading.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    val duplicateCheckFailed = stringResource(R.string.title_duplicate_check_failed)
     val haptic = rememberHaptic()
     val scope = rememberCoroutineScope()
     val barInsets = if (inPane) WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.End) else TopAppBarDefaults.windowInsets
@@ -338,7 +339,7 @@ private fun TitleContent(
                         .onSuccess { comparison ->
                             if (comparison == null) addEdition() else editionComparison = comparison
                         }
-                        .onFailure { snackbar.showSnackbar(context.getString(R.string.title_duplicate_check_failed)) }
+                        .onFailure { snackbar.showSnackbar(duplicateCheckFailed) }
                 } finally {
                     comparingEditions = false
                 }

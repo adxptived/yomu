@@ -1,0 +1,4 @@
+Configurable reading bar: chapters, search, display, bookmark and auto-scroll.
+AniList metadata and explicit relations for a confirmed match.
+Reading streak and shelf widgets on the home screen.
+CBZ export, Mihon export and saved source filter templates.

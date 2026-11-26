@@ -53,6 +53,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_18_0">
+        <item>The bottom reading bar is yours: chapters, search, display, bookmark and auto-scroll.</item>
+        <item>AniList metadata: a confirmed match replaces the cover and description and can be removed again.</item>
+        <item>Reading streak and shelf widgets for the home screen.</item>
+        <item>Save a downloaded chapter as CBZ, export the online library to Mihon, and keep filter templates in a source.</item>
+    </string-array>
     <string-array name="whats_new_2_17_0">
         <item>The top and bottom reader controls are translucent over the page across books, PDFs and comics.</item>
         <item>Turn transparent reader bars on or off in the reader settings.</item>
