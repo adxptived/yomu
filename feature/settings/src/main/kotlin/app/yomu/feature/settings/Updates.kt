@@ -366,9 +366,10 @@ class AppUpdates(
     val dismissedVersion: Flow<String?> = settings.updateDismissedVersion.flow.map { it.takeIf(String::isNotBlank) }
 
     /** The cross of the catalog banner: gone for this version only, the dot on Settings stays. */
-    fun dismissBanner(version: String) {
-        scope.launch { settings.updateDismissedVersion.set(SkipUpdate.normalize(version)) }
-    }
+    fun dismissBanner(version: String) =
+        scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            settings.updateDismissedVersion.set(SkipUpdate.normalize(version))
+        }
 
     /** At start: the daily check, if the user turned it on. Quiet, only a newer release changes anything. */
     fun checkIfDue() {

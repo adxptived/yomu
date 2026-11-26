@@ -245,11 +245,14 @@ class Release190Test {
         val settings = GlobalContext.get().get<AppSettings>()
         // The main thread stays busy in this test (its looper is not run). Before 1.9.0 the change of this write waited
         // for it while holding the store's write lock, and every later write of the app waited behind it.
-        CoroutineScope(Dispatchers.Main.immediate).launch { settings.crashSeenAt.set(1L) }
+        val firstWrite = CoroutineScope(Dispatchers.Main.immediate).launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            settings.crashSeenAt.set(1L)
+        }
         // Generous limits: on a loaded two-core CI runner the first DataStore write of a cold test JVM takes a while,
         // while the point of the test — that the main-thread write does not hold the store's lock forever — stands.
         withTimeout(120_000) { settings.updateCheckedAt.set(2L) }
         assertEquals(1L, withTimeout(120_000) { settings.crashSeenAt.flow.first { it == 1L } })
+        firstWrite.cancel()
         withTimeout(120_000) {
             settings.crashSeenAt.reset()
             settings.updateCheckedAt.reset()

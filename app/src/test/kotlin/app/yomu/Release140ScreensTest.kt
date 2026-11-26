@@ -110,18 +110,23 @@ class Release140ScreensTest {
     @Test
     fun titleChapterNumbers() {
         val id = seed()
+        lateinit var model: app.yomu.feature.catalog.TitleViewModel
         compose.setContent {
             YomuTheme {
+                model = koinViewModel { parametersOf(id) }
                 TitleScreen(
-                    viewModel = koinViewModel { parametersOf(id) },
+                    viewModel = model,
                     onBack = {}, onReadChapter = {}, onMigrate = { _, _ -> }, onOpenWebView = {}, onOpenDownloads = {},
                 )
             }
         }
         // The card header is taller than in 1.4 (poster cover and the primary action): scroll the chapters into view.
         awaitText("Find a replacement")
-        compose.mainClock.advanceTimeBy(1_000)
-        compose.onAllNodes(hasScrollAction())[0].performScrollToNode(hasText("Chapter 30", substring = true))
+        compose.waitUntil(30_000) { model.chapters.value.orEmpty().any { it.number == 30f } }
+        val chapterList = hasScrollAction() and androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(
+            androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange,
+        )
+        compose.onAllNodes(chapterList)[0].performScrollToNode(hasText("Chapter 30", substring = true))
         shot("40_title_chapter_numbers")
     }
 

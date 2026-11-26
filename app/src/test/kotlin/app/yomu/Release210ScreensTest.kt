@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -96,6 +97,7 @@ class Release210ScreensTest {
 
     @Test
     fun readerBarTransparencyCanBeTurnedOffAndBackOn() {
+        runBlocking { settings.commonReader.update { it.copy(transparentBars = true) } }
         val vm = model()
         compose.setContent {
             YomuTheme(dark) {
@@ -106,10 +108,12 @@ class Release210ScreensTest {
         awaitText("Transparent reader bars")
         val preference = compose.onNodeWithText("Transparent reader bars").performScrollTo()
         fun awaitSetting(enabled: Boolean) {
-            // A DataStore write of a cold test JVM can take longer than a few seconds on a loaded CI runner.
-            compose.waitUntil(30_000) { runBlocking { settings.commonReader.get().transparentBars } == enabled }
+            val state = androidx.compose.ui.test.SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.Selected, enabled)
+            compose.waitUntil(30_000) { compose.onAllNodes(hasText("Transparent reader bars") and state).fetchSemanticsNodes().isNotEmpty() }
+            assertEquals(enabled, runBlocking { settings.commonReader.get().transparentBars })
         }
 
+        awaitSetting(true)
         preference.performClick()
         awaitSetting(false)
         preference.performClick()

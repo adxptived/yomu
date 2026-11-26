@@ -60,6 +60,7 @@ class UpdatePolicyTest {
         settings.updateLastSuccessAt.set(0)
         settings.updateNextAttemptAt.set(0)
         settings.updateDismissedVersion.set("")
+        settings.skipUpdateVersion.set("")
     }
 
     @Test
@@ -161,8 +162,9 @@ class UpdatePolicyTest {
         assertEquals("9.9.0", withTimeout(60_000) { updates.available.first { it != null } })
         assertNull(withTimeout(60_000) { updates.dismissedVersion.first() })
 
-        updates.dismissBanner("9.9.0")
-        assertEquals("9.9.0", withTimeout(60_000) { updates.dismissedVersion.first { it == "9.9.0" } })
+        withTimeout(60_000) { updates.dismissBanner("9.9.0").join() }
+        assertEquals("9.9.0", settings.updateDismissedVersion.get())
+        assertEquals("9.9.0", updates.dismissedVersion.first())
         // The dot on Settings stays: the dismissal is about the catalog banner, not about knowing the version.
         assertEquals("9.9.0", withTimeout(60_000) { updates.available.first { it != null } })
 
