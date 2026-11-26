@@ -130,6 +130,23 @@ class TrackersTest {
     }
 
     @Test
+    fun myAnimeListDetailsKeepNonBlankAlternativeTitlesInOrder() = runBlocking {
+        val tracker = MyAnimeListTracker(store, keys, { client }, apiUrl = url("/v2"))
+        answer = { _, _ ->
+            json(
+                """{"id":2,"title":"Berserk","alternative_titles":{
+                    "en":"Berserk English","ja":"ベルセルク",
+                    "synonyms":["Berserk"," ","ベルセルク","Berserk: The Black Swordsman"]}}
+                """.trimIndent(),
+            )
+        }
+
+        val details = requireNotNull(tracker.details(2))
+
+        assertEquals(listOf("Berserk English", "ベルセルク", "Berserk: The Black Swordsman"), details.altTitles)
+    }
+
+    @Test
     fun myAnimeListUsesPkceAndRefreshesAnExpiredToken() = runBlocking {
         val t = MyAnimeListTracker(store, keys, { client }, apiUrl = url("/v2"), authBase = url("/oauth2"))
         val auth = t.startAuth().toHttpUrl()

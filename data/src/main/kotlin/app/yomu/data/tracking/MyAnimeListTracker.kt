@@ -170,11 +170,11 @@ class MyAnimeListTracker(
         val id = n["id"].long() ?: remoteId
         val title = n["title"].str()?.takeIf { it.isNotBlank() } ?: return null
         val alternative = n["alternative_titles"]
-        val alt = listOfNotNull(
-            alternative["en"].str(),
-            alternative["ja"].str(),
-            *alternative["synonyms"].list().mapNotNull { it.str() }.toTypedArray(),
-        ).filter { it.isNotBlank() && it != title }.distinct()
+        val alt = buildList {
+            alternative["en"].str()?.let(::add)
+            alternative["ja"].str()?.let(::add)
+            alternative["synonyms"].list().mapNotNullTo(this) { it.str() }
+        }.filter { it.isNotBlank() && it != title }.distinct()
         return TrackerTitleDetails(
             service = service,
             id = id,
