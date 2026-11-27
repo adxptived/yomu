@@ -65,6 +65,7 @@ import app.yomu.MainViewModel
 import app.yomu.R
 import app.yomu.core.common.ErrorLog
 import app.yomu.core.datastore.AppSettings
+import app.yomu.core.datastore.SettingsJson
 import app.yomu.core.ui.components.FloatingNavBarDefaults
 import app.yomu.core.ui.components.IncognitoBanner
 import app.yomu.core.ui.components.LocalNavAnimatedScope
@@ -79,6 +80,7 @@ import app.yomu.data.audio.YouTubeAuth
 import app.yomu.data.repository.toJson
 import app.yomu.data.source.SourceManager
 import app.yomu.domain.model.BookFormat
+import app.yomu.domain.model.BookReaderSettings
 import app.yomu.domain.model.TextReaderSettings
 import app.yomu.domain.repository.BookRepository
 import app.yomu.feature.annotations.AnnotationsScreen
@@ -126,7 +128,7 @@ import org.koin.core.parameter.parametersOf
 /** The screens of the [NavTab]s, all inside [HomeRoute] (see [TabsHost]); [trailName] names them in crash reports. */
 enum class TopLevel(val tab: NavTab, val trailName: String) {
     LIBRARY(NavTab.LIBRARY, "Library tab"),
-    HISTORY(NavTab.HISTORY, "Profile tab"),
+    HISTORY(NavTab.HISTORY, "Journal tab"),
     CATALOG(NavTab.CATALOG, "Catalog tab"),
     DICTIONARY(NavTab.DICTIONARY, "Dictionary tab"),
     SETTINGS(NavTab.SETTINGS, "Settings tab"),
@@ -445,16 +447,19 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
             // mode chosen for the book is a continuous one: "scroll" and "long strip" are promises the page layout
             // cannot keep, so they win over the default view.
             val appSettings: AppSettings = koinInject()
-            val docxPages by produceState<Boolean?>(if (r.bookId < 0) false else null, r.bookId) {
-                if (r.bookId >= 0) {
+            val checkLayout = r.bookId >= 0 && !r.textMode && r.locator == null && r.positionReference == null && r.chapterId < 0
+            val docxPages by produceState<Boolean?>(if (checkLayout) null else false, r) {
+                if (checkLayout) {
                     val book = runCatching { books.getBook(r.bookId) }.getOrNull()
-                    // A locator or chapter means "open exactly here" (an annotation, Continue): the page layout
-                    // cannot honour it, so the text reader opens instead.
-                    val exactPosition = r.locator != null || r.chapterId >= 0 || r.positionReference != null
-                    val text = runCatching { appSettings.textSettings.get() }.getOrDefault(TextReaderSettings())
-                    val continuous = text.longStrip || !text.paged
-                    value = book?.format == BookFormat.DOCX && !continuous && !exactPosition &&
-                        runCatching { appSettings.docxPageLayout.get() }.getOrDefault(false)
+                    value = if (book?.format == BookFormat.DOCX) {
+                        val bookText = book.readerSettingsJson?.let { json ->
+                            runCatching { SettingsJson.decodeFromString(BookReaderSettings.serializer(), json) }.getOrNull()?.text
+                        }
+                        val text = bookText ?: runCatching { appSettings.textSettings.get() }.getOrDefault(TextReaderSettings())
+                        text.paged && !text.longStrip && runCatching { appSettings.docxPageLayout.get() }.getOrDefault(false)
+                    } else {
+                        false
+                    }
                 }
             }
             when {
@@ -467,7 +472,11 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
                 )
                 docxPages == true -> DocxLayoutScreen(
                     koinViewModel { parametersOf(r.bookId) }, back,
-                    onOpenText = { nav.navigate(ReaderRoute(bookId = r.bookId)) { popUpTo<DocxLayoutRoute> { inclusive = true } } },
+                    onOpenText = {
+                        nav.navigate(ReaderRoute(bookId = r.bookId, textMode = true)) {
+                            popUpTo<ReaderRoute> { inclusive = true }
+                        }
+                    },
                 )
                 else -> ReaderScreen(
                     viewModel = koinViewModel { parametersOf(ReaderArgs(bookId = r.bookId, locatorJson = r.locator, chapterId = r.chapterId, positionReference = r.positionReference, preview = r.preview)) },
@@ -486,7 +495,16 @@ private fun YomuNavHost(nav: NavHostController, reduceMotion: Boolean, tabs: Tab
             val r = entry.toRoute<DocxLayoutRoute>()
             DocxLayoutScreen(
                 koinViewModel { parametersOf(r.bookId) }, back,
-                onOpenText = { nav.navigate(ReaderRoute(bookId = r.bookId)) { popUpTo<DocxLayoutRoute> { inclusive = true } } },
+                onOpenText = {
+                    val previous = nav.previousBackStackEntry
+                    if (previous?.destination?.hasRoute(ReaderRoute::class) == true && previous.toRoute<ReaderRoute>().bookId == r.bookId) {
+                        nav.popBackStack()
+                    } else {
+                        nav.navigate(ReaderRoute(bookId = r.bookId, textMode = true)) {
+                            popUpTo<DocxLayoutRoute> { inclusive = true }
+                        }
+                    }
+                },
             )
         }
         screen<AnnotationsRoute> { entry ->

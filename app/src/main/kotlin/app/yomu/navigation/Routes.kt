@@ -11,7 +11,14 @@ import kotlinx.serialization.Serializable
 // Library & reading
 @Serializable data class BookDetailsRoute(val bookId: Long)
 
-@Serializable data class ReaderRoute(val bookId: Long = -1, val locator: String? = null, val chapterId: Long = -1, val positionReference: String? = null, val preview: Boolean = false)
+@Serializable data class ReaderRoute(
+    val bookId: Long = -1,
+    val locator: String? = null,
+    val chapterId: Long = -1,
+    val positionReference: String? = null,
+    val preview: Boolean = false,
+    val textMode: Boolean = false,
+)
 
 /** [bookId] < 0 shows the annotations of all books. */
 @Serializable data class AnnotationsRoute(val bookId: Long = -1)

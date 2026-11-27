@@ -1,28 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The 1×1 tile of "New chapters": a lavender Yomu pill with the serif count and the label. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/nc_header"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_background"
+    android:background="@drawable/widget_metric_background"
+    android:foreground="@drawable/widget_press"
     android:gravity="center"
     android:orientation="vertical"
     android:padding="6dp">
-
-    <ImageView
-        android:layout_width="22dp"
-        android:layout_height="22dp"
-        android:contentDescription="@null"
-        android:src="@drawable/widget_ic_book" />
 
     <TextView
         android:id="@id/nc_count"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="3dp"
+        android:ellipsize="end"
+        android:fontFamily="serif"
+        android:gravity="center"
+        android:importantForAccessibility="no"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:textColor="@color/widget_on_accent_surface"
+        android:textSize="30sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
         android:ellipsize="end"
         android:gravity="center"
+        android:importantForAccessibility="no"
+        android:includeFontPadding="false"
+        android:letterSpacing="0.01"
         android:maxLines="2"
-        android:textColor="@color/widget_on_background"
-        android:textSize="12sp"
-        android:textStyle="bold" />
+        android:text="@string/widget_new_chapters_label"
+        android:textColor="@color/widget_on_accent_surface"
+        android:textSize="11sp" />
 </LinearLayout>

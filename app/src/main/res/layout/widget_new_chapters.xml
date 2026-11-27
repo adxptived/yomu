@@ -1,27 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- "New chapters" home-screen widget (U03): up to three new unread chapters of favourite titles. -->
+<!-- "New chapters" home-screen widget (U03): up to three new unread chapters of favourite titles.
+     Rows follow the library card: cover, book, chapter and a chevron; the header pill counts every new chapter. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/nc_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_background"
     android:orientation="vertical"
-    android:padding="10dp">
+    android:paddingStart="12dp"
+    android:paddingTop="10dp"
+    android:paddingEnd="12dp"
+    android:paddingBottom="10dp">
 
     <LinearLayout
         android:id="@+id/nc_header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="4dp"
-        android:paddingEnd="4dp">
+        android:orientation="horizontal">
 
         <ImageView
-            android:layout_width="18dp"
-            android:layout_height="18dp"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:background="@drawable/widget_badge_background"
             android:contentDescription="@null"
-            android:src="@drawable/widget_ic_book" />
+            android:padding="5dp"
+            android:src="@drawable/widget_ic_updates" />
 
         <TextView
             android:id="@+id/nc_label"
@@ -30,10 +34,12 @@
             android:layout_marginStart="8dp"
             android:layout_weight="1"
             android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:letterSpacing="0.01"
             android:maxLines="1"
             android:text="@string/widget_new_chapters_label"
             android:textColor="@color/widget_on_background"
-            android:textSize="14sp"
+            android:textSize="13sp"
             android:textStyle="bold" />
 
         <TextView
@@ -41,9 +47,13 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
+            android:background="@drawable/widget_metric_background"
+            android:includeFontPadding="false"
             android:maxLines="1"
-            android:textColor="@color/widget_accent"
-            android:textSize="12sp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:textColor="@color/widget_on_accent_surface"
+            android:textSize="11sp"
             android:textStyle="bold"
             android:visibility="gone" />
     </LinearLayout>
@@ -51,30 +61,30 @@
     <TextView
         android:id="@+id/nc_empty"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:gravity="center"
-        android:padding="8dp"
+        android:padding="12dp"
         android:text="@string/widget_new_chapters_empty"
         android:textColor="@color/widget_on_background_variant"
-        android:textSize="13sp"
-        android:visibility="gone" />
+        android:textSize="12sp" />
 
     <LinearLayout
         android:id="@+id/nc_row_0"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="6dp"
         android:background="@drawable/widget_row_background"
         android:gravity="center_vertical"
-        android:minHeight="56dp"
         android:orientation="horizontal"
-        android:padding="6dp">
+        android:padding="6dp"
+        android:visibility="gone">
 
         <ImageView
             android:id="@+id/nc_cover_0"
-            android:layout_width="36dp"
-            android:layout_height="50dp"
+            android:layout_width="34dp"
+            android:layout_height="46dp"
             android:contentDescription="@null"
             android:scaleType="centerCrop"
             android:src="@drawable/widget_cover_placeholder" />
@@ -91,19 +101,30 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
-                android:maxLines="2"
+                android:includeFontPadding="false"
+                android:maxLines="1"
                 android:textColor="@color/widget_on_background"
-                android:textSize="14sp" />
+                android:textSize="13sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/nc_subtitle_0"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
                 android:ellipsize="end"
+                android:includeFontPadding="false"
                 android:maxLines="1"
                 android:textColor="@color/widget_on_background_variant"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
         </LinearLayout>
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="4dp"
+            android:contentDescription="@null"
+            android:src="@drawable/widget_ic_chevron" />
     </LinearLayout>
 
     <LinearLayout
@@ -111,17 +132,17 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="6dp"
         android:background="@drawable/widget_row_background"
         android:gravity="center_vertical"
-        android:minHeight="56dp"
         android:orientation="horizontal"
-        android:padding="6dp">
+        android:padding="6dp"
+        android:visibility="gone">
 
         <ImageView
             android:id="@+id/nc_cover_1"
-            android:layout_width="36dp"
-            android:layout_height="50dp"
+            android:layout_width="34dp"
+            android:layout_height="46dp"
             android:contentDescription="@null"
             android:scaleType="centerCrop"
             android:src="@drawable/widget_cover_placeholder" />
@@ -138,19 +159,30 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
-                android:maxLines="2"
+                android:includeFontPadding="false"
+                android:maxLines="1"
                 android:textColor="@color/widget_on_background"
-                android:textSize="14sp" />
+                android:textSize="13sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/nc_subtitle_1"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
                 android:ellipsize="end"
+                android:includeFontPadding="false"
                 android:maxLines="1"
                 android:textColor="@color/widget_on_background_variant"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
         </LinearLayout>
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="4dp"
+            android:contentDescription="@null"
+            android:src="@drawable/widget_ic_chevron" />
     </LinearLayout>
 
     <LinearLayout
@@ -158,17 +190,17 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="6dp"
         android:background="@drawable/widget_row_background"
         android:gravity="center_vertical"
-        android:minHeight="56dp"
         android:orientation="horizontal"
-        android:padding="6dp">
+        android:padding="6dp"
+        android:visibility="gone">
 
         <ImageView
             android:id="@+id/nc_cover_2"
-            android:layout_width="36dp"
-            android:layout_height="50dp"
+            android:layout_width="34dp"
+            android:layout_height="46dp"
             android:contentDescription="@null"
             android:scaleType="centerCrop"
             android:src="@drawable/widget_cover_placeholder" />
@@ -185,18 +217,29 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
-                android:maxLines="2"
+                android:includeFontPadding="false"
+                android:maxLines="1"
                 android:textColor="@color/widget_on_background"
-                android:textSize="14sp" />
+                android:textSize="13sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/nc_subtitle_2"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
                 android:ellipsize="end"
+                android:includeFontPadding="false"
                 android:maxLines="1"
                 android:textColor="@color/widget_on_background_variant"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
         </LinearLayout>
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="4dp"
+            android:contentDescription="@null"
+            android:src="@drawable/widget_ic_chevron" />
     </LinearLayout>
 </LinearLayout>

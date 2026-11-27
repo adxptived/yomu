@@ -22,6 +22,7 @@ class ReaderTts(context: Context) {
     private var ready = false
     private var queue: List<String> = emptyList()
     private var index = 0
+    private var voiceSample = false
     private var pendingStart: (() -> Unit)? = null
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
 
@@ -95,7 +96,7 @@ class ReaderTts(context: Context) {
             main.post {
                 if (id.generation != generation) return@post
                 index = id.index
-                onSentence?.invoke(id.index)
+                if (!voiceSample) onSentence?.invoke(id.index)
             }
         }
 
@@ -105,7 +106,9 @@ class ReaderTts(context: Context) {
                 if (id.generation != generation) return@post
                 index = id.index
                 pending = (pending - 1).coerceAtLeast(0)
-                if (pending == 0 && _playing.value) onQueueFinished?.invoke()
+                if (pending == 0 && _playing.value) {
+                    if (voiceSample) stop() else onQueueFinished?.invoke()
+                }
             }
         }
 
@@ -143,9 +146,10 @@ class ReaderTts(context: Context) {
             .sortedBy { it.name }
     }.getOrDefault(emptyList())
 
-    /** Speaks a short sample with the current speed, pitch and voice, without touching the reading queue. */
+    /** Speaks a short sample with the current speed, pitch and voice, without reader navigation callbacks. */
     fun speakSample(text: String) {
         stop()
+        voiceSample = true
         queue = listOf(text)
         index = 0
         generation++
@@ -155,6 +159,7 @@ class ReaderTts(context: Context) {
 
     /** Speaks [sentences] starting at [from]. */
     fun play(sentences: List<String>, from: Int = 0) {
+        voiceSample = false
         queue = sentences
         index = from.coerceIn(0, (sentences.size - 1).coerceAtLeast(0))
         generation++
@@ -226,6 +231,7 @@ class ReaderTts(context: Context) {
 
     fun stop() {
         generation++
+        voiceSample = false
         pendingStart = null
         pending = 0
         _playing.value = false
@@ -235,6 +241,7 @@ class ReaderTts(context: Context) {
 
     fun shutdown() {
         generation++
+        voiceSample = false
         pendingStart = null
         pending = 0
         queue = emptyList()

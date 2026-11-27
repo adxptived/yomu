@@ -140,17 +140,17 @@
     <string name="set_tts_speed_sum">Как быстро читает голос</string>
     <string name="set_tts_pitch_sum">Выше или ниже голос</string>
 
-    <string name="set_profile">Профиль</string>
-    <string name="set_profile_sum">Какие блоки показывать в обзоре</string>
-    <string name="set_profile_blocks">Блоки обзора</string>
+    <string name="set_profile">Журнал</string>
+    <string name="set_profile_sum">Какие блоки показывает журнал</string>
+    <string name="set_profile_blocks">Блоки журнала</string>
     <string name="set_profile_stats">Статистика</string>
     <string name="set_profile_stats_sum">Прочитанные книги, страницы, серии и другие цифры</string>
     <string name="set_profile_milestones">Достижения</string>
     <string name="set_profile_milestones_sum">Уровни по времени, сериям, книгам, страницам и словам</string>
     <string name="set_profile_top">Самое читаемое</string>
     <string name="set_profile_top_sum">Произведения, которые вы читали больше всего</string>
-    <string name="set_profile_recent">Недавно читали</string>
-    <string name="set_profile_recent_sum">Последние книги и главы</string>
+    <string name="set_profile_recent">Продолжить чтение</string>
+    <string name="set_profile_recent_sum">Последняя книга или глава в начале журнала</string>
     <string name="set_profile_share">Поделиться и перенести</string>
     <string name="set_profile_share_sum">Карточка статистики, CSV истории и резервная копия</string>
 

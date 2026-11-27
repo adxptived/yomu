@@ -380,6 +380,7 @@
     <string name="webview_reload">Перезагрузить</string>
     <string name="webview_open_browser">Открыть в браузере</string>
     <string name="source_lang_multi">Многоязычный</string>
+    <string name="source_lang_tile_multi">Мультияз.</string>
     <!-- Переключатель языка источника, у которого по источнику на язык (1.9.0) -->
     <string name="source_lang_all_short">ВСЕ</string>
     <string name="source_language">Язык источника: %1$s</string>

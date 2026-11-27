@@ -245,7 +245,8 @@
     <string name="library_batch_saved">Metadata updated</string>
     <string name="library_no_scan_folders">No scan folders yet: add one from the import menu</string>
     <string name="library_up_to_date">Library is up to date</string>
-    <string name="hint_library_select">Tap a cover to read, a title for details. Long-press a book for actions and multi-select; pull down to rescan your folders.</string>
+    <string name="hint_library_select">Tap a book to open its card. Long-press a book for actions; pull down to rescan your folders.</string>
+    <string name="hint_library_selection">Tap more books to add them to the selection. The bar below acts on all of them.</string>
     <string name="library_remove_book">Remove from library</string>
     <string name="library_fast_scroll">Fast scroll</string>
     <plurals name="library_audio_videos">

@@ -31,6 +31,7 @@ import androidx.test.core.app.ApplicationProvider
 import app.yomu.core.database.BookEntity
 import app.yomu.core.database.CatalogItemEntity
 import app.yomu.core.database.ChapterEntity
+import app.yomu.core.database.ReadingSessionEntity
 import app.yomu.core.database.YomuDatabase
 import app.yomu.core.datastore.AppSettings
 import app.yomu.core.ui.components.LocalReduceMotion
@@ -48,10 +49,17 @@ import app.yomu.feature.settings.SettingsScreen
 import app.yomu.feature.settings.SettingsSection
 import app.yomu.feature.settings.SettingsViewModel
 import app.yomu.feature.settings.UpdateState
+import app.yomu.feature.audio.AudioWidgetContract
+import app.yomu.feature.audio.AudioWidgetState
+import app.yomu.widget.AudioWidgetProvider
 import app.yomu.widget.ContinueReadingWidget
 import app.yomu.widget.ContinueWidgets
 import app.yomu.widget.NewChaptersWidget
 import app.yomu.widget.NewChaptersWidgets
+import app.yomu.widget.ShelfWidget
+import app.yomu.widget.ShelfWidgets
+import app.yomu.widget.StreakWidget
+import app.yomu.widget.StreakWidgets
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.github.takahirom.roborazzi.captureScreenRoboImage
@@ -60,6 +68,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -74,6 +83,8 @@ import org.robolectric.annotation.GraphicsMode
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * Screenshots for the November 2026 UI work: the update banner and dialog (A1), the source grid (B1),
@@ -367,14 +378,25 @@ class UpdateAndSourcesScreensTest {
     }
 
     @Test
-    fun stage4Widgets() {
+    fun stage4Widgets() = widgetGallery("s4_widget")
+
+    /** The same gallery in the night palette: the widget colours are resources, so the system theme switches them. */
+    @Test
+    @Config(qualifiers = "ru-w411dp-h891dp-night-xxhdpi")
+    fun stage4WidgetsDark() = widgetGallery("s4_widget_night")
+
+    private fun widgetGallery(prefix: String) {
         seedReading()
         seedNewChapters()
+        seedSessions()
         val manager = android.appwidget.AppWidgetManager.getInstance(context)
         val continueId = shadowOf(manager).createWidget(ContinueReadingWidget::class.java, R.layout.widget_continue)
         val newId = shadowOf(manager).createWidget(NewChaptersWidget::class.java, R.layout.widget_new_chapters)
         val smallId = shadowOf(manager).createWidget(NewChaptersWidget::class.java, R.layout.widget_new_chapters)
         val tinyId = shadowOf(manager).createWidget(NewChaptersWidget::class.java, R.layout.widget_new_chapters)
+        val shelfId = shadowOf(manager).createWidget(ShelfWidget::class.java, R.layout.widget_shelf)
+        val streakId = shadowOf(manager).createWidget(StreakWidget::class.java, R.layout.widget_streak)
+        val audioId = shadowOf(manager).createWidget(AudioWidgetProvider::class.java, R.layout.widget_audio)
         fun size(id: Int, width: Int, height: Int) = manager.updateAppWidgetOptions(
             id,
             android.os.Bundle().apply {
@@ -388,10 +410,27 @@ class UpdateAndSourcesScreensTest {
         size(newId, 300, 200)
         size(smallId, 160, 120)
         size(tinyId, 80, 80)
+        size(shelfId, 340, 250)
+        size(streakId, 160, 160)
+        size(audioId, 340, 110)
         runBlocking {
             ContinueWidgets.refresh(context)
             NewChaptersWidgets.refresh(context)
+            ShelfWidgets.refresh(context)
+            StreakWidgets.refresh(context)
         }
+        AudioWidgetContract.save(
+            context,
+            AudioWidgetState(
+                bookId = 7,
+                bookTitle = "Тихий океан",
+                trackTitle = "Глава 4 · Море",
+                playing = true,
+                positionMs = 1_245_000,
+                durationMs = 4_320_000,
+            ),
+        )
+        AudioWidgetProvider().onReceive(context, AudioWidgetContract.updateIntent(context))
         shadowOf(Looper.getMainLooper()).idle()
         // The count of every new chapter, not only the visible rows, sits in the header.
         val newView = shadowOf(manager).getViewFor(newId)
@@ -400,12 +439,26 @@ class UpdateAndSourcesScreensTest {
         }
         assertEquals("stored new chapters", 3, total)
         assertEquals("3 новых", newView.findViewById<TextView>(R.id.nc_count).text.toString())
-        captureWidget(shadowOf(manager).getViewFor(continueId), 340, 250, "s4_widget_continue")
-        captureWidget(newView, 300, 200, "s4_widget_new_chapters")
-        captureWidget(shadowOf(manager).getViewFor(smallId), 160, 120, "s4_widget_new_chapters_small")
+        val continueView = shadowOf(manager).getViewFor(continueId)
+        captureWidget(continueView, 340, 250, "${prefix}_continue")
+        captureWidget(newView, 300, 200, "${prefix}_new_chapters")
+        captureWidget(shadowOf(manager).getViewFor(smallId), 160, 120, "${prefix}_new_chapters_small")
         val tinyView = shadowOf(manager).getViewFor(tinyId)
-        assertEquals("3 новых", tinyView.findViewById<TextView>(R.id.nc_count).text.toString())
-        captureWidget(tinyView, 80, 80, "s4_widget_new_chapters_tiny")
+        assertEquals("3", tinyView.findViewById<TextView>(R.id.nc_count).text.toString())
+        captureWidget(tinyView, 80, 80, "${prefix}_new_chapters_tiny")
+        // The same card style on the shelf, the streak tile of the stats screen and the mini player.
+        val shelfView = shadowOf(manager).getViewFor(shelfId)
+        assertEquals("Полка", shelfView.findViewById<TextView>(R.id.widget_shelf_header_text).text.toString())
+        assertTrue(shelfView.findViewById<TextView>(R.id.widget_shelf_title_0).text.toString().isNotBlank())
+        captureWidget(shelfView, 340, 250, "${prefix}_shelf")
+        val streakView = shadowOf(manager).getViewFor(streakId)
+        assertEquals("5", streakView.findViewById<TextView>(R.id.widget_streak_number).text.toString())
+        captureWidget(streakView, 160, 160, "${prefix}_streak")
+        val audioView = shadowOf(manager).getViewFor(audioId)
+        assertEquals("Тихий океан", audioView.findViewById<TextView>(R.id.widget_audio_title).text.toString())
+        assertEquals(View.VISIBLE, audioView.findViewById<View>(R.id.widget_audio_toggle).visibility)
+        assertEquals(View.VISIBLE, audioView.findViewById<View>(R.id.widget_audio_progress).visibility)
+        captureWidget(audioView, 340, 110, "${prefix}_audio")
     }
 
     /** E2: the last check report names the rule that skipped a title instead of only counting it. */
@@ -452,6 +505,24 @@ class UpdateAndSourcesScreensTest {
                     uri = "file:///books/$i.epub", isLinked = false, fileSize = 120_000, fileHash = null,
                     coverPath = null, status = "READING", isManga = false, addedAt = now - 5 * 86_400_000,
                     lastReadAt = now - i * 3_600_000L, progress = progress, readerSettingsJson = null,
+                ),
+            )
+        }
+    }
+
+    /** Five days of reading in a row, twenty minutes a day: the streak tile shows a readable number and a pill. */
+    private fun seedSessions() = runBlocking {
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
+        for (i in 0 until 5) {
+            val start = today.minusDays(i.toLong()).atTime(12, 0).atZone(zone).toInstant().toEpochMilli()
+            db.sessions().insert(
+                ReadingSessionEntity(
+                    bookId = null,
+                    startedAt = start,
+                    durationMs = 20 * 60_000L,
+                    pages = 12,
+                    chars = 2_400,
                 ),
             )
         }

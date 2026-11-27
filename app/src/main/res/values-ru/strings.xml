@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="process_text_label">Найти в Yomu</string>
     <string name="share_listen_label">Слушать в Yomu</string>
     <string name="import_failed_count">с ошибкой: %1$d</string>
@@ -54,6 +54,12 @@
     <string name="whats_new_title">Что нового в Yomu</string>
     <string name="whats_new_ok">Понятно</string>
     <string name="whats_new_all">Все изменения</string>
+    <string-array name="whats_new_2_20_0">
+        <item>В журнале собраны последняя книга, цель на сегодня и история чтения.</item>
+        <item>Обновили виджеты и добавили подписи языков в сетке каталога.</item>
+        <item>Переходы журнала и меню учитывают уменьшение движения и отключение анимаций в Android.</item>
+        <item>DOCX учитывает режим отдельной книги. Проба голоса сохраняет место чтения.</item>
+    </string-array>
     <string-array name="whats_new_2_19_0">
         <item>Источники в каталоге можно показать списком или сеткой. Кнопки остаются читаемыми при крупном шрифте.</item>
         <item>Подбирайте сведения через AniList, MangaBaka и MyAnimeList и открывайте страницы трекеров.</item>
@@ -244,15 +250,15 @@
         <item>Можно включить проверку раз в день — тогда о новой версии подскажут точка на «Настройках» и карточка вверху настроек.</item>
         <item>Этот список — один раз после каждого обновления.</item>
     </string-array>
-    <!-- Вкладка «Профиль» (1.8.0) -->
-    <string name="profile_title">Профиль</string>
+    <!-- Журнал чтения (2.20.0, бывшая вкладка «Профиль») -->
+    <string name="profile_title">Журнал</string>
     <string name="profile_tab_overview">Обзор</string>
     <string name="profile_tab_stats">Статистика</string>
     <string name="profile_stats_summary">Прочитано: %1$s · страниц: %2$s · серия: %3$s дн.</string>
     <string name="profile_tab_history">История</string>
     <string name="profile_default_name">Читатель</string>
     <string name="profile_set_name">Нажмите, чтобы задать имя и аватар</string>
-    <string name="profile_edit">Изменить профиль</string>
+    <string name="profile_edit">Изменить имя и аватар</string>
     <string name="profile_name">Имя</string>
     <string name="profile_avatar">Аватар</string>
     <string name="profile_since">Читает в Yomu с %1$s</string>
@@ -261,6 +267,8 @@
     <string name="profile_total_time">Всего за чтением</string>
     <string name="profile_open_stats">Статистика</string>
     <string name="profile_today">Сегодня: %1$d из %2$d мин</string>
+    <string name="profile_today_goal">Сегодня</string>
+    <string name="profile_today_of_goal">из %1$d мин</string>
     <string name="profile_stat_books">Книг прочитано</string>
     <string name="profile_stat_titles">Произведений</string>
     <string name="profile_stat_streak">Дней подряд</string>
@@ -287,14 +295,30 @@
     <string name="profile_continue_reading">Продолжить чтение</string>
     <string name="profile_start_reading">Начать чтение</string>
     <string name="profile_open_library">Открыть библиотеку</string>
-    <string name="profile_open_catalog">Открыть каталог</string>
+    <string name="profile_open_catalog">Найти в каталоге</string>
+    <string name="profile_choose_book">Выбрать книгу</string>
+    <string name="profile_choose_book_hint">Последняя книга не попала в историю. Откройте библиотеку или найдите что-нибудь в каталоге.</string>
+    <string name="profile_continue_chapter">Продолжить главу</string>
+    <string name="profile_open_title">Открыть тайтл</string>
+    <string name="profile_tools">Мои инструменты</string>
+    <string name="profile_tool_statistics">Статистика</string>
+    <string name="profile_tool_statistics_sum">Всё время, неделя и достижения</string>
+    <string name="profile_history_entry">Все чтения, сгруппированные по дням</string>
+    <string name="profile_share_edit">Имя, аватар и карточка</string>
+    <string name="profile_share_edit_sum">Как вы выглядите на карточке статистики</string>
     <string name="profile_reading_week">Последние семь дней</string>
+    <plurals name="profile_downloads_queue">
+        <item quantity="one">%1$d в очереди</item>
+        <item quantity="few">%1$d в очереди</item>
+        <item quantity="many">%1$d в очереди</item>
+        <item quantity="other">%1$d в очереди</item>
+    </plurals>
     <string name="onboarding_yomu_accent">Акцент Yomu</string>
     <string name="onboarding_classic_accent">Классический акцент</string>
     <string name="profile_all_history">Вся история</string>
     <string name="profile_share_section">Поделиться и перенести</string>
     <string name="profile_share_summary">Карточка статистики, CSV истории, резервная копия</string>
-    <string name="profile_share_hint">Профиль хранится на этом устройстве — аккаунт и сервер не нужны. Поделитесь им картинкой или текстом либо перенесите всё на другой телефон резервной копией.</string>
+    <string name="profile_share_hint">Данные чтения хранятся на этом устройстве — аккаунт и сервер не нужны. Поделитесь ими картинкой или текстом либо перенесите всё на другой телефон резервной копией.</string>
     <string name="profile_share_card">Карточка статистики</string>
     <string name="profile_share_card_sum">Картинка со временем чтения, серией и книгами</string>
     <string name="profile_share_text">Статистика текстом</string>
@@ -349,16 +373,18 @@
     <string name="widget_streak_label">Серия чтения</string>
     <string name="widget_streak_description">Дни чтения подряд и время чтения сегодня.</string>
     <string name="widget_streak_days_zero">Пока нет чтения</string>
+    <string name="widget_streak_zero" translatable="false">0</string>
     <string name="widget_streak_empty">Начните читать — и серия появится здесь.</string>
     <string name="widget_streak_today">Сегодня: %1$s</string>
     <string name="widget_streak_today_none">Сегодня ещё не читали</string>
     <string name="widget_streak_minutes">%1$d мин</string>
     <string name="widget_streak_hours">%1$d ч %2$d мин</string>
-    <plurals name="widget_streak_days">
-        <item quantity="one">%1$d день подряд</item>
-        <item quantity="few">%1$d дня подряд</item>
-        <item quantity="many">%1$d дней подряд</item>
-        <item quantity="other">%1$d дня подряд</item>
+    <!-- The count is the big serif number above, so the label carries only the words: "21" + "день подряд". -->
+    <plurals name="widget_streak_days" tools:ignore="ImpliedQuantity">
+        <item quantity="one">день подряд</item>
+        <item quantity="few">дня подряд</item>
+        <item quantity="many">дней подряд</item>
+        <item quantity="other">дня подряд</item>
     </plurals>
     <plurals name="widget_unread_chapters">
         <item quantity="one">%1$d непрочитанная глава</item>

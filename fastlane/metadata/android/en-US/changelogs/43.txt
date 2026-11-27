@@ -1,0 +1,4 @@
+• The new journal brings together your last book, daily goal and reading history.
+• Refreshed widgets and clearer language labels in the source grid.
+• Journal transitions and menus respect reduced motion.
+• Fixed Word reading modes, TTS voice previews and empty backup selections.

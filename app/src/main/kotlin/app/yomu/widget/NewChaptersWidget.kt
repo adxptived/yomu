@@ -201,11 +201,13 @@ object NewChaptersWidgets : KoinComponent {
         )
         v.setOnClickPendingIntent(R.id.nc_header, openUpdates)
         if (tiny) {
-            v.setTextViewText(R.id.nc_count, if (data.total > 0) {
+            v.setTextViewText(R.id.nc_count, "%d".format(data.total))
+            val description = if (data.total > 0) {
                 context.getString(R.string.widget_new_chapters_count, data.total)
             } else {
                 context.getString(R.string.widget_new_chapters_label)
-            })
+            }
+            v.setContentDescription(R.id.nc_header, description)
             return v
         }
         v.setOnClickPendingIntent(R.id.nc_empty, openUpdates)

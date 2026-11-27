@@ -2927,6 +2927,7 @@ class ReaderViewModel(
 
     /** N02: a short sample with the current voice, speed and pitch; it never advances the reading queue. */
     fun previewTts() {
+        if (_ttsActive.value) return
         tts.speakSample(context.getString(R.string.reader_tts_sample))
     }
 

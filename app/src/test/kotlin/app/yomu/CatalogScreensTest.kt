@@ -614,11 +614,14 @@ class CatalogScreensTest {
     @OptIn(ExperimentalTestApi::class)
     @Test
     fun sourceBulkEditor() {
-        seed()
-        val settings = GlobalContext.get().get<AppSettings>()
+        val koin = GlobalContext.get()
+        val settings = koin.get<AppSettings>()
         runBlocking {
+            val sources = koin.get<SourceManager>()
+            sources.addOpds("First fixture", "https://fixture.invalid/first", username = null, password = null)
+            sources.addOpds("Second fixture", "https://fixture.invalid/second", username = null, password = null)
             settings.contentPreference.set(ContentPreference.MIXED)
-            settings.catalogSourceFilter.set(SourceListFilter())
+            settings.catalogSourceFilter.set(SourceListFilter(kinds = setOf("OPDS")))
         }
         compose.setContent {
             YomuTheme {
@@ -633,6 +636,7 @@ class CatalogScreensTest {
         compose.onNode(editSources).performClick()
         awaitText("Select all")
         compose.onAllNodesWithText("Select all")[0].performClick()
+        awaitText("Selected: 2")
         compose.mainClock.advanceTimeBy(1_000)
         shot("37_catalog_sources_bulk")
         compose.onAllNodesWithText("Actions")[0].performClick()

@@ -3,7 +3,9 @@ package app.yomu.core.ui.components
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -28,6 +30,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -135,12 +138,22 @@ fun BookGridItem(
 ) {
     val border = if (selected || highlighted) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small) else Modifier
     val split = onInfoClick != null
+    // A long press starts the selection: the cover answers the hold with a small, local shrink and returns on release.
+    val interaction = remember { MutableInteractionSource() }
     Column(
         modifier
             .clip(MaterialTheme.shapes.small)
             .then(
                 if (split) Modifier else Modifier
-                    .combinedClickable(onClickLabel = readLabel, role = Role.Button, onClick = onClick, onLongClick = onLongClick)
+                    .pressPulse(interaction, scaleOnPress = onLongClick != null || selectionMode, pulseShape = MaterialTheme.shapes.small)
+                    .combinedClickable(
+                        interactionSource = interaction,
+                        indication = LocalIndication.current,
+                        onClickLabel = readLabel,
+                        role = Role.Button,
+                        onClick = onClick,
+                        onLongClick = onLongClick,
+                    )
                     .semantics(mergeDescendants = true) {
                         contentDescription = listOfNotNull(title, subtitle?.takeIf { it.isNotBlank() }, badge).joinToString(", ")
                         this.selected = selected

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pastel lavender pills for counts and small actions, as in the app. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/widget_accent_surface" />
+    <corners android:radius="100dp" />
+</shape>

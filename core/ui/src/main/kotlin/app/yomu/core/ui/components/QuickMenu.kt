@@ -1,6 +1,7 @@
 package app.yomu.core.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -36,6 +37,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -83,7 +85,13 @@ fun QuickActionMenu(
     }
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
-    val progress by animateFloatAsState(if (shown) 1f else 0f, spring(dampingRatio = 0.7f, stiffness = 500f), label = "quickMenu")
+    // Reduced motion: the menu is there at once; the items are tappable from the first frame either way.
+    val reduce = LocalReduceMotion.current
+    val progress by animateFloatAsState(
+        if (shown) 1f else 0f,
+        if (reduce) snap() else spring(dampingRatio = 0.7f, stiffness = 500f),
+        label = "quickMenu",
+    )
     // The popup must cover the whole window: [anchor] is in window coordinates and the list is placed from it.
     val dismiss by rememberUpdatedState(onDismiss)
     Popup(
@@ -110,7 +118,7 @@ private fun ListMenu(anchor: Offset, items: List<QuickMenuItem>, progress: Float
                 shape = MaterialTheme.shapes.large,
                 tonalElevation = 6.dp,
                 shadowElevation = 10.dp,
-                modifier = Modifier.widthIn(min = 200.dp, max = 300.dp).heightIn(max = 460.dp).alpha(progress).scale(0.9f + 0.1f * progress),
+                modifier = Modifier.widthIn(min = 200.dp, max = 300.dp).heightIn(max = 460.dp),
             ) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
                     if (title != null) {
@@ -138,7 +146,15 @@ private fun ListMenu(anchor: Offset, items: List<QuickMenuItem>, progress: Float
             } else {
                 (constraints.maxHeight - placeable.height) / 2
             }
-            placeable.place(x, y)
+            // The reveal grows from the anchor: horizontally from the finger, vertically from the edge nearest to it.
+            val originX = if (anchor.isSpecified) ((anchor.x - x) / placeable.width).coerceIn(0f, 1f) else 0.5f
+            val originY = if (anchor.isSpecified && anchor.y < y) 0f else 1f
+            placeable.placeWithLayer(x, y) {
+                alpha = progress
+                scaleX = 0.9f + 0.1f * progress
+                scaleY = 0.9f + 0.1f * progress
+                transformOrigin = TransformOrigin(originX, originY)
+            }
         }
     }
 }

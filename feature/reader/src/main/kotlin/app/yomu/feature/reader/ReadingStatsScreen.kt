@@ -5,6 +5,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -102,7 +103,14 @@ import java.time.format.TextStyle
 import java.util.Locale
 import app.yomu.core.ui.R as CoreR
 
-data class StatsUi(val summary: StatsSummary, val titles: Map<String, TitleInfo>, val goalMinutes: Int, val finished: Int)
+data class StatsUi(
+    val summary: StatsSummary,
+    val titles: Map<String, TitleInfo>,
+    val goalMinutes: Int,
+    val finished: Int,
+    /** Reading time over every session, independent of the chosen period. */
+    val allTimeMs: Long,
+)
 
 class ReadingStatsViewModel(
     private val stats: StatsRepository,
@@ -116,10 +124,12 @@ class ReadingStatsViewModel(
         .mapLatest { (sessions, p, goal) ->
             if (sessions.isEmpty()) return@mapLatest UiState.Empty
             val zone = ZoneId.systemDefault()
-            val summary = StatsCalculator.compute(sessions, p, System.currentTimeMillis(), zone)
+            val now = System.currentTimeMillis()
+            val summary = StatsCalculator.compute(sessions, p, now, zone)
             val titles = history.describe(summary.topTitles.map { it.key })
             val from = if (p == StatsPeriod.ALL) 0L else summary.from.atStartOfDay(zone).toInstant().toEpochMilli()
-            UiState.Data(StatsUi(summary, titles, goal, history.finishedBooksSince(from)))
+            val allTime = if (p == StatsPeriod.ALL) summary else StatsCalculator.compute(sessions, StatsPeriod.ALL, now, zone)
+            UiState.Data(StatsUi(summary, titles, goal, history.finishedBooksSince(from), allTime.totalMs))
         }
         // The summary goes over every session ever recorded: not on the main thread (it made the tab stutter).
         .flowOn(Dispatchers.Default)
@@ -184,7 +194,14 @@ fun ReadingStatsActions(viewModel: ReadingStatsViewModel) {
  * and by the Statistics tab of the profile (1.8.0), where it scrolls on under the floating navigation bar.
  */
 @Composable
-fun ReadingStatsPane(viewModel: ReadingStatsViewModel, modifier: Modifier = Modifier) {
+fun ReadingStatsPane(
+    viewModel: ReadingStatsViewModel,
+    modifier: Modifier = Modifier,
+    /** Most read titles are a journal block of their own and can be hidden in Settings. */
+    showTopTitles: Boolean = true,
+    /** Milestones (achievements) come from the journal, which owns the profile settings. */
+    achievements: (@Composable ColumnScope.() -> Unit)? = null,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val period by viewModel.period.collectAsStateWithLifecycle()
     StateContent(
@@ -199,11 +216,18 @@ fun ReadingStatsPane(viewModel: ReadingStatsViewModel, modifier: Modifier = Modi
                 modifier = modifier,
             )
         },
-    ) { s -> StatsContent(s, period, { viewModel.period.value = it }, modifier) }
+    ) { s -> StatsContent(s, period, { viewModel.period.value = it }, modifier, showTopTitles, achievements) }
 }
 
 @Composable
-private fun StatsContent(ui: StatsUi, period: StatsPeriod, onPeriod: (StatsPeriod) -> Unit, modifier: Modifier) {
+private fun StatsContent(
+    ui: StatsUi,
+    period: StatsPeriod,
+    onPeriod: (StatsPeriod) -> Unit,
+    modifier: Modifier,
+    showTopTitles: Boolean,
+    achievements: (@Composable ColumnScope.() -> Unit)?,
+) {
     val s = ui.summary
     Column(
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = navBarBottomPadding(8.dp)),
@@ -224,6 +248,14 @@ private fun StatsContent(ui: StatsUi, period: StatsPeriod, onPeriod: (StatsPerio
         // Hero: time in the period and the change against the previous one.
         ElevatedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
+                // The all-time total stays visible next to a shorter period, so the journal's brief card leads here.
+                if (period != StatsPeriod.ALL && ui.allTimeMs > s.totalMs) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.stats_all), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        Text(duration(ui.allTimeMs), style = MaterialTheme.typography.titleSmall)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
                 Text(stringResource(R.string.stats_total), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(duration(s.totalMs), style = MaterialTheme.typography.displaySmall)
                 if (period != StatsPeriod.ALL && s.previousTotalMs > 0) {
@@ -260,7 +292,9 @@ private fun StatsContent(ui: StatsUi, period: StatsPeriod, onPeriod: (StatsPerio
             StatCard(stringResource(R.string.stats_best), pluralStringResource(R.plurals.stats_days, s.bestStreak, s.bestStreak), cell)
         }
 
-        if (s.topTitles.isNotEmpty()) {
+        achievements?.invoke(this)
+
+        if (showTopTitles && s.topTitles.isNotEmpty()) {
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(stringResource(R.string.stats_top_titles), style = MaterialTheme.typography.titleMedium)

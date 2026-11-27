@@ -13,6 +13,7 @@ import app.yomu.YomuActivity
 import app.yomu.feature.audio.AudioPlaybackService
 import app.yomu.feature.audio.AudioWidgetContract
 import app.yomu.feature.audio.AudioWidgetState
+import kotlin.math.roundToInt
 
 /**
  * The audiobook transport widget (A03c).
@@ -55,6 +56,7 @@ class AudioWidgetProvider : AppWidgetProvider() {
             v.setViewVisibility(R.id.widget_audio_toggle, View.GONE)
             v.setViewVisibility(R.id.widget_audio_back, View.GONE)
             v.setViewVisibility(R.id.widget_audio_forward, View.GONE)
+            v.setViewVisibility(R.id.widget_audio_progress, View.GONE)
             return v
         }
         v.setTextViewText(R.id.widget_audio_title, state.bookTitle)
@@ -62,10 +64,21 @@ class AudioWidgetProvider : AppWidgetProvider() {
             R.id.widget_audio_subtitle,
             listOfNotNull(state.trackTitle.takeIf { it.isNotBlank() }, position(state)).joinToString(" · "),
         )
+        // A stopped player hides the transport; a new state must bring it back on the same widget instance.
+        v.setViewVisibility(R.id.widget_audio_toggle, View.VISIBLE)
+        v.setViewVisibility(R.id.widget_audio_back, View.VISIBLE)
+        v.setViewVisibility(R.id.widget_audio_forward, View.VISIBLE)
         v.setImageViewResource(
             R.id.widget_audio_toggle,
-            if (state.playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+            if (state.playing) R.drawable.widget_ic_pause else R.drawable.widget_ic_play,
         )
+        if (state.durationMs > 0) {
+            val fraction = (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f)
+            v.setProgressBar(R.id.widget_audio_progress, PROGRESS_MAX, (fraction * PROGRESS_MAX).roundToInt(), false)
+            v.setViewVisibility(R.id.widget_audio_progress, View.VISIBLE)
+        } else {
+            v.setViewVisibility(R.id.widget_audio_progress, View.GONE)
+        }
         v.setOnClickPendingIntent(R.id.widget_audio_toggle, serviceIntent(context, AudioWidgetContract.ACTION_TOGGLE, widgetId * REQUESTS_PER_WIDGET + 1))
         v.setOnClickPendingIntent(R.id.widget_audio_back, serviceIntent(context, AudioWidgetContract.ACTION_BACK, widgetId * REQUESTS_PER_WIDGET + 2))
         v.setOnClickPendingIntent(R.id.widget_audio_forward, serviceIntent(context, AudioWidgetContract.ACTION_FORWARD, widgetId * REQUESTS_PER_WIDGET + 3))
@@ -89,5 +102,6 @@ class AudioWidgetProvider : AppWidgetProvider() {
     private companion object {
         /** Room for four pending intents per widget instance. */
         const val REQUESTS_PER_WIDGET = 4
+        const val PROGRESS_MAX = 1000
     }
 }

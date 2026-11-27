@@ -138,17 +138,17 @@
     <string name="set_tts_speed_sum">How fast the voice reads</string>
     <string name="set_tts_pitch_sum">Higher or lower voice</string>
 
-    <string name="set_profile">Profile</string>
-    <string name="set_profile_sum">Which blocks the overview shows</string>
-    <string name="set_profile_blocks">Overview blocks</string>
+    <string name="set_profile">Journal</string>
+    <string name="set_profile_sum">Which blocks the journal shows</string>
+    <string name="set_profile_blocks">Journal blocks</string>
     <string name="set_profile_stats">Statistics</string>
     <string name="set_profile_stats_sum">Books finished, pages, streaks and other numbers</string>
     <string name="set_profile_milestones">Milestones</string>
     <string name="set_profile_milestones_sum">Reading time, streaks, books, pages and words levels</string>
     <string name="set_profile_top">Most read</string>
     <string name="set_profile_top_sum">The titles you read the most</string>
-    <string name="set_profile_recent">Recently read</string>
-    <string name="set_profile_recent_sum">The last few books and chapters</string>
+    <string name="set_profile_recent">Continue reading</string>
+    <string name="set_profile_recent_sum">The last book or chapter at the top of the journal</string>
     <string name="set_profile_share">Share and transfer</string>
     <string name="set_profile_share_sum">Statistics card, history CSV and a backup</string>
 

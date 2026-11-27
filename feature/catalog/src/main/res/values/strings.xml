@@ -376,6 +376,7 @@
     <string name="webview_reload">Reload</string>
     <string name="webview_open_browser">Open in browser</string>
     <string name="source_lang_multi">Multilingual</string>
+    <string name="source_lang_tile_multi">Multi</string>
     <!-- Language switch of a source with a source per language (1.9.0) -->
     <string name="source_lang_all_short">ALL</string>
     <string name="source_language">Language of the source: %1$s</string>

@@ -252,9 +252,11 @@ class Release200Test {
         fun text(id: Int) = view.findViewById<TextView>(id).text.toString()
         // The online title was read a minute later than the book.
         assertEquals("Online Title", text(R.id.widget_title_0))
-        assertEquals("7 unread chapters · 30%", text(R.id.widget_subtitle_0))
+        assertEquals("7 unread chapters", text(R.id.widget_subtitle_0))
+        assertEquals("30%", text(R.id.widget_percent_0))
         assertEquals("Widget Book", text(R.id.widget_title_1))
-        assertEquals("Ann Author · 42%", text(R.id.widget_subtitle_1))
+        assertEquals("Ann Author", text(R.id.widget_subtitle_1))
+        assertEquals("42%", text(R.id.widget_percent_1))
         assertEquals(View.VISIBLE, view.findViewById<View>(R.id.widget_row_1).visibility)
         assertEquals(View.GONE, view.findViewById<View>(R.id.widget_row_2).visibility)
         assertEquals(View.GONE, view.findViewById<View>(R.id.widget_empty).visibility)

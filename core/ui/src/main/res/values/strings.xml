@@ -69,7 +69,7 @@
     <string name="tabs_delete_text">“%1$s” will be deleted. Its books and titles stay in the library.</string>
     <!-- 1.6.0: navigation bar (moved from the app module) -->
     <string name="nav_library">Library</string>
-    <string name="nav_history">Profile</string>
+    <string name="nav_history">Journal</string>
     <string name="nav_catalog">Catalog</string>
     <string name="nav_dictionary">Words</string>
     <string name="nav_settings">Settings</string>

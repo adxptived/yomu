@@ -11,6 +11,7 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -36,6 +37,11 @@ import app.yomu.data.book.EpubBuilder
 import app.yomu.data.book.EpubMeta
 import app.yomu.data.library.ImportOutcome
 import app.yomu.data.library.ImportService
+import app.yomu.core.datastore.AppSettings
+import app.yomu.core.datastore.SettingsJson
+import app.yomu.domain.model.BookReaderSettings
+import app.yomu.domain.model.TextReaderSettings
+import app.yomu.domain.repository.BookRepository
 import app.yomu.domain.repository.StatsRepository
 import com.github.takahirom.roborazzi.captureRoboImage
 import kotlinx.coroutines.runBlocking
@@ -142,13 +148,13 @@ class AppSmokeTest {
     fun emptyProfileCanOpenLibraryAndCatalog() {
         val settings = GlobalContext.get().get<app.yomu.core.datastore.AppSettings>()
         runBlocking { settings.onboardingDone.set(true) }
-        clickTab("Profile")
+        clickTab("Journal")
         awaitText("Start reading")
         compose.onAllNodesWithText("Open library")[0].performClick()
         awaitText("Your library is empty")
 
-        clickTab("Profile")
-        compose.onAllNodesWithText("Open catalog")[0].performClick()
+        clickTab("Journal")
+        compose.onAllNodesWithText("Find in catalog")[0].performClick()
         awaitText("Internet Archive")
     }
 
@@ -264,19 +270,67 @@ class AppSmokeTest {
                 stats.recordSession(bookId, now - daysAgo * day - minutes * 60_000L, minutes * 60_000L, pages = minutes, chars = minutes * 900L)
             }
         }
-        // The profile tab sums everything up; History is its second segment and the statistics open from the overview.
-        clickTab("Profile")
-        awaitText("Total reading time")
+        // The journal: the last book, today's goal and the tools. History is one tap away in its top bar, statistics
+        // open from the today card.
+        clickTab("Journal")
+        awaitText("Smoke Test Book")
+        awaitText("Today")
         settle()
         shot("10_profile")
-        compose.onNode(hasText("History") and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton)).performClick()
+        compose.onAllNodes(hasContentDescription("History"))[0].performClick()
         awaitText("Smoke Test Book")
+        settle()
         shot("11_history")
-        compose.onNode(hasText("Overview") and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton)).performClick()
-        awaitText("Total reading time")
-        compose.onNode(hasText("Total reading time")).performClick()
+        compose.onNodeWithContentDescription("Back").performClick()
+        awaitText("Today")
+        compose.onNode(hasText("Today") and hasClickAction()).performClick()
         awaitText("Time read")
+        settle()
         shot("12_stats")
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun wordPageLayoutCanSwitchToTextWithLayoutAsTheDefault() {
+        openWordFromJournal()
+        compose.waitUntilAtLeastOneExists(hasContentDescription("Text mode"), 20_000)
+        shot("248_docx_page_layout")
+        compose.onNodeWithContentDescription("Text mode").performClick()
+        compose.waitUntilDoesNotExist(hasText("Page layout"), 20_000)
+
+        back()
+        awaitText("My tools")
+        shot("249_docx_back_to_journal")
+    }
+
+    @Test
+    fun wordWithBookSpecificScrollingOpensInTheTextReader() {
+        openWordFromJournal(TextReaderSettings(paged = false))
+        awaitText("Got it")
+        compose.onNode(hasText("Page layout")).assertDoesNotExist()
+    }
+
+    private fun openWordFromJournal(bookTextSettings: TextReaderSettings? = null) {
+        val koin = GlobalContext.get()
+        val settings = koin.get<AppSettings>()
+        val source = File("../data/src/test/resources/docx/sample.docx")
+        val wordFile = source.copyTo(File(compose.activity.cacheDir, "smoke.docx"), overwrite = true)
+        val bookTitle = runBlocking {
+            settings.onboardingDone.set(true)
+            settings.docxPageLayout.set(true)
+            settings.textSettings.set(TextReaderSettings(paged = true, longStrip = false))
+            val imported = koin.get<ImportService>().importLocalFile(wordFile, "smoke.docx") as ImportOutcome.Added
+            val books = koin.get<BookRepository>()
+            bookTextSettings?.let {
+                books.saveReaderSettings(imported.bookId, SettingsJson.encodeToString(BookReaderSettings.serializer(), BookReaderSettings(text = it)))
+            }
+            val now = System.currentTimeMillis()
+            koin.get<StatsRepository>().recordSession(imported.bookId, now - 60_000L, 60_000L, pages = 1, chars = 0L)
+            checkNotNull(books.getBook(imported.bookId)).title
+        }
+        clickTab("Journal")
+        awaitText(bookTitle)
+        compose.onNode(hasText(bookTitle) and hasClickAction()).performClick()
     }
 
     /** Generated comic pages: a coloured page with two panels and a big page number. */

@@ -1,6 +1,7 @@
 package app.yomu
 
 import android.content.Context
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -22,6 +24,7 @@ import app.yomu.core.ui.components.IncognitoBanner
 import app.yomu.core.ui.theme.ThemeConfig
 import app.yomu.core.ui.theme.ThemeMode
 import app.yomu.core.ui.theme.YomuTheme
+import app.yomu.data.backup.BackupManager
 import app.yomu.data.backup.SyncManager
 import app.yomu.feature.settings.AppUpdates
 import app.yomu.feature.settings.SettingsLinks
@@ -29,6 +32,7 @@ import app.yomu.feature.settings.SettingsScreen
 import app.yomu.feature.settings.SettingsSection
 import app.yomu.feature.settings.SettingsViewModel
 import com.github.takahirom.roborazzi.captureRoboImage
+import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -139,6 +143,35 @@ class Release210ScreensTest {
         awaitText("What to sync")
         compose.onNodeWithText("Tracker links").performScrollTo()
         shot("222_settings_sync_categories")
+    }
+
+    @Test
+    fun restoreRequiresASelectionAndCancelLeavesPreferencesAlone() {
+        val vm = model()
+        val archive = File(context.cacheDir, "settings-test.zip")
+        runBlocking {
+            settings.profileShowStats.set(false)
+            val manager = GlobalContext.get().get<BackupManager>()
+            archive.outputStream().use { manager.create(it, includeFiles = false) }
+            settings.profileShowStats.set(true)
+        }
+        compose.setContent {
+            YomuTheme(dark) { SettingsScreen(viewModel = vm, links = SettingsLinks(), initialSection = SettingsSection.BACKUP) }
+        }
+        compose.runOnIdle { vm.previewBackup(Uri.fromFile(archive)) }
+        awaitText("What is in this backup")
+        val categories = listOf(
+            "Books and progress", "Highlights, notes, bookmarks", "Words", "Catalog and tracking",
+            "Reading sessions", "Settings", "Book files", "Glossary notes",
+        )
+        for (category in categories) {
+            compose.onNodeWithText(category).performScrollTo().performClick()
+        }
+        compose.onNodeWithText("Restore").assertIsNotEnabled()
+        compose.onNodeWithText("Cancel").performClick()
+
+        compose.onNodeWithText("What is in this backup").assertDoesNotExist()
+        assertEquals(true, runBlocking { settings.profileShowStats.get() })
     }
 
     @Test

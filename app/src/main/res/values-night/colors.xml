@@ -2,10 +2,15 @@
 <resources>
     <color name="yomu_background">#121318</color>
     <bool name="yomu_light_bars">false</bool>
-    <color name="widget_background">#F21B1C22</color>
-    <color name="widget_surface">#FF262731</color>
-    <color name="widget_on_background">#E4E1E9</color>
-    <color name="widget_on_background_variant">#C5C5DA</color>
-    <color name="widget_accent">#BCC2FF</color>
-    <color name="widget_track">#3A3D55</color>
+    <!-- The night palette of the same Yomu accent: graphite surfaces and a light lavender accent. -->
+    <color name="widget_background">#121118</color>
+    <color name="widget_surface">#26242E</color>
+    <color name="widget_on_background">#ECEBEF</color>
+    <color name="widget_on_background_variant">#BFBDC7</color>
+    <color name="widget_accent">#B5ACDD</color>
+    <color name="widget_track">#3B3746</color>
+    <color name="widget_accent_surface">#3B3351</color>
+    <color name="widget_on_accent_surface">#E2DCF6</color>
+    <color name="widget_outline">#2E2A36</color>
+    <color name="widget_press">#33B5ACDD</color>
 </resources>

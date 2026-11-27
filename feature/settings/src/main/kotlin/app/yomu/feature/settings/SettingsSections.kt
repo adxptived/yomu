@@ -1613,7 +1613,10 @@ internal fun ColumnScope.BackupSection(vm: SettingsViewModel, onOpenSync: () -> 
                 }
             },
             confirmButton = {
-                TextButton(onClick = { vm.confirmRestore(BackupOptions(merge = !replace, categories = chosen)) }) {
+                TextButton(
+                    enabled = chosen.isNotEmpty(),
+                    onClick = { vm.confirmRestore(BackupOptions(merge = !replace, categories = chosen)) },
+                ) {
                     Text(stringResource(R.string.set_restore))
                 }
             },

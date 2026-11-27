@@ -316,6 +316,7 @@ internal fun TtsSheet(vm: ReaderViewModel, common: CommonReaderSettings, onDismi
             title = stringResource(R.string.tts_sample),
             summary = stringResource(R.string.tts_sample_summary),
             icon = Icons.Default.PlayArrow,
+            enabled = !active,
             onClick = vm::previewTts,
         )
         Text(

@@ -177,6 +177,7 @@ import dev.chrisbanes.haze.rememberHazeState
 import app.yomu.core.ui.components.WheelLayout
 import app.yomu.core.ui.components.YomuFab
 import app.yomu.core.ui.components.YomuSheet
+import app.yomu.core.ui.components.animateMotionFloat
 import app.yomu.core.ui.components.asFastScrollTarget
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.motionItem
@@ -718,8 +719,11 @@ fun LibraryScreen(
                         title = stringResource(R.string.library_empty_title),
                         message = stringResource(R.string.library_empty_text),
                         icon = Icons.Outlined.AutoStories,
+                        // Both ways the text promises are visible: importing and the catalog.
                         actionLabel = stringResource(R.string.library_import),
                         onAction = { showImport = true },
+                        secondaryActionLabel = stringResource(R.string.library_find_online),
+                        onSecondaryAction = onFindBooksOnline,
                     )
                     emptyResults -> when {
                         filtered -> EmptyState(
@@ -849,6 +853,14 @@ fun LibraryScreen(
                     OneTimeHint(
                         "library_select", stringResource(R.string.hint_library_select),
                         Modifier.align(Alignment.BottomCenter).padding(bottom = navBarBottomPadding(64.dp)).widthIn(max = 480.dp),
+                    )
+                }
+                // The multi-select gesture is explained where it is first used, not in the general hint.
+                if (selecting && selection.isNotEmpty()) {
+                    OneTimeHint(
+                        "library_selection", stringResource(R.string.hint_library_selection),
+                        Modifier.align(Alignment.BottomCenter).padding(bottom = navBarBottomPadding(64.dp)).widthIn(max = 480.dp),
+                        after = "library_select",
                     )
                 }
             }
@@ -1091,7 +1103,7 @@ private fun LibraryHeader(
 }
 
 @Composable
-private fun animatedFraction(target: Float): Float = androidx.compose.animation.core.animateFloatAsState(target, label = "downloads").value
+private fun animatedFraction(target: Float): Float = animateMotionFloat(target, label = "downloads").value
 
 /** Progress ring around a download icon with the number of items left; red with a warning icon when only failures remain. */
 @Composable

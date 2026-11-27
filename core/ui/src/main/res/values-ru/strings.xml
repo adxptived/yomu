@@ -69,7 +69,7 @@
     <string name="tabs_delete_text">Вкладка «%1$s» будет удалена. Её книги и тайтлы останутся в библиотеке.</string>
     <!-- 1.6.0: панель навигации (перенесено из модуля app) -->
     <string name="nav_library">Библиотека</string>
-    <string name="nav_history">Профиль</string>
+    <string name="nav_history">Журнал</string>
     <string name="nav_catalog">Каталог</string>
     <string name="nav_dictionary">Слова</string>
     <string name="nav_settings">Настройки</string>

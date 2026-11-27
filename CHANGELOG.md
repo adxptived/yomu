@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.20.0 - reading journal and reader fixes
+
+### Reading journal
+
+- Resume a book or audiobook in one tap. The journal shows the saved chapter or page when available, alongside today's goal and reading streak.
+- Open reading history, statistics, downloads, notes and trackers from the journal. Choose which journal sections appear in Settings.
+- The empty library offers both file import and online catalog search.
+
+### Catalog, widgets and motion
+
+- The source grid shows language labels so similarly named sources are easier to distinguish.
+- Updated the Continue Reading, New Chapters, Shelf, Reading Streak and Audio widgets.
+- Journal transitions and list menus respect reduced motion, including when animations are disabled in Android.
+
+### Fixes
+
+- Word documents respect per-book scrolling settings, and switching from page layout to text works when page layout is the default.
+- Testing a TTS voice leaves the reading position alone and stops cleanly when the sample ends.
+- Backup restore requires at least one selected category.
+
 ## 2.19.0 - catalog, metadata and progress sync
 
 ### Catalog and settings

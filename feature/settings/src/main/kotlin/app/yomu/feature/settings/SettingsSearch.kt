@@ -65,6 +65,11 @@ private val SEARCH_ALIASES: Map<String, List<String>> = mapOf(
     "set_pdf_autocrop" to listOf("поля pdf", "обрезка", "pdf margins", "crop"),
     "set_pdf_mode" to listOf("поля pdf", "pdf layout", "страницы pdf"),
     "set_reading" to listOf("таймер сна", "sleep timer", "чтение", "reading"),
+    "set_reduce_motion" to listOf("уменьшить анимации", "анимации", "движение", "motion", "animations", "reduce"),
+    "set_profile" to listOf("журнал", "история", "профиль", "journal", "history", "profile"),
+    "set_profile_blocks" to listOf("журнал", "блоки журнала", "journal", "journal blocks"),
+    "set_profile_recent" to listOf("журнал", "продолжить", "последняя книга", "journal", "continue", "last book"),
+    "set_profile_stats" to listOf("журнал", "статистика", "journal", "statistics", "stats"),
 )
 
 /** Index built from the same string resources the sections render; `<title>_sum` is used as the summary when present. */

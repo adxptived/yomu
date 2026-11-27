@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A book without a cover in the widget. -->
+<!-- A book without a cover in the widget: the empty slot of the library. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape android:shape="rectangle">
             <solid android:color="@color/widget_track" />
-            <corners android:radius="4dp" />
+            <corners android:radius="10dp" />
         </shape>
     </item>
-    <item android:drawable="@drawable/widget_ic_book" android:gravity="center" android:width="20dp" android:height="20dp" />
+    <item android:drawable="@drawable/widget_ic_book" android:gravity="center" android:width="18dp" android:height="18dp" />
 </layer-list>

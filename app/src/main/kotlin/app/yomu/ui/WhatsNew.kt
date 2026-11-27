@@ -43,6 +43,7 @@ data class WhatsNew(val versionCode: Long, val version: String, @ArrayRes val it
  * the sheet shows the releases newer than the one the user saw last, once, after the update.
  */
 val WHATS_NEW = listOf(
+    WhatsNew(43, "2.20.0", R.array.whats_new_2_20_0),
     WhatsNew(42, "2.19.0", R.array.whats_new_2_19_0),
     WhatsNew(41, "2.18.0", R.array.whats_new_2_18_0),
     WhatsNew(40, "2.17.0", R.array.whats_new_2_17_0),

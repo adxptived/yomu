@@ -151,7 +151,7 @@ object StreakWidgets : KoinComponent {
         val days = if (streak.days <= 0) {
             context.getString(R.string.widget_streak_days_zero)
         } else {
-            context.resources.getQuantityString(R.plurals.widget_streak_days, streak.days, streak.days)
+            context.resources.getQuantityString(R.plurals.widget_streak_days, streak.days)
         }
         v.setTextViewText(R.id.widget_streak_days, days)
         val today = if (streak.todayMs > 0) {

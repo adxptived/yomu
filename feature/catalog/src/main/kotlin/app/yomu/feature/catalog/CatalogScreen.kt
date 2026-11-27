@@ -66,6 +66,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.NewReleases
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.PushPin
@@ -983,8 +984,19 @@ private fun SourceTile(
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
-                if (checking || health?.slow == true) {
-                    CircularProgressIndicator(Modifier.align(Alignment.BottomEnd).size(14.dp), strokeWidth = 2.dp)
+                when {
+                    // A spinner means a request is running now, nothing else.
+                    checking -> CircularProgressIndicator(Modifier.align(Alignment.BottomEnd).size(14.dp), strokeWidth = 2.dp)
+                    // A source remembered as slow keeps a still badge with its own description: it is not loading.
+                    health?.slow == true -> Icon(
+                        Icons.Outlined.HourglassEmpty,
+                        stringResource(R.string.source_slow),
+                        Modifier.align(Alignment.BottomEnd).size(16.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                            .padding(2.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
             Text(
@@ -995,6 +1007,20 @@ private fun SourceTile(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 32.dp),
             )
+            // The same name can be installed in several languages: the tile says which one it is. A tile is narrow,
+            // so "Multilingual" is shortened to fit beside the name instead of being cut off.
+            if (s.kind != SourceInfo.Kind.LOCAL) {
+                Text(
+                    if (s.lang in setOf("", "all", "multi")) stringResource(R.string.source_lang_tile_multi)
+                    else langLabel(s.lang, single = true),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 }

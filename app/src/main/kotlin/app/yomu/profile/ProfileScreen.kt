@@ -3,6 +3,13 @@ package app.yomu.profile
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,31 +28,29 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.SendToMobile
 import androidx.compose.material.icons.automirrored.outlined.ShortText
-import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Backup
-import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EditNote
-import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.LocalFireDepartment
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Sync
-import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
@@ -54,9 +59,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -65,7 +67,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -77,10 +81,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -90,19 +93,21 @@ import app.yomu.R
 import app.yomu.core.common.ErrorLog
 import app.yomu.core.common.Share
 import app.yomu.core.datastore.AppSettings
-import app.yomu.core.ui.components.BookListItem
 import app.yomu.core.ui.components.CollapsibleSection
+import app.yomu.core.ui.components.CoverImage
 import app.yomu.core.ui.components.GlassTopBarBackground
+import app.yomu.core.ui.components.LocalReduceMotion
 import app.yomu.core.ui.components.PreferenceItem
 import app.yomu.core.ui.components.TopLevelBody
 import app.yomu.core.ui.components.errorMessage
 import app.yomu.core.ui.components.glassTopBarColors
 import app.yomu.core.ui.components.navBarBottomPadding
 import app.yomu.core.ui.components.topLevelContentInsets
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.rememberHazeState
-import app.yomu.core.ui.theme.Dimens
+import app.yomu.data.download.DownloadRepository
 import app.yomu.data.repository.ReadingHistoryItem
+import app.yomu.domain.model.DownloadStatus
+import app.yomu.domain.model.EngineType
+import app.yomu.domain.repository.BookRepository
 import app.yomu.feature.library.HistoryActions
 import app.yomu.feature.library.HistoryPane
 import app.yomu.feature.library.HistoryViewModel
@@ -110,6 +115,9 @@ import app.yomu.feature.reader.ReadingStatsActions
 import app.yomu.feature.reader.ReadingStatsPane
 import app.yomu.feature.reader.ReadingStatsViewModel
 import app.yomu.feature.settings.SettingsSection
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
+import app.yomu.core.ui.theme.Dimens
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -123,15 +131,16 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
 import app.yomu.core.ui.R as CoreR
+import app.yomu.feature.library.R as LibraryR
 
-private enum class ProfileTab(@StringRes val label: Int) {
-    OVERVIEW(R.string.profile_tab_overview),
-    HISTORY(R.string.profile_tab_history),
-}
-
-/** Full-screen pages opened from the overview; they replace the tabs until Back. */
+/**
+ * The pages of the journal, in the order they are entered: the journal itself, the full history, the statistics and
+ * the trackers. A single state replaces the old Overview/History tabs and the pages on top of them, so the history is
+ * one list with one search and one scroll position, and Back always returns to the screen it was opened from.
+ */
 private enum class ProfilePage(@StringRes val title: Int) {
-    NONE(R.string.profile_title),
+    JOURNAL(R.string.profile_title),
+    HISTORY(R.string.profile_tab_history),
     STATS(R.string.profile_tab_stats),
     TRACKING(R.string.profile_tab_tracking),
 }
@@ -141,8 +150,10 @@ private val AVATARS =
     listOf("📚", "📖", "🦊", "🐱", "🐼", "🦉", "🐉", "🌸", "🌙", "⭐", "🔥", "🍵", "🎧", "🎮", "👾", "🍙")
 
 /**
- * The "Profile" tab: an overview (summary, milestones, recent reading, entries to the statistics, tracking and downloads)
- * and the reading history, switched by a segmented control. Statistics and tracking open as pages inside the tab.
+ * The reading journal (2.20.0, formerly the "Profile" tab): the last book first, today's goal and streak, the tools
+ * (downloads, notes, tracking), then sharing. The full history, the statistics and the trackers are pages of the same
+ * screen; the history is one list with one search, and Back returns to the page it was opened from (statistics opened
+ * from the history come back to the same query and scroll position).
  */
 @Composable
 fun ProfileScreen(
@@ -160,16 +171,47 @@ fun ProfileScreen(
     onOpenCatalog: (() -> Unit)? = null,
     onOpenTrackerPage: ((app.yomu.domain.tracking.TrackService, Long) -> Unit)? = null,
 ) {
-    var tab by rememberSaveable { mutableStateOf(ProfileTab.OVERVIEW) }
-    var page by rememberSaveable { mutableStateOf(ProfilePage.NONE) }
-    // Created when the page is first opened.
+    var page by rememberSaveable { mutableStateOf(ProfilePage.JOURNAL) }
+    // The page the statistics were opened from (the journal or the history).
+    var statsReturn by rememberSaveable { mutableStateOf(ProfilePage.JOURNAL) }
+    // Created when the trackers page is first opened.
     val trackingViewModel: ProfileTrackingViewModel? = if (page == ProfilePage.TRACKING) koinViewModel() else null
     var searching by rememberSaveable { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val recent by historyViewModel.recent.collectAsStateWithLifecycle()
+    val reduce = LocalReduceMotion.current
+    // The scroll position of the journal and of the history survives the statistics and the trackers.
+    val journalList = rememberLazyListState()
+    val historyList = rememberLazyListState()
+    val settings: AppSettings = koinInject()
+    val showStats by settings.profileShowStats.flow.collectAsStateWithLifecycle(initialValue = true)
+    val showMilestones by settings.profileShowMilestones.flow.collectAsStateWithLifecycle(initialValue = true)
+    val showTop by settings.profileShowTop.flow.collectAsStateWithLifecycle(initialValue = true)
+    val showRecent by settings.profileShowRecent.flow.collectAsStateWithLifecycle(initialValue = true)
+    val showShare by settings.profileShowShare.flow.collectAsStateWithLifecycle(initialValue = true)
+    // Only the number of waiting chapters, for the one-line note under "Downloads".
+    val downloads: DownloadRepository = koinInject()
+    val queued by produceState(0) {
+        downloads.observe().collect { list ->
+            value = list.count { it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.RUNNING }
+        }
+    }
 
-    BackHandler(enabled = page != ProfilePage.NONE) { page = ProfilePage.NONE }
+    fun open(target: ProfilePage) {
+        if (target == ProfilePage.STATS) statsReturn = page
+        page = target
+    }
+
+    fun back() {
+        page = when (page) {
+            ProfilePage.STATS -> statsReturn
+            else -> ProfilePage.JOURNAL
+        }
+    }
+
+    BackHandler(enabled = page != ProfilePage.JOURNAL, onBack = ::back)
     val topBarBackdrop = rememberHazeState()
 
     Scaffold(
@@ -178,10 +220,20 @@ fun ProfileScreen(
         topBar = {
             GlassTopBarBackground(topBarBackdrop) { TopAppBar(
                 colors = glassTopBarColors(),
-                title = { Text(stringResource(page.title)) },
+                title = {
+                    if (reduce) {
+                        Text(stringResource(page.title))
+                    } else {
+                        AnimatedContent(
+                            targetState = page,
+                            transitionSpec = { fadeIn(tween(110, delayMillis = 90)) togetherWith fadeOut(tween(90)) },
+                            label = "journal-title",
+                        ) { p -> Text(stringResource(p.title)) }
+                    }
+                },
                 navigationIcon = {
-                    if (page != ProfilePage.NONE) {
-                        IconButton(onClick = { page = ProfilePage.NONE }) {
+                    if (page != ProfilePage.JOURNAL) {
+                        IconButton(onClick = ::back) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.back))
                         }
                     }
@@ -190,9 +242,15 @@ fun ProfileScreen(
                     when (page) {
                         ProfilePage.STATS -> ReadingStatsActions(statsViewModel)
                         ProfilePage.TRACKING -> trackingViewModel?.let { vm -> TrackingActions(vm, onOpenSettings = { onOpenSettings(SettingsSection.TRACKING) }) }
-                        ProfilePage.NONE -> when (tab) {
-                            ProfileTab.OVERVIEW -> Unit
-                            ProfileTab.HISTORY -> HistoryActions(historyViewModel, searching, onSearching = { searching = it })
+                        ProfilePage.HISTORY -> {
+                            IconButton(onClick = { open(ProfilePage.STATS) }) {
+                                Icon(Icons.Outlined.Insights, stringResource(R.string.profile_open_stats))
+                            }
+                            HistoryActions(historyViewModel, searching, onSearching = { searching = it })
+                        }
+                        // The journal's top row: its one other page, the full history.
+                        ProfilePage.JOURNAL -> IconButton(onClick = { open(ProfilePage.HISTORY) }) {
+                            Icon(Icons.Outlined.History, stringResource(R.string.profile_tab_history))
                         }
                     }
                 },
@@ -200,9 +258,61 @@ fun ProfileScreen(
         },
     ) { padding ->
         TopLevelBody(padding, Modifier.fillMaxSize().hazeSource(topBarBackdrop)) {
-            Column(Modifier.fillMaxSize()) {
-                when (page) {
-                    ProfilePage.STATS -> ReadingStatsPane(statsViewModel, Modifier.fillMaxSize())
+            val content: @Composable (ProfilePage) -> Unit = { p ->
+                when (p) {
+                    ProfilePage.JOURNAL -> JournalPane(
+                        state = state,
+                        recent = recent,
+                        listState = journalList,
+                        snackbar = snackbar,
+                        viewModel = viewModel,
+                        historyViewModel = historyViewModel,
+                        showStats = showStats,
+                        showMilestones = showMilestones,
+                        showTop = showTop,
+                        showRecent = showRecent,
+                        showShare = showShare,
+                        queued = queued,
+                        onEdit = { editing = true },
+                        onOpenStats = { open(ProfilePage.STATS) },
+                        onOpenHistory = { open(ProfilePage.HISTORY) },
+                        onOpenTracking = { open(ProfilePage.TRACKING) },
+                        onOpenDownloads = onOpenDownloads,
+                        onOpenNotes = onOpenNotes,
+                        onOpenLibrary = onOpenLibrary,
+                        onOpenCatalog = onOpenCatalog,
+                        onOpenBook = onOpenBook,
+                        onReadChapter = onReadChapter,
+                        onOpenTitle = onOpenTitle,
+                        onOpenBackup = { onOpenSettings(SettingsSection.BACKUP) },
+                    )
+                    ProfilePage.HISTORY -> HistoryPane(
+                        viewModel = historyViewModel,
+                        searching = searching,
+                        onSearching = { searching = it },
+                        snackbar = snackbar,
+                        onOpenBook = onOpenBook,
+                        onBookDetails = onBookDetails,
+                        onReadChapter = onReadChapter,
+                        onOpenTitle = onOpenTitle,
+                        onOpenStats = { open(ProfilePage.STATS) },
+                        modifier = Modifier.fillMaxSize(),
+                        showToday = false,
+                        listState = historyList,
+                    )
+                    ProfilePage.STATS -> {
+                        val ui = state
+                        ReadingStatsPane(
+                            statsViewModel,
+                            Modifier.fillMaxSize(),
+                            showTopTitles = showTop,
+                            achievements = if (showMilestones && ui != null) {
+                                { MilestonesCard(ui.milestones) }
+                            } else {
+                                null
+                            },
+                        )
+                    }
                     ProfilePage.TRACKING -> trackingViewModel?.let { vm ->
                         TrackingPane(
                             viewModel = vm,
@@ -214,51 +324,21 @@ fun ProfileScreen(
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
-                    ProfilePage.NONE -> {
-                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.l, vertical = Dimens.s)) {
-                            ProfileTab.entries.forEachIndexed { i, t ->
-                                SegmentedButton(
-                                    selected = tab == t,
-                                    onClick = { tab = t },
-                                    shape = SegmentedButtonDefaults.itemShape(i, ProfileTab.entries.size),
-                                ) { Text(stringResource(t.label), maxLines = 1) }
-                            }
-                        }
-                        when (tab) {
-                            ProfileTab.OVERVIEW -> ProfileOverview(
-                                state = state,
-                                historyViewModel = historyViewModel,
-                                snackbar = snackbar,
-                                viewModel = viewModel,
-                                onEdit = { editing = true },
-                                onOpenStats = { page = ProfilePage.STATS },
-                                onOpenHistory = { tab = ProfileTab.HISTORY },
-                                onOpenTracking = { page = ProfilePage.TRACKING },
-                                onOpenDownloads = onOpenDownloads,
-                                onOpenNotes = onOpenNotes,
-                                onOpenLibrary = onOpenLibrary,
-                                onOpenCatalog = onOpenCatalog,
-                                onOpenBook = onOpenBook,
-                                onReadChapter = onReadChapter,
-                                onOpenTitle = onOpenTitle,
-                                onOpenBackup = { onOpenSettings(SettingsSection.BACKUP) },
-                            )
-                            ProfileTab.HISTORY -> HistoryPane(
-                                viewModel = historyViewModel,
-                                searching = searching,
-                                onSearching = { searching = it },
-                                snackbar = snackbar,
-                                onOpenBook = onOpenBook,
-                                onBookDetails = onBookDetails,
-                                onReadChapter = onReadChapter,
-                                onOpenTitle = onOpenTitle,
-                                onOpenStats = { page = ProfilePage.STATS },
-                                modifier = Modifier.fillMaxSize(),
-                                showToday = false,
-                            )
-                        }
-                    }
                 }
+            }
+            if (reduce) {
+                content(page)
+            } else {
+                AnimatedContent(
+                    targetState = page,
+                    modifier = Modifier.fillMaxSize(),
+                    transitionSpec = {
+                        val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+                        (slideInHorizontally(tween(200)) { it / 10 * direction } + fadeIn(tween(200))) togetherWith
+                            (slideOutHorizontally(tween(160)) { -it / 10 * direction } + fadeOut(tween(120)))
+                    },
+                    label = "journal-page",
+                ) { p -> content(p) }
             }
         }
     }
@@ -276,12 +356,24 @@ fun ProfileScreen(
     }
 }
 
+/**
+ * The journal itself, in the order of the plan: the book to continue, today's goal and streak, the tools, then the
+ * rarely used sharing block. The name and avatar are not a header any more: they live in "Name, avatar and card".
+ */
 @Composable
-private fun ProfileOverview(
+private fun JournalPane(
     state: ProfileUi?,
-    historyViewModel: HistoryViewModel,
+    recent: List<ReadingHistoryItem>,
+    listState: LazyListState,
     snackbar: SnackbarHostState,
     viewModel: ProfileViewModel,
+    historyViewModel: HistoryViewModel,
+    showStats: Boolean,
+    showMilestones: Boolean,
+    showTop: Boolean,
+    showRecent: Boolean,
+    showShare: Boolean,
+    queued: Int,
     onEdit: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenHistory: () -> Unit,
@@ -297,16 +389,26 @@ private fun ProfileOverview(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val recent by historyViewModel.recent.collectAsStateWithLifecycle()
     var busy by remember { mutableStateOf(false) }
-    val settings: AppSettings = koinInject()
-    val showStats by settings.profileShowStats.flow.collectAsStateWithLifecycle(initialValue = true)
-    val showMilestones by settings.profileShowMilestones.flow.collectAsStateWithLifecycle(initialValue = true)
-    val showTop by settings.profileShowTop.flow.collectAsStateWithLifecycle(initialValue = true)
-    val showRecent by settings.profileShowRecent.flow.collectAsStateWithLifecycle(initialValue = true)
-    val showShare by settings.profileShowShare.flow.collectAsStateWithLifecycle(initialValue = true)
     val colors = MaterialTheme.colorScheme
     val palette = ProfileCard.Palette(colors.primary.toArgb(), colors.tertiary.toArgb(), colors.onPrimary.toArgb())
+    val books: BookRepository = koinInject()
+    // "Chapter 3" or "Page 12" when the saved position is known: the same words the library shelf uses.
+    val firstBook = recent.firstOrNull()
+    val place by key(firstBook?.bookId) {
+        produceState<String?>(null, firstBook?.readAt) {
+            val id = firstBook?.bookId ?: return@produceState
+            val book = runCatching { books.getBook(id) }.getOrNull() ?: return@produceState
+            val locator = runCatching { books.getProgress(id) }.getOrNull()
+            value = locator?.let {
+                when (book.engine) {
+                    EngineType.TEXT, EngineType.AUDIO -> it.chapterTitle?.takeIf { title -> title.isNotBlank() }
+                        ?: context.getString(LibraryR.string.library_continue_chapter, it.chapter + 1)
+                    else -> context.getString(LibraryR.string.library_continue_page, it.chapter + 1)
+                }
+            }
+        }
+    }
 
     /** Prepares a file off the main thread and opens the share sheet for it; failures go to the snackbar. */
     fun shareFile(mime: String, make: suspend (File) -> File) {
@@ -341,100 +443,40 @@ private fun ProfileOverview(
 
     LazyColumn(
         Modifier.fillMaxSize(),
+        state = listState,
         contentPadding = PaddingValues(start = Dimens.l, end = Dimens.l, top = Dimens.m, bottom = navBarBottomPadding(Dimens.xl)),
         verticalArrangement = Arrangement.spacedBy(Dimens.m),
     ) {
-        item(key = "header") { ProfileHeader(state, onEdit) }
-        if (state == null) {
-            item(key = "loading") {
-                Box(Modifier.fillMaxWidth().padding(Dimens.xl), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            }
-            return@LazyColumn
-        }
+        // The first useful thing: the book the reader left, one tap away (or the two ways to start).
         if (showRecent) {
-            if (recent.isNotEmpty()) {
-                item(key = "continue") {
-                    RecentCard(
-                        recent.take(1),
-                        onOpen = ::openRecent,
-                        onOpenHistory = onOpenHistory,
-                        title = R.string.profile_continue_reading,
+            item(key = "continue") {
+                when {
+                    recent.isNotEmpty() -> ContinueCard(recent.first(), place = place, onOpen = ::openRecent)
+                    state == null -> ContinuePlaceholder()
+                    // Sessions exist but the history is empty (cleared or incognito): do not claim "start reading".
+                    state.sessions > 0 -> ChooseBookCard(
+                        hint = stringResource(R.string.profile_choose_book_hint),
+                        onOpenLibrary = onOpenLibrary,
+                        onOpenCatalog = onOpenCatalog,
                     )
-                }
-            } else if (onOpenLibrary != null && onOpenCatalog != null) {
-                item(key = "start") {
-                    Surface(
-                        shape = MaterialTheme.shapes.large,
-                        color = colors.primaryContainer,
-                        contentColor = colors.onPrimaryContainer,
-                    ) {
-                        Column(Modifier.fillMaxWidth().padding(Dimens.l)) {
-                            Text(stringResource(R.string.profile_start_reading), style = MaterialTheme.typography.titleLarge)
-                            FlowRow {
-                                TextButton(onClick = onOpenLibrary) { Text(stringResource(R.string.profile_open_library)) }
-                                TextButton(onClick = onOpenCatalog) { Text(stringResource(R.string.profile_open_catalog)) }
-                            }
-                        }
-                    }
+                    else -> StartReadingCard(onOpenLibrary, onOpenCatalog)
                 }
             }
         }
-        if (showStats && state.sessions > 0) {
-            item(key = "time") { TimeCard(state, onOpenStats) }
+        if (state != null && showStats) {
+            item(key = "today") { TodayCard(state, onOpenStats) }
         }
-        item(key = "entries") {
-            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
-                Column {
-                    PreferenceItem(
-                        stringResource(R.string.profile_tab_tracking),
-                        stringResource(R.string.profile_tracking_entry),
-                        icon = Icons.Outlined.Sync,
-                        onClick = onOpenTracking,
-                    )
-                    if (onOpenDownloads != null) {
-                        PreferenceItem(
-                            stringResource(R.string.profile_tab_downloads),
-                            stringResource(R.string.profile_downloads_entry),
-                            icon = Icons.Outlined.Download,
-                            onClick = onOpenDownloads,
-                        )
-                    }
-                    if (onOpenNotes != null) {
-                        PreferenceItem(
-                            stringResource(R.string.profile_notes),
-                            stringResource(R.string.profile_notes_entry),
-                            icon = Icons.Outlined.EditNote,
-                            onClick = onOpenNotes,
-                        )
-                    }
-                }
-            }
+        item(key = "tools") {
+            ToolsCard(
+                queued = queued,
+                showStatsEntry = !showStats,
+                onOpenStats = onOpenStats,
+                onOpenTracking = onOpenTracking,
+                onOpenDownloads = onOpenDownloads,
+                onOpenNotes = onOpenNotes,
+            )
         }
-        // The numbers and milestones are a reference, not the headline: folded away until asked for.
-        val hasStats = showStats || showMilestones || (showTop && state.topTitles.isNotEmpty())
-        if (hasStats) {
-            item(key = "stats") {
-                CollapsibleSection(
-                    title = stringResource(R.string.profile_tab_stats),
-                    summary = stringResource(R.string.profile_stats_summary, number(state.finishedBooks), number(state.pages), number(state.streakDays)),
-                    icon = Icons.Outlined.Insights,
-                    horizontalPadding = 0.dp,
-                ) {
-                    Column(Modifier.padding(horizontal = Dimens.s)) {
-                        if (showStats) NumbersGrid(state)
-                        if (showMilestones) {
-                            if (showStats) Spacer(Modifier.height(Dimens.m))
-                            MilestonesCard(state.milestones)
-                        }
-                        if (showTop && state.topTitles.isNotEmpty()) {
-                            if (showStats || showMilestones) Spacer(Modifier.height(Dimens.m))
-                            TopTitlesCard(state.topTitles, onOpenStats)
-                        }
-                    }
-                }
-            }
-        }
-        if (showShare) {
+        if (state != null && showShare) {
             item(key = "share") {
                 CollapsibleSection(
                     title = stringResource(R.string.profile_share_section),
@@ -445,6 +487,7 @@ private fun ProfileOverview(
                     ShareSection(
                         busy = busy,
                         showHeader = false,
+                        onEdit = onEdit,
                         onShareCard = {
                             val content = cardContent(context, state)
                             shareFile("image/png") { dir -> withContext(Dispatchers.Default) { ProfileCard.render(File(dir, "yomu_profile.png"), content, palette) } }
@@ -457,59 +500,179 @@ private fun ProfileOverview(
                 }
             }
         }
-    }
-}
-
-// ------------------------------------------------------------------------------------------------ header
-
-@Composable
-private fun ProfileHeader(state: ProfileUi?, onEdit: () -> Unit) {
-    val name = state?.name?.ifBlank { null } ?: stringResource(R.string.profile_default_name)
-    val editLabel = stringResource(R.string.profile_edit)
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onEdit, onClickLabel = editLabel, role = Role.Button).padding(vertical = Dimens.s),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Avatar(state?.avatar.orEmpty(), state?.name.orEmpty(), Modifier.size(52.dp))
-        Spacer(Modifier.width(Dimens.l))
-        Column(Modifier.weight(1f)) {
-            Text(name, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val since = state?.since
-            val subtitle = when {
-                state == null -> ""
-                since != null -> stringResource(R.string.profile_since, formatDate(since))
-                else -> stringResource(R.string.profile_no_reading)
-            }
-            if (subtitle.isNotEmpty()) {
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            if (state?.name.isNullOrBlank() && state != null) {
-                Text(stringResource(R.string.profile_set_name), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            }
-            if (state != null && (state.streakDays > 0 || state.todayMs > 0)) {
-                val goal = state.goalMinutes.coerceAtLeast(1)
-                val today = (state.todayMs / 60_000).toInt()
-                Row(
-                    Modifier.padding(top = Dimens.xxs),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Dimens.xs),
-                ) {
-                    Icon(Icons.Outlined.LocalFireDepartment, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                    Text(stringResource(R.string.profile_header_streak, state.streakDays), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("·", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        stringResource(R.string.profile_today, today, goal),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+        // Milestones and most-read titles are not repeated here: they are part of the statistics page.
+        if (state != null && !showStats && (showMilestones || showTop)) {
+            item(key = "stats-hint") {
+                PreferenceItem(
+                    stringResource(R.string.profile_tool_statistics),
+                    stringResource(R.string.profile_tool_statistics_sum),
+                    icon = Icons.Outlined.Insights,
+                    onClick = onOpenStats,
+                )
             }
         }
-        Icon(Icons.Outlined.Edit, null, Modifier.padding(start = Dimens.s), tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+// ------------------------------------------------------------------------------------------------ journal cards
+
+/**
+ * One row: cover, title and the chapter (online) or the author and progress (local), then the arrow. The whole row is
+ * one action with one TalkBack focus; the label names the actual destination (book, chapter or title).
+ */
+@Composable
+private fun ContinueCard(item: ReadingHistoryItem, place: String? = null, onOpen: (ReadingHistoryItem) -> Unit) {
+    val heading = stringResource(if (item.isAudio) LibraryR.string.details_continue_listening else R.string.profile_continue_reading)
+    val actionLabel = stringResource(
+        when {
+            item.isAudio -> LibraryR.string.details_continue_listening
+            item.bookId != null -> R.string.profile_continue_reading
+            item.chapterId != null -> R.string.profile_continue_chapter
+            else -> R.string.profile_open_title
+        },
+    )
+    val meta = buildList {
+        // The saved chapter or page first: it is the one thing the progress bar cannot tell.
+        place?.takeIf { it.isNotBlank() }?.let(::add)
+        item.subtitle?.takeIf { it.isNotBlank() && it != place }?.let(::add)
+        if (item.bookId != null && !item.finished && (item.progress ?: 0f) > 0f) add("${((item.progress ?: 0f) * 100).toInt()}%")
+        if (item.bookId == null) item.sourceName?.takeIf { it.isNotBlank() }?.let(::add)
+    }.joinToString(" · ")
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClickLabel = actionLabel, role = Role.Button) { onOpen(item) },
+    ) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 88.dp).padding(horizontal = Dimens.l, vertical = Dimens.m),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Dimens.m),
+        ) {
+            CoverImage(item.cover?.let { c -> if (item.bookId != null) File(c) else c }, item.title, Modifier.width(48.dp))
+            Column(Modifier.weight(1f)) {
+                Text(heading, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (meta.isNotEmpty()) {
+                    Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** The height of [ContinueCard]: the brief block keeps its place while the data loads. */
+@Composable
+private fun ContinuePlaceholder() {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth().height(88.dp),
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+        }
+    }
+}
+
+@Composable
+private fun StartReadingCard(onOpenLibrary: (() -> Unit)?, onOpenCatalog: (() -> Unit)?) {
+    val colors = MaterialTheme.colorScheme
+    Surface(shape = MaterialTheme.shapes.large, color = colors.primaryContainer, contentColor = colors.onPrimaryContainer) {
+        Column(Modifier.fillMaxWidth().padding(Dimens.l)) {
+            Text(stringResource(R.string.profile_start_reading), style = MaterialTheme.typography.titleLarge)
+            Text(
+                stringResource(R.string.profile_no_reading),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = Dimens.xs),
+            )
+            FlowRow(Modifier.padding(top = Dimens.s)) {
+                // On the lavender card the default purple text would disappear: use the card's own content colour.
+                val text = ButtonDefaults.textButtonColors(contentColor = colors.onPrimaryContainer)
+                if (onOpenLibrary != null) TextButton(onClick = onOpenLibrary, colors = text) { Text(stringResource(R.string.profile_open_library)) }
+                if (onOpenCatalog != null) TextButton(onClick = onOpenCatalog, colors = text) { Text(stringResource(R.string.profile_open_catalog)) }
+            }
+        }
+    }
+}
+
+/** Past sessions but no history entry: offer the library and the catalog without pretending it is the first launch. */
+@Composable
+private fun ChooseBookCard(hint: String, onOpenLibrary: (() -> Unit)?, onOpenCatalog: (() -> Unit)?) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.fillMaxWidth().padding(Dimens.l)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.History, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(Dimens.s))
+                Text(stringResource(R.string.profile_choose_book), style = MaterialTheme.typography.titleMedium)
+            }
+            Text(
+                hint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Dimens.xs),
+            )
+            FlowRow(Modifier.padding(top = Dimens.xs)) {
+                if (onOpenLibrary != null) TextButton(onClick = onOpenLibrary) { Text(stringResource(R.string.profile_open_library)) }
+                if (onOpenCatalog != null) TextButton(onClick = onOpenCatalog) { Text(stringResource(R.string.profile_open_catalog)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolsCard(
+    queued: Int,
+    showStatsEntry: Boolean,
+    onOpenStats: () -> Unit,
+    onOpenTracking: () -> Unit,
+    onOpenDownloads: (() -> Unit)?,
+    onOpenNotes: (() -> Unit)?,
+) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
+        Column {
+            Row(Modifier.fillMaxWidth().padding(start = Dimens.l, end = Dimens.l, top = Dimens.m), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.profile_tools), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            }
+            if (onOpenDownloads != null) {
+                PreferenceItem(
+                    stringResource(R.string.profile_tab_downloads),
+                    if (queued > 0) pluralStringResource(R.plurals.profile_downloads_queue, queued, queued)
+                    else stringResource(R.string.profile_downloads_entry),
+                    icon = Icons.Outlined.Download,
+                    onClick = onOpenDownloads,
+                )
+            }
+            if (onOpenNotes != null) {
+                PreferenceItem(
+                    stringResource(R.string.profile_notes),
+                    stringResource(R.string.profile_notes_entry),
+                    icon = Icons.Outlined.EditNote,
+                    onClick = onOpenNotes,
+                )
+            }
+            PreferenceItem(
+                stringResource(R.string.profile_tab_tracking),
+                stringResource(R.string.profile_tracking_entry),
+                icon = Icons.Outlined.Sync,
+                onClick = onOpenTracking,
+            )
+            // With the today block hidden, the statistics stay reachable from here.
+            if (showStatsEntry) {
+                PreferenceItem(
+                    stringResource(R.string.profile_tool_statistics),
+                    stringResource(R.string.profile_tool_statistics_sum),
+                    icon = Icons.Outlined.Insights,
+                    onClick = onOpenStats,
+                )
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ avatar
 
 @Composable
 private fun Avatar(avatar: String, name: String, modifier: Modifier = Modifier) {
@@ -530,30 +693,45 @@ private fun Avatar(avatar: String, name: String, modifier: Modifier = Modifier) 
 private fun initial(name: String): String =
     name.trim().takeIf { it.isNotEmpty() }?.let { n -> String(Character.toChars(n.codePointAt(0))).uppercase() } ?: "📚"
 
-// ------------------------------------------------------------------------------------------------ numbers
+// ------------------------------------------------------------------------------------------------ today
 
+/**
+ * Today's goal and the streak only. The whole card opens the statistics (total time, the week, the numbers, the
+ * milestones and the most read titles), so the same minutes are not repeated twice on one screen.
+ */
 @Composable
-private fun TimeCard(state: ProfileUi, onOpenStats: () -> Unit) {
-    ElevatedCard(onClick = onOpenStats, modifier = Modifier.fillMaxWidth()) {
+private fun TodayCard(state: ProfileUi, onOpenStats: () -> Unit) {
+    val minutes = (state.todayMs / 60_000).toInt()
+    val goal = state.goalMinutes.coerceAtLeast(1)
+    val label = stringResource(R.string.profile_open_stats)
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth().clickable(onClickLabel = label, role = Role.Button, onClick = onOpenStats),
+    ) {
         Column(Modifier.padding(Dimens.l)) {
-            Text(stringResource(R.string.profile_total_time), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    duration(LocalContext.current, state.totalMs),
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-                Icon(Icons.AutoMirrored.Filled.ArrowForward, stringResource(R.string.profile_open_stats), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.profile_today_goal), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                if (state.streakDays > 0) {
+                    Icon(Icons.Outlined.LocalFireDepartment, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.tertiary)
+                    Spacer(Modifier.width(Dimens.xxs))
+                    Text(
+                        stringResource(R.string.profile_header_streak, state.streakDays),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = Dimens.s))
             }
-            val minutes = (state.todayMs / 60_000).toInt()
-            val goal = state.goalMinutes.coerceAtLeast(1)
-            Spacer(Modifier.height(Dimens.s))
-            Text(
-                stringResource(R.string.profile_today, minutes, goal),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(Modifier.padding(top = Dimens.xs), verticalAlignment = Alignment.Bottom) {
+                Text("$minutes", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    stringResource(R.string.profile_today_of_goal, goal),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = Dimens.xs, bottom = 3.dp),
+                )
+            }
             LinearProgressIndicator(
                 progress = { (minutes.toFloat() / goal).coerceIn(0f, 1f) },
                 strokeCap = StrokeCap.Round,
@@ -561,77 +739,6 @@ private fun TimeCard(state: ProfileUi, onOpenStats: () -> Unit) {
                 drawStopIndicator = {},
                 modifier = Modifier.fillMaxWidth().padding(top = Dimens.s).height(6.dp),
             )
-            Spacer(Modifier.height(Dimens.m))
-            Text(stringResource(R.string.profile_reading_week), style = MaterialTheme.typography.titleSmall)
-            val context = LocalContext.current
-            val maximum = state.week.maxOfOrNull { it.second }?.coerceAtLeast(1L) ?: 1L
-            val weekday = DateTimeFormatter.ofPattern("EEE", Locale.getDefault())
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                state.week.forEach { (day, readingMs) ->
-                    val description = "${formatDate(day)}, ${duration(context, readingMs)}"
-                    val barHeight = (readingMs.toFloat() / maximum * 30).coerceAtLeast(2f)
-                    Column(
-                        Modifier.weight(1f).semantics { contentDescription = description },
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Box(Modifier.height(32.dp), contentAlignment = Alignment.BottomCenter) {
-                            Box(
-                                Modifier.width(12.dp).height(barHeight.dp).background(
-                                    if (readingMs > 0) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.outlineVariant,
-                                    RoundedCornerShape(4.dp),
-                                ),
-                            )
-                        }
-                        Text(weekday.format(day), style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NumbersGrid(state: ProfileUi) {
-    val context = LocalContext.current
-    val numbers = listOf(
-        Triple(Icons.AutoMirrored.Outlined.MenuBook, number(state.finishedBooks), R.string.profile_stat_books),
-        Triple(Icons.Outlined.AutoStories, number(state.titlesCount), R.string.profile_stat_titles),
-        Triple(Icons.Outlined.LocalFireDepartment, number(state.streakDays), R.string.profile_stat_streak),
-        Triple(Icons.Outlined.EmojiEvents, number(state.bestStreak), R.string.profile_stat_best),
-        Triple(Icons.AutoMirrored.Outlined.ShortText, number(state.pages), R.string.profile_stat_pages),
-        Triple(Icons.Outlined.CalendarMonth, number(state.activeDays), R.string.profile_stat_days),
-        Triple(Icons.Outlined.Translate, number(state.wordsSaved), R.string.profile_stat_words),
-        Triple(Icons.Outlined.Schedule, duration(context, state.longestSessionMs), R.string.profile_stat_longest),
-    )
-    Column(verticalArrangement = Arrangement.spacedBy(Dimens.s)) {
-        numbers.chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(Dimens.s)) {
-                row.forEach { (icon, value, label) -> NumberTile(icon, value, stringResource(label), Modifier.weight(1f)) }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
-            }
-        }
-    }
-}
-
-@Composable
-private fun NumberTile(icon: ImageVector, value: String, label: String, modifier: Modifier = Modifier) {
-    Row(
-        modifier
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(Dimens.card))
-            .padding(horizontal = Dimens.m, vertical = Dimens.m),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
-        }
-        Spacer(Modifier.width(Dimens.m))
-        Column {
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
         }
     }
 }
@@ -703,63 +810,12 @@ private fun LevelBadge(level: Int, done: Boolean) {
     }
 }
 
-// ------------------------------------------------------------------------------------------------ titles
-
-@Composable
-private fun TopTitlesCard(titles: List<TopTitle>, onOpenStats: () -> Unit) {
-    val context = LocalContext.current
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(vertical = Dimens.m)) {
-            SectionTitle(stringResource(R.string.profile_top), action = stringResource(R.string.profile_open_stats), onAction = onOpenStats)
-            titles.forEach { t ->
-                BookListItem(
-                    title = t.title,
-                    subtitle = duration(context, t.ms),
-                    cover = t.cover?.let { c -> if (t.isBook) File(c) else c },
-                    progress = 0f,
-                    onClick = onOpenStats,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun RecentCard(
-    items: List<ReadingHistoryItem>,
-    onOpen: (ReadingHistoryItem) -> Unit,
-    onOpenHistory: () -> Unit,
-    @StringRes title: Int,
-) {
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(vertical = Dimens.m)) {
-            SectionTitle(stringResource(title), action = stringResource(R.string.profile_all_history), onAction = onOpenHistory)
-            items.forEach { item ->
-                BookListItem(
-                    title = item.title,
-                    subtitle = item.subtitle ?: item.sourceName,
-                    cover = item.cover?.let { c -> if (item.bookId != null) File(c) else c },
-                    progress = if (item.bookId != null && !item.finished) item.progress ?: 0f else 0f,
-                    onClick = { onOpen(item) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SectionTitle(title: String, action: String? = null, onAction: (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().padding(start = Dimens.l, end = Dimens.s), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-        if (action != null && onAction != null) TextButton(onClick = onAction) { Text(action) }
-    }
-}
-
 // ------------------------------------------------------------------------------------------------ sharing
 
 @Composable
 private fun ShareSection(
     busy: Boolean,
+    onEdit: () -> Unit,
     onShareCard: () -> Unit,
     onShareText: () -> Unit,
     onShareHistory: () -> Unit,
@@ -781,6 +837,8 @@ private fun ShareSection(
                     modifier = Modifier.padding(horizontal = Dimens.l, vertical = Dimens.xs),
                 )
             }
+            // The name and the avatar are edited here, next to the card they appear on.
+            ShareRow(Icons.Outlined.Edit, R.string.profile_share_edit, R.string.profile_share_edit_sum, enabled = true, onClick = onEdit)
             ShareRow(Icons.Outlined.Image, R.string.profile_share_card, R.string.profile_share_card_sum, enabled = !busy, onClick = onShareCard)
             ShareRow(Icons.AutoMirrored.Outlined.ShortText, R.string.profile_share_text, R.string.profile_share_text_sum, enabled = true, onClick = onShareText)
             ShareRow(Icons.Outlined.Description, R.string.profile_share_history, R.string.profile_share_history_sum, enabled = !busy, onClick = onShareHistory)

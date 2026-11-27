@@ -108,6 +108,7 @@ object ContinueWidgets : KoinComponent {
     private val titleIds = intArrayOf(R.id.widget_title_0, R.id.widget_title_1, R.id.widget_title_2)
     private val subtitleIds = intArrayOf(R.id.widget_subtitle_0, R.id.widget_subtitle_1, R.id.widget_subtitle_2)
     private val progressIds = intArrayOf(R.id.widget_progress_0, R.id.widget_progress_1, R.id.widget_progress_2)
+    private val percentIds = intArrayOf(R.id.widget_percent_0, R.id.widget_percent_1, R.id.widget_percent_2)
 
     fun widgetIds(context: Context): IntArray = runCatching {
         AppWidgetManager.getInstance(context).getAppWidgetIds(ComponentName(context, ContinueReadingWidget::class.java))
@@ -217,12 +218,13 @@ object ContinueWidgets : KoinComponent {
             v.setTextViewText(titleIds[i], e.title)
             val percent = (e.progress.coerceIn(0f, 1f) * 100).roundToInt()
             val subtitle = if (e.online) {
-                context.resources.getQuantityString(R.plurals.widget_unread_chapters, e.unread, e.unread) + " · $percent%"
+                context.resources.getQuantityString(R.plurals.widget_unread_chapters, e.unread, e.unread)
             } else {
-                listOfNotNull(e.author?.takeIf { it.isNotBlank() }, "$percent%").joinToString(" · ")
+                e.author?.takeIf { it.isNotBlank() }.orEmpty()
             }
             v.setTextViewText(subtitleIds[i], subtitle)
-            v.setProgressBar(progressIds[i], PROGRESS_MAX, (e.progress.coerceIn(0f, 1f) * PROGRESS_MAX).roundToInt(), false)
+            v.setTextViewText(percentIds[i], "$percent%")
+            v.setImageViewBitmap(progressIds[i], progressBar(context, e.progress))
             val cover = covers[e.key]
             if (cover != null) v.setImageViewBitmap(coverIds[i], cover) else v.setImageViewResource(coverIds[i], R.drawable.widget_cover_placeholder)
             val intent = Intent(context, YomuActivity::class.java)
@@ -237,6 +239,24 @@ object ContinueWidgets : KoinComponent {
             )
         }
         return v
+    }
+
+    /** A rounded progress line drawn as a bitmap: RemoteViews cannot style a ProgressBar the same on every launcher. */
+    private fun progressBar(context: Context, fraction: Float): Bitmap {
+        val height = (4 * context.resources.displayMetrics.density).roundToInt().coerceAtLeast(2)
+        val width = 480
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val radius = height / 2f
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = context.getColor(R.color.widget_track) }
+        canvas.drawRoundRect(RectF(0f, 0f, width.toFloat(), height.toFloat()), radius, radius, paint)
+        val fill = width * fraction.coerceIn(0f, 1f)
+        if (fill > 0f) {
+            paint.color = context.getColor(R.color.widget_accent)
+            val filled = RectF(0f, 0f, fill.coerceAtLeast(height.toFloat()), height.toFloat())
+            canvas.drawRoundRect(filled, radius, radius, paint)
+        }
+        return bitmap
     }
 
     /** A small cover with rounded corners: the local file of a book, the (cached) picture of an online title. */
@@ -275,7 +295,6 @@ object ContinueWidgets : KoinComponent {
     }
 
     private const val DEBOUNCE_MS = 1_500L
-    private const val PROGRESS_MAX = 1000
     private const val HEADER_DP = 52
     private const val ROW_DP = 62
     private const val SMALL_HEIGHT_DP = 120

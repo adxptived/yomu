@@ -3,6 +3,7 @@ package app.yomu.data.repository
 import app.yomu.core.database.YomuDatabase
 import app.yomu.data.source.SourceManager
 import app.yomu.domain.catalog.ChapterOrder
+import app.yomu.domain.model.BookFormat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -35,6 +36,7 @@ data class ReadingHistoryItem(
     val chaptersRead: Int = 0,
     val sourceName: String? = null,
     val isManga: Boolean = false,
+    val isAudio: Boolean = false,
 )
 
 /**
@@ -68,6 +70,7 @@ class ReadingHistoryRepository(private val db: YomuDatabase, private val sources
                         progress = b.progress,
                         finished = b.status == "FINISHED",
                         isManga = b.isManga,
+                        isAudio = b.format == BookFormat.AUDIO.name,
                     )
                 }
 

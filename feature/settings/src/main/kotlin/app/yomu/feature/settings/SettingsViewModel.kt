@@ -233,6 +233,7 @@ class SettingsViewModel(
 
     /** Restores the archive whose manifest was just shown. */
     fun confirmRestore(options: BackupOptions = BackupOptions()) {
+        if (options.categories.isEmpty()) return
         val selected = backupPreview.value ?: return
         if (backupPreview.compareAndSet(selected, null)) restoreBackup(selected.uri, options)
     }

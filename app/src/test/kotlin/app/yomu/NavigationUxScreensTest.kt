@@ -98,6 +98,41 @@ class NavigationUxScreensTest {
         compose.onNode(hasText("font") and hasSetTextAction()).assertExists()
     }
 
+    /** 2.20.0: the journal renamed the profile tab; settings search finds its blocks by the everyday word. */
+    @Test
+    @Config(qualifiers = "w411dp-h891dp-xxhdpi")
+    fun journalBlocksAreFoundInSettingsSearch() {
+        skipOnboarding()
+        compose.onAllNodes(tab("Settings"))[0].performClick()
+        awaitText("Search settings")
+        compose.onAllNodes(hasSetTextAction())[0].performTextInput("journal")
+        awaitText("Journal")
+        shot("326_settings_search_journal")
+        // The section itself is the result: its row opens the journal blocks.
+        compose.onAllNodesWithText("Journal")[0].performClick()
+        compose.mainClock.advanceTimeBy(2_000)
+        compose.onAllNodesWithText("Journal blocks")[0].assertIsDisplayed()
+        shot("327_settings_journal_opened")
+        compose.onAllNodes(hasContentDescription("Back"))[0].performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        awaitText("Settings ›")
+        compose.onNode(hasText("journal") and hasSetTextAction()).assertExists()
+    }
+
+    /** "Reduce motion" is found by "animations", not only by its own label (the plan's acceptance). */
+    @Test
+    @Config(qualifiers = "w411dp-h891dp-xxhdpi")
+    fun reduceMotionIsFoundByAnimations() {
+        skipOnboarding()
+        searchSettings("animations")
+        awaitText("Reduce motion")
+        shot("328_settings_search_animations")
+        compose.onAllNodes(hasText("Settings ›", substring = true))[0].performClick()
+        compose.mainClock.advanceTimeBy(2_000)
+        compose.onAllNodesWithText("Reduce motion")[0].assertIsDisplayed()
+        shot("329_settings_reduce_motion_opened")
+    }
+
     @Test
     fun editingLookupClearsThePreviousResult() {
         skipOnboarding()

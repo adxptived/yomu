@@ -25,12 +25,12 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Settings
@@ -93,8 +93,11 @@ data class NavItem(val label: String, val icon: ImageVector, val selectedIcon: I
 enum class NavTab(@StringRes val label: Int, val icon: ImageVector, val selectedIcon: ImageVector) {
     LIBRARY(R.string.nav_library, Icons.Outlined.CollectionsBookmark, Icons.Filled.CollectionsBookmark),
 
-    /** The profile since 1.8.0 (statistics and history are its tabs); the name stays for stored tab orders. */
-    HISTORY(R.string.nav_history, Icons.Outlined.AccountCircle, Icons.Filled.AccountCircle),
+    /**
+     * The reading journal since 2.20.0 (formerly the profile tab): the last book, today's goal, tools and history.
+     * The internal name stays [HISTORY] so stored tab orders and hidden tabs keep working.
+     */
+    HISTORY(R.string.nav_history, Icons.Outlined.AutoStories, Icons.Filled.AutoStories),
     CATALOG(R.string.nav_catalog, Icons.Outlined.Explore, Icons.Filled.Explore),
     DICTIONARY(R.string.nav_dictionary, Icons.Outlined.Translate, Icons.Filled.Translate),
     SETTINGS(R.string.nav_settings, Icons.Outlined.Settings, Icons.Filled.Settings),

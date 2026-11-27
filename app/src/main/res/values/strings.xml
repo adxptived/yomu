@@ -53,6 +53,12 @@
     <string name="whats_new_title">What\'s new in Yomu</string>
     <string name="whats_new_ok">Got it</string>
     <string name="whats_new_all">All changes</string>
+    <string-array name="whats_new_2_20_0">
+        <item>The reading journal puts your last book, daily goal and history in one place.</item>
+        <item>Updated home screen widgets and clearer language labels in the catalog grid.</item>
+        <item>Reduced motion applies to journal transitions and menus, including when Android animations are off.</item>
+        <item>Word documents respect per-book reading settings. Voice previews leave your reading position alone.</item>
+    </string-array>
     <string-array name="whats_new_2_19_0">
         <item>Switch between list and grid in Catalog. Large text keeps source controls readable.</item>
         <item>Match title details with AniList, MangaBaka or MyAnimeList and explore tracker pages.</item>
@@ -243,15 +249,15 @@
         <item>With the daily check on, a dot on Settings and a card at the top of the settings tell you about a new version.</item>
         <item>This list, once after every update.</item>
     </string-array>
-    <!-- Profile tab (1.8.0) -->
-    <string name="profile_title">Profile</string>
+    <!-- Reading journal (2.20.0, formerly the profile tab) -->
+    <string name="profile_title">Journal</string>
     <string name="profile_tab_overview">Overview</string>
     <string name="profile_tab_stats">Statistics</string>
     <string name="profile_stats_summary">Finished: %1$s · pages: %2$s · streak: %3$s</string>
     <string name="profile_tab_history">History</string>
     <string name="profile_default_name">Reader</string>
     <string name="profile_set_name">Tap to set your name and avatar</string>
-    <string name="profile_edit">Edit profile</string>
+    <string name="profile_edit">Edit name and avatar</string>
     <string name="profile_name">Name</string>
     <string name="profile_avatar">Avatar</string>
     <string name="profile_since">Reading with Yomu since %1$s</string>
@@ -260,6 +266,8 @@
     <string name="profile_total_time">Total reading time</string>
     <string name="profile_open_stats">Statistics</string>
     <string name="profile_today">Today: %1$d of %2$d min</string>
+    <string name="profile_today_goal">Today</string>
+    <string name="profile_today_of_goal">of %1$d min</string>
     <string name="profile_stat_books">Books finished</string>
     <string name="profile_stat_titles">Titles read</string>
     <string name="profile_stat_streak">Day streak</string>
@@ -286,12 +294,26 @@
     <string name="profile_continue_reading">Continue reading</string>
     <string name="profile_start_reading">Start reading</string>
     <string name="profile_open_library">Open library</string>
-    <string name="profile_open_catalog">Open catalog</string>
+    <string name="profile_open_catalog">Find in catalog</string>
+    <string name="profile_choose_book">Choose a book</string>
+    <string name="profile_choose_book_hint">Your last book is not in the history. Open the library or find something in the catalog.</string>
+    <string name="profile_continue_chapter">Continue chapter</string>
+    <string name="profile_open_title">Open title</string>
+    <string name="profile_tools">My tools</string>
+    <string name="profile_tool_statistics">Statistics</string>
+    <string name="profile_tool_statistics_sum">Total time, the week and achievements</string>
+    <string name="profile_history_entry">All readings, grouped by day</string>
+    <string name="profile_share_edit">Name, avatar and card</string>
+    <string name="profile_share_edit_sum">How you appear on the shared statistics card</string>
     <string name="profile_reading_week">Last seven days</string>
     <string name="profile_all_history">All history</string>
+    <plurals name="profile_downloads_queue">
+        <item quantity="one">%1$d in queue</item>
+        <item quantity="other">%1$d in queue</item>
+    </plurals>
     <string name="profile_share_section">Share and transfer</string>
     <string name="profile_share_summary">Statistics card, history CSV, backup</string>
-    <string name="profile_share_hint">Your profile lives on this device: no account or server is needed. Share it as a picture or text, or move everything to another phone with a backup.</string>
+    <string name="profile_share_hint">Your reading data lives on this device: no account or server is needed. Share it as a picture or text, or move everything to another phone with a backup.</string>
     <string name="profile_share_card">Statistics card</string>
     <string name="profile_share_card_sum">A picture with your reading time, streak and books</string>
     <string name="profile_share_text">Statistics as text</string>
@@ -344,14 +366,15 @@
     <string name="widget_streak_label">Reading streak</string>
     <string name="widget_streak_description">Days in a row and today\'s reading time.</string>
     <string name="widget_streak_days_zero">No reading yet</string>
+    <string name="widget_streak_zero" translatable="false">0</string>
     <string name="widget_streak_empty">Start reading and your streak appears here.</string>
     <string name="widget_streak_today">Today: %1$s</string>
     <string name="widget_streak_today_none">Nothing read today</string>
     <string name="widget_streak_minutes">%1$d min</string>
     <string name="widget_streak_hours">%1$d h %2$d min</string>
     <plurals name="widget_streak_days">
-        <item quantity="one">%1$d day in a row</item>
-        <item quantity="other">%1$d days in a row</item>
+        <item quantity="one">day in a row</item>
+        <item quantity="other">days in a row</item>
     </plurals>
     <plurals name="widget_unread_chapters">
         <item quantity="one">%1$d unread chapter</item>

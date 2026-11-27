@@ -82,6 +82,9 @@ fun EmptyState(
     icon: ImageVector = Icons.Outlined.Inbox,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
+    /** A second, quieter way out (empty library: find a book in the catalog next to importing one). */
+    secondaryActionLabel: String? = null,
+    onSecondaryAction: (() -> Unit)? = null,
 ) {
     Column(
         modifier.fillMaxSize().padding(Dimens.xl),
@@ -111,6 +114,10 @@ fun EmptyState(
         if (actionLabel != null && onAction != null) {
             Spacer(Modifier.height(Dimens.l))
             Button(onClick = onAction) { Text(actionLabel) }
+        }
+        if (secondaryActionLabel != null && onSecondaryAction != null) {
+            if (actionLabel == null) Spacer(Modifier.height(Dimens.l))
+            TextButton(onClick = onSecondaryAction) { Text(secondaryActionLabel) }
         }
     }
 }

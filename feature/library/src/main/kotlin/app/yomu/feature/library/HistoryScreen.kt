@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
@@ -237,6 +239,8 @@ fun HistoryPane(
     onOpenStats: () -> Unit,
     modifier: Modifier = Modifier,
     showToday: Boolean = true,
+    /** The list state of the host screen: the journal keeps the place while statistics open on top. */
+    listState: LazyListState = rememberLazyListState(),
 ) {
     val days by viewModel.days.collectAsStateWithLifecycle()
     val today by viewModel.today.collectAsStateWithLifecycle()
@@ -298,6 +302,7 @@ fun HistoryPane(
             )
             else -> LazyColumn(
                 Modifier.fillMaxSize(),
+                state = listState,
                 contentPadding = PaddingValues(bottom = navBarBottomPadding(Dimens.xl)),
             ) {
                 if (showToday) {
