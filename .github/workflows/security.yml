@@ -23,8 +23,8 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -44,8 +44,8 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
 
@@ -58,9 +58,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
-      - uses: gradle/actions/dependency-submission@v4
+      - uses: gradle/actions/dependency-submission@v6
