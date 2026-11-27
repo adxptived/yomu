@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
+import app.yomu.core.datastore.AppSettings
 import app.yomu.data.book.EpubBuilder
 import app.yomu.data.book.EpubMeta
 import app.yomu.data.library.ImportOutcome
@@ -21,6 +22,7 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -42,6 +44,20 @@ import java.io.File
 class NavigationScreensTest {
     @get:Rule
     val compose = createAndroidComposeRule<YomuActivity>()
+
+    @Before
+    @OptIn(ExperimentalTestApi::class)
+    fun openLibrary() {
+        val settings = GlobalContext.get().get<AppSettings>()
+        runBlocking {
+            settings.whatsNewSeen.set(BuildConfig.VERSION_CODE.toLong())
+            settings.onboardingDone.set(true)
+        }
+        val library = hasText("Library") and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
+        compose.waitUntilAtLeastOneExists(library, 20_000)
+        clickTab("Library")
+        settle()
+    }
 
     @After
     fun tearDown() {
@@ -71,17 +87,8 @@ class NavigationScreensTest {
         }
     }
 
-    /** Skips onboarding (when this process has not passed it yet) and imports a book with a cover. */
-    @OptIn(ExperimentalTestApi::class)
+    /** Imports a book into the active library. */
     private fun importBook(title: String, fileName: String) {
-        compose.waitUntil(20_000) {
-            listOf("Welcome to Yomu", "Library").any { compose.onAllNodes(hasText(it, substring = true)).fetchSemanticsNodes().isNotEmpty() }
-        }
-        if (compose.onAllNodes(hasText("Welcome to Yomu")).fetchSemanticsNodes().isNotEmpty()) {
-            compose.onAllNodesWithText("Next")[0].performClick()
-            awaitText("Where are your books?")
-            compose.onAllNodesWithText("Skip")[0].performClick()
-        }
         val epub = File(compose.activity.cacheDir, fileName)
         EpubBuilder(EpubMeta(title = title, authors = listOf("Mara Ellison"), language = "en")).apply {
             addChapter("Chapter 1", "<p>The sea kept its own records.</p>")
@@ -166,17 +173,8 @@ class NavigationScreensTest {
     @OptIn(ExperimentalTestApi::class)
     @Config(qualifiers = "w411dp-h891dp-xxhdpi")
     fun allShowsOnlineMangaWithTheShelfHidden() {
-        // Onboarding is the same gate as for an imported book; there is no local title in this test.
-        compose.waitUntil(20_000) {
-            listOf("Welcome to Yomu", "Library").any { compose.onAllNodes(hasText(it, substring = true)).fetchSemanticsNodes().isNotEmpty() }
-        }
-        if (compose.onAllNodes(hasText("Welcome to Yomu")).fetchSemanticsNodes().isNotEmpty()) {
-            compose.onAllNodesWithText("Next")[0].performClick()
-            awaitText("Where are your books?")
-            compose.onAllNodesWithText("Skip")[0].performClick()
-        }
         val koin = GlobalContext.get()
-        runBlocking { koin.get<app.yomu.core.datastore.AppSettings>().libraryShelfHidden.set(true) }
+        runBlocking { koin.get<AppSettings>().libraryShelfHidden.set(true) }
         runBlocking {
             koin.get<app.yomu.core.database.YomuDatabase>().catalog().insert(
                 app.yomu.core.database.CatalogItemEntity(
