@@ -5,7 +5,10 @@ import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Shader
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -18,6 +21,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
+import app.yomu.core.datastore.AppSettings
 import app.yomu.data.book.EpubBuilder
 import app.yomu.data.book.EpubMeta
 import app.yomu.data.library.ImportOutcome
@@ -76,17 +80,17 @@ class BookPaneScreensTest {
         return ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
     }
 
-    /** Skips onboarding (when this process has not passed it yet) and imports a book with a cover. */
+    /** Opens the library and imports a book with a cover. */
     @OptIn(ExperimentalTestApi::class)
     private fun importBook(title: String, fileName: String) {
-        compose.waitUntil(20_000) {
-            listOf("Welcome to Yomu", "Library").any { compose.onAllNodes(hasText(it, substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        val settings = GlobalContext.get().get<AppSettings>()
+        runBlocking {
+            settings.whatsNewSeen.set(BuildConfig.VERSION_CODE.toLong())
+            settings.onboardingDone.set(true)
         }
-        if (compose.onAllNodes(hasText("Welcome to Yomu")).fetchSemanticsNodes().isNotEmpty()) {
-            compose.onAllNodesWithText("Next")[0].performClick()
-            awaitText("Where are your books?")
-            compose.onAllNodesWithText("Skip")[0].performClick()
-        }
+        val library = hasText("Library") and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
+        compose.waitUntilAtLeastOneExists(library, 20_000)
+        compose.onAllNodes(library)[0].performClick()
         compose.waitUntilAtLeastOneExists(hasText("Library") and !hasClickAction(), 20_000)
         val epub = File(compose.activity.cacheDir, fileName)
         EpubBuilder(EpubMeta(title = title, authors = listOf("Mara Ellison"), language = "en")).apply {
