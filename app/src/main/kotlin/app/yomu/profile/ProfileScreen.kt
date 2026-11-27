@@ -107,6 +107,7 @@ import app.yomu.data.download.DownloadRepository
 import app.yomu.data.repository.ReadingHistoryItem
 import app.yomu.domain.model.DownloadStatus
 import app.yomu.domain.model.EngineType
+import app.yomu.domain.model.Locator
 import app.yomu.domain.repository.BookRepository
 import app.yomu.feature.library.HistoryActions
 import app.yomu.feature.library.HistoryPane
@@ -395,18 +396,20 @@ private fun JournalPane(
     val books: BookRepository = koinInject()
     // "Chapter 3" or "Page 12" when the saved position is known: the same words the library shelf uses.
     val firstBook = recent.firstOrNull()
-    val place by key(firstBook?.bookId) {
-        produceState<String?>(null, firstBook?.readAt) {
+    val savedPosition by key(firstBook?.bookId) {
+        produceState<Pair<EngineType, Locator>?>(null, firstBook?.readAt) {
             val id = firstBook?.bookId ?: return@produceState
             val book = runCatching { books.getBook(id) }.getOrNull() ?: return@produceState
             val locator = runCatching { books.getProgress(id) }.getOrNull()
-            value = locator?.let {
-                when (book.engine) {
-                    EngineType.TEXT, EngineType.AUDIO -> it.chapterTitle?.takeIf { title -> title.isNotBlank() }
-                        ?: context.getString(LibraryR.string.library_continue_chapter, it.chapter + 1)
-                    else -> context.getString(LibraryR.string.library_continue_page, it.chapter + 1)
-                }
-            }
+            value = locator?.let { book.engine to it }
+        }
+    }
+    val place = savedPosition?.let { (engine, locator) ->
+        val number: Int = locator.chapter + 1
+        when (engine) {
+            EngineType.TEXT, EngineType.AUDIO -> locator.chapterTitle?.takeIf { it.isNotBlank() }
+                ?: stringResource(LibraryR.string.library_continue_chapter, number)
+            else -> stringResource(LibraryR.string.library_continue_page, number)
         }
     }
 
